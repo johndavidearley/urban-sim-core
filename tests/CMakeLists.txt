@@ -2,6 +2,7 @@
 add_executable(test_core
   CoreTests.cpp
   WorldTests.cpp
+  NetworkTests.cpp
 )
 
 target_link_libraries(test_core PRIVATE urban_sim_core gtest gtest_main)

@@ -5,6 +5,8 @@ add_library(urban_sim_core
   core/Random.cpp
   world/CityMap.cpp
   world/Tile.cpp
+  networks/RoadNetwork.cpp
+  networks/Pathfinding.cpp
   metrics/CityMetrics.cpp
 )
 
