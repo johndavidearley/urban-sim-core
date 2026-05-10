@@ -180,7 +180,7 @@ Last updated: May 10, 2026
 2. District-level service policies and budget controls
 3. Add richer route diagnostics (per-origin/per-destination filtering)
 4. Add visualization-side origin/destination route filters
-5. Add persistence diagnostics/reporting for migration outcomes
+5. Add persistence summary commands for snapshot inspection
 
 ---
 

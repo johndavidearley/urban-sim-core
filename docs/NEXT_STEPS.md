@@ -14,6 +14,7 @@
 3. Persistence hardening
 - ✅ Added snapshot schema version migration guards (legacy v0 -> v1)
 - ✅ Expanded load validation for malformed/incompatible data
+- ✅ Added CLI migration diagnostics output during `--load-city`
 
 4. Visualization kickoff
 - ✅ Added first visualization scaffold (`MapRenderer`) with PPM export

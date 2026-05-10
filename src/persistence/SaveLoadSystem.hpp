@@ -38,6 +38,14 @@ struct CitySnapshot {
   std::vector<SerializedRoad> roads;
 };
 
+struct SnapshotLoadDiagnostics {
+  int sourceVersion = -1;
+  int targetVersion = -1;
+  bool migrationApplied = false;
+  bool validationPassed = false;
+  std::string migrationPath;
+};
+
 class SaveLoadSystem {
 public:
   static CitySnapshot captureSnapshot(
@@ -63,13 +71,18 @@ public:
     const PopulationStore& population
   );
 
-  static bool loadSnapshotFromFile(const std::string& filePath, CitySnapshot& snapshot);
+  static bool loadSnapshotFromFile(
+    const std::string& filePath,
+    CitySnapshot& snapshot,
+    SnapshotLoadDiagnostics* diagnostics = nullptr
+  );
 
   static bool loadFromFile(
     const std::string& filePath,
     CityMap& map,
     RoadNetwork& roads,
     EntityStore& store,
-    PopulationStore& population
+    PopulationStore& population,
+    SnapshotLoadDiagnostics* diagnostics = nullptr
   );
 };

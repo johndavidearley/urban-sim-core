@@ -44,12 +44,20 @@ int64_t tileKey(int x, int y) {
   return (static_cast<int64_t>(x) << 32) ^ static_cast<uint32_t>(y);
 }
 
-bool migrateSnapshotJsonToCurrent(json& root) {
+bool migrateSnapshotJsonToCurrent(
+  json& root,
+  int& sourceVersion,
+  bool& migrationApplied,
+  std::string& migrationPath
+) {
   if (!root.is_object()) {
     return false;
   }
 
-  const int sourceVersion = root.value("version", 0);
+  sourceVersion = root.value("version", 0);
+  migrationApplied = false;
+  migrationPath = "none";
+
   if (sourceVersion < kMinimumSupportedSnapshotVersion || sourceVersion > kCurrentSnapshotVersion) {
     return false;
   }
@@ -98,6 +106,8 @@ bool migrateSnapshotJsonToCurrent(json& root) {
     }
 
     root["version"] = kCurrentSnapshotVersion;
+    migrationApplied = true;
+    migrationPath = "v0->v1";
   }
 
   return root.value("version", -1) == kCurrentSnapshotVersion;
@@ -404,7 +414,15 @@ bool SaveLoadSystem::saveToFile(
   return static_cast<bool>(out);
 }
 
-bool SaveLoadSystem::loadSnapshotFromFile(const std::string& filePath, CitySnapshot& snapshot) {
+bool SaveLoadSystem::loadSnapshotFromFile(
+  const std::string& filePath,
+  CitySnapshot& snapshot,
+  SnapshotLoadDiagnostics* diagnostics
+) {
+  if (diagnostics != nullptr) {
+    *diagnostics = SnapshotLoadDiagnostics{};
+  }
+
   std::ifstream in(filePath);
   if (!in.is_open()) {
     return false;
@@ -414,8 +432,22 @@ bool SaveLoadSystem::loadSnapshotFromFile(const std::string& filePath, CitySnaps
   try {
     in >> root;
 
-    if (!migrateSnapshotJsonToCurrent(root)) {
+    int sourceVersion = -1;
+    bool migrationApplied = false;
+    std::string migrationPath;
+
+    if (!migrateSnapshotJsonToCurrent(root, sourceVersion, migrationApplied, migrationPath)) {
+      if (diagnostics != nullptr) {
+        diagnostics->sourceVersion = sourceVersion;
+      }
       return false;
+    }
+
+    if (diagnostics != nullptr) {
+      diagnostics->sourceVersion = sourceVersion;
+      diagnostics->targetVersion = root.value("version", -1);
+      diagnostics->migrationApplied = migrationApplied;
+      diagnostics->migrationPath = migrationPath;
     }
 
     snapshot = CitySnapshot{};
@@ -458,7 +490,11 @@ bool SaveLoadSystem::loadSnapshotFromFile(const std::string& filePath, CitySnaps
     return false;
   }
 
-  return validateSnapshot(snapshot);
+  const bool valid = validateSnapshot(snapshot);
+  if (diagnostics != nullptr) {
+    diagnostics->validationPassed = valid;
+  }
+  return valid;
 }
 
 bool SaveLoadSystem::loadFromFile(
@@ -466,10 +502,11 @@ bool SaveLoadSystem::loadFromFile(
   CityMap& map,
   RoadNetwork& roads,
   EntityStore& store,
-  PopulationStore& population
+  PopulationStore& population,
+  SnapshotLoadDiagnostics* diagnostics
 ) {
   CitySnapshot snapshot;
-  if (!loadSnapshotFromFile(filePath, snapshot)) {
+  if (!loadSnapshotFromFile(filePath, snapshot, diagnostics)) {
     return false;
   }
 

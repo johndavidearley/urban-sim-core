@@ -35,9 +35,15 @@ TEST(SaveLoadSystemTests, SaveAndLoadRoundTripPreservesCoreState) {
   ASSERT_TRUE(SaveLoadSystem::saveToFile(filePath.string(), map, roads, store, population));
 
   CitySnapshot snapshot;
-  ASSERT_TRUE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot));
+  SnapshotLoadDiagnostics diagnostics;
+  ASSERT_TRUE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot, &diagnostics));
   ASSERT_EQ(snapshot.width, 8);
   ASSERT_EQ(snapshot.height, 8);
+  EXPECT_EQ(diagnostics.sourceVersion, 1);
+  EXPECT_EQ(diagnostics.targetVersion, 1);
+  EXPECT_FALSE(diagnostics.migrationApplied);
+  EXPECT_TRUE(diagnostics.validationPassed);
+  EXPECT_STREQ(diagnostics.migrationPath.c_str(), "none");
 
   CityMap loadedMap({snapshot.width, snapshot.height});
   RoadNetwork loadedRoads(loadedMap);
@@ -109,11 +115,17 @@ TEST(SaveLoadSystemTests, MigratesLegacyVersionZeroSnapshotToCurrent) {
   out.close();
 
   CitySnapshot snapshot;
-  ASSERT_TRUE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot));
+  SnapshotLoadDiagnostics diagnostics;
+  ASSERT_TRUE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot, &diagnostics));
   EXPECT_EQ(snapshot.version, 1);
   EXPECT_EQ(snapshot.width, 4);
   EXPECT_EQ(snapshot.height, 4);
   EXPECT_EQ(snapshot.tiles.size(), 16u);
+  EXPECT_EQ(diagnostics.sourceVersion, 0);
+  EXPECT_EQ(diagnostics.targetVersion, 1);
+  EXPECT_TRUE(diagnostics.migrationApplied);
+  EXPECT_TRUE(diagnostics.validationPassed);
+  EXPECT_STREQ(diagnostics.migrationPath.c_str(), "v0->v1");
 
   CityMap map({4, 4});
   RoadNetwork roads(map);

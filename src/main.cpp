@@ -56,7 +56,7 @@ void printHelp() {
             << "  --render-scale N          Pixel size per tile when rendering (default: 8)\n"
             << "  --render-view X Y W H     Render viewport rectangle in tiles\n"
             << "  --save-city FILE          Save city snapshot JSON to FILE\n"
-            << "  --load-city FILE          Load city snapshot JSON from FILE\n"
+            << "  --load-city FILE          Load city snapshot JSON from FILE (prints migration diagnostics)\n"
             << "  --verify-replay N         Run deterministic replay check using N growth steps\n"
             << "  --help                   Show this help message\n";
 }
@@ -504,11 +504,17 @@ int main(int argc, char* argv[]) {
   
   try {
     CitySnapshot loadedSnapshot;
+    SnapshotLoadDiagnostics snapshotDiagnostics;
     if (!loadCityPath.empty()) {
-      if (!SaveLoadSystem::loadSnapshotFromFile(loadCityPath, loadedSnapshot)) {
+      if (!SaveLoadSystem::loadSnapshotFromFile(loadCityPath, loadedSnapshot, &snapshotDiagnostics)) {
         std::cerr << "Error: Failed to load city snapshot from '" << loadCityPath << "'\n";
         return 1;
       }
+      std::cout << "Snapshot diagnostics: sourceVersion=" << snapshotDiagnostics.sourceVersion
+                << ", targetVersion=" << snapshotDiagnostics.targetVersion
+                << ", migrated=" << (snapshotDiagnostics.migrationApplied ? "yes" : "no")
+                << ", path=" << snapshotDiagnostics.migrationPath
+                << "\n";
       mapSize = loadedSnapshot.width;
     }
 

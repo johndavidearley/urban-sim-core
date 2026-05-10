@@ -142,9 +142,10 @@ Implemented so far:
 	- occupancy/employment consistency checks
 	- road adjacency and load sanity checks
 - Save/load tests expanded to cover migration and malformed snapshot rejection
+- CLI load flow now prints migration diagnostics (source version, target version, migration path)
 
 Next implementation target:
-- Optional migration diagnostics output during CLI load flows
+- Snapshot inspection command(s) for persistence diagnostics
 
 ---
 
