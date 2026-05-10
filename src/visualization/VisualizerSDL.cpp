@@ -440,6 +440,38 @@ void drawGradientBar(SDL_Renderer* renderer, int x, int y, int w, int h, Overlay
   drawRectOutline(renderer, x, y, w, h, {220, 220, 220}, 255);
 }
 
+void drawSwatch(SDL_Renderer* renderer, int x, int y, RGB color, bool active = false) {
+  drawFilledRect(renderer, x, y, 18, 12, color, 255);
+  drawRectOutline(renderer, x, y, 18, 12, active ? RGB{255, 230, 120} : RGB{220, 220, 220}, 255);
+}
+
+void drawZoneLegend(SDL_Renderer* renderer, int x, int y) {
+  // Categories shown in zone overlay rendering path.
+  drawSwatch(renderer, x + 0, y, zoneColor(1));       // Residential
+  drawSwatch(renderer, x + 24, y, zoneColor(2));      // Commercial
+  drawSwatch(renderer, x + 48, y, zoneColor(3));      // Industrial
+  drawSwatch(renderer, x + 72, y, {64, 64, 64});      // Road
+
+  // Building colors are distinct from zoning base colors.
+  drawSwatch(renderer, x + 112, y, {44, 132, 70});    // Residential building
+  drawSwatch(renderer, x + 136, y, {31, 84, 163});    // Commercial building
+  drawSwatch(renderer, x + 160, y, {179, 93, 29});    // Industrial building
+}
+
+void drawSteppedLegend(SDL_Renderer* renderer, int x, int y, OverlayMode mode) {
+  // Five-step discrete scale for numeric overlays.
+  for (int i = 0; i < 5; ++i) {
+    const float t = static_cast<float>(i) / 4.0f;
+    drawSwatch(renderer, x + i * 24, y, overlaySampleColor(mode, t), i == 2);
+  }
+
+  // Low and high anchors are repeated as larger blocks for quick glance.
+  drawFilledRect(renderer, x + 140, y - 1, 20, 14, overlaySampleColor(mode, 0.0f), 255);
+  drawRectOutline(renderer, x + 140, y - 1, 20, 14, {220, 220, 220}, 255);
+  drawFilledRect(renderer, x + 166, y - 1, 20, 14, overlaySampleColor(mode, 1.0f), 255);
+  drawRectOutline(renderer, x + 166, y - 1, 20, 14, {220, 220, 220}, 255);
+}
+
 void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int windowWidth, int windowHeight) {
   (void)windowWidth;
   (void)windowHeight;
@@ -447,7 +479,7 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
   constexpr int panelX = 12;
   constexpr int panelY = 12;
   constexpr int panelW = 520;
-  constexpr int panelH = 92;
+  constexpr int panelH = 122;
   drawFilledRect(renderer, panelX, panelY, panelW, panelH, {14, 16, 20}, 190);
   drawRectOutline(renderer, panelX, panelY, panelW, panelH, {230, 230, 230}, 220);
 
@@ -483,16 +515,30 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
     }
   }
 
-  // Lower strip shows current overlay scale hints.
+  // Mid strip shows overlay-specific legend swatches.
+  constexpr int legendX = panelX + 10;
+  constexpr int legendY = panelY + 40;
+  if (overlayMode == OverlayMode::Zone) {
+    drawZoneLegend(renderer, legendX, legendY);
+  } else {
+    drawSteppedLegend(renderer, legendX, legendY, overlayMode);
+  }
+
+  // Lower strip shows continuous scale hints for numeric overlays.
   constexpr int barX = panelX + 10;
-  constexpr int barY = panelY + 40;
+  constexpr int barY = panelY + 72;
   constexpr int barW = 280;
   constexpr int barH = 14;
-  drawGradientBar(renderer, barX, barY, barW, barH, overlayMode);
+  if (overlayMode == OverlayMode::Zone) {
+    drawFilledRect(renderer, barX, barY, barW, barH, {36, 40, 48}, 255);
+    drawRectOutline(renderer, barX, barY, barW, barH, {220, 220, 220}, 255);
+  } else {
+    drawGradientBar(renderer, barX, barY, barW, barH, overlayMode);
+  }
 
   // Low/high indicator blocks for quick visual reference.
-  const RGB low = overlaySampleColor(overlayMode, 0.0f);
-  const RGB high = overlaySampleColor(overlayMode, 1.0f);
+  const RGB low = overlayMode == OverlayMode::Zone ? zoneColor(1) : overlaySampleColor(overlayMode, 0.0f);
+  const RGB high = overlayMode == OverlayMode::Zone ? RGB{64, 64, 64} : overlaySampleColor(overlayMode, 1.0f);
   drawFilledRect(renderer, barX + barW + 10, barY, 16, barH, low, 255);
   drawRectOutline(renderer, barX + barW + 10, barY, 16, barH, {220, 220, 220}, 255);
   drawFilledRect(renderer, barX + barW + 32, barY, 16, barH, high, 255);
