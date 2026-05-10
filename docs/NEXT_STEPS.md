@@ -56,7 +56,28 @@
 ### Remaining Slice 5 work
 - ✅ Improve growth balancing and zone demand shaping (coverage-pressure + demand-floor tuning)
 - ✅ Add growth-oriented city metrics/summary output (`--print-growth-summary`)
-- Add additional long-run simulation tests
+- ✅ Add additional long-run simulation tests
+
+**Slice 5 status:** ✅ Functionally complete for current scope.
+
+---
+
+## Current: Backlog Slice 6 - Population and Jobs
+
+**Goal:** Model residents, employment, and housing/job allocation
+
+1. **Population entities**
+- Add population group structures and storage
+
+2. **Allocation system**
+- Assign residents to residential capacity
+- Assign workers to available jobs
+
+3. **Metrics integration**
+- Population total, housing capacity, available jobs, unemployment
+
+4. **Tests**
+- Deterministic population/job assignment behavior
 
 ---
 

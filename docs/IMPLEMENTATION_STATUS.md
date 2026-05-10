@@ -10,7 +10,7 @@ Last updated: May 10, 2026
 | **Phase 2: World Model** | ✅ Complete | 100% |
 | **Phase 3: Road System** | ✅ Complete | 100% |
 | **Phase 4: Zoning & Parcels** | ✅ Complete | 100% |
-| **Phase 5+: Advanced Systems** | ⏳ In Progress | 20% |
+| **Phase 5+: Advanced Systems** | ⏳ In Progress | 25% |
 
 ---
 
@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **63 tests passing** (9 test suites)
+✅ **65 tests passing** (9 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -93,7 +93,7 @@ Last updated: May 10, 2026
 - EntityStoreTests: 4
 - RoadNetworkTests: 11
 - PathfindingTests: 8
-- GrowthSystemTests: 6
+- GrowthSystemTests: 8
 - GrowthMetricsTests: 3
 
 ---
@@ -111,7 +111,8 @@ Implemented so far:
 - CLI growth commands: `--run-growth N`, `--print-buildings`
 - Growth summary metrics module with fill-rate reporting (`--print-growth-summary`)
 - Growth system tests and CLI smoke verification
+- Long-run growth regression tests (multi-step stabilization + determinism)
 
 Next implementation target:
-- Add additional long-run simulation tests
+- Begin Slice 6: population and job assignment foundations
 
