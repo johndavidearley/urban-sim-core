@@ -81,8 +81,28 @@
 
 ### Remaining Slice 6 work
 - ✅ Add multi-group demographics and income bands
-- Add explicit commute/job matching constraints beyond capacity-only assignment
+- ✅ Add explicit commute/job matching constraints beyond capacity-only assignment
 - ✅ Add CLI command to print grouped population composition
+
+**Slice 6 status:** ✅ Functionally complete for current scope.
+
+---
+
+## Current: Backlog Slice 7 - Traffic and Commute
+
+**Goal:** Introduce commute time and congestion impact from worker movement
+
+1. **Commute modeling**
+- Add assignment of employed groups to route demand
+
+2. **Traffic accumulation**
+- Map commuter flows onto road network edges
+
+3. **Metrics impact**
+- Feed commute burden / congestion into city metrics
+
+4. **Tests**
+- Deterministic commute and congestion behavior
 
 ---
 
@@ -105,8 +125,8 @@
 | 3 | Road system | ✅ Complete |
 | 4 | Zoning & parcels | ✅ Complete |
 | 5 | Building growth | ✅ Complete |
-| 6 | Population | ⏳ Current |
-| 7 | Traffic | ⏹️ Pending |
+| 6 | Population | ✅ Complete |
+| 7 | Traffic | ⏳ Current |
 | 8 | Economy | ⏹️ Pending |
 | 9 | Metrics | ⏹️ Pending |
 | 10 | Save/Load | ⏹️ Pending |

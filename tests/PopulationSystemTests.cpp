@@ -160,6 +160,32 @@ TEST(PopulationSystemTests, CompositionIsDeterministicForSameSeed) {
   EXPECT_EQ(a.highIncomeEmployed, b.highIncomeEmployed);
 }
 
+TEST(PopulationSystemTests, IncomeBandJobPreferencesAffectJobTypeMix) {
+  EntityStore buildings;
+  PopulationStore people;
+
+  buildings.createBuilding(BuildingType::Residential, {1, 1}, 20);
+  buildings.createBuilding(BuildingType::Commercial, {3, 1}, 20);
+  buildings.createBuilding(BuildingType::Industrial, {4, 1}, 20);
+
+  const PopulationSummary summary = PopulationSystem::allocate(buildings, people, 20, 5);
+
+  uint32_t commercialOccupancy = 0;
+  uint32_t industrialOccupancy = 0;
+  for (const auto& [id, building] : buildings.getBuildings()) {
+    (void)id;
+    if (building.type == BuildingType::Commercial) {
+      commercialOccupancy += static_cast<uint32_t>(building.occupancy);
+    } else if (building.type == BuildingType::Industrial) {
+      industrialOccupancy += static_cast<uint32_t>(building.occupancy);
+    }
+  }
+
+  EXPECT_EQ(summary.employedPopulation, 20u);
+  EXPECT_EQ(commercialOccupancy + industrialOccupancy, 20u);
+  EXPECT_GT(industrialOccupancy, commercialOccupancy);
+}
+
 TEST(PopulationSystemTests, SummaryAppliesToCityMetrics) {
   CityMetrics metrics;
   PopulationSummary summary;

@@ -96,6 +96,42 @@ std::array<uint32_t, 3> splitByWeights(uint32_t total, const std::array<uint32_t
 
   return split;
 }
+
+void allocateBandToJobTypes(
+  uint32_t employed,
+  uint32_t preferredCommercialPercent,
+  uint32_t& remainingCommercial,
+  uint32_t& remainingIndustrial,
+  uint32_t& assignedCommercial,
+  uint32_t& assignedIndustrial
+) {
+  if (employed == 0) {
+    return;
+  }
+
+  uint32_t desiredCommercial = (employed * preferredCommercialPercent) / 100u;
+  uint32_t desiredIndustrial = employed - desiredCommercial;
+
+  uint32_t commercial = std::min(desiredCommercial, remainingCommercial);
+  uint32_t industrial = std::min(desiredIndustrial, remainingIndustrial);
+
+  uint32_t assigned = commercial + industrial;
+  if (assigned < employed) {
+    uint32_t remaining = employed - assigned;
+
+    const uint32_t moreIndustrial = std::min(remaining, remainingIndustrial - industrial);
+    industrial += moreIndustrial;
+    remaining -= moreIndustrial;
+
+    const uint32_t moreCommercial = std::min(remaining, remainingCommercial - commercial);
+    commercial += moreCommercial;
+  }
+
+  remainingCommercial -= commercial;
+  remainingIndustrial -= industrial;
+  assignedCommercial += commercial;
+  assignedIndustrial += industrial;
+}
 } // namespace
 
 PopulationSummary PopulationSystem::allocate(
@@ -121,21 +157,44 @@ PopulationSummary PopulationSystem::allocate(
 
   assignOccupancy(store, residential, housed, seed + 17u);
 
-  uint32_t commercialShare = employed / 2u;
-  commercialShare = std::min(commercialShare, commercialCapacity);
-  uint32_t industrialShare = employed - commercialShare;
-  if (industrialShare > industrialCapacity) {
-    const uint32_t overflow = industrialShare - industrialCapacity;
-    industrialShare = industrialCapacity;
-    commercialShare = std::min(commercialShare + overflow, commercialCapacity);
-  }
-
-  assignOccupancy(store, commercial, commercialShare, seed + 29u);
-  assignOccupancy(store, industrial, industrialShare, seed + 43u);
-
   // Composition model: low/middle/high income split with deterministic band employment shares.
   const std::array<uint32_t, 3> housedByBand = splitByWeights(housed, {50u, 35u, 15u});
   const std::array<uint32_t, 3> employedByBand = splitByWeights(employed, {30u, 40u, 30u});
+
+  // Job matching constraints by income band.
+  // Low income prefers industrial jobs, high income prefers commercial jobs.
+  uint32_t remainingCommercial = commercialCapacity;
+  uint32_t remainingIndustrial = industrialCapacity;
+  uint32_t commercialShare = 0u;
+  uint32_t industrialShare = 0u;
+
+  allocateBandToJobTypes(
+    employedByBand[0],
+    30u,
+    remainingCommercial,
+    remainingIndustrial,
+    commercialShare,
+    industrialShare
+  );
+  allocateBandToJobTypes(
+    employedByBand[1],
+    50u,
+    remainingCommercial,
+    remainingIndustrial,
+    commercialShare,
+    industrialShare
+  );
+  allocateBandToJobTypes(
+    employedByBand[2],
+    75u,
+    remainingCommercial,
+    remainingIndustrial,
+    commercialShare,
+    industrialShare
+  );
+
+  assignOccupancy(store, commercial, commercialShare, seed + 29u);
+  assignOccupancy(store, industrial, industrialShare, seed + 43u);
 
   population.clear();
   if (housedByBand[0] > 0) {

@@ -10,7 +10,7 @@ Last updated: May 10, 2026
 | **Phase 2: World Model** | ✅ Complete | 100% |
 | **Phase 3: Road System** | ✅ Complete | 100% |
 | **Phase 4: Zoning & Parcels** | ✅ Complete | 100% |
-| **Phase 5+: Advanced Systems** | ⏳ In Progress | 38% |
+| **Phase 5+: Advanced Systems** | ⏳ In Progress | 45% |
 
 ---
 
@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **70 tests passing** (10 test suites)
+✅ **71 tests passing** (10 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -108,10 +108,11 @@ Implemented so far:
 - Multi-group composition with income bands (low/middle/high)
 - Deterministic population allocation system (`PopulationSystem`)
 - Housing assignment to residential occupancy and jobs assignment to non-residential occupancy
+- Income-band-based job matching constraints (commercial vs industrial preference)
 - Population summary wiring to city metrics (population, housing/jobs availability, unemployment)
 - CLI population commands: `--seed-population N`, `--print-population-summary`, `--print-population-groups`
-- Population allocation/composition tests and CLI smoke verification
+- Population allocation/composition/job-matching tests and CLI smoke verification
 
 Next implementation target:
-- Add explicit commute/job matching constraints beyond capacity-only assignment
+- Begin Slice 7: traffic and commute modeling foundations
 
