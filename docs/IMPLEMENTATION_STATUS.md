@@ -6,7 +6,7 @@ Last updated: May 10, 2026
 
 | Phase | Status | Progress |
 |-------|--------|----------|
-| **Phase 1: Headless Foundation** | ⏳ Setup | 10% |
+| **Phase 1: Headless Foundation** | ⏳ M1 Complete | 30% |
 | **Phase 2: Population & Economy** | ⏹️ Pending | 0% |
 | **Phase 3: Services & Persistence** | ⏹️ Pending | 0% |
 | **Phase 4: Visualization** | ⏹️ Pending | 0% |
@@ -23,12 +23,13 @@ Last updated: May 10, 2026
 | Project structure | ✅ Done | All directories created |
 | CMake build system | ✅ Done | Top-level + src + tests CMakeLists.txt |
 | Core types | ✅ Done | EntityId, SimulationTime, Random, Tile, CityMap |
-| Unit test framework | ✅ Done | Google Test setup with 5 initial tests |
-| Basic CLI entry point | ✅ Done | `UrbanSimCore-cli` with arg parsing and tick loop |
+| Unit test framework | ✅ Done | Google Test submodule, 5 tests passing |
+| Basic CLI entry point | ✅ Done | `UrbanSimCore-cli` compiling and running |
+| Git repository | ✅ Done | Initialized with 3 commits, submodule configured |
 
-**Target:** ⏳ Build and verify—all code in place, awaiting compilation
+**Target:** ✅ **COMPLETE** — Build verified, all tests passing
 
-**Next action:** See [Build Instructions](#build-instructions) below
+**Status:** Ready to proceed to Backlog Slice 2
 
 ---
 
@@ -84,40 +85,33 @@ Last updated: May 10, 2026
 
 ---
 
-## Build Instructions
+## Build Status
 
-### Prerequisites
+✅ **Successfully built and tested.**
 
-```bash
-# macOS
-brew install glm nlohmann-json
-
-# Ubuntu/Debian
-sudo apt-get install libglm-dev nlohmann-json3-dev
-
-# Or use vcpkg/conan for cross-platform
+### Build Output
+```
+[100%] Linking CXX executable ../bin/test_core
+[100%] Built target test_core
 ```
 
-### Build
-
-```bash
-cd /Users/johnearley/code/urban-sim-core
-mkdir -p build && cd build
-cmake ..
-cmake --build . --config Release
+### Test Results
+```
+100% tests passed, 5 tests from 2 test suites ran (0.51 sec total)
+✅ EntityIdTests.GenerateUniqueIds
+✅ CityMapTests.CreateAndAccess
+✅ CityMapTests.TileInitialization
+✅ CityMapTests.BoundsChecking
+✅ CityMapTests.InvalidCreation
 ```
 
-### Run Tests
-
-```bash
-cd build
-ctest --verbose
+### CLI Execution
 ```
-
-### Run CLI
-
-```bash
-./bin/UrbanSimCore-cli --size 64 --ticks 100 --seed 42
+$ ./bin/UrbanSimCore-cli --size 64 --ticks 100 --seed 42
+Initializing city (64x64)...
+Running 100 ticks with seed 42...
+✅ Simulation complete
+✅ Metrics calculated and displayed
 ```
 
 ---
@@ -149,17 +143,29 @@ None once dependencies are installed.
 
 ## Next Actions
 
-**Immediate (if building now):**
-1. Install GLM and nlohmann/json via brew/apt
-2. Initialize Google Test submodule
-3. Run build commands above
-4. Verify tests pass and CLI runs
+**Milestone 1 is complete.** Proceed to **Backlog Slice 2** (World Model Foundation) in [NEXT_STEPS.md](NEXT_STEPS.md).
 
-**After successful build:**
-1. Proceed to **Backlog Slice 2** (World Model Foundation) in [NEXT_STEPS.md](NEXT_STEPS.md)
-2. Implement map inspection commands
-3. Continue through backlog slices systematically
+### To rebuild locally (future reference):
 
-**To continue development:**
-See [NEXT_STEPS.md](NEXT_STEPS.md) for prioritized backlog slices and detailed tasks for each phase.
+```bash
+cd /Users/johnearley/code/urban-sim-core/build
+cmake --build . --config Release  # Rebuild after changes
+ctest --verbose                     # Run tests
+./bin/UrbanSimCore-cli --help       # Show CLI options
+```
+
+### Current executable location:
+```
+/Users/johnearley/code/urban-sim-core/build/bin/UrbanSimCore-cli
+```
+
+### Git status:
+```
+$ git log --oneline | head -3
+557564f Build verification: All tests pass, CLI executable runs successfully
+335d6ba Add Google Test submodule
+22f3654 Initial project setup: UrbanSimCore structure, documentation, and core types
+```
+
+Ready for next backlog slice.
 
