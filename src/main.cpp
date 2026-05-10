@@ -4,8 +4,11 @@
 #include <iomanip>
 #include "src/core/SimulationTime.hpp"
 #include "src/world/CityMap.hpp"
+#include "src/world/Zoning.hpp"
+#include "src/entities/EntityStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/networks/Pathfinding.hpp"
+#include "src/systems/GrowthSystem.hpp"
 #include "src/metrics/CityMetrics.hpp"
 
 void printHelp() {
@@ -17,6 +20,11 @@ void printHelp() {
             << "  --seed SEED              Random seed (default: 42)\n"
             << "  --print-map              Print ASCII map representation and exit\n"
             << "  --print-tile X Y         Print detailed info for tile at (X,Y)\n"
+            << "  --zone-rect X1 Y1 X2 Y2 TYPE  Apply zoning to rectangle\n"
+            << "  --print-zones            Print zoning map and exit\n"
+            << "  --print-demand           Print zoning demand stub and exit\n"
+            << "  --run-growth N           Run N growth steps and print summary\n"
+            << "  --print-buildings        Print all spawned buildings\n"
             << "  --place-road X1 Y1 X2 Y2  Build a road segment between tiles\n"
             << "  --connectivity-map       Print connectivity status and exit\n"
             << "  --find-path X1 Y1 X2 Y2  Find shortest path from (X1,Y1) to (X2,Y2)\n"
@@ -61,7 +69,7 @@ void printTile(const CityMap& map, int x, int y) {
   
   std::cout << "Tile (" << x << "," << y << "):\n";
   std::cout << "  Position: (" << tile.position.x << "," << tile.position.y << ")\n";
-  std::cout << "  Zone: " << static_cast<int>(tile.zone) << "\n";
+  std::cout << "  Zone: " << Zoning::zoneToString(tile.zone) << " (" << tile.zone << ")\n";
   std::cout << "  Type: " << static_cast<int>(tile.type) << "\n";
   std::cout << "  Land Value: " << tile.landValue << "\n";
   std::cout << "  Pollution: " << tile.pollution << "\n";
@@ -69,6 +77,60 @@ void printTile(const CityMap& map, int x, int y) {
   std::cout << "  Connected to Road: " << (tile.connectedToRoad ? "Yes" : "No") << "\n";
   if (tile.buildingId != 0) {
     std::cout << "  Building ID: " << tile.buildingId << "\n";
+  }
+}
+
+void printZones(const CityMap& map) {
+  glm::ivec2 dims = map.getDimensions();
+
+  std::cout << "Zone Map (" << dims.x << "x" << dims.y << "):\n";
+  std::cout << "  Legend: . = none, R = residential, C = commercial, I = industrial, P = park\n\n";
+
+  std::cout << "    ";
+  for (int x = 0; x < dims.x; x += 5) {
+    std::cout << std::setw(5) << x;
+  }
+  std::cout << "\n";
+
+  for (int y = 0; y < dims.y; ++y) {
+    std::cout << std::setw(3) << y << " ";
+    for (int x = 0; x < dims.x; ++x) {
+      const Tile& tile = map.getTile({x, y});
+      std::cout << Zoning::zoneToSymbol(tile.zone);
+    }
+    std::cout << "\n";
+  }
+}
+
+void printDemand(uint32_t seed) {
+  ZoneDemand demand = Zoning::calculateDemand(seed);
+  std::cout << "Zone demand (stub):\n";
+  std::cout << "  Residential: " << std::fixed << std::setprecision(3) << demand.residential << "\n";
+  std::cout << "  Commercial:  " << std::fixed << std::setprecision(3) << demand.commercial << "\n";
+  std::cout << "  Industrial:  " << std::fixed << std::setprecision(3) << demand.industrial << "\n";
+}
+
+const char* buildingTypeToString(BuildingType type) {
+  switch (type) {
+    case BuildingType::Residential:
+      return "Residential";
+    case BuildingType::Commercial:
+      return "Commercial";
+    case BuildingType::Industrial:
+      return "Industrial";
+    default:
+      return "Unknown";
+  }
+}
+
+void printBuildings(const EntityStore& store) {
+  const auto& buildings = store.getBuildings();
+  std::cout << "Buildings: " << buildings.size() << "\n";
+
+  for (const auto& [id, building] : buildings) {
+    std::cout << "  #" << id << " " << buildingTypeToString(building.type)
+              << " at (" << building.position.x << "," << building.position.y << ")"
+              << " cap=" << building.capacity << " occ=" << building.occupancy << "\n";
   }
 }
 
@@ -123,7 +185,13 @@ int main(int argc, char* argv[]) {
   uint32_t seed = 42;
   bool printMapFlag = false;
   int printTileX = -1, printTileY = -1;
+  bool printZonesFlag = false;
+  bool printDemandFlag = false;
+  bool printBuildingsFlag = false;
   bool printConnectivityMapFlag = false;
+  int zoneX1 = -1, zoneY1 = -1, zoneX2 = -1, zoneY2 = -1;
+  std::string zoneTypeRaw;
+  int runGrowthSteps = 0;
   int placeRoadX1 = -1, placeRoadY1 = -1, placeRoadX2 = -1, placeRoadY2 = -1;
   int findPathX1 = -1, findPathY1 = -1, findPathX2 = -1, findPathY2 = -1;
   
@@ -144,6 +212,20 @@ int main(int argc, char* argv[]) {
     } else if (arg == "--print-tile" && i + 2 < argc) {
       printTileX = std::atoi(argv[++i]);
       printTileY = std::atoi(argv[++i]);
+    } else if (arg == "--zone-rect" && i + 5 < argc) {
+      zoneX1 = std::atoi(argv[++i]);
+      zoneY1 = std::atoi(argv[++i]);
+      zoneX2 = std::atoi(argv[++i]);
+      zoneY2 = std::atoi(argv[++i]);
+      zoneTypeRaw = argv[++i];
+    } else if (arg == "--print-zones") {
+      printZonesFlag = true;
+    } else if (arg == "--print-demand") {
+      printDemandFlag = true;
+    } else if (arg == "--run-growth" && i + 1 < argc) {
+      runGrowthSteps = std::atoi(argv[++i]);
+    } else if (arg == "--print-buildings") {
+      printBuildingsFlag = true;
     } else if (arg == "--connectivity-map") {
       printConnectivityMapFlag = true;
     } else if (arg == "--place-road" && i + 4 < argc) {
@@ -174,6 +256,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Initializing city (" << mapSize << "x" << mapSize << ")...\n";
     CityMap map({mapSize, mapSize});
     RoadNetwork roads(map);
+    EntityStore store;
     
     // Handle inspection commands
     if (printMapFlag) {
@@ -185,11 +268,23 @@ int main(int argc, char* argv[]) {
       printTile(map, printTileX, printTileY);
       return 0;
     }
-    
-    if (printConnectivityMapFlag) {
-      roads.updateConnectivity({0, 0}); // Check connectivity from top-left
-      printConnectivityMap(map, roads);
-      return 0;
+
+    if (zoneX1 >= 0) {
+      ZoneType zoneType = ZoneType::None;
+      if (!Zoning::parseZoneType(zoneTypeRaw, zoneType)) {
+        std::cerr << "Error: Unknown zone type '" << zoneTypeRaw
+                  << "'. Use NONE, RESIDENTIAL, COMMERCIAL, INDUSTRIAL, or PARK.\n";
+        return 1;
+      }
+
+      int zonedCount = 0;
+      if (!Zoning::applyZoneRect(map, {zoneX1, zoneY1}, {zoneX2, zoneY2}, zoneType, &zonedCount)) {
+        std::cerr << "Error: Zone rectangle is out of bounds\n";
+        return 1;
+      }
+
+      std::cout << "Applied zone " << Zoning::zoneToString(static_cast<int>(zoneType))
+                << " to " << zonedCount << " tiles.\n";
     }
     
     if (placeRoadX1 >= 0) {
@@ -198,15 +293,51 @@ int main(int argc, char* argv[]) {
       std::cout << "Road built from (" << placeRoadX1 << "," << placeRoadY1 
                 << ") to (" << placeRoadX2 << "," << placeRoadY2 << ")\n";
       std::cout << "Total roads: " << roads.getRoadCount() << "\n";
-      printConnectivityMap(map, roads);
-      return 0;
     }
     
+    if (runGrowthSteps > 0) {
+      for (int step = 0; step < runGrowthSteps; ++step) {
+        const ZoneDemand demand = Zoning::calculateDemand(seed + static_cast<uint32_t>(step));
+        const GrowthStats stats = GrowthSystem::runStep(
+          map, roads, store, demand, seed + static_cast<uint32_t>(step), 0.5f
+        );
+
+        std::cout << "Growth step " << (step + 1)
+                  << ": evaluated=" << stats.evaluatedTiles
+                  << " spawned=" << stats.totalSpawned()
+                  << " (R=" << stats.spawnedResidential
+                  << ", C=" << stats.spawnedCommercial
+                  << ", I=" << stats.spawnedIndustrial << ")\n";
+      }
+    }
+
+    if (printDemandFlag) {
+      printDemand(seed);
+    }
+
+    if (printConnectivityMapFlag) {
+      roads.updateConnectivity({0, 0}); // Check connectivity from top-left
+      printConnectivityMap(map, roads);
+    }
+
+    if (printZonesFlag) {
+      printZones(map);
+    }
+
+    if (printBuildingsFlag) {
+      printBuildings(store);
+    }
+
     if (findPathX1 >= 0) {
       Pathfinding::Path path = Pathfinding::findShortestPath(
         roads, {findPathX1, findPathY1}, {findPathX2, findPathY2}
       );
       printPath(path);
+      return 0;
+    }
+
+    if (zoneX1 >= 0 || placeRoadX1 >= 0 || runGrowthSteps > 0 || printZonesFlag ||
+        printDemandFlag || printConnectivityMapFlag || printBuildingsFlag) {
       return 0;
     }
     

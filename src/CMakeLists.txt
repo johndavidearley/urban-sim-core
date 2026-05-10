@@ -3,8 +3,11 @@ add_library(urban_sim_core
   core/EntityId.cpp
   core/SimulationTime.cpp
   core/Random.cpp
+  entities/EntityStore.cpp
+  systems/GrowthSystem.cpp
   world/CityMap.cpp
   world/Tile.cpp
+  world/Zoning.cpp
   networks/RoadNetwork.cpp
   networks/Pathfinding.cpp
   metrics/CityMetrics.cpp

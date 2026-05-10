@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "src/world/CityMap.hpp"
 #include "src/world/Tile.hpp"
+#include "src/world/Zoning.hpp"
 
 // Tests for Tile structure
 TEST(TileTests, TileCreation) {
@@ -224,4 +225,84 @@ TEST(CityMapTests, OutOfBoundsAccess) {
   EXPECT_THROW(map.getTile({5, -1}), std::out_of_range);
   EXPECT_THROW(map.getTile({10, 5}), std::out_of_range);
   EXPECT_THROW(map.getTile({5, 10}), std::out_of_range);
+}
+
+// Tests for Zoning
+TEST(ZoningTests, ParseZoneType) {
+  ZoneType zone = ZoneType::None;
+
+  EXPECT_TRUE(Zoning::parseZoneType("residential", zone));
+  EXPECT_EQ(zone, ZoneType::Residential);
+
+  EXPECT_TRUE(Zoning::parseZoneType("COM", zone));
+  EXPECT_EQ(zone, ZoneType::Commercial);
+
+  EXPECT_TRUE(Zoning::parseZoneType("INDUSTRIAL", zone));
+  EXPECT_EQ(zone, ZoneType::Industrial);
+
+  EXPECT_TRUE(Zoning::parseZoneType("park", zone));
+  EXPECT_EQ(zone, ZoneType::Park);
+
+  EXPECT_FALSE(Zoning::parseZoneType("invalid-zone", zone));
+}
+
+TEST(ZoningTests, ApplyZoneRectInclusive) {
+  CityMap map({8, 8});
+  int zonedCount = 0;
+
+  EXPECT_TRUE(Zoning::applyZoneRect(
+    map, {2, 2}, {4, 3}, ZoneType::Residential, &zonedCount
+  ));
+  EXPECT_EQ(zonedCount, 6);
+
+  for (int y = 2; y <= 3; ++y) {
+    for (int x = 2; x <= 4; ++x) {
+      EXPECT_EQ(map.getTile({x, y}).zone, static_cast<int>(ZoneType::Residential));
+      EXPECT_EQ(map.getTile({x, y}).landValue, 120.0f);
+    }
+  }
+}
+
+TEST(ZoningTests, ApplyZoneRectHandlesInvertedCorners) {
+  CityMap map({8, 8});
+  int zonedCount = 0;
+
+  EXPECT_TRUE(Zoning::applyZoneRect(
+    map, {5, 5}, {3, 4}, ZoneType::Commercial, &zonedCount
+  ));
+  EXPECT_EQ(zonedCount, 6);
+
+  for (int y = 4; y <= 5; ++y) {
+    for (int x = 3; x <= 5; ++x) {
+      EXPECT_EQ(map.getTile({x, y}).zone, static_cast<int>(ZoneType::Commercial));
+      EXPECT_EQ(map.getTile({x, y}).landValue, 140.0f);
+    }
+  }
+}
+
+TEST(ZoningTests, ApplyZoneRectOutOfBoundsFails) {
+  CityMap map({8, 8});
+  map.getTile({0, 0}).zone = static_cast<int>(ZoneType::Industrial);
+
+  EXPECT_FALSE(Zoning::applyZoneRect(map, {-1, 0}, {2, 2}, ZoneType::Park));
+  EXPECT_EQ(map.getTile({0, 0}).zone, static_cast<int>(ZoneType::Industrial));
+}
+
+TEST(ZoningTests, DemandIsDeterministicPerSeed) {
+  const ZoneDemand first = Zoning::calculateDemand(42);
+  const ZoneDemand second = Zoning::calculateDemand(42);
+  const ZoneDemand third = Zoning::calculateDemand(43);
+
+  EXPECT_FLOAT_EQ(first.residential, second.residential);
+  EXPECT_FLOAT_EQ(first.commercial, second.commercial);
+  EXPECT_FLOAT_EQ(first.industrial, second.industrial);
+
+  EXPECT_NE(first.residential, third.residential);
+
+  EXPECT_GE(first.residential, 0.0f);
+  EXPECT_LE(first.residential, 1.0f);
+  EXPECT_GE(first.commercial, 0.0f);
+  EXPECT_LE(first.commercial, 1.0f);
+  EXPECT_GE(first.industrial, 0.0f);
+  EXPECT_LE(first.industrial, 1.0f);
 }

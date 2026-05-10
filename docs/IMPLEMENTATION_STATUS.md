@@ -8,9 +8,9 @@ Last updated: May 10, 2026
 |-------|--------|----------|
 | **Phase 1: Headless Foundation** | ✅ Complete | 100% |
 | **Phase 2: World Model** | ✅ Complete | 100% |
-| **Phase 3: Road System** | ⏳ In Progress | 0% |
-| **Phase 4: Zoning & Growth** | ⏹️ Pending | 0% |
-| **Phase 5+: Advanced Systems** | ⏹️ Pending | 0% |
+| **Phase 3: Road System** | ✅ Complete | 100% |
+| **Phase 4: Zoning & Parcels** | ✅ Complete | 100% |
+| **Phase 5+: Advanced Systems** | ⏳ In Progress | 10% |
 
 ---
 
@@ -23,156 +23,93 @@ Last updated: May 10, 2026
 | Project structure | ✅ Done | All directories created |
 | CMake build system | ✅ Done | Top-level + src + tests CMakeLists.txt |
 | Core types | ✅ Done | EntityId, SimulationTime, Random, Tile, CityMap |
-| Unit test framework | ✅ Done | Google Test submodule, 5 tests passing |
-| Basic CLI entry point | ✅ Done | `UrbanSimCore-cli` compiling and running |
-| Git repository | ✅ Done | Initialized with 3 commits, submodule configured |
+| Unit test framework | ✅ Done | Google Test integrated |
+| Basic CLI entry point | ✅ Done | UrbanSimCore-cli compiling and running |
 
-**Target:** ✅ **COMPLETE** — Build verified, all tests passing
-
-**Status:** Ready to proceed to Backlog Slice 2
+**Status:** ✅ Complete
 
 ---
 
-### Milestone 2: World Model and Map Inspection
+## Phase 2: World Model
+
+### Milestone 1: CityMap & Inspection
 
 | Task | Status | Notes |
 |------|--------|-------|
-| CityMap and Tile | ✅ Done | Grid storage, accessor methods, bounds checking |
-| CLI map printing | ✅ Done | `--print-map` command with ASCII visualization |
-| CLI tile inspection | ✅ Done | `--print-tile X Y` command for detailed info |
-| Comprehensive tests | ✅ Done | 26 total tests (5 core + 21 world), all passing |
+| CityMap and Tile | ✅ Done | Grid storage, bounds checking, tile defaults |
+| CLI map printing | ✅ Done | `--print-map` command |
+| CLI tile inspection | ✅ Done | `--print-tile X Y` command |
+| World tests | ✅ Done | 21 CityMap tests + Tile tests |
 
-**Status:** ✅ **COMPLETE** — World model fully functional with comprehensive CLI and tests
-
-**Test Results:**
-```
-26 tests from 3 test suites ran (7 ms total)
-✅ EntityIdTests: 1 test
-✅ TileTests: 4 tests
-✅ CityMapTests: 21 tests
-```
+**Status:** ✅ Complete
 
 ---
 
-### Milestone 3: Zoning and Building Growth
+## Phase 3: Road System
+
+### Milestone 1: Road Network Graph & Pathfinding
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Parcel data structure | ⏹️ Not Started | Tile zones, land value, etc. |
-| Zoning commands | ⏹️ Not Started | ZONE_RESIDENTIAL, etc. |
-| Building entity creation | ⏹️ Not Started | Spawn buildings on parcels |
-| Demand calculation | ⏹️ Not Started | Stub formula |
-| Growth rules | ⏹️ Not Started | Checks for spawning conditions |
+| Road graph | ✅ Done | Undirected edges + adjacency lists |
+| Connectivity tracking | ✅ Done | BFS over road component |
+| Congestion tracking | ✅ Done | Per-edge load/capacity modeling |
+| Pathfinding | ✅ Done | Dijkstra + congestion-aware variant |
+| CLI road commands | ✅ Done | `--place-road`, `--connectivity-map`, `--find-path` |
+| Network tests | ✅ Done | 19 tests covering road/path behavior |
 
-**Target:** Buildings spawn when zoning + roads exist
-
----
-
-## Phase 2: Population & Economy
-
-(To be started after Phase 1)
+**Status:** ✅ Complete
 
 ---
 
-## Phase 3: Services & Persistence
+## Phase 4: Zoning & Parcels
 
-(To be started after Phase 2)
+### Milestone 1: Zoning Workflow & Entity Basics
 
----
+| Task | Status | Notes |
+|------|--------|-------|
+| Zoning module | ✅ Done | `src/world/Zoning.hpp/.cpp` with zone parsing and rect application |
+| Zone map CLI | ✅ Done | `--zone-rect X1 Y1 X2 Y2 TYPE`, `--print-zones` |
+| Demand stub | ✅ Done | `--print-demand` deterministic demand output from seed |
+| Land value by zone | ✅ Done | Zone defaults applied during zoning |
+| Building entity | ✅ Done | `Building` + `EntityStore` with creation/retrieval |
+| Slice 4 tests | ✅ Done | Zoning + entity store tests |
 
-## Phase 4: Visualization
-
-(To be started after Phase 3)
-
----
-
-## Phase 5: Advanced Systems
-
-(To be started after Phase 4)
-
----
-
-## Build Status
-
-✅ **Successfully built and tested.**
-
-### Build Output
-```
-[100%] Linking CXX executable ../bin/test_core
-[100%] Built target test_core
-```
-
-### Test Results
-```
-100% tests passed, 5 tests from 2 test suites ran (0.51 sec total)
-✅ EntityIdTests.GenerateUniqueIds
-✅ CityMapTests.CreateAndAccess
-✅ CityMapTests.TileInitialization
-✅ CityMapTests.BoundsChecking
-✅ CityMapTests.InvalidCreation
-```
-
-### CLI Execution
-```
-$ ./bin/UrbanSimCore-cli --size 64 --ticks 100 --seed 42
-Initializing city (64x64)...
-Running 100 ticks with seed 42...
-✅ Simulation complete
-✅ Metrics calculated and displayed
-```
+**Status:** ✅ Complete
 
 ---
 
-## Known Issues
+## Build and Test Status
 
-1. **Google Test submodule** — Need to initialize: `git submodule add https://github.com/google/googletest extern/googletest`
-2. **GLM and nlohmann/json** — Ensure these are installed via your package manager or downloaded
+✅ **Build successful**
 
----
+✅ **58 tests passing** (8 test suites)
 
-## Blockers
-
-None once dependencies are installed.
-
----
-
-## Tech Stack Decisions
-
-| Component | Choice | Rationale |
-|-----------|--------|-----------|
-| Language | C++17/20 | Performance, modern features |
-| Build | CMake 3.16+ | Cross-platform |
-| Testing | Google Test | Industry standard |
-| Serialization | nlohmann/json | Header-only, easy |
-| Visualization (future) | SFML or SDL2 | Decoupled from engine |
+### Test Suite Breakdown
+- EntityIdTests: 1
+- CityMapTests: 21
+- TileTests: 4
+- ZoningTests: 5
+- EntityStoreTests: 4
+- RoadNetworkTests: 11
+- PathfindingTests: 8
+- GrowthSystemTests: 4
 
 ---
 
-## Next Actions
+## Current Focus
 
-**Milestone 1 is complete.** Proceed to **Backlog Slice 2** (World Model Foundation) in [NEXT_STEPS.md](NEXT_STEPS.md).
+### Backlog Slice 5: Building Growth
 
-### To rebuild locally (future reference):
+Implemented so far:
+- Growth simulation step (`src/systems/GrowthSystem.hpp/.cpp`)
+- Deterministic growth behavior from seed
+- Spawn rules: zoned + road-accessible + demand-weighted chance
+- Building spawn integration with `EntityStore` and tile `buildingId`
+- CLI growth commands: `--run-growth N`, `--print-buildings`
+- Growth system tests and CLI smoke verification
 
-```bash
-cd /Users/johnearley/code/urban-sim-core/build
-cmake --build . --config Release  # Rebuild after changes
-ctest --verbose                     # Run tests
-./bin/UrbanSimCore-cli --help       # Show CLI options
-```
-
-### Current executable location:
-```
-/Users/johnearley/code/urban-sim-core/build/bin/UrbanSimCore-cli
-```
-
-### Git status:
-```
-$ git log --oneline | head -3
-557564f Build verification: All tests pass, CLI executable runs successfully
-335d6ba Add Google Test submodule
-22f3654 Initial project setup: UrbanSimCore structure, documentation, and core types
-```
-
-Ready for next backlog slice.
+Next implementation target:
+- Extend growth balancing rules and demand shaping
+- Add richer growth summaries/metrics
 
