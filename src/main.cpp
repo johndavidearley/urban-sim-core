@@ -12,6 +12,7 @@
 #include "src/systems/GrowthSystem.hpp"
 #include "src/systems/PopulationSystem.hpp"
 #include "src/systems/TrafficSystem.hpp"
+#include "src/systems/EconomySystem.hpp"
 #include "src/metrics/CityMetrics.hpp"
 #include "src/metrics/GrowthMetrics.hpp"
 
@@ -39,6 +40,8 @@ void printHelp() {
             << "  --run-commute-simulation Run commute simulation for all employed\n"
             << "  --print-traffic-summary  Print traffic congestion and commute metrics\n"
             << "  --print-top-edges N      Print top N most congested edges\n"
+            << "  --run-economy-calculation Run economy/tax calculation\n"
+            << "  --print-budget-summary    Print revenue/expense/economic health summary\n"
             << "  --help                   Show this help message\n";
 }
 
@@ -254,6 +257,23 @@ void printTopCongestedEdges(const std::vector<EdgeTrafficData>& edges) {
   }
 }
 
+void printBudgetSummary(const EconomyState& economy) {
+  std::cout << "Budget Summary:\n";
+  std::cout << "  Residential Tax Revenue: " << economy.residentialTaxRevenue << "\n";
+  std::cout << "  Commercial Tax Revenue: " << economy.commercialTaxRevenue << "\n";
+  std::cout << "  Industrial Tax Revenue: " << economy.industrialTaxRevenue << "\n";
+  std::cout << "  Total Revenue: " << economy.totalRevenue << "\n";
+  std::cout << "  Residential Maintenance: " << economy.residentialMaintenance << "\n";
+  std::cout << "  Commercial Maintenance: " << economy.commercialMaintenance << "\n";
+  std::cout << "  Industrial Maintenance: " << economy.industrialMaintenance << "\n";
+  std::cout << "  Total Expenses: " << economy.totalExpenses << "\n";
+  std::cout << "  Balance: " << economy.balance << "\n";
+  std::cout << "  Average Land Value: " << std::fixed << std::setprecision(2)
+            << economy.averageLandValue << "\n";
+  std::cout << "  Economic Health: " << std::fixed << std::setprecision(1)
+            << (economy.economicHealth * 100.0f) << "%\n";
+}
+
 int main(int argc, char* argv[]) {
   // Parse arguments
   int mapSize = 64;
@@ -270,6 +290,8 @@ int main(int argc, char* argv[]) {
   bool printConnectivityMapFlag = false;
   bool runCommuteSimulationFlag = false;
   bool printTrafficSummaryFlag = false;
+  bool runEconomyCalculationFlag = false;
+  bool printBudgetSummaryFlag = false;
   int printTopEdgesCount = -1;
   int zoneX1 = -1, zoneY1 = -1, zoneX2 = -1, zoneY2 = -1;
   std::string zoneTypeRaw;
@@ -335,6 +357,10 @@ int main(int argc, char* argv[]) {
       printTrafficSummaryFlag = true;
     } else if (arg == "--print-top-edges" && i + 1 < argc) {
       printTopEdgesCount = std::atoi(argv[++i]);
+    } else if (arg == "--run-economy-calculation") {
+      runEconomyCalculationFlag = true;
+    } else if (arg == "--print-budget-summary") {
+      printBudgetSummaryFlag = true;
     }
   }
   
@@ -356,7 +382,9 @@ int main(int argc, char* argv[]) {
     EntityStore store;
     PopulationStore population;
     PopulationSummary populationSummary;
+    EconomyState economyState;
     bool hasPopulationSummary = false;
+    bool hasEconomyState = false;
     
     // Handle inspection commands
     if (printMapFlag) {
@@ -493,6 +521,19 @@ int main(int argc, char* argv[]) {
       printTopCongestedEdges(topEdges);
     }
 
+    if (runEconomyCalculationFlag) {
+      economyState = EconomySystem::calculateEconomy(store, population);
+      hasEconomyState = true;
+      std::cout << "Economy calculation completed.\n";
+    }
+
+    if (printBudgetSummaryFlag) {
+      if (!hasEconomyState) {
+        economyState = EconomySystem::calculateEconomy(store, population);
+      }
+      printBudgetSummary(economyState);
+    }
+
     if (findPathX1 >= 0) {
       Pathfinding::Path path = Pathfinding::findShortestPath(
         roads, {findPathX1, findPathY1}, {findPathX2, findPathY2}
@@ -505,7 +546,7 @@ int main(int argc, char* argv[]) {
         printDemandFlag || printConnectivityMapFlag || printBuildingsFlag ||
         printGrowthSummaryFlag || seedPopulation >= 0 || printPopulationSummaryFlag ||
         printPopulationGroupsFlag || runCommuteSimulationFlag || printTrafficSummaryFlag ||
-        printTopEdgesCount > 0) {
+        printTopEdgesCount > 0 || runEconomyCalculationFlag || printBudgetSummaryFlag) {
       return 0;
     }
     

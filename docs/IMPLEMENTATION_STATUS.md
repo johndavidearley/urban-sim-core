@@ -10,7 +10,7 @@ Last updated: May 10, 2026
 | **Phase 2: World Model** | ✅ Complete | 100% |
 | **Phase 3: Road System** | ✅ Complete | 100% |
 | **Phase 4: Zoning & Parcels** | ✅ Complete | 100% |
-| **Phase 5+: Advanced Systems** | ⏳ In Progress | 50% |
+| **Phase 5+: Advanced Systems** | ⏳ In Progress | 60% |
 
 ---
 
@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **81 tests passing** (11 test suites)
+✅ **98 tests passing** (12 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -97,26 +97,24 @@ Last updated: May 10, 2026
 - GrowthMetricsTests: 3
 - PopulationSystemTests: 6
 - TrafficSystemTests: 10
+- EconomySystemTests: 17
 
 ---
 
 ## Current Focus
 
-### Backlog Slice 7: Traffic and Commute System
+### Backlog Slice 8: Economy and Finances
 
 Implemented so far:
-- Traffic/commute data structures: `TrafficSummary`, `EdgeTrafficData`
-- RoadNetwork API extensions: `resetCongestion()`, `getAllEdgeTraffic()`
-- Deterministic commute simulation engine (`TrafficSystem`)
-- Commute pathfinding using existing Dijkstra with congestion awareness
-- Traffic load accumulation on edges from employed population commutes
-- Commute time and burden calculation (average commute time)
-- Edge congestion metrics aggregation
-- Metrics integration: commute burden and traffic congestion applied to city happiness
-- Top congested edges reporting
-- CLI traffic commands: `--run-commute-simulation`, `--print-traffic-summary`, `--print-top-edges N`
-- Traffic system tests: 10 comprehensive tests covering determinism, edge cases, and metrics
+- Economy modeling structures: `EconomyState`, `TaxRates`
+- Property-tax and income-tax revenue calculation
+- Per-type maintenance cost accounting
+- Balance and monthly balance tracking
+- Land value and economic health scoring
+- Metrics integration for revenue/expenses/land value/happiness/pollution
+- CLI economy commands: `--run-economy-calculation`, `--print-budget-summary`
+- Economy system tests: 17 tests covering taxation, maintenance, metrics, and health behavior
 
 Next implementation target:
-- Begin Slice 8: economy and finances system
+- Begin Slice 9: citywide metrics consolidation and summary workflows
 

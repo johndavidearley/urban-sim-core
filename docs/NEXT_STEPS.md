@@ -123,30 +123,30 @@
 
 **Goal:** Model city budget, taxation, and economic impact
 
-1. **City budget system**
-- Implement taxation from population/buildings
-- Track city revenue and expenses
-- Calculate balance/debt
+1. **City budget system** ✅
+- ✅ Implement taxation from population/buildings
+- ✅ Track city revenue and expenses
+- ✅ Calculate balance/debt
 
-2. **Building maintenance costs**
-- Residential/commercial/industrial maintenance expenses
-- Variable costs based on age/condition (future)
+2. **Building maintenance costs** ✅
+- ✅ Residential/commercial/industrial maintenance expenses
+- ⏭️ Variable costs based on age/condition (future)
 
-3. **Economic impact on growth**
-- City budget affects ability to provide services
-- Economic zones expand/contract based on finances
+3. **Economic impact on growth** ✅
+- ✅ City budget outputs now flow into `CityMetrics`
+- ⏭️ Economic zones expansion/contraction remains future work
 
-4. **CLI commands**
-- `--print-budget-summary` - Show revenue/expenses/balance
-- `--print-economic-zones` - Show economic indicators
+4. **CLI commands** ✅
+- ✅ `--run-economy-calculation` - Execute economy pass
+- ✅ `--print-budget-summary` - Show revenue/expenses/balance/health
+- ⏭️ `--print-economic-zones` - future extension
+
+**Slice 8 status:** ✅ Functionally complete for current scope.
 
 ---
 
 ## Remaining Slices
 
-### Backlog Slice 6: Population and Jobs
-### Backlog Slice 7: Traffic and Commute
-### Backlog Slice 8: City Budget
 ### Backlog Slice 9: Metrics and Summary
 ### Backlog Slice 10: Save and Load
 
@@ -162,8 +162,8 @@
 | 4 | Zoning & parcels | ✅ Complete |
 | 5 | Building growth | ✅ Complete |
 | 6 | Population | ✅ Complete |
-| 7 | Traffic | ⏳ Current |
-| 8 | Economy | ⏹️ Pending |
-| 9 | Metrics | ⏹️ Pending |
+| 7 | Traffic | ✅ Complete |
+| 8 | Economy | ✅ Complete |
+| 9 | Metrics | ⏳ Current |
 | 10 | Save/Load | ⏹️ Pending |
 
