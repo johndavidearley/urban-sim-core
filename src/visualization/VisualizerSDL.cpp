@@ -440,6 +440,73 @@ void drawGradientBar(SDL_Renderer* renderer, int x, int y, int w, int h, Overlay
   drawRectOutline(renderer, x, y, w, h, {220, 220, 220}, 255);
 }
 
+std::array<uint8_t, 5> glyphRows(char c) {
+  switch (c) {
+    case 'A': return {0b010, 0b101, 0b111, 0b101, 0b101};
+    case 'B': return {0b110, 0b101, 0b110, 0b101, 0b110};
+    case 'C': return {0b011, 0b100, 0b100, 0b100, 0b011};
+    case 'D': return {0b110, 0b101, 0b101, 0b101, 0b110};
+    case 'E': return {0b111, 0b100, 0b110, 0b100, 0b111};
+    case 'G': return {0b011, 0b100, 0b101, 0b101, 0b011};
+    case 'H': return {0b101, 0b101, 0b111, 0b101, 0b101};
+    case 'I': return {0b111, 0b010, 0b010, 0b010, 0b111};
+    case 'L': return {0b100, 0b100, 0b100, 0b100, 0b111};
+    case 'M': return {0b101, 0b111, 0b111, 0b101, 0b101};
+    case 'N': return {0b101, 0b111, 0b111, 0b111, 0b101};
+    case 'O': return {0b010, 0b101, 0b101, 0b101, 0b010};
+    case 'P': return {0b110, 0b101, 0b110, 0b100, 0b100};
+    case 'R': return {0b110, 0b101, 0b110, 0b101, 0b101};
+    case 'S': return {0b011, 0b100, 0b010, 0b001, 0b110};
+    case 'T': return {0b111, 0b010, 0b010, 0b010, 0b010};
+    case 'U': return {0b101, 0b101, 0b101, 0b101, 0b111};
+    case 'V': return {0b101, 0b101, 0b101, 0b101, 0b010};
+    case 'W': return {0b101, 0b101, 0b111, 0b111, 0b101};
+    case 'Y': return {0b101, 0b101, 0b010, 0b010, 0b010};
+    case 'Z': return {0b111, 0b001, 0b010, 0b100, 0b111};
+    case '0': return {0b111, 0b101, 0b101, 0b101, 0b111};
+    case '1': return {0b010, 0b110, 0b010, 0b010, 0b111};
+    case '2': return {0b110, 0b001, 0b111, 0b100, 0b111};
+    case '3': return {0b110, 0b001, 0b111, 0b001, 0b110};
+    case '4': return {0b101, 0b101, 0b111, 0b001, 0b001};
+    case '5': return {0b111, 0b100, 0b111, 0b001, 0b110};
+    case '6': return {0b011, 0b100, 0b111, 0b101, 0b111};
+    case '7': return {0b111, 0b001, 0b001, 0b001, 0b001};
+    case '8': return {0b111, 0b101, 0b111, 0b101, 0b111};
+    case '-': return {0b000, 0b000, 0b111, 0b000, 0b000};
+    default: return {0b000, 0b000, 0b000, 0b000, 0b000};
+  }
+}
+
+void drawGlyph(SDL_Renderer* renderer, int x, int y, char raw, RGB color, int scale) {
+  char c = raw;
+  if (c >= 'a' && c <= 'z') {
+    c = static_cast<char>(c - 'a' + 'A');
+  }
+
+  const std::array<uint8_t, 5> rows = glyphRows(c);
+  for (int ry = 0; ry < 5; ++ry) {
+    for (int rx = 0; rx < 3; ++rx) {
+      const bool on = (rows[ry] & (1 << (2 - rx))) != 0;
+      if (!on) {
+        continue;
+      }
+      drawFilledRect(renderer, x + rx * scale, y + ry * scale, scale, scale, color, 255);
+    }
+  }
+}
+
+void drawText(SDL_Renderer* renderer, int x, int y, const std::string& text, RGB color, int scale = 2) {
+  int cursorX = x;
+  for (char c : text) {
+    if (c == ' ') {
+      cursorX += scale * 2;
+      continue;
+    }
+    drawGlyph(renderer, cursorX, y, c, color, scale);
+    cursorX += (3 * scale) + scale;
+  }
+}
+
 void drawSwatch(SDL_Renderer* renderer, int x, int y, RGB color, bool active = false) {
   drawFilledRect(renderer, x, y, 18, 12, color, 255);
   drawRectOutline(renderer, x, y, 18, 12, active ? RGB{255, 230, 120} : RGB{220, 220, 220}, 255);
@@ -447,18 +514,29 @@ void drawSwatch(SDL_Renderer* renderer, int x, int y, RGB color, bool active = f
 
 void drawZoneLegend(SDL_Renderer* renderer, int x, int y) {
   // Categories shown in zone overlay rendering path.
+  drawText(renderer, x, y - 12, "ZONE", {230, 230, 230}, 2);
   drawSwatch(renderer, x + 0, y, zoneColor(1));       // Residential
-  drawSwatch(renderer, x + 24, y, zoneColor(2));      // Commercial
-  drawSwatch(renderer, x + 48, y, zoneColor(3));      // Industrial
-  drawSwatch(renderer, x + 72, y, {64, 64, 64});      // Road
+  drawSwatch(renderer, x + 42, y, zoneColor(2));      // Commercial
+  drawSwatch(renderer, x + 84, y, zoneColor(3));      // Industrial
+  drawSwatch(renderer, x + 126, y, {64, 64, 64});     // Road
+  drawText(renderer, x + 0, y + 16, "RES", {205, 220, 205}, 1);
+  drawText(renderer, x + 42, y + 16, "COM", {205, 220, 205}, 1);
+  drawText(renderer, x + 84, y + 16, "IND", {205, 220, 205}, 1);
+  drawText(renderer, x + 126, y + 16, "ROAD", {205, 220, 205}, 1);
 
   // Building colors are distinct from zoning base colors.
-  drawSwatch(renderer, x + 112, y, {44, 132, 70});    // Residential building
-  drawSwatch(renderer, x + 136, y, {31, 84, 163});    // Commercial building
-  drawSwatch(renderer, x + 160, y, {179, 93, 29});    // Industrial building
+  drawText(renderer, x + 190, y - 12, "BLDG", {230, 230, 230}, 2);
+  drawSwatch(renderer, x + 190, y, {44, 132, 70});    // Residential building
+  drawSwatch(renderer, x + 232, y, {31, 84, 163});    // Commercial building
+  drawSwatch(renderer, x + 274, y, {179, 93, 29});    // Industrial building
+  drawText(renderer, x + 190, y + 16, "R", {205, 220, 205}, 1);
+  drawText(renderer, x + 232, y + 16, "C", {205, 220, 205}, 1);
+  drawText(renderer, x + 274, y + 16, "I", {205, 220, 205}, 1);
 }
 
 void drawSteppedLegend(SDL_Renderer* renderer, int x, int y, OverlayMode mode) {
+  drawText(renderer, x, y - 12, overlayModeName(mode), {230, 230, 230}, 2);
+
   // Five-step discrete scale for numeric overlays.
   for (int i = 0; i < 5; ++i) {
     const float t = static_cast<float>(i) / 4.0f;
@@ -470,6 +548,10 @@ void drawSteppedLegend(SDL_Renderer* renderer, int x, int y, OverlayMode mode) {
   drawRectOutline(renderer, x + 140, y - 1, 20, 14, {220, 220, 220}, 255);
   drawFilledRect(renderer, x + 166, y - 1, 20, 14, overlaySampleColor(mode, 1.0f), 255);
   drawRectOutline(renderer, x + 166, y - 1, 20, 14, {220, 220, 220}, 255);
+
+  drawText(renderer, x + 140, y + 16, "LOW", {205, 220, 205}, 1);
+  drawText(renderer, x + 166, y + 16, "HIGH", {205, 220, 205}, 1);
+  drawText(renderer, x + 58, y + 16, "MID", {205, 220, 205}, 1);
 }
 
 void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int windowWidth, int windowHeight) {
@@ -479,7 +561,7 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
   constexpr int panelX = 12;
   constexpr int panelY = 12;
   constexpr int panelW = 520;
-  constexpr int panelH = 122;
+  constexpr int panelH = 146;
   drawFilledRect(renderer, panelX, panelY, panelW, panelH, {14, 16, 20}, 190);
   drawRectOutline(renderer, panelX, panelY, panelW, panelH, {230, 230, 230}, 220);
 
@@ -517,7 +599,7 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
 
   // Mid strip shows overlay-specific legend swatches.
   constexpr int legendX = panelX + 10;
-  constexpr int legendY = panelY + 40;
+  constexpr int legendY = panelY + 48;
   if (overlayMode == OverlayMode::Zone) {
     drawZoneLegend(renderer, legendX, legendY);
   } else {
@@ -526,14 +608,16 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
 
   // Lower strip shows continuous scale hints for numeric overlays.
   constexpr int barX = panelX + 10;
-  constexpr int barY = panelY + 72;
+  constexpr int barY = panelY + 102;
   constexpr int barW = 280;
   constexpr int barH = 14;
   if (overlayMode == OverlayMode::Zone) {
     drawFilledRect(renderer, barX, barY, barW, barH, {36, 40, 48}, 255);
     drawRectOutline(renderer, barX, barY, barW, barH, {220, 220, 220}, 255);
+    drawText(renderer, barX, barY + 18, "CATEGORICAL", {205, 220, 205}, 1);
   } else {
     drawGradientBar(renderer, barX, barY, barW, barH, overlayMode);
+    drawText(renderer, barX, barY + 18, "CONTINUOUS", {205, 220, 205}, 1);
   }
 
   // Low/high indicator blocks for quick visual reference.
