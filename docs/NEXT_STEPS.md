@@ -54,7 +54,7 @@
 **Deliverable:** Buildings spawn automatically from zoned, connected parcels according to demand. ✅
 
 ### Remaining Slice 5 work
-- Improve growth balancing and zone demand shaping
+- ✅ Improve growth balancing and zone demand shaping (coverage-pressure + demand-floor tuning)
 - Add growth-oriented city metrics/summary output
 - Add additional long-run simulation tests
 

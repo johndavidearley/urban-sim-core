@@ -10,7 +10,7 @@ Last updated: May 10, 2026
 | **Phase 2: World Model** | ✅ Complete | 100% |
 | **Phase 3: Road System** | ✅ Complete | 100% |
 | **Phase 4: Zoning & Parcels** | ✅ Complete | 100% |
-| **Phase 5+: Advanced Systems** | ⏳ In Progress | 10% |
+| **Phase 5+: Advanced Systems** | ⏳ In Progress | 15% |
 
 ---
 
@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **58 tests passing** (8 test suites)
+✅ **60 tests passing** (8 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -93,7 +93,7 @@ Last updated: May 10, 2026
 - EntityStoreTests: 4
 - RoadNetworkTests: 11
 - PathfindingTests: 8
-- GrowthSystemTests: 4
+- GrowthSystemTests: 6
 
 ---
 
@@ -105,11 +105,11 @@ Implemented so far:
 - Growth simulation step (`src/systems/GrowthSystem.hpp/.cpp`)
 - Deterministic growth behavior from seed
 - Spawn rules: zoned + road-accessible + demand-weighted chance
+- Balancing rules: demand floor, zone-coverage pressure, road-quality weighting
 - Building spawn integration with `EntityStore` and tile `buildingId`
 - CLI growth commands: `--run-growth N`, `--print-buildings`
 - Growth system tests and CLI smoke verification
 
 Next implementation target:
-- Extend growth balancing rules and demand shaping
 - Add richer growth summaries/metrics
 

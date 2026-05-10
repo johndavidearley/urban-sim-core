@@ -95,3 +95,56 @@ TEST(GrowthSystemTests, DeterministicForSameSeed) {
   EXPECT_EQ(first.spawnedIndustrial, second.spawnedIndustrial);
   EXPECT_EQ(storeA.getBuildingCount(), storeB.getBuildingCount());
 }
+
+TEST(GrowthSystemTests, VeryLowDemandSuppressesGrowth) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  roads.buildRoad({2, 2}, {3, 2});
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 3}, {3, 3}, ZoneType::Residential));
+
+  ZoneDemand demand;
+  demand.residential = 0.01f;
+  demand.commercial = 0.0f;
+  demand.industrial = 0.0f;
+
+  const GrowthStats stats = GrowthSystem::runStep(map, roads, store, demand, 5, 1.0f);
+
+  EXPECT_EQ(stats.totalSpawned(), 0);
+  EXPECT_EQ(store.getBuildingCount(), 0u);
+}
+
+TEST(GrowthSystemTests, SaturatedZonePreventsMoreGrowth) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  // Ensure all zoned tiles are road-accessible.
+  roads.buildRoad({1, 1}, {2, 1});
+  roads.buildRoad({2, 1}, {3, 1});
+  roads.buildRoad({3, 1}, {4, 1});
+  roads.buildRoad({4, 1}, {5, 1});
+  roads.buildRoad({5, 1}, {6, 1});
+  roads.buildRoad({6, 1}, {7, 1});
+  roads.buildRoad({7, 1}, {8, 1});
+  roads.buildRoad({8, 1}, {9, 1});
+
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {1, 2}, {10, 2}, ZoneType::Industrial));
+
+  // Pre-fill 9/10 tiles with existing buildings to simulate near-saturation.
+  for (int x = 1; x <= 9; ++x) {
+    map.getTile({x, 2}).buildingId = static_cast<EntityId>(1000 + x);
+  }
+
+  ZoneDemand demand;
+  demand.residential = 0.0f;
+  demand.commercial = 0.0f;
+  demand.industrial = 0.1f;
+
+  const GrowthStats stats = GrowthSystem::runStep(map, roads, store, demand, 9, 1.0f);
+
+  EXPECT_EQ(stats.totalSpawned(), 0);
+  EXPECT_EQ(store.getBuildingCount(), 0u);
+  EXPECT_EQ(map.getTile({10, 2}).buildingId, EntityIdUtils::NullEntity);
+}
