@@ -1,14 +1,22 @@
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <iostream>
+#include <queue>
 #include <sstream>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #include <SDL2/SDL.h>
 
 #include "src/entities/EntityStore.hpp"
+#include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/GrowthSystem.hpp"
+#include "src/systems/PopulationSystem.hpp"
+#include "src/systems/ServiceSystem.hpp"
+#include "src/systems/TrafficSystem.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
 
@@ -23,6 +31,8 @@ enum class OverlayMode {
   Zone = 0,
   LandValue = 1,
   Pollution = 2,
+  ServiceCoverage = 3,
+  TrafficCongestion = 4,
 };
 
 const char* overlayModeName(OverlayMode mode) {
@@ -33,6 +43,10 @@ const char* overlayModeName(OverlayMode mode) {
       return "land-value";
     case OverlayMode::Pollution:
       return "pollution";
+    case OverlayMode::ServiceCoverage:
+      return "service";
+    case OverlayMode::TrafficCongestion:
+      return "traffic";
     default:
       return "unknown";
   }
@@ -81,7 +95,138 @@ RGB pollutionColor(float pollution) {
   return {value, static_cast<uint8_t>(180 - value / 2), static_cast<uint8_t>(80 - value / 4)};
 }
 
-RGB tileColor(const CityMap& map, const EntityStore& store, Coord coord, OverlayMode overlayMode) {
+RGB serviceCoverageColor(float score) {
+  const uint8_t value = toByte(score);
+  return {static_cast<uint8_t>(255 - value), static_cast<uint8_t>(80 + (value / 2)), value};
+}
+
+RGB congestionColor(float score) {
+  const uint8_t value = toByte(score);
+  return {value, static_cast<uint8_t>(255 - value), static_cast<uint8_t>(80 - value / 4)};
+}
+
+bool hasRoadAdjacency(const RoadNetwork& roads, Coord coord) {
+  const RoadNetwork::Node* node = roads.getNode(coord);
+  return node != nullptr && !node->adjacent.empty();
+}
+
+bool resolveRoadAnchor(const RoadNetwork& roads, Coord coord, Coord& outAnchor) {
+  if (hasRoadAdjacency(roads, coord)) {
+    outAnchor = coord;
+    return true;
+  }
+
+  const std::array<Coord, 4> neighbors = {
+    Coord{coord.x + 1, coord.y},
+    Coord{coord.x - 1, coord.y},
+    Coord{coord.x, coord.y + 1},
+    Coord{coord.x, coord.y - 1},
+  };
+
+  for (const Coord& n : neighbors) {
+    if (hasRoadAdjacency(roads, n)) {
+      outAnchor = n;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+int shortestRoadDistance(const RoadNetwork& roads, Coord start, Coord goal) {
+  if (start == goal) {
+    return 0;
+  }
+
+  std::queue<Coord> frontier;
+  std::unordered_map<Coord, int, Vec2Hash> distance;
+  frontier.push(start);
+  distance[start] = 0;
+
+  while (!frontier.empty()) {
+    const Coord current = frontier.front();
+    frontier.pop();
+
+    const RoadNetwork::Node* node = roads.getNode(current);
+    if (node == nullptr) {
+      continue;
+    }
+
+    for (const RoadNodeId& neighborId : node->adjacent) {
+      const Coord next = neighborId.coord;
+      if (distance.find(next) != distance.end()) {
+        continue;
+      }
+
+      const int nextDistance = distance[current] + 1;
+      distance[next] = nextDistance;
+      if (next == goal) {
+        return nextDistance;
+      }
+      frontier.push(next);
+    }
+  }
+
+  return -1;
+}
+
+float serviceCoverageAtTile(const RoadNetwork& roads, Coord coord, const std::vector<ServiceFacility>& facilities) {
+  if (facilities.empty()) {
+    return 0.0f;
+  }
+
+  Coord tileAnchor;
+  if (!resolveRoadAnchor(roads, coord, tileAnchor)) {
+    return 0.0f;
+  }
+
+  float best = 0.0f;
+  for (const ServiceFacility& facility : facilities) {
+    Coord facilityAnchor;
+    if (!resolveRoadAnchor(roads, facility.position, facilityAnchor)) {
+      continue;
+    }
+
+    const int distance = shortestRoadDistance(roads, tileAnchor, facilityAnchor);
+    if (distance < 0 || distance > facility.maxTravelDistance || facility.maxTravelDistance <= 0) {
+      continue;
+    }
+
+    const float normalized = 1.0f - (static_cast<float>(distance) / static_cast<float>(facility.maxTravelDistance));
+    best = std::max(best, std::max(0.0f, normalized));
+  }
+
+  return best;
+}
+
+float localCongestionAtTile(const RoadNetwork& roads, Coord coord) {
+  if (!roads.hasNode(coord)) {
+    return 0.0f;
+  }
+
+  float maxCongestion = 0.0f;
+  const std::array<Coord, 4> neighbors = {
+    Coord{coord.x + 1, coord.y},
+    Coord{coord.x - 1, coord.y},
+    Coord{coord.x, coord.y + 1},
+    Coord{coord.x, coord.y - 1},
+  };
+
+  for (const Coord& n : neighbors) {
+    maxCongestion = std::max(maxCongestion, roads.getCongestion(coord, n));
+  }
+
+  return maxCongestion;
+}
+
+RGB tileColor(
+  const CityMap& map,
+  const RoadNetwork& roads,
+  const EntityStore& store,
+  Coord coord,
+  OverlayMode overlayMode,
+  const std::vector<ServiceFacility>& facilities
+) {
   const Tile& tile = map.getTile(coord);
 
   if (overlayMode == OverlayMode::LandValue) {
@@ -89,6 +234,12 @@ RGB tileColor(const CityMap& map, const EntityStore& store, Coord coord, Overlay
   }
   if (overlayMode == OverlayMode::Pollution) {
     return pollutionColor(tile.pollution);
+  }
+  if (overlayMode == OverlayMode::ServiceCoverage) {
+    return serviceCoverageColor(serviceCoverageAtTile(roads, coord, facilities));
+  }
+  if (overlayMode == OverlayMode::TrafficCongestion) {
+    return congestionColor(localCongestionAtTile(roads, coord));
   }
 
   RGB color = terrainTint(tile, zoneColor(tile.zone));
@@ -118,9 +269,11 @@ RGB tileColor(const CityMap& map, const EntityStore& store, Coord coord, Overlay
 }
 
 std::string makeHudTitle(
-  const CityMap& map,
   const RoadNetwork& roads,
   const EntityStore& store,
+  const PopulationStore& population,
+  const ServiceCoverageSummary& serviceSummary,
+  const TrafficSummary& trafficSummary,
   int tilePixels,
   int viewX,
   int viewY,
@@ -149,14 +302,17 @@ std::string makeHudTitle(
       << "Buildings:" << store.getBuildingCount() << " (R:" << residential
       << " C:" << commercial << " I:" << industrial << ")"
       << " | Roads:" << roads.getRoadCount()
+      << " | Pop:" << population.getTotalPopulation()
+      << " | Commute:" << trafficSummary.averageCommuteTime
+      << " | Service:" << static_cast<int>(serviceSummary.overallCoverage * 100.0f) << "%"
       << " | Zoom:" << tilePixels
       << " | View:" << viewX << "," << viewY
       << " | Overlay:" << overlayModeName(overlayMode)
-      << " [1=zone 2=land 3=pollution]";
+      << " [1=zone 2=land 3=pollution 4=service 5=traffic]";
   return oss.str();
 }
 
-bool seedScenario(CityMap& map, RoadNetwork& roads, EntityStore& store) {
+bool seedScenario(CityMap& map, RoadNetwork& roads, EntityStore& store, PopulationStore& population) {
   const glm::ivec2 dims = map.getDimensions();
   if (dims.x < 8 || dims.y < 8) {
     return false;
@@ -184,7 +340,54 @@ bool seedScenario(CityMap& map, RoadNetwork& roads, EntityStore& store) {
     GrowthSystem::runStep(map, roads, store, demand, seed + static_cast<uint32_t>(i), 0.45f);
   }
 
+  // Seed guaranteed commute-capable buildings directly on the road spine for live traffic overlays.
+  const EntityId resA = store.createBuilding(BuildingType::Residential, {midX, midY - 8}, 90);
+  const EntityId resB = store.createBuilding(BuildingType::Residential, {midX, midY + 8}, 75);
+  const EntityId comA = store.createBuilding(BuildingType::Commercial, {midX - 10, midY}, 80);
+  const EntityId comB = store.createBuilding(BuildingType::Commercial, {midX + 10, midY}, 60);
+  const EntityId indA = store.createBuilding(BuildingType::Industrial, {midX - 16, midY}, 70);
+  const EntityId indB = store.createBuilding(BuildingType::Industrial, {midX + 16, midY}, 85);
+
+  map.getTile({midX, midY - 8}).buildingId = resA;
+  map.getTile({midX, midY + 8}).buildingId = resB;
+  map.getTile({midX - 10, midY}).buildingId = comA;
+  map.getTile({midX + 10, midY}).buildingId = comB;
+  map.getTile({midX - 16, midY}).buildingId = indA;
+  map.getTile({midX + 16, midY}).buildingId = indB;
+
+  // Add deterministic land value and pollution gradients so overlays show meaningful variation.
+  for (int y = 0; y < dims.y; ++y) {
+    for (int x = 0; x < dims.x; ++x) {
+      Tile& tile = map.getTile({x, y});
+      const float distX = static_cast<float>(std::abs(x - midX));
+      const float distY = static_cast<float>(std::abs(y - midY));
+      tile.landValue = std::max(40.0f, 190.0f - (distX * 2.0f) - (distY * 1.25f));
+
+      if (x > midX && y > midY) {
+        tile.pollution = std::min(1.0f, 0.1f + ((distX + distY) / 64.0f));
+      } else {
+        tile.pollution = std::max(0.0f, 0.05f - ((distX + distY) / 128.0f));
+      }
+    }
+  }
+
+  PopulationSystem::allocate(store, population, 480, seed + 99u);
+  TrafficSystem::simulateCommutes(store, population, roads, seed + 211u);
+
   return true;
+}
+
+std::vector<ServiceFacility> seedServiceFacilities(const CityMap& map) {
+  const glm::ivec2 dims = map.getDimensions();
+  const int midX = dims.x / 2;
+  const int midY = dims.y / 2;
+
+  std::vector<ServiceFacility> facilities;
+  facilities.push_back(ServiceFacility{ServiceType::Fire, {midX - 6, midY}, 16, 1.0f});
+  facilities.push_back(ServiceFacility{ServiceType::Police, {midX + 6, midY}, 14, 1.0f});
+  facilities.push_back(ServiceFacility{ServiceType::Health, {midX, midY - 10}, 18, 1.0f});
+  facilities.push_back(ServiceFacility{ServiceType::Education, {midX, midY + 10}, 20, 1.0f});
+  return facilities;
 }
 } // namespace
 
@@ -196,11 +399,16 @@ int main(int argc, char* argv[]) {
   CityMap map({mapSize, mapSize});
   RoadNetwork roads(map);
   EntityStore store;
+  PopulationStore population;
 
-  if (!seedScenario(map, roads, store)) {
+  if (!seedScenario(map, roads, store, population)) {
     std::cerr << "Failed to seed visualization scenario\n";
     return 1;
   }
+
+  const std::vector<ServiceFacility> facilities = seedServiceFacilities(map);
+  const ServiceCoverageSummary serviceSummary = ServiceSystem::evaluateCoverage(store, roads, facilities);
+  const TrafficSummary trafficSummary = TrafficSystem::simulateCommutes(store, population, roads, 98765u);
 
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     std::cerr << "SDL init failed: " << SDL_GetError() << "\n";
@@ -276,6 +484,12 @@ int main(int argc, char* argv[]) {
           case SDLK_3:
             overlayMode = OverlayMode::Pollution;
             break;
+          case SDLK_4:
+            overlayMode = OverlayMode::ServiceCoverage;
+            break;
+          case SDLK_5:
+            overlayMode = OverlayMode::TrafficCongestion;
+            break;
           default:
             break;
         }
@@ -299,7 +513,7 @@ int main(int argc, char* argv[]) {
           continue;
         }
 
-        const RGB color = tileColor(map, store, coord, overlayMode);
+        const RGB color = tileColor(map, roads, store, coord, overlayMode, facilities);
         SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, 255);
 
         SDL_Rect rect{tx * tilePixels, ty * tilePixels, tilePixels, tilePixels};
@@ -309,7 +523,17 @@ int main(int argc, char* argv[]) {
 
     const uint32_t nowMs = SDL_GetTicks();
     if (nowMs - lastHudRefreshMs >= 250) {
-      const std::string hudTitle = makeHudTitle(map, roads, store, tilePixels, viewX, viewY, overlayMode);
+      const std::string hudTitle = makeHudTitle(
+        roads,
+        store,
+        population,
+        serviceSummary,
+        trafficSummary,
+        tilePixels,
+        viewX,
+        viewY,
+        overlayMode
+      );
       SDL_SetWindowTitle(window, hudTitle.c_str());
       lastHudRefreshMs = nowMs;
     }

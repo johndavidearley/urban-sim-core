@@ -35,6 +35,8 @@ Controls:
 - `1`: zone overlay
 - `2`: land value overlay
 - `3`: pollution overlay
+- `4`: service coverage overlay
+- `5`: traffic congestion overlay
 - `Esc`: quit
 
 ### Run Tests

@@ -106,8 +106,8 @@ Last updated: May 10, 2026
 ### Milestone 10: Debug Overlays
 - [x] Land value overlay
 - [ ] Demand overlay
-- [ ] Service coverage overlay
-- [ ] Congestion/traffic overlay
+- [x] Service coverage overlay
+- [x] Congestion/traffic overlay
 - [ ] Happiness/desirability overlay
 - [ ] Route heatmap
 
@@ -176,8 +176,8 @@ Last updated: May 10, 2026
 
 ## Next Targets (Post-Backlog)
 
-1. Expand overlays to service coverage and congestion from simulation outputs
-2. Add in-window legend and controls panel for live visualizer
+1. Add in-window legend and controls panel for live visualizer
+2. Add demand, happiness, and route heatmap overlays
 3. Save schema versioning and migration guards
 4. Performance pass for larger maps and higher population counts
 5. District-level service policies and budget controls
