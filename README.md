@@ -40,6 +40,8 @@ Controls:
 - `6`: demand overlay
 - `7`: happiness overlay
 - `8`: route heatmap overlay
+- `Space`: pause/resume live deterministic ticks
+- `.` or `N`: single simulation tick while paused
 - `H`: show/hide in-window legend panel
 - `Esc`: quit
 

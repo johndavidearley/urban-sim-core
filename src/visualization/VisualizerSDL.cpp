@@ -130,6 +130,16 @@ RGB routeHeatColor(float score) {
   return {value, warm, static_cast<uint8_t>(255 - value / 2)};
 }
 
+struct LiveSimulationState {
+  uint32_t tick = 0;
+  bool paused = false;
+  uint32_t tickIntervalMs = 350;
+  uint32_t lastTickMs = 0;
+  ServiceCoverageSummary serviceSummary;
+  TrafficSummary trafficSummary;
+  std::unordered_map<Coord, float, Vec2Hash> routeHeatByTile;
+};
+
 bool hasRoadAdjacency(const RoadNetwork& roads, Coord coord) {
   const RoadNetwork::Node* node = roads.getNode(coord);
   return node != nullptr && !node->adjacent.empty();
@@ -493,12 +503,34 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
   drawRectOutline(renderer, panelX + panelW - 72, panelY + panelH - 20, 60, 10, {220, 220, 220}, 255);
 }
 
+void runSimulationTick(
+  CityMap& map,
+  RoadNetwork& roads,
+  EntityStore& store,
+  PopulationStore& population,
+  const std::vector<ServiceFacility>& facilities,
+  LiveSimulationState& liveState
+) {
+  const uint32_t tickSeed = 1000u + (liveState.tick * 31u);
+
+  const ZoneDemand demand = Zoning::calculateDemand(tickSeed);
+  GrowthSystem::runStep(map, roads, store, demand, tickSeed + 1u, 0.18f);
+
+  const uint32_t requestedPopulation = 480u + ((liveState.tick % 6u) * 20u);
+  PopulationSystem::allocate(store, population, requestedPopulation, tickSeed + 2u);
+
+  liveState.trafficSummary = TrafficSystem::simulateCommutes(store, population, roads, tickSeed + 3u);
+  liveState.serviceSummary = ServiceSystem::evaluateCoverage(store, roads, facilities);
+  liveState.routeHeatByTile = buildRouteHeatByTile(roads);
+
+  ++liveState.tick;
+}
+
 std::string makeHudTitle(
   const RoadNetwork& roads,
   const EntityStore& store,
   const PopulationStore& population,
-  const ServiceCoverageSummary& serviceSummary,
-  const TrafficSummary& trafficSummary,
+  const LiveSimulationState& liveState,
   int tilePixels,
   int viewX,
   int viewY,
@@ -524,16 +556,18 @@ std::string makeHudTitle(
 
   std::ostringstream oss;
   oss << "UrbanSimCore Visualizer | "
+      << "Tick:" << liveState.tick << (liveState.paused ? "(paused)" : "(live)")
+      << " | "
       << "Buildings:" << store.getBuildingCount() << " (R:" << residential
       << " C:" << commercial << " I:" << industrial << ")"
       << " | Roads:" << roads.getRoadCount()
       << " | Pop:" << population.getTotalPopulation()
-      << " | Commute:" << trafficSummary.averageCommuteTime
-      << " | Service:" << static_cast<int>(serviceSummary.overallCoverage * 100.0f) << "%"
+      << " | Commute:" << liveState.trafficSummary.averageCommuteTime
+      << " | Service:" << static_cast<int>(liveState.serviceSummary.overallCoverage * 100.0f) << "%"
       << " | Zoom:" << tilePixels
       << " | View:" << viewX << "," << viewY
       << " | Overlay:" << overlayModeName(overlayMode)
-      << " [1=zone 2=land 3=pollution 4=service 5=traffic 6=demand 7=happiness 8=route H=legend]";
+      << " [1-8 overlays Space pause . step H legend]";
   return oss.str();
 }
 
@@ -632,9 +666,10 @@ int main(int argc, char* argv[]) {
   }
 
   const std::vector<ServiceFacility> facilities = seedServiceFacilities(map);
-  const ServiceCoverageSummary serviceSummary = ServiceSystem::evaluateCoverage(store, roads, facilities);
-  const TrafficSummary trafficSummary = TrafficSystem::simulateCommutes(store, population, roads, 98765u);
-  const std::unordered_map<Coord, float, Vec2Hash> routeHeatByTile = buildRouteHeatByTile(roads);
+  LiveSimulationState liveState;
+  liveState.serviceSummary = ServiceSystem::evaluateCoverage(store, roads, facilities);
+  liveState.trafficSummary = TrafficSystem::simulateCommutes(store, population, roads, 98765u);
+  liveState.routeHeatByTile = buildRouteHeatByTile(roads);
 
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     std::cerr << "SDL init failed: " << SDL_GetError() << "\n";
@@ -727,6 +762,15 @@ int main(int argc, char* argv[]) {
           case SDLK_8:
             overlayMode = OverlayMode::RouteHeatmap;
             break;
+          case SDLK_SPACE:
+            liveState.paused = !liveState.paused;
+            break;
+          case SDLK_PERIOD:
+          case SDLK_n:
+            if (liveState.paused) {
+              runSimulationTick(map, roads, store, population, facilities, liveState);
+            }
+            break;
           case SDLK_h:
             showLegend = !showLegend;
             break;
@@ -743,6 +787,12 @@ int main(int argc, char* argv[]) {
     viewX = std::min(viewX, maxViewX);
     viewY = std::min(viewY, maxViewY);
 
+    const uint32_t nowMs = SDL_GetTicks();
+    if (!liveState.paused && (nowMs - liveState.lastTickMs) >= liveState.tickIntervalMs) {
+      runSimulationTick(map, roads, store, population, facilities, liveState);
+      liveState.lastTickMs = nowMs;
+    }
+
     SDL_SetRenderDrawColor(renderer, 24, 26, 30, 255);
     SDL_RenderClear(renderer);
 
@@ -753,7 +803,7 @@ int main(int argc, char* argv[]) {
           continue;
         }
 
-        const RGB color = tileColor(map, roads, store, coord, overlayMode, facilities, routeHeatByTile);
+        const RGB color = tileColor(map, roads, store, coord, overlayMode, facilities, liveState.routeHeatByTile);
         SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, 255);
 
         SDL_Rect rect{tx * tilePixels, ty * tilePixels, tilePixels, tilePixels};
@@ -765,14 +815,12 @@ int main(int argc, char* argv[]) {
       drawLegendPanel(renderer, overlayMode, windowWidth, windowHeight);
     }
 
-    const uint32_t nowMs = SDL_GetTicks();
     if (nowMs - lastHudRefreshMs >= 250) {
       const std::string hudTitle = makeHudTitle(
         roads,
         store,
         population,
-        serviceSummary,
-        trafficSummary,
+        liveState,
         tilePixels,
         viewX,
         viewY,

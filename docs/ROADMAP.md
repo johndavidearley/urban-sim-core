@@ -176,11 +176,11 @@ Last updated: May 10, 2026
 
 ## Next Targets (Post-Backlog)
 
-1. Add pause/step controls for deterministic tick stepping in live mode
-2. Save schema versioning and migration guards
-3. Performance pass for larger maps and higher population counts
-4. District-level service policies and budget controls
-5. Add richer route diagnostics (per-origin/per-destination filtering)
+1. Save schema versioning and migration guards
+2. Performance pass for larger maps and higher population counts
+3. District-level service policies and budget controls
+4. Add richer route diagnostics (per-origin/per-destination filtering)
+5. Add visualization-side origin/destination route filters
 
 ---
 

@@ -26,7 +26,7 @@
 5. Visualization hardening
 - ✅ Added in-window legend/controls HUD panel without external font dependencies
 - ✅ Added service coverage and congestion overlays fed from simulation outputs
-- ⏭️ Add pause/step controls and deterministic tick stepping in SDL mode
+- ✅ Added pause/step controls and deterministic tick stepping in SDL mode
 - ✅ Added demand and happiness overlays for debugging simulation balance
 - ✅ Added route heatmap overlay for path-flow diagnostics
 

@@ -123,9 +123,10 @@ Implemented so far:
 - Demand overlay added in live visualizer (`6`)
 - Happiness overlay added in live visualizer (`7`)
 - Route heatmap overlay added in live visualizer (`8`)
+- Pause/resume and deterministic single-step tick controls added (`Space`, `.`/`N`)
 
 Next implementation target:
-- Deterministic pause/step controls in live mode
+- Persistence schema version migration guards
 
 ---
 
@@ -157,8 +158,9 @@ Implemented so far:
 - Live visualizer HUD metrics shown in window title (updated during runtime)
 - Live visualizer in-window legend panel for overlay controls and scale bands
 - Live visualizer debug overlays for zone, land value, pollution, service coverage, traffic congestion, demand, happiness, and route heatmap
+- Live visualizer supports deterministic live tick progression and manual stepping
 - Renderer tests validate PPM format and viewport clamping behavior
 
 Next implementation target:
-- Live simulation stepping controls and schema-version hardening
+- Schema-version hardening and load validation expansion
 
