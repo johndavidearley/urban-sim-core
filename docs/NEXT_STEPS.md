@@ -1,5 +1,21 @@
 # Next Steps: Immediate Implementation Tasks
 
+## Post-Backlog Focus (Phase 3 Continuation)
+
+1. Deterministic replay parity checks
+- ✅ Implemented `ReplayVerifier` checksum tooling
+- ✅ Added CLI verification command: `--verify-replay N`
+
+2. Services and utilities simulation
+- ⏭️ Add service building categories (fire/police/school/health)
+- ⏭️ Add graph-based coverage scoring and happiness impact
+
+3. Persistence hardening
+- ⏭️ Add snapshot schema version migration guards
+- ⏭️ Expand load validation for malformed/incompatible data
+
+---
+
 ## Completed Slices
 
 ### ✅ Backlog Slice 1: Build System & Core Types

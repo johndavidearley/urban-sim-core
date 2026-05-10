@@ -2,6 +2,7 @@
 #include <string>
 #include <cstdlib>
 #include <iomanip>
+#include <algorithm>
 #include "src/core/SimulationTime.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
@@ -15,6 +16,7 @@
 #include "src/systems/EconomySystem.hpp"
 #include "src/systems/MetricsSystem.hpp"
 #include "src/persistence/SaveLoadSystem.hpp"
+#include "src/persistence/ReplayVerifier.hpp"
 #include "src/metrics/CityMetrics.hpp"
 #include "src/metrics/GrowthMetrics.hpp"
 
@@ -47,6 +49,7 @@ void printHelp() {
             << "  --print-city-summary      Print consolidated city metrics summary\n"
             << "  --save-city FILE          Save city snapshot JSON to FILE\n"
             << "  --load-city FILE          Load city snapshot JSON from FILE\n"
+            << "  --verify-replay N         Run deterministic replay check using N growth steps\n"
             << "  --help                   Show this help message\n";
 }
 
@@ -353,6 +356,7 @@ int main(int argc, char* argv[]) {
   bool runEconomyCalculationFlag = false;
   bool printBudgetSummaryFlag = false;
   bool printCitySummaryFlag = false;
+  int verifyReplayGrowthSteps = -1;
   std::string saveCityPath;
   std::string loadCityPath;
   int printTopEdgesCount = -1;
@@ -430,6 +434,8 @@ int main(int argc, char* argv[]) {
       saveCityPath = argv[++i];
     } else if (arg == "--load-city" && i + 1 < argc) {
       loadCityPath = argv[++i];
+    } else if (arg == "--verify-replay" && i + 1 < argc) {
+      verifyReplayGrowthSteps = std::atoi(argv[++i]);
     }
   }
   
@@ -451,6 +457,24 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       mapSize = loadedSnapshot.width;
+    }
+
+    if (verifyReplayGrowthSteps >= 0) {
+      ReplayConfig config;
+      config.mapSize = mapSize;
+      config.seed = seed;
+      config.growthSteps = verifyReplayGrowthSteps;
+      config.seedPopulation = (seedPopulation >= 0) ? seedPopulation : 120;
+      config.runCommutes = true;
+      config.runEconomy = true;
+
+      const ReplayResult replayResult = ReplayVerifier::verifyDeterministicRun(config);
+      std::cout << "Replay Verification:\n";
+      std::cout << "  First checksum:  " << replayResult.firstChecksum << "\n";
+      std::cout << "  Second checksum: " << replayResult.secondChecksum << "\n";
+      std::cout << "  Deterministic:   " << (replayResult.deterministic ? "Yes" : "No") << "\n";
+
+      return replayResult.deterministic ? 0 : 1;
     }
 
     // Initialize city

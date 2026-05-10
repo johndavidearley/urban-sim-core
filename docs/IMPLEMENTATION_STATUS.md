@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **102 tests passing** (14 test suites)
+✅ **104 tests passing** (15 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -100,6 +100,7 @@ Last updated: May 10, 2026
 - EconomySystemTests: 17
 - MetricsSystemTests: 2
 - SaveLoadSystemTests: 2
+- ReplayVerifierTests: 2
 
 ---
 
@@ -111,9 +112,10 @@ Implemented so far:
 - Persistence module added: `SaveLoadSystem` with JSON snapshot capture/apply
 - City snapshot format includes map tiles, roads, buildings, and population groups
 - CLI save/load commands added: `--save-city FILE`, `--load-city FILE`
+- CLI deterministic replay command added: `--verify-replay N`
 - Snapshot loading bootstraps map size and restores entity/population/network state
 - End-to-end save then load workflow validated through CLI
-- Save/load tests added for round-trip and missing-file handling
+- Save/load and replay tests added for round-trip, missing-file handling, and parity checks
 
 Next implementation target:
 - Transition from backlog slices to next-phase polish/refinement tasks

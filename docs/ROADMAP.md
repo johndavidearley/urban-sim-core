@@ -1,31 +1,42 @@
 # UrbanSimCore Development Roadmap
 
+Last updated: May 10, 2026
+
+## Current Status Snapshot
+
+- Backlog Slices 1-10: complete
+- Headless core simulation loop: complete
+- Population, traffic, economy, metrics, and save/load scaffolding: complete
+- Automated validation: 104 tests passing
+
+---
+
 ## Phase 1: Headless Foundation (M1–M3)
 
 ### Milestone 1: Core Engine Scaffolding
 - [x] Project structure
-- [ ] CMake build system
-- [ ] Core types (EntityId, SimulationTime, Random)
-- [ ] Unit test framework
-- [ ] Basic CLI entry point
+- [x] CMake build system
+- [x] Core types (EntityId, SimulationTime, Random)
+- [x] Unit test framework
+- [x] Basic CLI entry point
 
 **Deliverable:** Executable that creates a 128×128 map and runs 100 empty ticks.
 
 ### Milestone 2: World Model and Road System
-- [ ] CityMap and Tile data structures
-- [ ] Road network graph
-- [ ] Pathfinding (A* or Dijkstra)
-- [ ] Road building/removal commands
-- [ ] Connectivity computation
+- [x] CityMap and Tile data structures
+- [x] Road network graph
+- [x] Pathfinding (A* or Dijkstra)
+- [x] Road building/removal commands
+- [x] Connectivity computation
 
 **Deliverable:** Can place roads; connectivity reported for each tile.
 
 ### Milestone 3: Zoning and Building Growth
-- [ ] Parcel data structure
-- [ ] Zoning commands (ZONE_RESIDENTIAL, ZONE_COMMERCIAL, etc.)
-- [ ] Building entity creation
-- [ ] Demand calculation (stub)
-- [ ] Growth rules (checks for demand, road access, etc.)
+- [x] Parcel data structure
+- [x] Zoning commands (ZONE_RESIDENTIAL, ZONE_COMMERCIAL, etc.)
+- [x] Building entity creation
+- [x] Demand calculation (stub)
+- [x] Growth rules (checks for demand, road access, etc.)
 
 **Deliverable:** Buildings spawn when zoning + roads + demand exist.
 
@@ -34,27 +45,27 @@
 ## Phase 2: Population and Economy (M4–M6)
 
 ### Milestone 4: Population System
-- [ ] PopulationGroup entity
-- [ ] Population distribution to buildings
-- [ ] Basic migration logic (attracted by housing)
-- [ ] Unemployment calculation
-- [ ] Population growth over time
+- [x] PopulationGroup entity
+- [x] Population distribution to buildings
+- [x] Basic migration logic (attracted by housing)
+- [x] Unemployment calculation
+- [x] Population growth over time (seeded deterministic allocation)
 
 **Deliverable:** Population grows and fills residential buildings; unemployment tracked.
 
 ### Milestone 5: Traffic and Commute
-- [ ] Commute calculation from home to job
-- [ ] Road congestion based on commuter load
-- [ ] Travel time calculation (base + congestion)
-- [ ] Commute burden on happiness
+- [x] Commute calculation from home to job
+- [x] Road congestion based on commuter load
+- [x] Travel time calculation (base + congestion)
+- [x] Commute burden on happiness
 
 **Deliverable:** Realistic commute times that affect city metrics.
 
 ### Milestone 6: Economy and Budget
-- [ ] City budget tracking (revenue, expenses, debt)
-- [ ] Tax calculation and collection
-- [ ] Service and maintenance costs
-- [ ] Monthly budget summary
+- [x] City budget tracking (revenue, expenses, debt)
+- [x] Tax calculation and collection
+- [x] Service and maintenance costs
+- [x] Monthly budget summary
 
 **Deliverable:** Balanced or deficit budget; can adjust tax rates.
 
@@ -66,16 +77,16 @@
 - [ ] Service building types (fire, police, schools, hospitals)
 - [ ] Coverage calculation (graph-based, not Euclidean)
 - [ ] Service satisfaction affecting happiness
-- [ ] Utility stubs (power, water coverage)
+- [x] Utility stubs (power, water coverage)
 
 **Deliverable:** Service coverage affects city happiness and growth.
 
 ### Milestone 8: Save/Load and Determinism
-- [ ] JSON serialization of full state
-- [ ] Save game command
-- [ ] Load game command
-- [ ] Deterministic RNG and replay
-- [ ] Save/load validation tests
+- [x] JSON serialization scaffold for city state
+- [x] Save game command (`--save-city FILE`)
+- [x] Load game command (`--load-city FILE`)
+- [x] Deterministic RNG replay parity checks (`--verify-replay N`)
+- [x] Save/load validation tests
 
 **Deliverable:** Can save, load, and replay a city deterministically.
 
@@ -159,7 +170,17 @@
 | 4 | M9–M10 | 4–6 weeks |
 | 5 | M11+ | 12+ weeks |
 
-**Total to MVP completion (through M8):** ~17–22 weeks
+**MVP Baseline (headless through save/load scaffold):** complete
+
+---
+
+## Next Targets (Post-Backlog)
+
+1. Service simulation core (fire/police/health/school coverage)
+2. Visualization entry milestone (map renderer + core overlays)
+3. Save schema versioning and migration guards
+4. Performance pass for larger maps and higher population counts
+5. Service-aware happiness and growth feedback loop
 
 ---
 
@@ -176,7 +197,7 @@ By end of Phase 2:
 
 By end of Phase 3:
 - Game can be saved and loaded
-- Deterministic replay working
+- Deterministic replay working with checksum parity verification
 
 By end of Phase 4:
 - Visual representation working
