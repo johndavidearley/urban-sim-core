@@ -1,0 +1,72 @@
+# UrbanSimCore
+
+A high-performance simulation engine for modeling living cities. Designed to simulate population dynamics, urban growth, economics, traffic, and services at scale.
+
+## Quick Start
+
+### Build
+
+```bash
+mkdir -p build && cd build
+cmake ..
+cmake --build . --config Release
+```
+
+### Run Headless Simulation
+
+```bash
+./build/UrbanSimCore-cli --help
+```
+
+### Run Tests
+
+```bash
+cd build
+ctest --verbose
+```
+
+## Project Structure
+
+- **src/core/** — Foundation (Time, Random, EntityId, Commands)
+- **src/world/** — Map, Tiles, Parcels, Districts
+- **src/entities/** — Building, PopulationGroup, Business, Vehicle
+- **src/networks/** — RoadNetwork, UtilityNetwork, Pathfinding
+- **src/systems/** — PopulationSystem, ZoningSystem, EconomySystem, etc.
+- **src/metrics/** — CityMetrics aggregation
+- **src/persistence/** — SaveGame, Snapshot, Replay
+- **tests/** — Unit and integration tests
+- **examples/** — Example simulations and configs
+- **configs/** — Configuration files (JSON/YAML)
+- **docs/** — Architecture, roadmap, design docs
+
+## Current Status
+
+🔧 **Setup Phase** — Project structure and documentation in place. Core systems pending implementation.
+
+See [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for detailed progress.
+
+## Technology Stack
+
+- **Language:** C++17/20
+- **Build:** CMake 3.16+
+- **Testing:** Google Test
+- **Serialization:** nlohmann/json
+- **Optional:** SFML or SDL2 for future visualization
+
+## Vision
+
+> Simulate 10,000 citizens using aggregate population groups, grid-based land parcels, graph-based road connectivity, and monthly city budget updates.
+
+From there, expand into traffic micro-simulation, utilities, services, and policies—without losing performance or clarity.
+
+## Documentation
+
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — Engine design, data models, systems
+- [ROADMAP.md](docs/ROADMAP.md) — Development milestones
+- [MVP_SPEC.md](docs/MVP_SPEC.md) — MVP features and simulation loop
+- [NEXT_STEPS.md](docs/NEXT_STEPS.md) — What to build next
+- [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) — Progress tracking
+
+## License
+
+MIT

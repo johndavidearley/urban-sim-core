@@ -1,0 +1,33 @@
+# .gitignore for UrbanSimCore
+
+# Build artifacts
+build/
+cmake-build-*/
+*.o
+*.a
+*.lib
+*.exe
+*.dll
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+
+# Test outputs
+Testing/
+
+# External dependencies
+extern/googletest/
+
+# Save files (if placed here during testing)
+*.save

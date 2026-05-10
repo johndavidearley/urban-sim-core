@@ -1,0 +1,18 @@
+{
+  "mapSize": [128, 128],
+  "initialPopulation": 100,
+  "taxRates": {
+    "residential": 0.10,
+    "commercial": 0.12,
+    "industrial": 0.08
+  },
+  "timeModel": {
+    "ticksPerDay": 24,
+    "ticksPerMonth": 720
+  },
+  "systems": {
+    "populationGrowthRate": 1.05,
+    "landValueDecay": 0.95,
+    "buildingGrowthProbability": 0.15
+  }
+}
