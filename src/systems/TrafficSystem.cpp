@@ -25,15 +25,18 @@ TrafficSummary TrafficSystem::simulateCommutes(
 
   // Get all buildings by type
   const auto& buildings = store.getBuildings();
-  std::vector<EntityId> residentialBuildings;
-  std::vector<EntityId> jobBuildings; // Commercial + Industrial
+  std::vector<const Building*> residentialBuildings;
+  std::vector<const Building*> jobBuildings; // Commercial + Industrial
+  residentialBuildings.reserve(buildings.size());
+  jobBuildings.reserve(buildings.size());
 
   for (const auto& [id, building] : buildings) {
+    (void)id;
     if (building.type == BuildingType::Residential) {
-      residentialBuildings.push_back(id);
+      residentialBuildings.push_back(&building);
     } else if (building.type == BuildingType::Commercial || 
                building.type == BuildingType::Industrial) {
-      jobBuildings.push_back(id);
+      jobBuildings.push_back(&building);
     }
   }
 
@@ -44,8 +47,12 @@ TrafficSummary TrafficSystem::simulateCommutes(
     return summary;
   }
 
+  std::uniform_int_distribution<size_t> residentialDist(0, residentialBuildings.size() - 1);
+  std::uniform_int_distribution<size_t> jobDist(0, jobBuildings.size() - 1);
+
   // For each population group, assign workers to jobs and simulate commutes
   for (const auto& [groupId, group] : groups) {
+    (void)groupId;
     // Only people who are employed commute
     if (group.employed == 0) {
       continue;
@@ -60,20 +67,25 @@ TrafficSummary TrafficSystem::simulateCommutes(
 
     for (uint32_t c = 0; c < numCommutes; ++c) {
       // Select source residential building (deterministically from seed)
-      std::uniform_int_distribution<size_t> residentialDist(0, residentialBuildings.size() - 1);
-      EntityId residentialId = residentialBuildings[residentialDist(rng)];
-      const Building& residentialBldg = buildings.at(residentialId);
+      const Building* residentialBldg = residentialBuildings[residentialDist(rng)];
 
       // Select destination job building (deterministically from seed)
-      std::uniform_int_distribution<size_t> jobDist(0, jobBuildings.size() - 1);
-      EntityId jobId = jobBuildings[jobDist(rng)];
-      const Building& jobBldg = buildings.at(jobId);
+      const Building* jobBldg = jobBuildings[jobDist(rng)];
+
+      if (residentialBldg == nullptr || jobBldg == nullptr) {
+        continue;
+      }
+
+      // Most spawned buildings are not guaranteed to be on road nodes; avoid costly pathfinding attempts.
+      if (!network.hasNode(residentialBldg->position) || !network.hasNode(jobBldg->position)) {
+        continue;
+      }
 
       // Calculate commute path using pathfinding with congestion
       auto path = Pathfinding::findShortestPathWithCongestion(
         network,
-        residentialBldg.position,
-        jobBldg.position
+        residentialBldg->position,
+        jobBldg->position
       );
 
       if (path.found && path.waypoints.size() > 1) {

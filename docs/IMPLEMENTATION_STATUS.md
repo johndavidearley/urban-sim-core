@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **108 tests passing** (17 test suites)
+✅ **111 tests passing** (17 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -146,9 +146,14 @@ Implemented so far:
 	- Benchmark smoke reduction at `--size 96 --benchmark-phase5 24`:
 		- Service time: ~1644 ms -> ~35 ms total
 		- Avg tick time: ~77.7 ms -> ~10.9 ms
+- Traffic simulation optimization pass completed:
+	- Removed per-commute distribution construction and repeated map lookups in inner loops
+	- Reused precomputed residential/job building pointer sets for deterministic selection
+	- Added early non-road-endpoint rejection before pathfinding calls
+	- Benchmark smoke runs at `--size 96 --benchmark-phase5 24` now show traffic near ~172-178 ms total (from prior ~185 ms range)
 
 Next implementation target:
-- Apply targeted optimization pass to traffic simulation hotspot
+- Add benchmark toggles to isolate subsystem timing for tighter profiling loops
 
 ---
 
