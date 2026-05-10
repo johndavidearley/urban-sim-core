@@ -99,12 +99,12 @@ Last updated: May 10, 2026
 - [x] Isometric or top-down renderer (PPM top-down export scaffold)
 - [x] Tile, road, building, zone rendering
 - [x] Zoom and pan controls (tile scale + viewport render window)
-- [ ] Real-time metrics display
+- [x] Real-time metrics display (live HUD in visualizer title)
 
 **Deliverable:** 2D visualization of city with buildings, roads, zones.
 
 ### Milestone 10: Debug Overlays
-- [ ] Land value overlay
+- [x] Land value overlay
 - [ ] Demand overlay
 - [ ] Service coverage overlay
 - [ ] Congestion/traffic overlay
@@ -176,8 +176,8 @@ Last updated: May 10, 2026
 
 ## Next Targets (Post-Backlog)
 
-1. Integrate live renderer backend (SDL2 or SFML) from current PPM scaffold
-2. Real-time metrics HUD in visualization mode
+1. Expand overlays to service coverage and congestion from simulation outputs
+2. Add in-window legend and controls panel for live visualizer
 3. Save schema versioning and migration guards
 4. Performance pass for larger maps and higher population counts
 5. District-level service policies and budget controls

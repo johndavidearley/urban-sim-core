@@ -18,8 +18,15 @@
 4. Visualization kickoff
 - ✅ Added first visualization scaffold (`MapRenderer`) with PPM export
 - ✅ Added render CLI commands (`--render-map`, `--render-scale`, `--render-view`)
-- ⏭️ Introduce live renderer integration (SDL2/SFML)
-- ⏭️ Render map, roads, zones, and buildings in real time
+- ✅ Introduced live renderer integration path (SDL2 optional target)
+- ✅ Added real-time map/road/zone/building rendering in SDL mode
+- ✅ Added real-time HUD metrics in window title (building mix, roads, zoom, viewport)
+- ✅ Added debug overlay toggles in SDL mode (`1` zone, `2` land value, `3` pollution)
+
+5. Visualization hardening
+- ⏭️ Add in-window text HUD (legend/metrics panel) without external font dependencies
+- ⏭️ Add service coverage and congestion overlays fed from simulation outputs
+- ⏭️ Add pause/step controls and deterministic tick stepping in SDL mode
 
 ---
 

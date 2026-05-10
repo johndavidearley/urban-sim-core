@@ -108,19 +108,18 @@ Last updated: May 10, 2026
 
 ## Current Focus
 
-### Backlog Slice 10: Save and Load
+### Post-Backlog Phase 4: Visualization Iteration
 
 Implemented so far:
-- Persistence module added: `SaveLoadSystem` with JSON snapshot capture/apply
-- City snapshot format includes map tiles, roads, buildings, and population groups
-- CLI save/load commands added: `--save-city FILE`, `--load-city FILE`
-- CLI deterministic replay command added: `--verify-replay N`
-- Snapshot loading bootstraps map size and restores entity/population/network state
-- End-to-end save then load workflow validated through CLI
-- Save/load and replay tests added for round-trip, missing-file handling, and parity checks
+- Dependency-free renderer module added: `MapRenderer` (PPM export)
+- Optional SDL2 live visualizer target added: `UrbanSimCore-visualizer`
+- Live visualizer renders map, roads, zones, and building types in real time
+- Keyboard controls implemented: arrows pan, +/- zoom, ESC quit
+- Real-time HUD metrics added through dynamic window-title updates
+- Debug overlay toggles added: zone (`1`), land value (`2`), pollution (`3`)
 
 Next implementation target:
-- Phase 3 services milestone extension and post-backlog refinement
+- Service- and traffic-driven overlay layers plus in-window legend panel
 
 ---
 
@@ -140,7 +139,7 @@ Next implementation target:
 
 ---
 
-## Phase 4 Kickoff: Visualization Scaffold
+## Phase 4 Progress: Visualization
 
 Implemented so far:
 - Added dependency-free top-down renderer module: `MapRenderer`
@@ -149,8 +148,10 @@ Implemented so far:
 - Rendering includes tiles, roads, and building type color layers
 - Optional SDL2 live visualizer target added: `UrbanSimCore-visualizer`
 - Live visualizer includes keyboard pan/zoom controls (arrows, +/-)
+- Live visualizer HUD metrics shown in window title (updated during runtime)
+- Live visualizer debug overlays for zone, land value, and pollution
 - Renderer tests validate PPM format and viewport clamping behavior
 
 Next implementation target:
-- Real-time metrics HUD and overlay layers in live visualization mode
+- In-window legend panel and additional simulation-derived overlays
 

@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
+#include <sstream>
+#include <string>
 
 #include <SDL2/SDL.h>
 
@@ -16,6 +18,30 @@ struct RGB {
   uint8_t g = 0;
   uint8_t b = 0;
 };
+
+enum class OverlayMode {
+  Zone = 0,
+  LandValue = 1,
+  Pollution = 2,
+};
+
+const char* overlayModeName(OverlayMode mode) {
+  switch (mode) {
+    case OverlayMode::Zone:
+      return "zone";
+    case OverlayMode::LandValue:
+      return "land-value";
+    case OverlayMode::Pollution:
+      return "pollution";
+    default:
+      return "unknown";
+  }
+}
+
+uint8_t toByte(float normalized) {
+  const float clamped = std::max(0.0f, std::min(1.0f, normalized));
+  return static_cast<uint8_t>(clamped * 255.0f);
+}
 
 RGB zoneColor(int zone) {
   switch (zone) {
@@ -44,8 +70,27 @@ RGB terrainTint(const Tile& tile, RGB base) {
   return base;
 }
 
-RGB tileColor(const CityMap& map, const EntityStore& store, Coord coord) {
+RGB landValueColor(float landValue) {
+  const float normalized = (landValue - 50.0f) / 150.0f;
+  const uint8_t value = toByte(normalized);
+  return {value, static_cast<uint8_t>(255 - value / 2), static_cast<uint8_t>(255 - value)};
+}
+
+RGB pollutionColor(float pollution) {
+  const uint8_t value = toByte(pollution);
+  return {value, static_cast<uint8_t>(180 - value / 2), static_cast<uint8_t>(80 - value / 4)};
+}
+
+RGB tileColor(const CityMap& map, const EntityStore& store, Coord coord, OverlayMode overlayMode) {
   const Tile& tile = map.getTile(coord);
+
+  if (overlayMode == OverlayMode::LandValue) {
+    return landValueColor(tile.landValue);
+  }
+  if (overlayMode == OverlayMode::Pollution) {
+    return pollutionColor(tile.pollution);
+  }
+
   RGB color = terrainTint(tile, zoneColor(tile.zone));
 
   if (tile.hasRoad) {
@@ -70,6 +115,45 @@ RGB tileColor(const CityMap& map, const EntityStore& store, Coord coord) {
   }
 
   return color;
+}
+
+std::string makeHudTitle(
+  const CityMap& map,
+  const RoadNetwork& roads,
+  const EntityStore& store,
+  int tilePixels,
+  int viewX,
+  int viewY,
+  OverlayMode overlayMode
+) {
+  const auto& buildings = store.getBuildings();
+  size_t residential = 0;
+  size_t commercial = 0;
+  size_t industrial = 0;
+  for (const auto& entry : buildings) {
+    switch (entry.second.type) {
+      case BuildingType::Residential:
+        ++residential;
+        break;
+      case BuildingType::Commercial:
+        ++commercial;
+        break;
+      case BuildingType::Industrial:
+        ++industrial;
+        break;
+    }
+  }
+
+  std::ostringstream oss;
+  oss << "UrbanSimCore Visualizer | "
+      << "Buildings:" << store.getBuildingCount() << " (R:" << residential
+      << " C:" << commercial << " I:" << industrial << ")"
+      << " | Roads:" << roads.getRoadCount()
+      << " | Zoom:" << tilePixels
+      << " | View:" << viewX << "," << viewY
+      << " | Overlay:" << overlayModeName(overlayMode)
+      << " [1=zone 2=land 3=pollution]";
+  return oss.str();
 }
 
 bool seedScenario(CityMap& map, RoadNetwork& roads, EntityStore& store) {
@@ -150,6 +234,8 @@ int main(int argc, char* argv[]) {
   int tilePixels = 12;
   int viewX = 0;
   int viewY = 0;
+  OverlayMode overlayMode = OverlayMode::Zone;
+  uint32_t lastHudRefreshMs = 0;
 
   bool running = true;
   while (running) {
@@ -181,6 +267,15 @@ int main(int argc, char* argv[]) {
           case SDLK_DOWN:
             viewY = std::min(mapSize - 1, viewY + 1);
             break;
+          case SDLK_1:
+            overlayMode = OverlayMode::Zone;
+            break;
+          case SDLK_2:
+            overlayMode = OverlayMode::LandValue;
+            break;
+          case SDLK_3:
+            overlayMode = OverlayMode::Pollution;
+            break;
           default:
             break;
         }
@@ -204,12 +299,19 @@ int main(int argc, char* argv[]) {
           continue;
         }
 
-        const RGB color = tileColor(map, store, coord);
+        const RGB color = tileColor(map, store, coord, overlayMode);
         SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, 255);
 
         SDL_Rect rect{tx * tilePixels, ty * tilePixels, tilePixels, tilePixels};
         SDL_RenderFillRect(renderer, &rect);
       }
+    }
+
+    const uint32_t nowMs = SDL_GetTicks();
+    if (nowMs - lastHudRefreshMs >= 250) {
+      const std::string hudTitle = makeHudTitle(map, roads, store, tilePixels, viewX, viewY, overlayMode);
+      SDL_SetWindowTitle(window, hudTitle.c_str());
+      lastHudRefreshMs = nowMs;
     }
 
     SDL_RenderPresent(renderer);

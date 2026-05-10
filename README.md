@@ -18,6 +18,25 @@ cmake --build . --config Release
 ./build/UrbanSimCore-cli --help
 ```
 
+### Optional Live Visualizer (SDL2)
+
+If SDL2 is installed, CMake adds an extra executable target named `UrbanSimCore-visualizer`.
+
+```bash
+cd build
+cmake ..
+cmake --build . --config Release
+./UrbanSimCore-visualizer
+```
+
+Controls:
+- Arrow keys: pan viewport
+- `+` / `-`: zoom in/out
+- `1`: zone overlay
+- `2`: land value overlay
+- `3`: pollution overlay
+- `Esc`: quit
+
 ### Run Tests
 
 ```bash
@@ -41,7 +60,7 @@ ctest --verbose
 
 ## Current Status
 
-🔧 **Setup Phase** — Project structure and documentation in place. Core systems pending implementation.
+✅ **Backlog Slices 1-10 Complete** — Core headless simulation, persistence, replay verification, and visualization scaffolding are implemented.
 
 See [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for detailed progress.
 
