@@ -16,5 +16,7 @@ std::string CityMetrics::toString() const {
   ss << "City Expenses: $" << cityExpenses << "\n";
   ss << "Commute Burden: " << (commuteBurden * 100.0f) << "%\n";
   ss << "Traffic Congestion: " << (trafficCongestion * 100.0f) << "%\n";
+  ss << "Service Coverage: " << (serviceCoverage * 100.0f) << "%\n";
+  ss << "Service Satisfaction: " << (serviceSatisfaction * 100.0f) << "%\n";
   return ss.str();
 }

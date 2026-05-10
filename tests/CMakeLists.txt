@@ -10,6 +10,7 @@ add_executable(test_core
   TrafficSystemTests.cpp
   EconomySystemTests.cpp
   MetricsSystemTests.cpp
+  ServiceSystemTests.cpp
   SaveLoadSystemTests.cpp
   ReplayVerifierTests.cpp
   )

@@ -15,6 +15,7 @@
 #include "src/systems/TrafficSystem.hpp"
 #include "src/systems/EconomySystem.hpp"
 #include "src/systems/MetricsSystem.hpp"
+#include "src/systems/ServiceSystem.hpp"
 #include "src/persistence/SaveLoadSystem.hpp"
 #include "src/persistence/ReplayVerifier.hpp"
 #include "src/metrics/CityMetrics.hpp"
@@ -46,11 +47,32 @@ void printHelp() {
             << "  --print-top-edges N      Print top N most congested edges\n"
             << "  --run-economy-calculation Run economy/tax calculation\n"
             << "  --print-budget-summary    Print revenue/expense/economic health summary\n"
+            << "  --add-service TYPE X Y DIST  Add service facility and max road distance\n"
+            << "  --run-service-evaluation  Evaluate service coverage from facilities\n"
+            << "  --print-service-summary   Print service coverage and satisfaction\n"
             << "  --print-city-summary      Print consolidated city metrics summary\n"
             << "  --save-city FILE          Save city snapshot JSON to FILE\n"
             << "  --load-city FILE          Load city snapshot JSON from FILE\n"
             << "  --verify-replay N         Run deterministic replay check using N growth steps\n"
             << "  --help                   Show this help message\n";
+}
+
+void printServiceSummary(const ServiceCoverageSummary& summary) {
+  std::cout << "Service Summary:\n";
+  std::cout << "  Total Buildings: " << summary.totalBuildings << "\n";
+  std::cout << "  Serviced Buildings: " << summary.servicedBuildings << "\n";
+  std::cout << "  Fire Coverage: " << std::fixed << std::setprecision(1)
+            << (summary.fireCoverage * 100.0f) << "%\n";
+  std::cout << "  Police Coverage: " << std::fixed << std::setprecision(1)
+            << (summary.policeCoverage * 100.0f) << "%\n";
+  std::cout << "  Health Coverage: " << std::fixed << std::setprecision(1)
+            << (summary.healthCoverage * 100.0f) << "%\n";
+  std::cout << "  Education Coverage: " << std::fixed << std::setprecision(1)
+            << (summary.educationCoverage * 100.0f) << "%\n";
+  std::cout << "  Overall Coverage: " << std::fixed << std::setprecision(1)
+            << (summary.overallCoverage * 100.0f) << "%\n";
+  std::cout << "  Satisfaction: " << std::fixed << std::setprecision(1)
+            << (summary.satisfaction * 100.0f) << "%\n";
 }
 
 PopulationSummary buildPopulationSummaryFromState(
@@ -355,10 +377,13 @@ int main(int argc, char* argv[]) {
   bool printTrafficSummaryFlag = false;
   bool runEconomyCalculationFlag = false;
   bool printBudgetSummaryFlag = false;
+  bool runServiceEvaluationFlag = false;
+  bool printServiceSummaryFlag = false;
   bool printCitySummaryFlag = false;
   int verifyReplayGrowthSteps = -1;
   std::string saveCityPath;
   std::string loadCityPath;
+  std::vector<std::tuple<std::string, int, int, int>> serviceRequests;
   int printTopEdgesCount = -1;
   int zoneX1 = -1, zoneY1 = -1, zoneX2 = -1, zoneY2 = -1;
   std::string zoneTypeRaw;
@@ -428,6 +453,16 @@ int main(int argc, char* argv[]) {
       runEconomyCalculationFlag = true;
     } else if (arg == "--print-budget-summary") {
       printBudgetSummaryFlag = true;
+    } else if (arg == "--add-service" && i + 4 < argc) {
+      std::string serviceType = argv[++i];
+      int x = std::atoi(argv[++i]);
+      int y = std::atoi(argv[++i]);
+      int dist = std::atoi(argv[++i]);
+      serviceRequests.emplace_back(serviceType, x, y, dist);
+    } else if (arg == "--run-service-evaluation") {
+      runServiceEvaluationFlag = true;
+    } else if (arg == "--print-service-summary") {
+      printServiceSummaryFlag = true;
     } else if (arg == "--print-city-summary") {
       printCitySummaryFlag = true;
     } else if (arg == "--save-city" && i + 1 < argc) {
@@ -486,9 +521,14 @@ int main(int argc, char* argv[]) {
     PopulationSummary populationSummary;
     TrafficSummary trafficSummary;
     EconomyState economyState;
+    ServiceCoverageSummary serviceSummary;
     bool hasPopulationSummary = false;
     bool hasTrafficSummary = false;
     bool hasEconomyState = false;
+    bool hasServiceSummary = false;
+
+    std::vector<ServiceFacility> serviceFacilities;
+    serviceFacilities.reserve(serviceRequests.size());
 
     auto saveIfRequested = [&]() -> bool {
       if (saveCityPath.empty()) {
@@ -510,6 +550,24 @@ int main(int argc, char* argv[]) {
       populationSummary = buildPopulationSummaryFromState(store, population);
       hasPopulationSummary = true;
       std::cout << "Loaded city snapshot from " << loadCityPath << "\n";
+    }
+
+    for (const auto& [typeRaw, x, y, dist] : serviceRequests) {
+      ServiceType type;
+      if (!ServiceSystem::parseServiceType(typeRaw, type)) {
+        std::cerr << "Error: Unknown service type '" << typeRaw
+                  << "'. Use FIRE, POLICE, HEALTH/HOSPITAL, EDUCATION/SCHOOL.\n";
+        return 1;
+      }
+      if (!map.isValid({x, y})) {
+        std::cerr << "Error: Service location (" << x << "," << y << ") is out of bounds\n";
+        return 1;
+      }
+      ServiceFacility facility;
+      facility.type = type;
+      facility.position = {x, y};
+      facility.maxTravelDistance = std::max(0, dist);
+      serviceFacilities.push_back(facility);
     }
     
     // Handle inspection commands
@@ -670,6 +728,20 @@ int main(int argc, char* argv[]) {
       printBudgetSummary(economyState);
     }
 
+    if (runServiceEvaluationFlag) {
+      serviceSummary = ServiceSystem::evaluateCoverage(store, roads, serviceFacilities);
+      hasServiceSummary = true;
+      std::cout << "Service evaluation completed.\n";
+    }
+
+    if (printServiceSummaryFlag) {
+      if (!hasServiceSummary) {
+        serviceSummary = ServiceSystem::evaluateCoverage(store, roads, serviceFacilities);
+        hasServiceSummary = true;
+      }
+      printServiceSummary(serviceSummary);
+    }
+
     if (printCitySummaryFlag) {
       if (!hasPopulationSummary) {
         std::cerr << "Error: --print-city-summary requires --seed-population N\n";
@@ -685,9 +757,16 @@ int main(int argc, char* argv[]) {
         economyState = EconomySystem::calculateEconomy(store, population);
         hasEconomyState = true;
       }
+      if (!hasServiceSummary && !serviceFacilities.empty()) {
+        serviceSummary = ServiceSystem::evaluateCoverage(store, roads, serviceFacilities);
+        hasServiceSummary = true;
+      }
 
       CityMetrics summaryMetrics = MetricsSystem::collectCityMetrics(
-        populationSummary, trafficSummary, economyState
+        populationSummary,
+        trafficSummary,
+        economyState,
+        hasServiceSummary ? &serviceSummary : nullptr
       );
       std::cout << MetricsSystem::createCitySummaryReport(summaryMetrics);
     }
@@ -706,6 +785,7 @@ int main(int argc, char* argv[]) {
         printGrowthSummaryFlag || seedPopulation >= 0 || printPopulationSummaryFlag ||
         printPopulationGroupsFlag || runCommuteSimulationFlag || printTrafficSummaryFlag ||
         printTopEdgesCount > 0 || runEconomyCalculationFlag || printBudgetSummaryFlag ||
+        runServiceEvaluationFlag || printServiceSummaryFlag || !serviceRequests.empty() ||
         printCitySummaryFlag || !saveCityPath.empty() || !loadCityPath.empty()) {
       if (!saveIfRequested()) return 1;
       return 0;

@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **104 tests passing** (15 test suites)
+✅ **106 tests passing** (16 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -101,6 +101,7 @@ Last updated: May 10, 2026
 - MetricsSystemTests: 2
 - SaveLoadSystemTests: 2
 - ReplayVerifierTests: 2
+- ServiceSystemTests: 2
 
 ---
 
@@ -118,5 +119,21 @@ Implemented so far:
 - Save/load and replay tests added for round-trip, missing-file handling, and parity checks
 
 Next implementation target:
-- Transition from backlog slices to next-phase polish/refinement tasks
+- Phase 3 services milestone extension and post-backlog refinement
+
+---
+
+## Phase 3 Continuation: Services and Utilities
+
+Implemented so far:
+- Service simulation module added: `ServiceSystem`
+- Service facility types: Fire, Police, Health, Education
+- Graph-distance road coverage evaluation (BFS over road graph)
+- Service satisfaction and coverage metrics integrated into `CityMetrics`
+- CLI service commands: `--add-service`, `--run-service-evaluation`, `--print-service-summary`
+- City summary now includes service coverage and satisfaction
+- Service system tests validate reachability logic and happiness impact
+
+Next implementation target:
+- Visualization milestone and schema-version hardening
 

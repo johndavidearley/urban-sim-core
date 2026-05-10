@@ -15,6 +15,8 @@ struct CityMetrics {
   int64_t cityExpenses = 0;
   float commuteBurden = 0.0f;
   float trafficCongestion = 0.0f;
+  float serviceCoverage = 0.0f;
+  float serviceSatisfaction = 0.5f;
   
   std::string toString() const;
 };

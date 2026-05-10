@@ -6,12 +6,16 @@
 CityMetrics MetricsSystem::collectCityMetrics(
   const PopulationSummary& population,
   const TrafficSummary& traffic,
-  const EconomyState& economy
+  const EconomyState& economy,
+  const ServiceCoverageSummary* serviceSummary
 ) {
   CityMetrics metrics;
   PopulationSystem::applyToMetrics(population, metrics);
   TrafficSystem::applyToMetrics(traffic, metrics);
   EconomySystem::applyToMetrics(economy, metrics);
+  if (serviceSummary != nullptr) {
+    ServiceSystem::applyToMetrics(*serviceSummary, metrics);
+  }
   return metrics;
 }
 

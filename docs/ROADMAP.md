@@ -7,7 +7,7 @@ Last updated: May 10, 2026
 - Backlog Slices 1-10: complete
 - Headless core simulation loop: complete
 - Population, traffic, economy, metrics, and save/load scaffolding: complete
-- Automated validation: 104 tests passing
+- Automated validation: 106 tests passing
 
 ---
 
@@ -74,9 +74,9 @@ Last updated: May 10, 2026
 ## Phase 3: Services and Persistence (M7–M8)
 
 ### Milestone 7: Services and Utilities
-- [ ] Service building types (fire, police, schools, hospitals)
-- [ ] Coverage calculation (graph-based, not Euclidean)
-- [ ] Service satisfaction affecting happiness
+- [x] Service building types (fire, police, schools, hospitals)
+- [x] Coverage calculation (graph-based, not Euclidean)
+- [x] Service satisfaction affecting happiness
 - [x] Utility stubs (power, water coverage)
 
 **Deliverable:** Service coverage affects city happiness and growth.
@@ -176,11 +176,11 @@ Last updated: May 10, 2026
 
 ## Next Targets (Post-Backlog)
 
-1. Service simulation core (fire/police/health/school coverage)
-2. Visualization entry milestone (map renderer + core overlays)
-3. Save schema versioning and migration guards
-4. Performance pass for larger maps and higher population counts
-5. Service-aware happiness and growth feedback loop
+1. Visualization entry milestone (map renderer + core overlays)
+2. Save schema versioning and migration guards
+3. Performance pass for larger maps and higher population counts
+4. Service-aware happiness and growth feedback loop
+5. District-level service policies and budget controls
 
 ---
 

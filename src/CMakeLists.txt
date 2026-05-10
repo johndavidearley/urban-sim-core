@@ -10,6 +10,7 @@ add_library(urban_sim_core
   systems/TrafficSystem.cpp
   systems/EconomySystem.cpp
   systems/MetricsSystem.cpp
+  systems/ServiceSystem.cpp
   world/CityMap.cpp
   world/Tile.cpp
   world/Zoning.cpp

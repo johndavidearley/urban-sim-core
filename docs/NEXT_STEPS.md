@@ -7,12 +7,17 @@
 - ✅ Added CLI verification command: `--verify-replay N`
 
 2. Services and utilities simulation
-- ⏭️ Add service building categories (fire/police/school/health)
-- ⏭️ Add graph-based coverage scoring and happiness impact
+- ✅ Added service facility categories (fire/police/school/health)
+- ✅ Added graph-based coverage scoring and happiness impact
+- ✅ Added CLI service commands (`--add-service`, `--run-service-evaluation`, `--print-service-summary`)
 
 3. Persistence hardening
 - ⏭️ Add snapshot schema version migration guards
 - ⏭️ Expand load validation for malformed/incompatible data
+
+4. Visualization kickoff
+- ⏭️ Introduce first renderer integration (SDL2/SFML)
+- ⏭️ Render map, roads, zones, and buildings in real time
 
 ---
 
