@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include "src/core/SimulationTime.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
@@ -59,6 +60,7 @@ void printHelp() {
             << "  --save-city FILE          Save city snapshot JSON to FILE\n"
             << "  --load-city FILE          Load city snapshot JSON from FILE (prints migration diagnostics)\n"
             << "  --inspect-snapshot FILE   Inspect snapshot schema and structural summary\n"
+            << "  --benchmark-phase5 N      Run N-tick Phase 5 performance benchmark\n"
             << "  --verify-replay N         Run deterministic replay check using N growth steps\n"
             << "  --help                   Show this help message\n";
 }
@@ -418,6 +420,56 @@ void printSnapshotInspection(const CitySnapshot& snapshot, const SnapshotLoadDia
   std::cout << "  Population Groups: " << snapshot.populationGroups.size() << "\n";
 }
 
+void seedBenchmarkScenario(CityMap& map, RoadNetwork& roads) {
+  const glm::ivec2 dims = map.getDimensions();
+  const int midX = dims.x / 2;
+  const int midY = dims.y / 2;
+
+  Zoning::applyZoneRect(map, {2, 2}, {midX - 2, dims.y - 3}, ZoneType::Residential);
+  Zoning::applyZoneRect(map, {midX + 1, 2}, {dims.x - 3, midY - 2}, ZoneType::Commercial);
+  Zoning::applyZoneRect(map, {midX + 1, midY + 1}, {dims.x - 3, dims.y - 3}, ZoneType::Industrial);
+
+  for (int x = 1; x < dims.x - 1; ++x) {
+    roads.buildRoad({x, midY}, {x + 1, midY});
+  }
+  for (int y = 1; y < dims.y - 1; ++y) {
+    roads.buildRoad({midX, y}, {midX, y + 1});
+  }
+
+  for (int x = 6; x < dims.x - 6; x += 8) {
+    roads.buildRoad({x, 6}, {x, 7});
+    roads.buildRoad({x, dims.y - 7}, {x, dims.y - 8});
+  }
+
+  roads.updateConnectivity({midX, midY});
+}
+
+void printBenchmarkResults(
+  int benchmarkTicks,
+  double growthMs,
+  double populationMs,
+  double trafficMs,
+  double economyMs,
+  double serviceMs,
+  size_t buildingCount,
+  uint32_t finalPopulation
+) {
+  const double totalMs = growthMs + populationMs + trafficMs + economyMs + serviceMs;
+
+  std::cout << "Phase 5 Performance Benchmark:\n";
+  std::cout << "  Ticks: " << benchmarkTicks << "\n";
+  std::cout << "  Final Buildings: " << buildingCount << "\n";
+  std::cout << "  Final Population: " << finalPopulation << "\n";
+  std::cout << "  Total Time: " << std::fixed << std::setprecision(2) << totalMs << " ms\n";
+  std::cout << "  Avg/Tick: " << (benchmarkTicks > 0 ? (totalMs / benchmarkTicks) : 0.0) << " ms\n";
+  std::cout << "  Breakdown:\n";
+  std::cout << "    Growth: " << growthMs << " ms\n";
+  std::cout << "    Population: " << populationMs << " ms\n";
+  std::cout << "    Traffic: " << trafficMs << " ms\n";
+  std::cout << "    Economy: " << economyMs << " ms\n";
+  std::cout << "    Service: " << serviceMs << " ms\n";
+}
+
 int main(int argc, char* argv[]) {
   // Parse arguments
   int mapSize = 64;
@@ -444,6 +496,7 @@ int main(int argc, char* argv[]) {
   bool hasRenderView = false;
   int renderViewX = 0, renderViewY = 0, renderViewW = -1, renderViewH = -1;
   int verifyReplayGrowthSteps = -1;
+  int benchmarkPhase5Ticks = -1;
   std::string saveCityPath;
   std::string loadCityPath;
   std::string inspectSnapshotPath;
@@ -545,6 +598,8 @@ int main(int argc, char* argv[]) {
       loadCityPath = argv[++i];
     } else if (arg == "--inspect-snapshot" && i + 1 < argc) {
       inspectSnapshotPath = argv[++i];
+    } else if (arg == "--benchmark-phase5" && i + 1 < argc) {
+      benchmarkPhase5Ticks = std::atoi(argv[++i]);
     } else if (arg == "--verify-replay" && i + 1 < argc) {
       verifyReplayGrowthSteps = std::atoi(argv[++i]);
     }
@@ -559,6 +614,10 @@ int main(int argc, char* argv[]) {
     std::cerr << "Error: Number of ticks must be non-negative\n";
     return 1;
   }
+  if (benchmarkPhase5Ticks < -1) {
+    std::cerr << "Error: benchmark ticks must be non-negative\n";
+    return 1;
+  }
   
   try {
     if (!inspectSnapshotPath.empty()) {
@@ -569,6 +628,73 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       printSnapshotInspection(inspectedSnapshot, inspectDiagnostics);
+      return 0;
+    }
+
+    if (benchmarkPhase5Ticks >= 0) {
+      std::cout << "Running Phase 5 benchmark on " << mapSize << "x" << mapSize
+                << " map for " << benchmarkPhase5Ticks << " ticks...\n";
+
+      CityMap benchmarkMap({mapSize, mapSize});
+      RoadNetwork benchmarkRoads(benchmarkMap);
+      EntityStore benchmarkStore;
+      PopulationStore benchmarkPopulation;
+
+      seedBenchmarkScenario(benchmarkMap, benchmarkRoads);
+
+      std::vector<ServiceFacility> benchmarkFacilities;
+      const int midX = mapSize / 2;
+      const int midY = mapSize / 2;
+      benchmarkFacilities.push_back(ServiceFacility{ServiceType::Fire, {midX - 6, midY}, 20, 1.0f});
+      benchmarkFacilities.push_back(ServiceFacility{ServiceType::Police, {midX + 6, midY}, 20, 1.0f});
+      benchmarkFacilities.push_back(ServiceFacility{ServiceType::Health, {midX, midY - 6}, 22, 1.0f});
+      benchmarkFacilities.push_back(ServiceFacility{ServiceType::Education, {midX, midY + 6}, 24, 1.0f});
+
+      double growthMs = 0.0;
+      double populationMs = 0.0;
+      double trafficMs = 0.0;
+      double economyMs = 0.0;
+      double serviceMs = 0.0;
+
+      for (int tick = 0; tick < benchmarkPhase5Ticks; ++tick) {
+        const uint32_t tickSeed = seed + static_cast<uint32_t>(tick * 13);
+        const ZoneDemand demand = Zoning::calculateDemand(tickSeed);
+
+        auto t0 = std::chrono::steady_clock::now();
+        (void)GrowthSystem::runStep(benchmarkMap, benchmarkRoads, benchmarkStore, demand, tickSeed, 0.30f);
+        auto t1 = std::chrono::steady_clock::now();
+
+        const uint32_t requestedPopulation = static_cast<uint32_t>(std::max(1000, mapSize * mapSize / 2))
+          + static_cast<uint32_t>((tick % 12) * 100);
+        (void)PopulationSystem::allocate(benchmarkStore, benchmarkPopulation, requestedPopulation, tickSeed + 1);
+        auto t2 = std::chrono::steady_clock::now();
+
+        (void)TrafficSystem::simulateCommutes(benchmarkStore, benchmarkPopulation, benchmarkRoads, tickSeed + 2);
+        auto t3 = std::chrono::steady_clock::now();
+
+        (void)EconomySystem::calculateEconomy(benchmarkStore, benchmarkPopulation);
+        auto t4 = std::chrono::steady_clock::now();
+
+        (void)ServiceSystem::evaluateCoverage(benchmarkStore, benchmarkRoads, benchmarkFacilities);
+        auto t5 = std::chrono::steady_clock::now();
+
+        growthMs += std::chrono::duration<double, std::milli>(t1 - t0).count();
+        populationMs += std::chrono::duration<double, std::milli>(t2 - t1).count();
+        trafficMs += std::chrono::duration<double, std::milli>(t3 - t2).count();
+        economyMs += std::chrono::duration<double, std::milli>(t4 - t3).count();
+        serviceMs += std::chrono::duration<double, std::milli>(t5 - t4).count();
+      }
+
+      printBenchmarkResults(
+        benchmarkPhase5Ticks,
+        growthMs,
+        populationMs,
+        trafficMs,
+        economyMs,
+        serviceMs,
+        benchmarkStore.getBuildingCount(),
+        benchmarkPopulation.getTotalPopulation()
+      );
       return 0;
     }
 

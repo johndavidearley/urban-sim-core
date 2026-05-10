@@ -130,6 +130,23 @@ Next implementation target:
 
 ---
 
+## Phase 5 Kickoff: Performance Baseline
+
+Implemented so far:
+- Added CLI benchmark command: `--benchmark-phase5 N`
+- Benchmark run seeds a representative zoned/road-connected scenario on configurable map size
+- Reports per-subsystem timing totals and average-per-tick:
+	- Growth
+	- Population allocation
+	- Traffic simulation
+	- Economy calculation
+	- Service coverage evaluation
+
+Next implementation target:
+- Apply targeted optimizations to top benchmark hotspots
+
+---
+
 ## Persistence Hardening (Post-Backlog)
 
 Implemented so far:

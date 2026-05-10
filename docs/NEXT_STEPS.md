@@ -32,6 +32,10 @@
 - ✅ Added demand and happiness overlays for debugging simulation balance
 - ✅ Added route heatmap overlay for path-flow diagnostics
 
+6. Phase 5 optimization baseline
+- ✅ Added `--benchmark-phase5 N` CLI command with per-subsystem timing breakdown
+- ⏭️ Use benchmark results to prioritize hotspot optimizations (traffic/service first)
+
 ---
 
 ## Completed Slices
