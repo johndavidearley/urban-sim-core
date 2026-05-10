@@ -27,7 +27,8 @@
 - ✅ Added in-window legend/controls HUD panel without external font dependencies
 - ✅ Added service coverage and congestion overlays fed from simulation outputs
 - ⏭️ Add pause/step controls and deterministic tick stepping in SDL mode
-- ⏭️ Add demand/happiness/route heatmap overlays for debugging simulation balance
+- ✅ Added demand and happiness overlays for debugging simulation balance
+- ⏭️ Add route heatmap overlay for path-flow diagnostics
 
 ---
 

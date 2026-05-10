@@ -37,6 +37,8 @@ Controls:
 - `3`: pollution overlay
 - `4`: service coverage overlay
 - `5`: traffic congestion overlay
+- `6`: demand overlay
+- `7`: happiness overlay
 - `H`: show/hide in-window legend panel
 - `Esc`: quit
 

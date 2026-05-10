@@ -105,10 +105,10 @@ Last updated: May 10, 2026
 
 ### Milestone 10: Debug Overlays
 - [x] Land value overlay
-- [ ] Demand overlay
+- [x] Demand overlay
 - [x] Service coverage overlay
 - [x] Congestion/traffic overlay
-- [ ] Happiness/desirability overlay
+- [x] Happiness/desirability overlay
 - [ ] Route heatmap
 
 **Deliverable:** Multiple debug views toggle-able in real-time.
@@ -176,7 +176,7 @@ Last updated: May 10, 2026
 
 ## Next Targets (Post-Backlog)
 
-1. Add demand, happiness, and route heatmap overlays
+1. Add route heatmap overlay
 2. Add pause/step controls for deterministic tick stepping in live mode
 3. Save schema versioning and migration guards
 4. Performance pass for larger maps and higher population counts

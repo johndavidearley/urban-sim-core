@@ -33,6 +33,8 @@ enum class OverlayMode {
   Pollution = 2,
   ServiceCoverage = 3,
   TrafficCongestion = 4,
+  Demand = 5,
+  Happiness = 6,
 };
 
 const char* overlayModeName(OverlayMode mode) {
@@ -47,6 +49,10 @@ const char* overlayModeName(OverlayMode mode) {
       return "service";
     case OverlayMode::TrafficCongestion:
       return "traffic";
+    case OverlayMode::Demand:
+      return "demand";
+    case OverlayMode::Happiness:
+      return "happiness";
     default:
       return "unknown";
   }
@@ -103,6 +109,16 @@ RGB serviceCoverageColor(float score) {
 RGB congestionColor(float score) {
   const uint8_t value = toByte(score);
   return {value, static_cast<uint8_t>(255 - value), static_cast<uint8_t>(80 - value / 4)};
+}
+
+RGB demandColor(float score) {
+  const uint8_t value = toByte(score);
+  return {static_cast<uint8_t>(120 + value / 2), static_cast<uint8_t>(80 + value / 3), static_cast<uint8_t>(255 - value / 3)};
+}
+
+RGB happinessColor(float score) {
+  const uint8_t value = toByte(score);
+  return {static_cast<uint8_t>(255 - value / 2), static_cast<uint8_t>(120 + value / 2), static_cast<uint8_t>(80 + value / 4)};
 }
 
 bool hasRoadAdjacency(const RoadNetwork& roads, Coord coord) {
@@ -219,6 +235,61 @@ float localCongestionAtTile(const RoadNetwork& roads, Coord coord) {
   return maxCongestion;
 }
 
+float demandAtTile(const CityMap& map, const RoadNetwork& roads, Coord coord) {
+  const Tile& tile = map.getTile(coord);
+  if (tile.zone == 0 || tile.type == 2) {
+    return 0.0f;
+  }
+
+  const bool hasBuilding = (tile.buildingId != 0);
+  Coord anchor;
+  const bool roadAdj = resolveRoadAnchor(roads, coord, anchor);
+
+  float baseDemand = 0.25f;
+  if (tile.zone == 1) {
+    baseDemand = 0.65f;
+  } else if (tile.zone == 2) {
+    baseDemand = 0.55f;
+  } else if (tile.zone == 3) {
+    baseDemand = 0.45f;
+  }
+
+  if (roadAdj) {
+    baseDemand += 0.25f;
+  }
+  if (hasBuilding) {
+    baseDemand -= 0.35f;
+  }
+
+  return std::max(0.0f, std::min(1.0f, baseDemand));
+}
+
+float happinessAtTile(
+  const CityMap& map,
+  const RoadNetwork& roads,
+  Coord coord,
+  const std::vector<ServiceFacility>& facilities
+) {
+  const Tile& tile = map.getTile(coord);
+
+  const float service = serviceCoverageAtTile(roads, coord, facilities);
+  const float congestion = localCongestionAtTile(roads, coord);
+  const float pollution = std::max(0.0f, std::min(1.0f, tile.pollution));
+  const float landNorm = std::max(0.0f, std::min(1.0f, (tile.landValue - 40.0f) / 160.0f));
+
+  float happiness = 0.45f;
+  happiness += service * 0.25f;
+  happiness += landNorm * 0.2f;
+  happiness -= pollution * 0.25f;
+  happiness -= congestion * 0.2f;
+
+  if (tile.zone == 0) {
+    happiness -= 0.1f;
+  }
+
+  return std::max(0.0f, std::min(1.0f, happiness));
+}
+
 RGB tileColor(
   const CityMap& map,
   const RoadNetwork& roads,
@@ -240,6 +311,12 @@ RGB tileColor(
   }
   if (overlayMode == OverlayMode::TrafficCongestion) {
     return congestionColor(localCongestionAtTile(roads, coord));
+  }
+  if (overlayMode == OverlayMode::Demand) {
+    return demandColor(demandAtTile(map, roads, coord));
+  }
+  if (overlayMode == OverlayMode::Happiness) {
+    return happinessColor(happinessAtTile(map, roads, coord, facilities));
   }
 
   RGB color = terrainTint(tile, zoneColor(tile.zone));
@@ -278,6 +355,10 @@ RGB overlaySampleColor(OverlayMode mode, float value) {
       return serviceCoverageColor(value);
     case OverlayMode::TrafficCongestion:
       return congestionColor(value);
+    case OverlayMode::Demand:
+      return demandColor(value);
+    case OverlayMode::Happiness:
+      return happinessColor(value);
     case OverlayMode::Zone:
     default:
       return zoneColor(value < 0.33f ? 1 : (value < 0.66f ? 2 : 3));
@@ -311,7 +392,7 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
 
   constexpr int panelX = 12;
   constexpr int panelY = 12;
-  constexpr int panelW = 420;
+  constexpr int panelW = 520;
   constexpr int panelH = 92;
   drawFilledRect(renderer, panelX, panelY, panelW, panelH, {14, 16, 20}, 190);
   drawRectOutline(renderer, panelX, panelY, panelW, panelH, {230, 230, 230}, 220);
@@ -322,12 +403,14 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
   constexpr int keyW = 52;
   constexpr int keyH = 20;
   constexpr int keyGap = 8;
-  const std::array<OverlayMode, 5> modes = {
+  const std::array<OverlayMode, 7> modes = {
     OverlayMode::Zone,
     OverlayMode::LandValue,
     OverlayMode::Pollution,
     OverlayMode::ServiceCoverage,
     OverlayMode::TrafficCongestion,
+    OverlayMode::Demand,
+    OverlayMode::Happiness,
   };
 
   for (size_t i = 0; i < modes.size(); ++i) {
@@ -405,7 +488,7 @@ std::string makeHudTitle(
       << " | Zoom:" << tilePixels
       << " | View:" << viewX << "," << viewY
       << " | Overlay:" << overlayModeName(overlayMode)
-      << " [1=zone 2=land 3=pollution 4=service 5=traffic H=legend]";
+      << " [1=zone 2=land 3=pollution 4=service 5=traffic 6=demand 7=happiness H=legend]";
   return oss.str();
 }
 
@@ -588,6 +671,12 @@ int main(int argc, char* argv[]) {
             break;
           case SDLK_5:
             overlayMode = OverlayMode::TrafficCongestion;
+            break;
+          case SDLK_6:
+            overlayMode = OverlayMode::Demand;
+            break;
+          case SDLK_7:
+            overlayMode = OverlayMode::Happiness;
             break;
           case SDLK_h:
             showLegend = !showLegend;
