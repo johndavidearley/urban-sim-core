@@ -27,7 +27,8 @@ CMakeUserPresets.json
 Testing/
 
 # External dependencies
-extern/googletest/
+# Note: googletest is a git submodule, so it's tracked separately
+# extern/googletest/ is NOT ignored—submodules are committed via .gitmodules
 
 # Save files (if placed here during testing)
 *.save
