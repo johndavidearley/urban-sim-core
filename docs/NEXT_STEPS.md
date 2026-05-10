@@ -28,7 +28,7 @@
 - ✅ Added service coverage and congestion overlays fed from simulation outputs
 - ⏭️ Add pause/step controls and deterministic tick stepping in SDL mode
 - ✅ Added demand and happiness overlays for debugging simulation balance
-- ⏭️ Add route heatmap overlay for path-flow diagnostics
+- ✅ Added route heatmap overlay for path-flow diagnostics
 
 ---
 

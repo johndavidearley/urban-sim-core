@@ -122,9 +122,10 @@ Implemented so far:
 - Traffic congestion overlay added in live visualizer (`5`)
 - Demand overlay added in live visualizer (`6`)
 - Happiness overlay added in live visualizer (`7`)
+- Route heatmap overlay added in live visualizer (`8`)
 
 Next implementation target:
-- Route heatmap overlay plus deterministic pause/step controls
+- Deterministic pause/step controls in live mode
 
 ---
 
@@ -155,9 +156,9 @@ Implemented so far:
 - Live visualizer includes keyboard pan/zoom controls (arrows, +/-)
 - Live visualizer HUD metrics shown in window title (updated during runtime)
 - Live visualizer in-window legend panel for overlay controls and scale bands
-- Live visualizer debug overlays for zone, land value, pollution, service coverage, traffic congestion, demand, and happiness
+- Live visualizer debug overlays for zone, land value, pollution, service coverage, traffic congestion, demand, happiness, and route heatmap
 - Renderer tests validate PPM format and viewport clamping behavior
 
 Next implementation target:
-- Remaining advanced overlay (route heatmap)
+- Live simulation stepping controls and schema-version hardening
 

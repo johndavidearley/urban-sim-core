@@ -35,6 +35,7 @@ enum class OverlayMode {
   TrafficCongestion = 4,
   Demand = 5,
   Happiness = 6,
+  RouteHeatmap = 7,
 };
 
 const char* overlayModeName(OverlayMode mode) {
@@ -53,6 +54,8 @@ const char* overlayModeName(OverlayMode mode) {
       return "demand";
     case OverlayMode::Happiness:
       return "happiness";
+    case OverlayMode::RouteHeatmap:
+      return "route-heat";
     default:
       return "unknown";
   }
@@ -119,6 +122,12 @@ RGB demandColor(float score) {
 RGB happinessColor(float score) {
   const uint8_t value = toByte(score);
   return {static_cast<uint8_t>(255 - value / 2), static_cast<uint8_t>(120 + value / 2), static_cast<uint8_t>(80 + value / 4)};
+}
+
+RGB routeHeatColor(float score) {
+  const uint8_t value = toByte(score);
+  const uint8_t warm = static_cast<uint8_t>(80 + (value * 3) / 5);
+  return {value, warm, static_cast<uint8_t>(255 - value / 2)};
 }
 
 bool hasRoadAdjacency(const RoadNetwork& roads, Coord coord) {
@@ -290,13 +299,43 @@ float happinessAtTile(
   return std::max(0.0f, std::min(1.0f, happiness));
 }
 
+std::unordered_map<Coord, float, Vec2Hash> buildRouteHeatByTile(const RoadNetwork& roads) {
+  std::unordered_map<Coord, float, Vec2Hash> heat;
+  const std::vector<RoadNetwork::EdgeTrafficInfo> allTraffic = roads.getAllEdgeTraffic();
+
+  float maxLoad = 0.0f;
+  for (const auto& edge : allTraffic) {
+    maxLoad = std::max(maxLoad, edge.currentLoad);
+  }
+  if (maxLoad <= 0.0f) {
+    return heat;
+  }
+
+  for (const auto& edge : allTraffic) {
+    const float normalized = std::max(0.0f, std::min(1.0f, edge.currentLoad / maxLoad));
+    heat[edge.from] = std::max(heat[edge.from], normalized);
+    heat[edge.to] = std::max(heat[edge.to], normalized);
+  }
+
+  return heat;
+}
+
+float routeHeatAtTile(const std::unordered_map<Coord, float, Vec2Hash>& routeHeatByTile, Coord coord) {
+  const auto it = routeHeatByTile.find(coord);
+  if (it != routeHeatByTile.end()) {
+    return it->second;
+  }
+  return 0.0f;
+}
+
 RGB tileColor(
   const CityMap& map,
   const RoadNetwork& roads,
   const EntityStore& store,
   Coord coord,
   OverlayMode overlayMode,
-  const std::vector<ServiceFacility>& facilities
+  const std::vector<ServiceFacility>& facilities,
+  const std::unordered_map<Coord, float, Vec2Hash>& routeHeatByTile
 ) {
   const Tile& tile = map.getTile(coord);
 
@@ -317,6 +356,9 @@ RGB tileColor(
   }
   if (overlayMode == OverlayMode::Happiness) {
     return happinessColor(happinessAtTile(map, roads, coord, facilities));
+  }
+  if (overlayMode == OverlayMode::RouteHeatmap) {
+    return routeHeatColor(routeHeatAtTile(routeHeatByTile, coord));
   }
 
   RGB color = terrainTint(tile, zoneColor(tile.zone));
@@ -359,6 +401,8 @@ RGB overlaySampleColor(OverlayMode mode, float value) {
       return demandColor(value);
     case OverlayMode::Happiness:
       return happinessColor(value);
+    case OverlayMode::RouteHeatmap:
+      return routeHeatColor(value);
     case OverlayMode::Zone:
     default:
       return zoneColor(value < 0.33f ? 1 : (value < 0.66f ? 2 : 3));
@@ -403,7 +447,7 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
   constexpr int keyW = 52;
   constexpr int keyH = 20;
   constexpr int keyGap = 8;
-  const std::array<OverlayMode, 7> modes = {
+  const std::array<OverlayMode, 8> modes = {
     OverlayMode::Zone,
     OverlayMode::LandValue,
     OverlayMode::Pollution,
@@ -411,6 +455,7 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
     OverlayMode::TrafficCongestion,
     OverlayMode::Demand,
     OverlayMode::Happiness,
+    OverlayMode::RouteHeatmap,
   };
 
   for (size_t i = 0; i < modes.size(); ++i) {
@@ -422,7 +467,7 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
     const bool active = (modes[i] == overlayMode);
     drawRectOutline(renderer, x, keyY, keyW, keyH, active ? RGB{255, 230, 120} : RGB{120, 130, 145}, 255);
 
-    // Draw a minimal key indicator glyph as vertical bars (1..5 count).
+    // Draw a minimal key indicator glyph as vertical bars (1..8 count).
     for (size_t bar = 0; bar <= i; ++bar) {
       drawFilledRect(renderer, x + 20 + static_cast<int>(bar) * 5, keyY + 5, 3, keyH - 10, {220, 220, 220}, 255);
     }
@@ -488,7 +533,7 @@ std::string makeHudTitle(
       << " | Zoom:" << tilePixels
       << " | View:" << viewX << "," << viewY
       << " | Overlay:" << overlayModeName(overlayMode)
-      << " [1=zone 2=land 3=pollution 4=service 5=traffic 6=demand 7=happiness H=legend]";
+      << " [1=zone 2=land 3=pollution 4=service 5=traffic 6=demand 7=happiness 8=route H=legend]";
   return oss.str();
 }
 
@@ -589,6 +634,7 @@ int main(int argc, char* argv[]) {
   const std::vector<ServiceFacility> facilities = seedServiceFacilities(map);
   const ServiceCoverageSummary serviceSummary = ServiceSystem::evaluateCoverage(store, roads, facilities);
   const TrafficSummary trafficSummary = TrafficSystem::simulateCommutes(store, population, roads, 98765u);
+  const std::unordered_map<Coord, float, Vec2Hash> routeHeatByTile = buildRouteHeatByTile(roads);
 
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     std::cerr << "SDL init failed: " << SDL_GetError() << "\n";
@@ -678,6 +724,9 @@ int main(int argc, char* argv[]) {
           case SDLK_7:
             overlayMode = OverlayMode::Happiness;
             break;
+          case SDLK_8:
+            overlayMode = OverlayMode::RouteHeatmap;
+            break;
           case SDLK_h:
             showLegend = !showLegend;
             break;
@@ -704,7 +753,7 @@ int main(int argc, char* argv[]) {
           continue;
         }
 
-        const RGB color = tileColor(map, roads, store, coord, overlayMode, facilities);
+        const RGB color = tileColor(map, roads, store, coord, overlayMode, facilities, routeHeatByTile);
         SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, 255);
 
         SDL_Rect rect{tx * tilePixels, ty * tilePixels, tilePixels, tilePixels};

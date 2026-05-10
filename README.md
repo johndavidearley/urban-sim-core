@@ -39,6 +39,7 @@ Controls:
 - `5`: traffic congestion overlay
 - `6`: demand overlay
 - `7`: happiness overlay
+- `8`: route heatmap overlay
 - `H`: show/hide in-window legend panel
 - `Esc`: quit
 
