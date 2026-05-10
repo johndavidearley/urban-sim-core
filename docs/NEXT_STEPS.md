@@ -145,9 +145,29 @@
 
 ---
 
+## Current: Backlog Slice 9 - Metrics and Summary
+
+**Goal:** Consolidate subsystem metrics into one citywide summary workflow
+
+1. **Metrics consolidation system** ✅
+- ✅ Added `MetricsSystem::collectCityMetrics` to compose population, traffic, and economy outputs
+
+2. **Summary reporting** ✅
+- ✅ Added `MetricsSystem::createCitySummaryReport` with budget balance/status lines
+
+3. **CLI workflow** ✅
+- ✅ Added `--print-city-summary` for consolidated reporting
+- ✅ Added command-path reuse of cached traffic/economy summaries in a single run
+
+4. **Tests** ✅
+- ✅ Added `MetricsSystemTests` covering composition and report output
+
+**Slice 9 status:** ✅ Functionally complete for current scope.
+
+---
+
 ## Remaining Slices
 
-### Backlog Slice 9: Metrics and Summary
 ### Backlog Slice 10: Save and Load
 
 ---
@@ -164,6 +184,6 @@
 | 6 | Population | ✅ Complete |
 | 7 | Traffic | ✅ Complete |
 | 8 | Economy | ✅ Complete |
-| 9 | Metrics | ⏳ Current |
-| 10 | Save/Load | ⏹️ Pending |
+| 9 | Metrics | ✅ Complete |
+| 10 | Save/Load | ⏳ Current |
 

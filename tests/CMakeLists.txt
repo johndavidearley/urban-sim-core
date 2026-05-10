@@ -9,6 +9,7 @@ add_executable(test_core
   PopulationSystemTests.cpp
   TrafficSystemTests.cpp
   EconomySystemTests.cpp
+  MetricsSystemTests.cpp
   )
 
 target_link_libraries(test_core PRIVATE urban_sim_core gtest gtest_main)

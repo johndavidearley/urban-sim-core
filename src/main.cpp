@@ -13,6 +13,7 @@
 #include "src/systems/PopulationSystem.hpp"
 #include "src/systems/TrafficSystem.hpp"
 #include "src/systems/EconomySystem.hpp"
+#include "src/systems/MetricsSystem.hpp"
 #include "src/metrics/CityMetrics.hpp"
 #include "src/metrics/GrowthMetrics.hpp"
 
@@ -42,6 +43,7 @@ void printHelp() {
             << "  --print-top-edges N      Print top N most congested edges\n"
             << "  --run-economy-calculation Run economy/tax calculation\n"
             << "  --print-budget-summary    Print revenue/expense/economic health summary\n"
+            << "  --print-city-summary      Print consolidated city metrics summary\n"
             << "  --help                   Show this help message\n";
 }
 
@@ -292,6 +294,7 @@ int main(int argc, char* argv[]) {
   bool printTrafficSummaryFlag = false;
   bool runEconomyCalculationFlag = false;
   bool printBudgetSummaryFlag = false;
+  bool printCitySummaryFlag = false;
   int printTopEdgesCount = -1;
   int zoneX1 = -1, zoneY1 = -1, zoneX2 = -1, zoneY2 = -1;
   std::string zoneTypeRaw;
@@ -361,6 +364,8 @@ int main(int argc, char* argv[]) {
       runEconomyCalculationFlag = true;
     } else if (arg == "--print-budget-summary") {
       printBudgetSummaryFlag = true;
+    } else if (arg == "--print-city-summary") {
+      printCitySummaryFlag = true;
     }
   }
   
@@ -382,8 +387,10 @@ int main(int argc, char* argv[]) {
     EntityStore store;
     PopulationStore population;
     PopulationSummary populationSummary;
+    TrafficSummary trafficSummary;
     EconomyState economyState;
     bool hasPopulationSummary = false;
+    bool hasTrafficSummary = false;
     bool hasEconomyState = false;
     
     // Handle inspection commands
@@ -492,9 +499,10 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: --run-commute-simulation requires --seed-population N\n";
         return 1;
       }
-      TrafficSystem::simulateCommutes(
+      trafficSummary = TrafficSystem::simulateCommutes(
         store, population, roads, seed
       );
+      hasTrafficSummary = true;
       std::cout << "Commute simulation completed.\n";
     }
 
@@ -503,9 +511,12 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: --print-traffic-summary requires --run-commute-simulation\n";
         return 1;
       }
-      TrafficSummary trafficSummary = TrafficSystem::simulateCommutes(
-        store, population, roads, seed
-      );
+      if (!hasTrafficSummary) {
+        trafficSummary = TrafficSystem::simulateCommutes(
+          store, population, roads, seed
+        );
+        hasTrafficSummary = true;
+      }
       printTrafficSummary(trafficSummary);
     }
 
@@ -514,9 +525,12 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: --print-top-edges requires --seed-population N\n";
         return 1;
       }
-      TrafficSystem::simulateCommutes(
-        store, population, roads, seed
-      );
+      if (!hasTrafficSummary) {
+        trafficSummary = TrafficSystem::simulateCommutes(
+          store, population, roads, seed
+        );
+        hasTrafficSummary = true;
+      }
       auto topEdges = TrafficSystem::getTopCongestedEdges(roads, printTopEdgesCount);
       printTopCongestedEdges(topEdges);
     }
@@ -530,8 +544,31 @@ int main(int argc, char* argv[]) {
     if (printBudgetSummaryFlag) {
       if (!hasEconomyState) {
         economyState = EconomySystem::calculateEconomy(store, population);
+        hasEconomyState = true;
       }
       printBudgetSummary(economyState);
+    }
+
+    if (printCitySummaryFlag) {
+      if (!hasPopulationSummary) {
+        std::cerr << "Error: --print-city-summary requires --seed-population N\n";
+        return 1;
+      }
+      if (!hasTrafficSummary) {
+        trafficSummary = TrafficSystem::simulateCommutes(
+          store, population, roads, seed
+        );
+        hasTrafficSummary = true;
+      }
+      if (!hasEconomyState) {
+        economyState = EconomySystem::calculateEconomy(store, population);
+        hasEconomyState = true;
+      }
+
+      CityMetrics summaryMetrics = MetricsSystem::collectCityMetrics(
+        populationSummary, trafficSummary, economyState
+      );
+      std::cout << MetricsSystem::createCitySummaryReport(summaryMetrics);
     }
 
     if (findPathX1 >= 0) {
@@ -546,7 +583,8 @@ int main(int argc, char* argv[]) {
         printDemandFlag || printConnectivityMapFlag || printBuildingsFlag ||
         printGrowthSummaryFlag || seedPopulation >= 0 || printPopulationSummaryFlag ||
         printPopulationGroupsFlag || runCommuteSimulationFlag || printTrafficSummaryFlag ||
-        printTopEdgesCount > 0 || runEconomyCalculationFlag || printBudgetSummaryFlag) {
+        printTopEdgesCount > 0 || runEconomyCalculationFlag || printBudgetSummaryFlag ||
+        printCitySummaryFlag) {
       return 0;
     }
     

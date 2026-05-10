@@ -10,7 +10,7 @@ Last updated: May 10, 2026
 | **Phase 2: World Model** | ✅ Complete | 100% |
 | **Phase 3: Road System** | ✅ Complete | 100% |
 | **Phase 4: Zoning & Parcels** | ✅ Complete | 100% |
-| **Phase 5+: Advanced Systems** | ⏳ In Progress | 60% |
+| **Phase 5+: Advanced Systems** | ⏳ In Progress | 70% |
 
 ---
 
@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **98 tests passing** (12 test suites)
+✅ **100 tests passing** (13 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -98,23 +98,22 @@ Last updated: May 10, 2026
 - PopulationSystemTests: 6
 - TrafficSystemTests: 10
 - EconomySystemTests: 17
+- MetricsSystemTests: 2
 
 ---
 
 ## Current Focus
 
-### Backlog Slice 8: Economy and Finances
+### Backlog Slice 9: Metrics and Summary
 
 Implemented so far:
-- Economy modeling structures: `EconomyState`, `TaxRates`
-- Property-tax and income-tax revenue calculation
-- Per-type maintenance cost accounting
-- Balance and monthly balance tracking
-- Land value and economic health scoring
-- Metrics integration for revenue/expenses/land value/happiness/pollution
-- CLI economy commands: `--run-economy-calculation`, `--print-budget-summary`
-- Economy system tests: 17 tests covering taxation, maintenance, metrics, and health behavior
+- Centralized metrics aggregation system (`MetricsSystem`)
+- Consolidated report generation (`createCitySummaryReport`)
+- CLI summary workflow command: `--print-city-summary`
+- Metrics pipeline composes outputs from population, traffic, and economy systems
+- Cached CLI traffic/economy summaries to avoid duplicate simulation in chained commands
+- Metrics system tests added for aggregation and report formatting
 
 Next implementation target:
-- Begin Slice 9: citywide metrics consolidation and summary workflows
+- Begin Slice 10: save/load serialization and persistence workflows
 
