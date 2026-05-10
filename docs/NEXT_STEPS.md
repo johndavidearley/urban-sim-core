@@ -80,9 +80,9 @@
 - ✅ Deterministic population/job assignment behavior
 
 ### Remaining Slice 6 work
-- Add multi-group demographics and income bands
+- ✅ Add multi-group demographics and income bands
 - Add explicit commute/job matching constraints beyond capacity-only assignment
-- Add CLI command to print grouped population composition
+- ✅ Add CLI command to print grouped population composition
 
 ---
 

@@ -1,16 +1,23 @@
 #include "src/entities/PopulationStore.hpp"
 
+#include <algorithm>
+
 #include "src/core/EntityId.hpp"
 
-EntityId PopulationStore::createGroup(uint32_t size, uint32_t employed) {
+EntityId PopulationStore::createGroup(IncomeBand band, uint32_t size, uint32_t employed) {
   PopulationGroup group;
   group.id = EntityIdUtils::generateEntityId();
+  group.band = band;
   group.size = size;
-  group.employed = employed;
+  group.employed = std::min(employed, size);
 
   const EntityId id = group.id;
   groups[id] = group;
   return id;
+}
+
+EntityId PopulationStore::createGroup(uint32_t size, uint32_t employed) {
+  return createGroup(IncomeBand::Middle, size, employed);
 }
 
 void PopulationStore::clear() {

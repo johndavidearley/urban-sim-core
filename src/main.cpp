@@ -30,6 +30,7 @@ void printHelp() {
             << "  --print-growth-summary   Print growth fill-rate summary\n"
             << "  --seed-population N      Allocate N residents to housing/jobs\n"
             << "  --print-population-summary  Print population/job summary\n"
+            << "  --print-population-groups   Print grouped population composition\n"
             << "  --print-buildings        Print all spawned buildings\n"
             << "  --place-road X1 Y1 X2 Y2  Build a road segment between tiles\n"
             << "  --connectivity-map       Print connectivity status and exit\n"
@@ -184,6 +185,19 @@ void printPath(const Pathfinding::Path& path) {
   std::cout << "\n";
 }
 
+const char* incomeBandToString(IncomeBand band) {
+  switch (band) {
+    case IncomeBand::Low:
+      return "Low";
+    case IncomeBand::Middle:
+      return "Middle";
+    case IncomeBand::High:
+      return "High";
+    default:
+      return "Unknown";
+  }
+}
+
 void printPopulationSummary(const PopulationSummary& summary) {
   std::cout << "Population Summary:\n";
   std::cout << "  Requested: " << summary.requestedPopulation << "\n";
@@ -194,6 +208,21 @@ void printPopulationSummary(const PopulationSummary& summary) {
   std::cout << "  Available Jobs: " << summary.availableJobs << "\n";
   std::cout << "  Unemployment: " << std::fixed << std::setprecision(1)
             << (summary.unemploymentRate * 100.0f) << "%\n";
+  std::cout << "  Composition (pop): Low=" << summary.lowIncomePopulation
+            << ", Middle=" << summary.middleIncomePopulation
+            << ", High=" << summary.highIncomePopulation << "\n";
+  std::cout << "  Composition (employed): Low=" << summary.lowIncomeEmployed
+            << ", Middle=" << summary.middleIncomeEmployed
+            << ", High=" << summary.highIncomeEmployed << "\n";
+}
+
+void printPopulationGroups(const PopulationStore& population) {
+  std::cout << "Population Groups: " << population.getGroupCount() << "\n";
+  for (const auto& [id, group] : population.getGroups()) {
+    std::cout << "  #" << id << " " << incomeBandToString(group.band)
+              << " size=" << group.size
+              << " employed=" << group.employed << "\n";
+  }
 }
 
 int main(int argc, char* argv[]) {
@@ -207,6 +236,7 @@ int main(int argc, char* argv[]) {
   bool printDemandFlag = false;
   bool printGrowthSummaryFlag = false;
   bool printPopulationSummaryFlag = false;
+  bool printPopulationGroupsFlag = false;
   bool printBuildingsFlag = false;
   bool printConnectivityMapFlag = false;
   int zoneX1 = -1, zoneY1 = -1, zoneX2 = -1, zoneY2 = -1;
@@ -249,6 +279,8 @@ int main(int argc, char* argv[]) {
       seedPopulation = std::atoi(argv[++i]);
     } else if (arg == "--print-population-summary") {
       printPopulationSummaryFlag = true;
+    } else if (arg == "--print-population-groups") {
+      printPopulationGroupsFlag = true;
     } else if (arg == "--run-growth" && i + 1 < argc) {
       runGrowthSteps = std::atoi(argv[++i]);
     } else if (arg == "--print-buildings") {
@@ -381,6 +413,14 @@ int main(int argc, char* argv[]) {
       printPopulationSummary(populationSummary);
     }
 
+    if (printPopulationGroupsFlag) {
+      if (!hasPopulationSummary) {
+        std::cerr << "Error: --print-population-groups requires --seed-population N\n";
+        return 1;
+      }
+      printPopulationGroups(population);
+    }
+
     if (findPathX1 >= 0) {
       Pathfinding::Path path = Pathfinding::findShortestPath(
         roads, {findPathX1, findPathY1}, {findPathX2, findPathY2}
@@ -391,7 +431,8 @@ int main(int argc, char* argv[]) {
 
     if (zoneX1 >= 0 || placeRoadX1 >= 0 || runGrowthSteps > 0 || printZonesFlag ||
         printDemandFlag || printConnectivityMapFlag || printBuildingsFlag ||
-        printGrowthSummaryFlag || seedPopulation >= 0 || printPopulationSummaryFlag) {
+        printGrowthSummaryFlag || seedPopulation >= 0 || printPopulationSummaryFlag ||
+        printPopulationGroupsFlag) {
       return 0;
     }
     

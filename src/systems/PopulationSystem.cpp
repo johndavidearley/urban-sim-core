@@ -1,6 +1,7 @@
 #include "src/systems/PopulationSystem.hpp"
 
 #include <algorithm>
+#include <array>
 #include <vector>
 
 namespace {
@@ -72,6 +73,29 @@ void assignOccupancy(
     index = (index + 1) % ids.size();
   }
 }
+
+std::array<uint32_t, 3> splitByWeights(uint32_t total, const std::array<uint32_t, 3>& weights) {
+  std::array<uint32_t, 3> split{0u, 0u, 0u};
+  const uint32_t weightSum = weights[0] + weights[1] + weights[2];
+  if (total == 0 || weightSum == 0) {
+    return split;
+  }
+
+  uint32_t assigned = 0;
+  for (size_t i = 0; i < split.size(); ++i) {
+    split[i] = (total * weights[i]) / weightSum;
+    assigned += split[i];
+  }
+
+  size_t idx = 0;
+  while (assigned < total) {
+    split[idx % split.size()] += 1u;
+    ++idx;
+    ++assigned;
+  }
+
+  return split;
+}
 } // namespace
 
 PopulationSummary PopulationSystem::allocate(
@@ -87,7 +111,9 @@ PopulationSummary PopulationSystem::allocate(
   const std::vector<EntityId> industrial = collectBuildingIds(store, BuildingType::Industrial);
 
   const uint32_t housingCapacity = capacityFor(store, residential);
-  const uint32_t jobCapacity = capacityFor(store, commercial) + capacityFor(store, industrial);
+  const uint32_t commercialCapacity = capacityFor(store, commercial);
+  const uint32_t industrialCapacity = capacityFor(store, industrial);
+  const uint32_t jobCapacity = commercialCapacity + industrialCapacity;
 
   const uint32_t housed = std::min(requestedPopulation, housingCapacity);
   const uint32_t employed = std::min(housed, jobCapacity);
@@ -96,21 +122,30 @@ PopulationSummary PopulationSystem::allocate(
   assignOccupancy(store, residential, housed, seed + 17u);
 
   uint32_t commercialShare = employed / 2u;
-  commercialShare = std::min(commercialShare, capacityFor(store, commercial));
+  commercialShare = std::min(commercialShare, commercialCapacity);
   uint32_t industrialShare = employed - commercialShare;
-  const uint32_t industrialCapacity = capacityFor(store, industrial);
   if (industrialShare > industrialCapacity) {
     const uint32_t overflow = industrialShare - industrialCapacity;
     industrialShare = industrialCapacity;
-    commercialShare = std::min(commercialShare + overflow, capacityFor(store, commercial));
+    commercialShare = std::min(commercialShare + overflow, commercialCapacity);
   }
 
   assignOccupancy(store, commercial, commercialShare, seed + 29u);
   assignOccupancy(store, industrial, industrialShare, seed + 43u);
 
+  // Composition model: low/middle/high income split with deterministic band employment shares.
+  const std::array<uint32_t, 3> housedByBand = splitByWeights(housed, {50u, 35u, 15u});
+  const std::array<uint32_t, 3> employedByBand = splitByWeights(employed, {30u, 40u, 30u});
+
   population.clear();
-  if (housed > 0) {
-    population.createGroup(housed, employed);
+  if (housedByBand[0] > 0) {
+    population.createGroup(IncomeBand::Low, housedByBand[0], std::min(housedByBand[0], employedByBand[0]));
+  }
+  if (housedByBand[1] > 0) {
+    population.createGroup(IncomeBand::Middle, housedByBand[1], std::min(housedByBand[1], employedByBand[1]));
+  }
+  if (housedByBand[2] > 0) {
+    population.createGroup(IncomeBand::High, housedByBand[2], std::min(housedByBand[2], employedByBand[2]));
   }
 
   PopulationSummary summary;
@@ -123,6 +158,13 @@ PopulationSummary PopulationSystem::allocate(
   if (housed > 0) {
     summary.unemploymentRate = static_cast<float>(unemployed) / static_cast<float>(housed);
   }
+
+  summary.lowIncomePopulation = housedByBand[0];
+  summary.middleIncomePopulation = housedByBand[1];
+  summary.highIncomePopulation = housedByBand[2];
+  summary.lowIncomeEmployed = std::min(housedByBand[0], employedByBand[0]);
+  summary.middleIncomeEmployed = std::min(housedByBand[1], employedByBand[1]);
+  summary.highIncomeEmployed = std::min(housedByBand[2], employedByBand[2]);
 
   return summary;
 }

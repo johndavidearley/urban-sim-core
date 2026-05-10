@@ -10,7 +10,7 @@ Last updated: May 10, 2026
 | **Phase 2: World Model** | ✅ Complete | 100% |
 | **Phase 3: Road System** | ✅ Complete | 100% |
 | **Phase 4: Zoning & Parcels** | ✅ Complete | 100% |
-| **Phase 5+: Advanced Systems** | ⏳ In Progress | 32% |
+| **Phase 5+: Advanced Systems** | ⏳ In Progress | 38% |
 
 ---
 
@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **69 tests passing** (10 test suites)
+✅ **70 tests passing** (10 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -95,7 +95,7 @@ Last updated: May 10, 2026
 - PathfindingTests: 8
 - GrowthSystemTests: 8
 - GrowthMetricsTests: 3
-- PopulationSystemTests: 4
+- PopulationSystemTests: 5
 
 ---
 
@@ -105,12 +105,13 @@ Last updated: May 10, 2026
 
 Implemented so far:
 - Population model entities: `PopulationGroup` and `PopulationStore`
+- Multi-group composition with income bands (low/middle/high)
 - Deterministic population allocation system (`PopulationSystem`)
 - Housing assignment to residential occupancy and jobs assignment to non-residential occupancy
 - Population summary wiring to city metrics (population, housing/jobs availability, unemployment)
-- CLI population commands: `--seed-population N`, `--print-population-summary`
-- Population allocation tests and CLI smoke verification
+- CLI population commands: `--seed-population N`, `--print-population-summary`, `--print-population-groups`
+- Population allocation/composition tests and CLI smoke verification
 
 Next implementation target:
-- Expand Slice 6 with multi-group demographics and richer employment modeling
+- Add explicit commute/job matching constraints beyond capacity-only assignment
 

@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <array>
+
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/systems/PopulationSystem.hpp"
@@ -14,6 +16,36 @@ uint32_t occupancyByType(const EntityStore& store, BuildingType type) {
     }
   }
   return total;
+}
+
+std::array<uint32_t, 3> populationByBand(const PopulationStore& store) {
+  std::array<uint32_t, 3> totals{0u, 0u, 0u};
+  for (const auto& [id, group] : store.getGroups()) {
+    (void)id;
+    if (group.band == IncomeBand::Low) {
+      totals[0] += group.size;
+    } else if (group.band == IncomeBand::Middle) {
+      totals[1] += group.size;
+    } else if (group.band == IncomeBand::High) {
+      totals[2] += group.size;
+    }
+  }
+  return totals;
+}
+
+std::array<uint32_t, 3> employedByBand(const PopulationStore& store) {
+  std::array<uint32_t, 3> totals{0u, 0u, 0u};
+  for (const auto& [id, group] : store.getGroups()) {
+    (void)id;
+    if (group.band == IncomeBand::Low) {
+      totals[0] += group.employed;
+    } else if (group.band == IncomeBand::Middle) {
+      totals[1] += group.employed;
+    } else if (group.band == IncomeBand::High) {
+      totals[2] += group.employed;
+    }
+  }
+  return totals;
 }
 } // namespace
 
@@ -39,6 +71,18 @@ TEST(PopulationSystemTests, AllocationRespectsHousingAndJobs) {
   EXPECT_EQ(people.getTotalPopulation(), 15u);
   EXPECT_EQ(people.getTotalEmployed(), 8u);
 
+  EXPECT_EQ(summary.lowIncomePopulation + summary.middleIncomePopulation + summary.highIncomePopulation, 15u);
+  EXPECT_EQ(summary.lowIncomeEmployed + summary.middleIncomeEmployed + summary.highIncomeEmployed, 8u);
+
+  const auto popBands = populationByBand(people);
+  const auto empBands = employedByBand(people);
+  EXPECT_EQ(popBands[0], summary.lowIncomePopulation);
+  EXPECT_EQ(popBands[1], summary.middleIncomePopulation);
+  EXPECT_EQ(popBands[2], summary.highIncomePopulation);
+  EXPECT_EQ(empBands[0], summary.lowIncomeEmployed);
+  EXPECT_EQ(empBands[1], summary.middleIncomeEmployed);
+  EXPECT_EQ(empBands[2], summary.highIncomeEmployed);
+
   EXPECT_EQ(occupancyByType(buildings, BuildingType::Residential), 15u);
   EXPECT_EQ(
     occupancyByType(buildings, BuildingType::Commercial) +
@@ -56,6 +100,9 @@ TEST(PopulationSystemTests, AllocationWithNoBuildingsProducesZeroPopulation) {
   EXPECT_EQ(summary.housedPopulation, 0u);
   EXPECT_EQ(summary.employedPopulation, 0u);
   EXPECT_EQ(summary.unemployedPopulation, 0u);
+  EXPECT_EQ(summary.lowIncomePopulation, 0u);
+  EXPECT_EQ(summary.middleIncomePopulation, 0u);
+  EXPECT_EQ(summary.highIncomePopulation, 0u);
   EXPECT_EQ(summary.availableHousing, 0u);
   EXPECT_EQ(summary.availableJobs, 0u);
   EXPECT_FLOAT_EQ(summary.unemploymentRate, 0.0f);
@@ -86,6 +133,31 @@ TEST(PopulationSystemTests, AllocationIsDeterministicForSameSeed) {
   EXPECT_EQ(resA, resB);
   EXPECT_EQ(comA, comB);
   EXPECT_EQ(indA, indB);
+}
+
+TEST(PopulationSystemTests, CompositionIsDeterministicForSameSeed) {
+  EntityStore buildingsA;
+  EntityStore buildingsB;
+  PopulationStore peopleA;
+  PopulationStore peopleB;
+
+  buildingsA.createBuilding(BuildingType::Residential, {1, 1}, 30);
+  buildingsA.createBuilding(BuildingType::Commercial, {3, 1}, 8);
+  buildingsA.createBuilding(BuildingType::Industrial, {4, 1}, 8);
+
+  buildingsB.createBuilding(BuildingType::Residential, {1, 1}, 30);
+  buildingsB.createBuilding(BuildingType::Commercial, {3, 1}, 8);
+  buildingsB.createBuilding(BuildingType::Industrial, {4, 1}, 8);
+
+  const PopulationSummary a = PopulationSystem::allocate(buildingsA, peopleA, 24, 123);
+  const PopulationSummary b = PopulationSystem::allocate(buildingsB, peopleB, 24, 123);
+
+  EXPECT_EQ(a.lowIncomePopulation, b.lowIncomePopulation);
+  EXPECT_EQ(a.middleIncomePopulation, b.middleIncomePopulation);
+  EXPECT_EQ(a.highIncomePopulation, b.highIncomePopulation);
+  EXPECT_EQ(a.lowIncomeEmployed, b.lowIncomeEmployed);
+  EXPECT_EQ(a.middleIncomeEmployed, b.middleIncomeEmployed);
+  EXPECT_EQ(a.highIncomeEmployed, b.highIncomeEmployed);
 }
 
 TEST(PopulationSystemTests, SummaryAppliesToCityMetrics) {
