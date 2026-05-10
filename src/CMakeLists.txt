@@ -10,6 +10,7 @@ add_library(urban_sim_core
   world/Zoning.cpp
   networks/RoadNetwork.cpp
   networks/Pathfinding.cpp
+  metrics/GrowthMetrics.cpp
   metrics/CityMetrics.cpp
 )
 

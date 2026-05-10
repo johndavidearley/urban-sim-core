@@ -10,7 +10,7 @@ Last updated: May 10, 2026
 | **Phase 2: World Model** | ✅ Complete | 100% |
 | **Phase 3: Road System** | ✅ Complete | 100% |
 | **Phase 4: Zoning & Parcels** | ✅ Complete | 100% |
-| **Phase 5+: Advanced Systems** | ⏳ In Progress | 15% |
+| **Phase 5+: Advanced Systems** | ⏳ In Progress | 20% |
 
 ---
 
@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **60 tests passing** (8 test suites)
+✅ **63 tests passing** (9 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -94,6 +94,7 @@ Last updated: May 10, 2026
 - RoadNetworkTests: 11
 - PathfindingTests: 8
 - GrowthSystemTests: 6
+- GrowthMetricsTests: 3
 
 ---
 
@@ -108,8 +109,9 @@ Implemented so far:
 - Balancing rules: demand floor, zone-coverage pressure, road-quality weighting
 - Building spawn integration with `EntityStore` and tile `buildingId`
 - CLI growth commands: `--run-growth N`, `--print-buildings`
+- Growth summary metrics module with fill-rate reporting (`--print-growth-summary`)
 - Growth system tests and CLI smoke verification
 
 Next implementation target:
-- Add richer growth summaries/metrics
+- Add additional long-run simulation tests
 

@@ -10,6 +10,7 @@
 #include "src/networks/Pathfinding.hpp"
 #include "src/systems/GrowthSystem.hpp"
 #include "src/metrics/CityMetrics.hpp"
+#include "src/metrics/GrowthMetrics.hpp"
 
 void printHelp() {
   std::cout << "UrbanSimCore CLI v0.1.0\n"
@@ -24,6 +25,7 @@ void printHelp() {
             << "  --print-zones            Print zoning map and exit\n"
             << "  --print-demand           Print zoning demand stub and exit\n"
             << "  --run-growth N           Run N growth steps and print summary\n"
+            << "  --print-growth-summary   Print growth fill-rate summary\n"
             << "  --print-buildings        Print all spawned buildings\n"
             << "  --place-road X1 Y1 X2 Y2  Build a road segment between tiles\n"
             << "  --connectivity-map       Print connectivity status and exit\n"
@@ -187,6 +189,7 @@ int main(int argc, char* argv[]) {
   int printTileX = -1, printTileY = -1;
   bool printZonesFlag = false;
   bool printDemandFlag = false;
+  bool printGrowthSummaryFlag = false;
   bool printBuildingsFlag = false;
   bool printConnectivityMapFlag = false;
   int zoneX1 = -1, zoneY1 = -1, zoneX2 = -1, zoneY2 = -1;
@@ -222,6 +225,8 @@ int main(int argc, char* argv[]) {
       printZonesFlag = true;
     } else if (arg == "--print-demand") {
       printDemandFlag = true;
+    } else if (arg == "--print-growth-summary") {
+      printGrowthSummaryFlag = true;
     } else if (arg == "--run-growth" && i + 1 < argc) {
       runGrowthSteps = std::atoi(argv[++i]);
     } else if (arg == "--print-buildings") {
@@ -328,6 +333,11 @@ int main(int argc, char* argv[]) {
       printBuildings(store);
     }
 
+    if (printGrowthSummaryFlag) {
+      const GrowthMetrics growthMetrics = GrowthMetrics::collect(map, store);
+      std::cout << growthMetrics.toString();
+    }
+
     if (findPathX1 >= 0) {
       Pathfinding::Path path = Pathfinding::findShortestPath(
         roads, {findPathX1, findPathY1}, {findPathX2, findPathY2}
@@ -337,7 +347,8 @@ int main(int argc, char* argv[]) {
     }
 
     if (zoneX1 >= 0 || placeRoadX1 >= 0 || runGrowthSteps > 0 || printZonesFlag ||
-        printDemandFlag || printConnectivityMapFlag || printBuildingsFlag) {
+        printDemandFlag || printConnectivityMapFlag || printBuildingsFlag ||
+        printGrowthSummaryFlag) {
       return 0;
     }
     

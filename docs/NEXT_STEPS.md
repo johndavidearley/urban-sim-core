@@ -55,7 +55,7 @@
 
 ### Remaining Slice 5 work
 - ✅ Improve growth balancing and zone demand shaping (coverage-pressure + demand-floor tuning)
-- Add growth-oriented city metrics/summary output
+- ✅ Add growth-oriented city metrics/summary output (`--print-growth-summary`)
 - Add additional long-run simulation tests
 
 ---
