@@ -176,7 +176,7 @@ Last updated: May 10, 2026
 
 ## Next Targets (Post-Backlog)
 
-1. Optimize benchmark hotspots from `--benchmark-phase5` results
+1. Optimize traffic simulation hotspot from `--benchmark-phase5` results
 2. District-level service policies and budget controls
 3. Add richer route diagnostics (per-origin/per-destination filtering)
 4. Add visualization-side origin/destination route filters

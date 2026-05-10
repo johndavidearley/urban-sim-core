@@ -34,7 +34,8 @@
 
 6. Phase 5 optimization baseline
 - ✅ Added `--benchmark-phase5 N` CLI command with per-subsystem timing breakdown
-- ⏭️ Use benchmark results to prioritize hotspot optimizations (traffic/service first)
+- ✅ Optimized service coverage evaluation using cached facility BFS distance fields
+- ⏭️ Optimize traffic simulation hotspot from benchmark results
 
 ---
 

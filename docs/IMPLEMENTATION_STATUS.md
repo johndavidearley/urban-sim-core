@@ -141,9 +141,14 @@ Implemented so far:
 	- Traffic simulation
 	- Economy calculation
 	- Service coverage evaluation
+- Service coverage optimization pass completed:
+	- Replaced per-building/per-facility shortest-path searches with cached per-facility BFS distance fields
+	- Benchmark smoke reduction at `--size 96 --benchmark-phase5 24`:
+		- Service time: ~1644 ms -> ~35 ms total
+		- Avg tick time: ~77.7 ms -> ~10.9 ms
 
 Next implementation target:
-- Apply targeted optimizations to top benchmark hotspots
+- Apply targeted optimization pass to traffic simulation hotspot
 
 ---
 

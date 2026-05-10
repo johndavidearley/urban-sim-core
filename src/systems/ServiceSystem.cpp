@@ -47,20 +47,28 @@ bool resolveRoadAnchor(const RoadNetwork& roads, Coord coord, Coord& outAnchor) 
   return false;
 }
 
-int shortestRoadDistance(const RoadNetwork& roads, Coord start, Coord goal) {
-  if (start == goal) {
-    return 0;
+std::unordered_map<Coord, int, Vec2Hash> buildDistanceField(
+  const RoadNetwork& roads,
+  Coord start,
+  int maxDistance
+) {
+  std::unordered_map<Coord, int, Vec2Hash> distance;
+  if (maxDistance < 0) {
+    return distance;
   }
 
   std::queue<Coord> frontier;
-  std::unordered_map<Coord, int, Vec2Hash> distance;
-
   frontier.push(start);
   distance[start] = 0;
 
   while (!frontier.empty()) {
     const Coord current = frontier.front();
     frontier.pop();
+
+    const int currentDistance = distance[current];
+    if (currentDistance >= maxDistance) {
+      continue;
+    }
 
     const RoadNetwork::Node* node = roads.getNode(current);
     if (node == nullptr) {
@@ -73,18 +81,17 @@ int shortestRoadDistance(const RoadNetwork& roads, Coord start, Coord goal) {
         continue;
       }
 
-      const int nextDistance = distance[current] + 1;
-      distance[next] = nextDistance;
-
-      if (next == goal) {
-        return nextDistance;
+      const int nextDistance = currentDistance + 1;
+      if (nextDistance > maxDistance) {
+        continue;
       }
 
+      distance[next] = nextDistance;
       frontier.push(next);
     }
   }
 
-  return -1;
+  return distance;
 }
 } // namespace
 
@@ -131,6 +138,11 @@ ServiceCoverageSummary ServiceSystem::evaluateCoverage(
   const RoadNetwork& roads,
   const std::vector<ServiceFacility>& facilities
 ) {
+  struct FacilityCache {
+    ServiceType type = ServiceType::Fire;
+    std::unordered_map<Coord, int, Vec2Hash> distanceField;
+  };
+
   ServiceCoverageSummary summary;
   summary.totalBuildings = static_cast<uint32_t>(store.getBuildings().size());
 
@@ -140,6 +152,22 @@ ServiceCoverageSummary ServiceSystem::evaluateCoverage(
   }
 
   std::array<uint32_t, 4> coveredByType = {0, 0, 0, 0};
+
+  std::vector<FacilityCache> facilityCaches;
+  facilityCaches.reserve(facilities.size());
+  for (const ServiceFacility& facility : facilities) {
+    Coord facilityAnchor;
+    if (!resolveRoadAnchor(roads, facility.position, facilityAnchor)) {
+      continue;
+    }
+
+    FacilityCache cache;
+    cache.type = facility.type;
+    cache.distanceField = buildDistanceField(roads, facilityAnchor, facility.maxTravelDistance);
+    if (!cache.distanceField.empty()) {
+      facilityCaches.push_back(std::move(cache));
+    }
+  }
 
   for (const auto& [id, building] : store.getBuildings()) {
     (void)id;
@@ -151,14 +179,8 @@ ServiceCoverageSummary ServiceSystem::evaluateCoverage(
     bool anyCoverage = false;
     std::array<bool, 4> hasTypeCoverage = {false, false, false, false};
 
-    for (const ServiceFacility& facility : facilities) {
-      Coord facilityAnchor;
-      if (!resolveRoadAnchor(roads, facility.position, facilityAnchor)) {
-        continue;
-      }
-
-      const int distance = shortestRoadDistance(roads, buildingAnchor, facilityAnchor);
-      if (distance < 0 || distance > facility.maxTravelDistance) {
+    for (const FacilityCache& facility : facilityCaches) {
+      if (facility.distanceField.find(buildingAnchor) == facility.distanceField.end()) {
         continue;
       }
 
