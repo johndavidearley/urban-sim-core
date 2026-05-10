@@ -4,7 +4,9 @@ add_library(urban_sim_core
   core/SimulationTime.cpp
   core/Random.cpp
   entities/EntityStore.cpp
+  entities/PopulationStore.cpp
   systems/GrowthSystem.cpp
+  systems/PopulationSystem.cpp
   world/CityMap.cpp
   world/Tile.cpp
   world/Zoning.cpp

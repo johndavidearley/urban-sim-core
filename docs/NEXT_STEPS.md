@@ -67,17 +67,22 @@
 **Goal:** Model residents, employment, and housing/job allocation
 
 1. **Population entities**
-- Add population group structures and storage
+- ✅ Added `PopulationGroup` and `PopulationStore`
 
 2. **Allocation system**
-- Assign residents to residential capacity
-- Assign workers to available jobs
+- ✅ Assign residents to residential capacity
+- ✅ Assign workers to available jobs
 
 3. **Metrics integration**
-- Population total, housing capacity, available jobs, unemployment
+- ✅ Population total, housing capacity, available jobs, unemployment
 
 4. **Tests**
-- Deterministic population/job assignment behavior
+- ✅ Deterministic population/job assignment behavior
+
+### Remaining Slice 6 work
+- Add multi-group demographics and income bands
+- Add explicit commute/job matching constraints beyond capacity-only assignment
+- Add CLI command to print grouped population composition
 
 ---
 
@@ -99,8 +104,8 @@
 | 2 | World model | ✅ Complete |
 | 3 | Road system | ✅ Complete |
 | 4 | Zoning & parcels | ✅ Complete |
-| 5 | Building growth | ⏳ Current |
-| 6 | Population | ⏹️ Pending |
+| 5 | Building growth | ✅ Complete |
+| 6 | Population | ⏳ Current |
 | 7 | Traffic | ⏹️ Pending |
 | 8 | Economy | ⏹️ Pending |
 | 9 | Metrics | ⏹️ Pending |

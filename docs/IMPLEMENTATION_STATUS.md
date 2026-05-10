@@ -10,7 +10,7 @@ Last updated: May 10, 2026
 | **Phase 2: World Model** | ✅ Complete | 100% |
 | **Phase 3: Road System** | ✅ Complete | 100% |
 | **Phase 4: Zoning & Parcels** | ✅ Complete | 100% |
-| **Phase 5+: Advanced Systems** | ⏳ In Progress | 25% |
+| **Phase 5+: Advanced Systems** | ⏳ In Progress | 32% |
 
 ---
 
@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **65 tests passing** (9 test suites)
+✅ **69 tests passing** (10 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -95,24 +95,22 @@ Last updated: May 10, 2026
 - PathfindingTests: 8
 - GrowthSystemTests: 8
 - GrowthMetricsTests: 3
+- PopulationSystemTests: 4
 
 ---
 
 ## Current Focus
 
-### Backlog Slice 5: Building Growth
+### Backlog Slice 6: Population and Jobs Foundations
 
 Implemented so far:
-- Growth simulation step (`src/systems/GrowthSystem.hpp/.cpp`)
-- Deterministic growth behavior from seed
-- Spawn rules: zoned + road-accessible + demand-weighted chance
-- Balancing rules: demand floor, zone-coverage pressure, road-quality weighting
-- Building spawn integration with `EntityStore` and tile `buildingId`
-- CLI growth commands: `--run-growth N`, `--print-buildings`
-- Growth summary metrics module with fill-rate reporting (`--print-growth-summary`)
-- Growth system tests and CLI smoke verification
-- Long-run growth regression tests (multi-step stabilization + determinism)
+- Population model entities: `PopulationGroup` and `PopulationStore`
+- Deterministic population allocation system (`PopulationSystem`)
+- Housing assignment to residential occupancy and jobs assignment to non-residential occupancy
+- Population summary wiring to city metrics (population, housing/jobs availability, unemployment)
+- CLI population commands: `--seed-population N`, `--print-population-summary`
+- Population allocation tests and CLI smoke verification
 
 Next implementation target:
-- Begin Slice 6: population and job assignment foundations
+- Expand Slice 6 with multi-group demographics and richer employment modeling
 
