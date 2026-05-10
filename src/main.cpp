@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cctype>
 #include "src/core/SimulationTime.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
@@ -61,8 +62,70 @@ void printHelp() {
             << "  --load-city FILE          Load city snapshot JSON from FILE (prints migration diagnostics)\n"
             << "  --inspect-snapshot FILE   Inspect snapshot schema and structural summary\n"
             << "  --benchmark-phase5 N      Run N-tick Phase 5 performance benchmark\n"
+            << "  --benchmark-phase5-focus PHASE  Time only one phase: ALL|GROWTH|POPULATION|TRAFFIC|ECONOMY|SERVICE\n"
             << "  --verify-replay N         Run deterministic replay check using N growth steps\n"
             << "  --help                   Show this help message\n";
+}
+
+enum class BenchmarkFocus {
+  All,
+  Growth,
+  Population,
+  Traffic,
+  Economy,
+  Service
+};
+
+bool parseBenchmarkFocus(const std::string& raw, BenchmarkFocus& out) {
+  std::string value = raw;
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+    return static_cast<char>(std::toupper(c));
+  });
+
+  if (value == "ALL") {
+    out = BenchmarkFocus::All;
+    return true;
+  }
+  if (value == "GROWTH") {
+    out = BenchmarkFocus::Growth;
+    return true;
+  }
+  if (value == "POPULATION") {
+    out = BenchmarkFocus::Population;
+    return true;
+  }
+  if (value == "TRAFFIC") {
+    out = BenchmarkFocus::Traffic;
+    return true;
+  }
+  if (value == "ECONOMY") {
+    out = BenchmarkFocus::Economy;
+    return true;
+  }
+  if (value == "SERVICE") {
+    out = BenchmarkFocus::Service;
+    return true;
+  }
+  return false;
+}
+
+const char* benchmarkFocusToString(BenchmarkFocus focus) {
+  switch (focus) {
+    case BenchmarkFocus::All:
+      return "ALL";
+    case BenchmarkFocus::Growth:
+      return "GROWTH";
+    case BenchmarkFocus::Population:
+      return "POPULATION";
+    case BenchmarkFocus::Traffic:
+      return "TRAFFIC";
+    case BenchmarkFocus::Economy:
+      return "ECONOMY";
+    case BenchmarkFocus::Service:
+      return "SERVICE";
+    default:
+      return "ALL";
+  }
 }
 
 void printServiceSummary(const ServiceCoverageSummary& summary) {
@@ -446,6 +509,7 @@ void seedBenchmarkScenario(CityMap& map, RoadNetwork& roads) {
 
 void printBenchmarkResults(
   int benchmarkTicks,
+  BenchmarkFocus focus,
   double growthMs,
   double populationMs,
   double trafficMs,
@@ -455,19 +519,34 @@ void printBenchmarkResults(
   uint32_t finalPopulation
 ) {
   const double totalMs = growthMs + populationMs + trafficMs + economyMs + serviceMs;
+  const auto printPhaseTime = [](const char* label, double value, bool included) {
+    std::cout << "    " << label << ": ";
+    if (included) {
+      std::cout << value << " ms\n";
+    } else {
+      std::cout << "excluded by focus\n";
+    }
+  };
+
+  const bool includeGrowth = (focus == BenchmarkFocus::All || focus == BenchmarkFocus::Growth);
+  const bool includePopulation = (focus == BenchmarkFocus::All || focus == BenchmarkFocus::Population);
+  const bool includeTraffic = (focus == BenchmarkFocus::All || focus == BenchmarkFocus::Traffic);
+  const bool includeEconomy = (focus == BenchmarkFocus::All || focus == BenchmarkFocus::Economy);
+  const bool includeService = (focus == BenchmarkFocus::All || focus == BenchmarkFocus::Service);
 
   std::cout << "Phase 5 Performance Benchmark:\n";
   std::cout << "  Ticks: " << benchmarkTicks << "\n";
+  std::cout << "  Focus: " << benchmarkFocusToString(focus) << "\n";
   std::cout << "  Final Buildings: " << buildingCount << "\n";
   std::cout << "  Final Population: " << finalPopulation << "\n";
   std::cout << "  Total Time: " << std::fixed << std::setprecision(2) << totalMs << " ms\n";
   std::cout << "  Avg/Tick: " << (benchmarkTicks > 0 ? (totalMs / benchmarkTicks) : 0.0) << " ms\n";
   std::cout << "  Breakdown:\n";
-  std::cout << "    Growth: " << growthMs << " ms\n";
-  std::cout << "    Population: " << populationMs << " ms\n";
-  std::cout << "    Traffic: " << trafficMs << " ms\n";
-  std::cout << "    Economy: " << economyMs << " ms\n";
-  std::cout << "    Service: " << serviceMs << " ms\n";
+  printPhaseTime("Growth", growthMs, includeGrowth);
+  printPhaseTime("Population", populationMs, includePopulation);
+  printPhaseTime("Traffic", trafficMs, includeTraffic);
+  printPhaseTime("Economy", economyMs, includeEconomy);
+  printPhaseTime("Service", serviceMs, includeService);
 }
 
 int main(int argc, char* argv[]) {
@@ -497,6 +576,7 @@ int main(int argc, char* argv[]) {
   int renderViewX = 0, renderViewY = 0, renderViewW = -1, renderViewH = -1;
   int verifyReplayGrowthSteps = -1;
   int benchmarkPhase5Ticks = -1;
+  BenchmarkFocus benchmarkPhase5Focus = BenchmarkFocus::All;
   std::string saveCityPath;
   std::string loadCityPath;
   std::string inspectSnapshotPath;
@@ -600,6 +680,11 @@ int main(int argc, char* argv[]) {
       inspectSnapshotPath = argv[++i];
     } else if (arg == "--benchmark-phase5" && i + 1 < argc) {
       benchmarkPhase5Ticks = std::atoi(argv[++i]);
+    } else if (arg == "--benchmark-phase5-focus" && i + 1 < argc) {
+      if (!parseBenchmarkFocus(argv[++i], benchmarkPhase5Focus)) {
+        std::cerr << "Error: Unknown benchmark focus. Use ALL, GROWTH, POPULATION, TRAFFIC, ECONOMY, or SERVICE\n";
+        return 1;
+      }
     } else if (arg == "--verify-replay" && i + 1 < argc) {
       verifyReplayGrowthSteps = std::atoi(argv[++i]);
     }
@@ -633,7 +718,8 @@ int main(int argc, char* argv[]) {
 
     if (benchmarkPhase5Ticks >= 0) {
       std::cout << "Running Phase 5 benchmark on " << mapSize << "x" << mapSize
-                << " map for " << benchmarkPhase5Ticks << " ticks...\n";
+                << " map for " << benchmarkPhase5Ticks << " ticks"
+                << " (focus=" << benchmarkFocusToString(benchmarkPhase5Focus) << ")...\n";
 
       CityMap benchmarkMap({mapSize, mapSize});
       RoadNetwork benchmarkRoads(benchmarkMap);
@@ -660,33 +746,57 @@ int main(int argc, char* argv[]) {
         const uint32_t tickSeed = seed + static_cast<uint32_t>(tick * 13);
         const ZoneDemand demand = Zoning::calculateDemand(tickSeed);
 
-        auto t0 = std::chrono::steady_clock::now();
-        (void)GrowthSystem::runStep(benchmarkMap, benchmarkRoads, benchmarkStore, demand, tickSeed, 0.30f);
-        auto t1 = std::chrono::steady_clock::now();
+        if (benchmarkPhase5Focus == BenchmarkFocus::All || benchmarkPhase5Focus == BenchmarkFocus::Growth) {
+          auto t0 = std::chrono::steady_clock::now();
+          (void)GrowthSystem::runStep(benchmarkMap, benchmarkRoads, benchmarkStore, demand, tickSeed, 0.30f);
+          auto t1 = std::chrono::steady_clock::now();
+          growthMs += std::chrono::duration<double, std::milli>(t1 - t0).count();
+        } else {
+          (void)GrowthSystem::runStep(benchmarkMap, benchmarkRoads, benchmarkStore, demand, tickSeed, 0.30f);
+        }
 
         const uint32_t requestedPopulation = static_cast<uint32_t>(std::max(1000, mapSize * mapSize / 2))
           + static_cast<uint32_t>((tick % 12) * 100);
-        (void)PopulationSystem::allocate(benchmarkStore, benchmarkPopulation, requestedPopulation, tickSeed + 1);
-        auto t2 = std::chrono::steady_clock::now();
+        if (benchmarkPhase5Focus == BenchmarkFocus::All || benchmarkPhase5Focus == BenchmarkFocus::Population) {
+          auto t0 = std::chrono::steady_clock::now();
+          (void)PopulationSystem::allocate(benchmarkStore, benchmarkPopulation, requestedPopulation, tickSeed + 1);
+          auto t1 = std::chrono::steady_clock::now();
+          populationMs += std::chrono::duration<double, std::milli>(t1 - t0).count();
+        } else {
+          (void)PopulationSystem::allocate(benchmarkStore, benchmarkPopulation, requestedPopulation, tickSeed + 1);
+        }
 
-        (void)TrafficSystem::simulateCommutes(benchmarkStore, benchmarkPopulation, benchmarkRoads, tickSeed + 2);
-        auto t3 = std::chrono::steady_clock::now();
+        if (benchmarkPhase5Focus == BenchmarkFocus::All || benchmarkPhase5Focus == BenchmarkFocus::Traffic) {
+          auto t0 = std::chrono::steady_clock::now();
+          (void)TrafficSystem::simulateCommutes(benchmarkStore, benchmarkPopulation, benchmarkRoads, tickSeed + 2);
+          auto t1 = std::chrono::steady_clock::now();
+          trafficMs += std::chrono::duration<double, std::milli>(t1 - t0).count();
+        } else {
+          (void)TrafficSystem::simulateCommutes(benchmarkStore, benchmarkPopulation, benchmarkRoads, tickSeed + 2);
+        }
 
-        (void)EconomySystem::calculateEconomy(benchmarkStore, benchmarkPopulation);
-        auto t4 = std::chrono::steady_clock::now();
+        if (benchmarkPhase5Focus == BenchmarkFocus::All || benchmarkPhase5Focus == BenchmarkFocus::Economy) {
+          auto t0 = std::chrono::steady_clock::now();
+          (void)EconomySystem::calculateEconomy(benchmarkStore, benchmarkPopulation);
+          auto t1 = std::chrono::steady_clock::now();
+          economyMs += std::chrono::duration<double, std::milli>(t1 - t0).count();
+        } else {
+          (void)EconomySystem::calculateEconomy(benchmarkStore, benchmarkPopulation);
+        }
 
-        (void)ServiceSystem::evaluateCoverage(benchmarkStore, benchmarkRoads, benchmarkFacilities);
-        auto t5 = std::chrono::steady_clock::now();
-
-        growthMs += std::chrono::duration<double, std::milli>(t1 - t0).count();
-        populationMs += std::chrono::duration<double, std::milli>(t2 - t1).count();
-        trafficMs += std::chrono::duration<double, std::milli>(t3 - t2).count();
-        economyMs += std::chrono::duration<double, std::milli>(t4 - t3).count();
-        serviceMs += std::chrono::duration<double, std::milli>(t5 - t4).count();
+        if (benchmarkPhase5Focus == BenchmarkFocus::All || benchmarkPhase5Focus == BenchmarkFocus::Service) {
+          auto t0 = std::chrono::steady_clock::now();
+          (void)ServiceSystem::evaluateCoverage(benchmarkStore, benchmarkRoads, benchmarkFacilities);
+          auto t1 = std::chrono::steady_clock::now();
+          serviceMs += std::chrono::duration<double, std::milli>(t1 - t0).count();
+        } else {
+          (void)ServiceSystem::evaluateCoverage(benchmarkStore, benchmarkRoads, benchmarkFacilities);
+        }
       }
 
       printBenchmarkResults(
         benchmarkPhase5Ticks,
+        benchmarkPhase5Focus,
         growthMs,
         populationMs,
         trafficMs,

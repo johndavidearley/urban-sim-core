@@ -34,6 +34,7 @@
 
 6. Phase 5 optimization baseline
 - ✅ Added `--benchmark-phase5 N` CLI command with per-subsystem timing breakdown
+- ✅ Added benchmark focus toggle: `--benchmark-phase5-focus ALL|GROWTH|POPULATION|TRAFFIC|ECONOMY|SERVICE`
 - ✅ Optimized service coverage evaluation using cached facility BFS distance fields
 - ✅ Optimized traffic simulation inner-loop overhead (distribution reuse + direct building pointer sets + road-node precheck)
 

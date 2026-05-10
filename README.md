@@ -52,6 +52,16 @@ cd build
 ctest --verbose
 ```
 
+### Phase 5 Benchmarking
+
+```bash
+./build/UrbanSimCore-cli --size 96 --benchmark-phase5 24
+./build/UrbanSimCore-cli --size 96 --benchmark-phase5 24 --benchmark-phase5-focus TRAFFIC
+./build/UrbanSimCore-cli --size 96 --benchmark-phase5 24 --benchmark-phase5-focus SERVICE
+```
+
+Use `--benchmark-phase5-focus` with one of `ALL`, `GROWTH`, `POPULATION`, `TRAFFIC`, `ECONOMY`, or `SERVICE` to isolate timing for a single subsystem while still executing the full simulation pipeline.
+
 ## Project Structure
 
 - **src/core/** — Foundation (Time, Random, EntityId, Commands)

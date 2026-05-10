@@ -134,6 +134,7 @@ Next implementation target:
 
 Implemented so far:
 - Added CLI benchmark command: `--benchmark-phase5 N`
+- Added benchmark focus toggle: `--benchmark-phase5-focus ALL|GROWTH|POPULATION|TRAFFIC|ECONOMY|SERVICE`
 - Benchmark run seeds a representative zoned/road-connected scenario on configurable map size
 - Reports per-subsystem timing totals and average-per-tick:
 	- Growth
@@ -151,9 +152,12 @@ Implemented so far:
 	- Reused precomputed residential/job building pointer sets for deterministic selection
 	- Added early non-road-endpoint rejection before pathfinding calls
 	- Benchmark smoke runs at `--size 96 --benchmark-phase5 24` now show traffic near ~172-178 ms total (from prior ~185 ms range)
+- Benchmark focus profiling examples validated:
+	- `--benchmark-phase5 24 --benchmark-phase5-focus TRAFFIC` isolates traffic timing while keeping full pipeline execution for stable state evolution
+	- `--benchmark-phase5 24 --benchmark-phase5-focus SERVICE` isolates service timing with the same scenario progression
 
 Next implementation target:
-- Add benchmark toggles to isolate subsystem timing for tighter profiling loops
+- Add richer route diagnostics (per-origin/per-destination filtering)
 
 ---
 
