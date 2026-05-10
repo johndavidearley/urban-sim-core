@@ -20,6 +20,7 @@ add_library(urban_sim_core
   metrics/CityMetrics.cpp
   persistence/SaveLoadSystem.cpp
   persistence/ReplayVerifier.cpp
+  visualization/MapRenderer.cpp
 )
 
 target_include_directories(urban_sim_core PUBLIC

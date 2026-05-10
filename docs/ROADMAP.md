@@ -7,7 +7,7 @@ Last updated: May 10, 2026
 - Backlog Slices 1-10: complete
 - Headless core simulation loop: complete
 - Population, traffic, economy, metrics, and save/load scaffolding: complete
-- Automated validation: 106 tests passing
+- Automated validation: 108 tests passing
 
 ---
 
@@ -96,9 +96,9 @@ Last updated: May 10, 2026
 
 ### Milestone 9: 2D Map Visualization
 - [ ] Integration with SFML or SDL2
-- [ ] Isometric or top-down renderer
-- [ ] Tile, road, building, zone rendering
-- [ ] Zoom and pan controls
+- [x] Isometric or top-down renderer (PPM top-down export scaffold)
+- [x] Tile, road, building, zone rendering
+- [x] Zoom and pan controls (tile scale + viewport render window)
 - [ ] Real-time metrics display
 
 **Deliverable:** 2D visualization of city with buildings, roads, zones.
@@ -176,10 +176,10 @@ Last updated: May 10, 2026
 
 ## Next Targets (Post-Backlog)
 
-1. Visualization entry milestone (map renderer + core overlays)
-2. Save schema versioning and migration guards
-3. Performance pass for larger maps and higher population counts
-4. Service-aware happiness and growth feedback loop
+1. Integrate live renderer backend (SDL2 or SFML) from current PPM scaffold
+2. Real-time metrics HUD in visualization mode
+3. Save schema versioning and migration guards
+4. Performance pass for larger maps and higher population counts
 5. District-level service policies and budget controls
 
 ---

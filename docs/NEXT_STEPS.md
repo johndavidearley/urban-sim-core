@@ -16,7 +16,9 @@
 - ⏭️ Expand load validation for malformed/incompatible data
 
 4. Visualization kickoff
-- ⏭️ Introduce first renderer integration (SDL2/SFML)
+- ✅ Added first visualization scaffold (`MapRenderer`) with PPM export
+- ✅ Added render CLI commands (`--render-map`, `--render-scale`, `--render-view`)
+- ⏭️ Introduce live renderer integration (SDL2/SFML)
 - ⏭️ Render map, roads, zones, and buildings in real time
 
 ---

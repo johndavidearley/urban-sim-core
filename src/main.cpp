@@ -18,6 +18,7 @@
 #include "src/systems/ServiceSystem.hpp"
 #include "src/persistence/SaveLoadSystem.hpp"
 #include "src/persistence/ReplayVerifier.hpp"
+#include "src/visualization/MapRenderer.hpp"
 #include "src/metrics/CityMetrics.hpp"
 #include "src/metrics/GrowthMetrics.hpp"
 
@@ -51,6 +52,9 @@ void printHelp() {
             << "  --run-service-evaluation  Evaluate service coverage from facilities\n"
             << "  --print-service-summary   Print service coverage and satisfaction\n"
             << "  --print-city-summary      Print consolidated city metrics summary\n"
+            << "  --render-map FILE         Render top-down city snapshot to PPM file\n"
+            << "  --render-scale N          Pixel size per tile when rendering (default: 8)\n"
+            << "  --render-view X Y W H     Render viewport rectangle in tiles\n"
             << "  --save-city FILE          Save city snapshot JSON to FILE\n"
             << "  --load-city FILE          Load city snapshot JSON from FILE\n"
             << "  --verify-replay N         Run deterministic replay check using N growth steps\n"
@@ -380,6 +384,10 @@ int main(int argc, char* argv[]) {
   bool runServiceEvaluationFlag = false;
   bool printServiceSummaryFlag = false;
   bool printCitySummaryFlag = false;
+  std::string renderMapPath;
+  int renderScale = 8;
+  bool hasRenderView = false;
+  int renderViewX = 0, renderViewY = 0, renderViewW = -1, renderViewH = -1;
   int verifyReplayGrowthSteps = -1;
   std::string saveCityPath;
   std::string loadCityPath;
@@ -465,6 +473,16 @@ int main(int argc, char* argv[]) {
       printServiceSummaryFlag = true;
     } else if (arg == "--print-city-summary") {
       printCitySummaryFlag = true;
+    } else if (arg == "--render-map" && i + 1 < argc) {
+      renderMapPath = argv[++i];
+    } else if (arg == "--render-scale" && i + 1 < argc) {
+      renderScale = std::atoi(argv[++i]);
+    } else if (arg == "--render-view" && i + 4 < argc) {
+      renderViewX = std::atoi(argv[++i]);
+      renderViewY = std::atoi(argv[++i]);
+      renderViewW = std::atoi(argv[++i]);
+      renderViewH = std::atoi(argv[++i]);
+      hasRenderView = true;
     } else if (arg == "--save-city" && i + 1 < argc) {
       saveCityPath = argv[++i];
     } else if (arg == "--load-city" && i + 1 < argc) {
@@ -771,6 +789,23 @@ int main(int argc, char* argv[]) {
       std::cout << MetricsSystem::createCitySummaryReport(summaryMetrics);
     }
 
+    if (!renderMapPath.empty()) {
+      RenderOptions renderOptions;
+      renderOptions.tilePixels = std::max(1, renderScale);
+      if (hasRenderView) {
+        renderOptions.viewX = renderViewX;
+        renderOptions.viewY = renderViewY;
+        renderOptions.viewWidth = renderViewW;
+        renderOptions.viewHeight = renderViewH;
+      }
+
+      if (!MapRenderer::renderToPPM(renderMapPath, map, store, renderOptions)) {
+        std::cerr << "Error: Failed to render map to '" << renderMapPath << "'\n";
+        return 1;
+      }
+      std::cout << "Rendered map image to " << renderMapPath << "\n";
+    }
+
     if (findPathX1 >= 0) {
       Pathfinding::Path path = Pathfinding::findShortestPath(
         roads, {findPathX1, findPathY1}, {findPathX2, findPathY2}
@@ -786,7 +821,7 @@ int main(int argc, char* argv[]) {
         printPopulationGroupsFlag || runCommuteSimulationFlag || printTrafficSummaryFlag ||
         printTopEdgesCount > 0 || runEconomyCalculationFlag || printBudgetSummaryFlag ||
         runServiceEvaluationFlag || printServiceSummaryFlag || !serviceRequests.empty() ||
-        printCitySummaryFlag || !saveCityPath.empty() || !loadCityPath.empty()) {
+        printCitySummaryFlag || !renderMapPath.empty() || !saveCityPath.empty() || !loadCityPath.empty()) {
       if (!saveIfRequested()) return 1;
       return 0;
     }

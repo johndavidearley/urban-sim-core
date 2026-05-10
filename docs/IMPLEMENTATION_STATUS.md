@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **106 tests passing** (16 test suites)
+✅ **108 tests passing** (17 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -102,6 +102,7 @@ Last updated: May 10, 2026
 - SaveLoadSystemTests: 2
 - ReplayVerifierTests: 2
 - ServiceSystemTests: 2
+- MapRendererTests: 2
 
 ---
 
@@ -135,5 +136,19 @@ Implemented so far:
 - Service system tests validate reachability logic and happiness impact
 
 Next implementation target:
-- Visualization milestone and schema-version hardening
+- Visualization milestone progression and schema-version hardening
+
+---
+
+## Phase 4 Kickoff: Visualization Scaffold
+
+Implemented so far:
+- Added dependency-free top-down renderer module: `MapRenderer`
+- Image export command added: `--render-map FILE`
+- View controls added: `--render-scale N`, `--render-view X Y W H`
+- Rendering includes tiles, roads, and building type color layers
+- Renderer tests validate PPM format and viewport clamping behavior
+
+Next implementation target:
+- Live interactive renderer integration (SDL2 or SFML)
 
