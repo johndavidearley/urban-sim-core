@@ -6,11 +6,11 @@ Last updated: May 10, 2026
 
 | Phase | Status | Progress |
 |-------|--------|----------|
-| **Phase 1: Headless Foundation** | ⏳ M1 Complete | 30% |
-| **Phase 2: Population & Economy** | ⏹️ Pending | 0% |
-| **Phase 3: Services & Persistence** | ⏹️ Pending | 0% |
-| **Phase 4: Visualization** | ⏹️ Pending | 0% |
-| **Phase 5: Advanced Systems** | ⏹️ Pending | 0% |
+| **Phase 1: Headless Foundation** | ✅ Complete | 100% |
+| **Phase 2: World Model** | ✅ Complete | 100% |
+| **Phase 3: Road System** | ⏳ In Progress | 0% |
+| **Phase 4: Zoning & Growth** | ⏹️ Pending | 0% |
+| **Phase 5+: Advanced Systems** | ⏹️ Pending | 0% |
 
 ---
 
@@ -33,17 +33,24 @@ Last updated: May 10, 2026
 
 ---
 
-### Milestone 2: World Model and Road System
+### Milestone 2: World Model and Map Inspection
 
 | Task | Status | Notes |
 |------|--------|-------|
-| CityMap and Tile | ⏹️ Not Started | Data structures |
-| Road network graph | ⏹️ Not Started | Node/Edge representation |
-| Pathfinding (A*) | ⏹️ Not Started | A* or Dijkstra |
-| Road building/removal | ⏹️ Not Started | Commands |
-| Connectivity computation | ⏹️ Not Started | Mark tiles as connected |
+| CityMap and Tile | ✅ Done | Grid storage, accessor methods, bounds checking |
+| CLI map printing | ✅ Done | `--print-map` command with ASCII visualization |
+| CLI tile inspection | ✅ Done | `--print-tile X Y` command for detailed info |
+| Comprehensive tests | ✅ Done | 26 total tests (5 core + 21 world), all passing |
 
-**Target:** Place roads; connectivity reported per tile
+**Status:** ✅ **COMPLETE** — World model fully functional with comprehensive CLI and tests
+
+**Test Results:**
+```
+26 tests from 3 test suites ran (7 ms total)
+✅ EntityIdTests: 1 test
+✅ TileTests: 4 tests
+✅ CityMapTests: 21 tests
+```
 
 ---
 

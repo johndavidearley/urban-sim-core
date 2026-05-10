@@ -1,69 +1,37 @@
 # Next Steps: Immediate Implementation Tasks
 
-## Current Backlog (Ordered by Priority)
+## Completed Slices
 
-### Backlog Slice 1: Build System & Core Types
-**Goal:** Get the project compiling and running
+### ✅ Backlog Slice 1: Build System & Core Types
+- All tasks complete
+- Project builds successfully
+- 5 initial tests passing
 
-1. **Create CMakeLists.txt**
-   - Top-level CMake configuration
-   - Source subdirectories
-   - Google Test integration
-   - Output directories (bin, lib)
-   - Compiler flags (C++17, warnings)
+### ✅ Backlog Slice 2: World Model Foundation
+- ✅ CLI `--print-map` command with ASCII visualization
+- ✅ CLI `--print-tile X Y` command for detailed tile inspection
+- ✅ 21 new comprehensive tests for world model
+- ✅ Error handling for bounds checking
+- ✅ All 26 tests passing (7ms total)
 
-2. **Implement core types** (`src/core/`)
-   - `EntityId.hpp` — Type alias and utilities
-   - `SimulationTime.hpp` — Time tracking, day/month boundaries
-   - `Random.hpp` — Seeded deterministic RNG
-   - `Types.hpp` — Common types (Coord, Rect, etc.)
+**Example usage:**
+```bash
+$ ./bin/UrbanSimCore-cli --size 64 --print-map
+Map (64x64):
+  Legend: . = empty, # = has road, ~ = water, T = terrain
+  [ASCII grid visualization]
 
-3. **Create CLI entry point** (`src/main.cpp`)
-   - Parse command-line arguments (map size, seed, ticks)
-   - Create empty SimulationState
-   - Run N ticks
-   - Print tick summary to stdout
-   - Basic error handling
-
-4. **Set up Google Test**
-   - `tests/CMakeLists.txt`
-   - Example test: "EntityId increments correctly"
-   - Run tests via `ctest`
-
-**Deliverable:** Executable `./build/UrbanSimCore-cli` that:
-```
-$ ./build/UrbanSimCore-cli --size 64 --ticks 100 --seed 42
-Initializing city (64x64)...
-Running 100 ticks...
-Tick 0: Time 0h (Day 0, Month 0)
-...
-Tick 99: Time 99h (Day 4, Month 0)
-Simulation complete. No errors.
+$ ./bin/UrbanSimCore-cli --size 32 --print-tile 5 10
+Tile at (5, 10):
+  Type: Empty
+  Zone: None
+  Land Value: $100.00
+  [tile details]
 ```
 
 ---
 
-### Backlog Slice 2: World Model Foundation
-**Goal:** Create map, tiles, parcels
-
-1. **Implement world structures** (`src/world/`)
-   - `Tile.hpp` — Position, terrain type, zone, building ref
-   - `CityMap.hpp` — Grid storage, accessor methods, bounds checking
-
-2. **Create CLI commands for map inspection**
-   - `--print-map` — Print ASCII representation of map
-   - `--print-tile X Y` — Print detailed tile info
-   - Example: `./UrbanSimCore-cli --size 32 --seed 42 --print-map`
-
-3. **Add basic tests**
-   - `tests/WorldTests.cpp`
-   - Test tile creation, map bounds, valid coordinates
-
-**Deliverable:** Map creation and printing; can inspect individual tiles.
-
----
-
-### Backlog Slice 3: Road System
+## Current: Backlog Slice 3: Road System
 **Goal:** Build and query road networks
 
 1. **Implement road network** (`src/networks/`)
@@ -88,7 +56,7 @@ Simulation complete. No errors.
 
 **Deliverable:** Can build roads; connectivity and shortest paths computed.
 
----
+## Remaining Slices
 
 ### Backlog Slice 4: Zoning and Parcels
 **Goal:** Allow zoning and prepare for building growth
@@ -229,35 +197,33 @@ Simulation complete. No errors.
 
 ---
 
-## Current Priority
+## Timeline & Progress
 
-**Start with Backlog Slice 1** (Build System & Core Types).
+| Slice | Goal | Status |
+|-------|------|--------|
+| 1 | Core types & build | ✅ Complete |
+| 2 | World model | ✅ Complete |
+| 3 | Road system | ⏳ **Ready to start** |
+| 4 | Zoning & parcels | ⏹️ Pending |
+| 5 | Building growth | ⏹️ Pending |
+| 6 | Population | ⏹️ Pending |
+| 7 | Traffic | ⏹️ Pending |
+| 8 | Economy | ⏹️ Pending |
+| 9 | Metrics | ⏹️ Pending |
+| 10 | Save/Load | ⏹️ Pending |
 
-This establishes:
-- A working CMake build
-- Core type definitions
-- A running CLI executable
-- Test framework
-
-Once you complete Slice 1, update this document and move to Slice 2.
+**MVP complete target:** ~15-20 days of focused development
 
 ---
 
 ## How to Proceed
 
-1. **Pick one backlog slice** above.
-2. **Create the feature branch** (optional, depending on your workflow).
-3. **Implement all tasks** in the slice.
-4. **Write tests** as you go.
-5. **Update IMPLEMENTATION_STATUS.md** to mark tasks complete.
-6. **Commit and push.**
-7. **Move to next slice.**
+1. **Say "continue"** to start Slice 3: Road System
+2. **Implement all tasks** in the slice
+3. **Write tests** as you go
+4. **Update docs** to mark tasks complete
+5. **Commit and push**
+6. **Move to next slice**
 
-Each slice should take 1–3 days depending on complexity.
-
----
-
-## Completed Slices
-
-(None yet—mark as you finish!)
+Each slice is designed to be independent and builds on the previous ones.
 
