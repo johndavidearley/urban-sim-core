@@ -24,6 +24,10 @@ void PopulationStore::clear() {
   groups.clear();
 }
 
+void PopulationStore::upsertGroup(const PopulationGroup& group) {
+  groups[group.id] = group;
+}
+
 PopulationGroup* PopulationStore::getGroup(EntityId id) {
   auto it = groups.find(id);
   if (it == groups.end()) {

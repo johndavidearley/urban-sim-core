@@ -14,6 +14,7 @@
 #include "src/systems/TrafficSystem.hpp"
 #include "src/systems/EconomySystem.hpp"
 #include "src/systems/MetricsSystem.hpp"
+#include "src/persistence/SaveLoadSystem.hpp"
 #include "src/metrics/CityMetrics.hpp"
 #include "src/metrics/GrowthMetrics.hpp"
 
@@ -44,7 +45,64 @@ void printHelp() {
             << "  --run-economy-calculation Run economy/tax calculation\n"
             << "  --print-budget-summary    Print revenue/expense/economic health summary\n"
             << "  --print-city-summary      Print consolidated city metrics summary\n"
+            << "  --save-city FILE          Save city snapshot JSON to FILE\n"
+            << "  --load-city FILE          Load city snapshot JSON from FILE\n"
             << "  --help                   Show this help message\n";
+}
+
+PopulationSummary buildPopulationSummaryFromState(
+  const EntityStore& store,
+  const PopulationStore& population
+) {
+  PopulationSummary summary;
+  summary.requestedPopulation = population.getTotalPopulation();
+  summary.housedPopulation = summary.requestedPopulation;
+  summary.employedPopulation = population.getTotalEmployed();
+  summary.unemployedPopulation = summary.housedPopulation - summary.employedPopulation;
+
+  uint32_t housingCapacity = 0;
+  uint32_t jobCapacity = 0;
+  uint32_t occupiedHousing = 0;
+  uint32_t occupiedJobs = 0;
+
+  for (const auto& [id, building] : store.getBuildings()) {
+    (void)id;
+    const uint32_t cap = static_cast<uint32_t>(std::max(0, building.capacity));
+    const uint32_t occ = static_cast<uint32_t>(std::max(0, building.occupancy));
+    if (building.type == BuildingType::Residential) {
+      housingCapacity += cap;
+      occupiedHousing += std::min(cap, occ);
+    } else {
+      jobCapacity += cap;
+      occupiedJobs += std::min(cap, occ);
+    }
+  }
+
+  summary.availableHousing = (housingCapacity > occupiedHousing) ? (housingCapacity - occupiedHousing) : 0;
+  summary.availableJobs = (jobCapacity > occupiedJobs) ? (jobCapacity - occupiedJobs) : 0;
+  summary.unemploymentRate = summary.housedPopulation > 0
+    ? (static_cast<float>(summary.unemployedPopulation) / static_cast<float>(summary.housedPopulation))
+    : 0.0f;
+
+  for (const auto& [id, group] : population.getGroups()) {
+    (void)id;
+    switch (group.band) {
+      case IncomeBand::Low:
+        summary.lowIncomePopulation += group.size;
+        summary.lowIncomeEmployed += group.employed;
+        break;
+      case IncomeBand::Middle:
+        summary.middleIncomePopulation += group.size;
+        summary.middleIncomeEmployed += group.employed;
+        break;
+      case IncomeBand::High:
+        summary.highIncomePopulation += group.size;
+        summary.highIncomeEmployed += group.employed;
+        break;
+    }
+  }
+
+  return summary;
 }
 
 void printMap(const CityMap& map) {
@@ -295,6 +353,8 @@ int main(int argc, char* argv[]) {
   bool runEconomyCalculationFlag = false;
   bool printBudgetSummaryFlag = false;
   bool printCitySummaryFlag = false;
+  std::string saveCityPath;
+  std::string loadCityPath;
   int printTopEdgesCount = -1;
   int zoneX1 = -1, zoneY1 = -1, zoneX2 = -1, zoneY2 = -1;
   std::string zoneTypeRaw;
@@ -366,6 +426,10 @@ int main(int argc, char* argv[]) {
       printBudgetSummaryFlag = true;
     } else if (arg == "--print-city-summary") {
       printCitySummaryFlag = true;
+    } else if (arg == "--save-city" && i + 1 < argc) {
+      saveCityPath = argv[++i];
+    } else if (arg == "--load-city" && i + 1 < argc) {
+      loadCityPath = argv[++i];
     }
   }
   
@@ -380,6 +444,15 @@ int main(int argc, char* argv[]) {
   }
   
   try {
+    CitySnapshot loadedSnapshot;
+    if (!loadCityPath.empty()) {
+      if (!SaveLoadSystem::loadSnapshotFromFile(loadCityPath, loadedSnapshot)) {
+        std::cerr << "Error: Failed to load city snapshot from '" << loadCityPath << "'\n";
+        return 1;
+      }
+      mapSize = loadedSnapshot.width;
+    }
+
     // Initialize city
     std::cout << "Initializing city (" << mapSize << "x" << mapSize << ")...\n";
     CityMap map({mapSize, mapSize});
@@ -392,15 +465,39 @@ int main(int argc, char* argv[]) {
     bool hasPopulationSummary = false;
     bool hasTrafficSummary = false;
     bool hasEconomyState = false;
+
+    auto saveIfRequested = [&]() -> bool {
+      if (saveCityPath.empty()) {
+        return true;
+      }
+      if (!SaveLoadSystem::saveToFile(saveCityPath, map, roads, store, population)) {
+        std::cerr << "Error: Failed to save city snapshot to '" << saveCityPath << "'\n";
+        return false;
+      }
+      std::cout << "City snapshot saved to " << saveCityPath << "\n";
+      return true;
+    };
+
+    if (!loadCityPath.empty()) {
+      if (!SaveLoadSystem::applySnapshot(loadedSnapshot, map, roads, store, population)) {
+        std::cerr << "Error: Loaded snapshot dimensions do not match current city map\n";
+        return 1;
+      }
+      populationSummary = buildPopulationSummaryFromState(store, population);
+      hasPopulationSummary = true;
+      std::cout << "Loaded city snapshot from " << loadCityPath << "\n";
+    }
     
     // Handle inspection commands
     if (printMapFlag) {
       printMap(map);
+      if (!saveIfRequested()) return 1;
       return 0;
     }
     
     if (printTileX >= 0 && printTileY >= 0) {
       printTile(map, printTileX, printTileY);
+      if (!saveIfRequested()) return 1;
       return 0;
     }
 
@@ -576,6 +673,7 @@ int main(int argc, char* argv[]) {
         roads, {findPathX1, findPathY1}, {findPathX2, findPathY2}
       );
       printPath(path);
+      if (!saveIfRequested()) return 1;
       return 0;
     }
 
@@ -584,7 +682,8 @@ int main(int argc, char* argv[]) {
         printGrowthSummaryFlag || seedPopulation >= 0 || printPopulationSummaryFlag ||
         printPopulationGroupsFlag || runCommuteSimulationFlag || printTrafficSummaryFlag ||
         printTopEdgesCount > 0 || runEconomyCalculationFlag || printBudgetSummaryFlag ||
-        printCitySummaryFlag) {
+        printCitySummaryFlag || !saveCityPath.empty() || !loadCityPath.empty()) {
+      if (!saveIfRequested()) return 1;
       return 0;
     }
     
@@ -614,6 +713,10 @@ int main(int argc, char* argv[]) {
     
     std::cout << "\nSimulation complete.\n";
     std::cout << metrics.toString();
+
+    if (!saveIfRequested()) {
+      return 1;
+    }
     
     return 0;
   } catch (const std::exception& e) {

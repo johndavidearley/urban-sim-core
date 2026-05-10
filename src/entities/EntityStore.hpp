@@ -10,6 +10,8 @@ private:
 
 public:
   EntityId createBuilding(BuildingType type, Coord position, int capacity);
+  void clear();
+  void upsertBuilding(const Building& building);
 
   Building* getBuilding(EntityId id);
   const Building* getBuilding(EntityId id) const;

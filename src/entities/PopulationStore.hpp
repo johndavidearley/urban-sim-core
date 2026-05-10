@@ -14,6 +14,7 @@ public:
   EntityId createGroup(IncomeBand band, uint32_t size, uint32_t employed);
   EntityId createGroup(uint32_t size, uint32_t employed);
   void clear();
+  void upsertGroup(const PopulationGroup& group);
 
   PopulationGroup* getGroup(EntityId id);
   const PopulationGroup* getGroup(EntityId id) const;

@@ -17,6 +17,7 @@ add_library(urban_sim_core
   networks/Pathfinding.cpp
   metrics/GrowthMetrics.cpp
   metrics/CityMetrics.cpp
+  persistence/SaveLoadSystem.cpp
 )
 
 target_include_directories(urban_sim_core PUBLIC

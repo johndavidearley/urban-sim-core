@@ -166,9 +166,32 @@
 
 ---
 
+## Current: Backlog Slice 10 - Save and Load
+
+**Goal:** Add persistence scaffolding for city state snapshots
+
+1. **Persistence model** ✅
+- ✅ Added `SaveLoadSystem` snapshot schema and JSON serialization/deserialization
+
+2. **State restoration hooks** ✅
+- ✅ Added store import/reset helpers for buildings and population groups
+- ✅ Added snapshot apply flow for map tiles, roads, congestion, entities, and population
+
+3. **CLI workflow** ✅
+- ✅ Added `--save-city FILE`
+- ✅ Added `--load-city FILE`
+- ✅ Added loaded-state summary bootstrap so reporting commands can run immediately after load
+
+4. **Tests** ✅
+- ✅ Added `SaveLoadSystemTests` for round-trip persistence and failure handling
+
+**Slice 10 status:** ✅ Functionally complete for current scope.
+
+---
+
 ## Remaining Slices
 
-### Backlog Slice 10: Save and Load
+No backlog slices remain in the current 10-slice plan.
 
 ---
 
@@ -185,5 +208,5 @@
 | 7 | Traffic | ✅ Complete |
 | 8 | Economy | ✅ Complete |
 | 9 | Metrics | ✅ Complete |
-| 10 | Save/Load | ⏳ Current |
+| 10 | Save/Load | ✅ Complete |
 

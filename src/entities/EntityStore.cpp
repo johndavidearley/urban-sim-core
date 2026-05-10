@@ -15,6 +15,14 @@ EntityId EntityStore::createBuilding(BuildingType type, Coord position, int capa
   return id;
 }
 
+void EntityStore::clear() {
+  buildings.clear();
+}
+
+void EntityStore::upsertBuilding(const Building& building) {
+  buildings[building.id] = building;
+}
+
 Building* EntityStore::getBuilding(EntityId id) {
   auto it = buildings.find(id);
   if (it == buildings.end()) {

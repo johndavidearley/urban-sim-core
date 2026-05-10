@@ -10,7 +10,7 @@ Last updated: May 10, 2026
 | **Phase 2: World Model** | ✅ Complete | 100% |
 | **Phase 3: Road System** | ✅ Complete | 100% |
 | **Phase 4: Zoning & Parcels** | ✅ Complete | 100% |
-| **Phase 5+: Advanced Systems** | ⏳ In Progress | 70% |
+| **Phase 5+: Advanced Systems** | ✅ Complete | 100% |
 
 ---
 
@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **100 tests passing** (13 test suites)
+✅ **102 tests passing** (14 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -99,21 +99,22 @@ Last updated: May 10, 2026
 - TrafficSystemTests: 10
 - EconomySystemTests: 17
 - MetricsSystemTests: 2
+- SaveLoadSystemTests: 2
 
 ---
 
 ## Current Focus
 
-### Backlog Slice 9: Metrics and Summary
+### Backlog Slice 10: Save and Load
 
 Implemented so far:
-- Centralized metrics aggregation system (`MetricsSystem`)
-- Consolidated report generation (`createCitySummaryReport`)
-- CLI summary workflow command: `--print-city-summary`
-- Metrics pipeline composes outputs from population, traffic, and economy systems
-- Cached CLI traffic/economy summaries to avoid duplicate simulation in chained commands
-- Metrics system tests added for aggregation and report formatting
+- Persistence module added: `SaveLoadSystem` with JSON snapshot capture/apply
+- City snapshot format includes map tiles, roads, buildings, and population groups
+- CLI save/load commands added: `--save-city FILE`, `--load-city FILE`
+- Snapshot loading bootstraps map size and restores entity/population/network state
+- End-to-end save then load workflow validated through CLI
+- Save/load tests added for round-trip and missing-file handling
 
 Next implementation target:
-- Begin Slice 10: save/load serialization and persistence workflows
+- Transition from backlog slices to next-phase polish/refinement tasks
 
