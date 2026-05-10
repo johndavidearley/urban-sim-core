@@ -34,5 +34,19 @@ add_executable(UrbanSimCore-cli
 
 target_link_libraries(UrbanSimCore-cli PRIVATE urban_sim_core)
 
+# Optional live visualizer (SDL2)
+find_package(SDL2 QUIET)
+if(SDL2_FOUND)
+  add_executable(UrbanSimCore-visualizer
+    visualization/VisualizerSDL.cpp
+  )
+  target_link_libraries(UrbanSimCore-visualizer PRIVATE urban_sim_core SDL2::SDL2)
+  target_compile_definitions(UrbanSimCore-visualizer PRIVATE URBAN_SIM_HAS_SDL2=1)
+  install(TARGETS UrbanSimCore-visualizer DESTINATION bin)
+  message(STATUS "SDL2 found: building UrbanSimCore-visualizer")
+else()
+  message(STATUS "SDL2 not found: skipping UrbanSimCore-visualizer target")
+endif()
+
 # Install
 install(TARGETS UrbanSimCore-cli DESTINATION bin)

@@ -147,8 +147,10 @@ Implemented so far:
 - Image export command added: `--render-map FILE`
 - View controls added: `--render-scale N`, `--render-view X Y W H`
 - Rendering includes tiles, roads, and building type color layers
+- Optional SDL2 live visualizer target added: `UrbanSimCore-visualizer`
+- Live visualizer includes keyboard pan/zoom controls (arrows, +/-)
 - Renderer tests validate PPM format and viewport clamping behavior
 
 Next implementation target:
-- Live interactive renderer integration (SDL2 or SFML)
+- Real-time metrics HUD and overlay layers in live visualization mode
 

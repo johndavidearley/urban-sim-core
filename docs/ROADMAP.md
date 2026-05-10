@@ -95,7 +95,7 @@ Last updated: May 10, 2026
 ## Phase 4: Visualization (M9–M10)
 
 ### Milestone 9: 2D Map Visualization
-- [ ] Integration with SFML or SDL2
+- [x] Integration path for SDL2 (optional CMake target `UrbanSimCore-visualizer`)
 - [x] Isometric or top-down renderer (PPM top-down export scaffold)
 - [x] Tile, road, building, zone rendering
 - [x] Zoom and pan controls (tile scale + viewport render window)
