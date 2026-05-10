@@ -176,11 +176,11 @@ Last updated: May 10, 2026
 
 ## Next Targets (Post-Backlog)
 
-1. Save schema versioning and migration guards
-2. Performance pass for larger maps and higher population counts
-3. District-level service policies and budget controls
-4. Add richer route diagnostics (per-origin/per-destination filtering)
-5. Add visualization-side origin/destination route filters
+1. Performance pass for larger maps and higher population counts
+2. District-level service policies and budget controls
+3. Add richer route diagnostics (per-origin/per-destination filtering)
+4. Add visualization-side origin/destination route filters
+5. Add persistence diagnostics/reporting for migration outcomes
 
 ---
 

@@ -126,7 +126,25 @@ Implemented so far:
 - Pause/resume and deterministic single-step tick controls added (`Space`, `.`/`N`)
 
 Next implementation target:
-- Persistence schema version migration guards
+- Performance pass and advanced route diagnostics
+
+---
+
+## Persistence Hardening (Post-Backlog)
+
+Implemented so far:
+- Snapshot schema migration guard added for legacy version `0` snapshots (auto-migrated to current schema)
+- Snapshot version gate added to reject unsupported future versions
+- Structural/data validation added before apply/load:
+	- dimensions and tile-count integrity
+	- tile coordinate uniqueness and bounds checks
+	- building reference integrity from tiles
+	- occupancy/employment consistency checks
+	- road adjacency and load sanity checks
+- Save/load tests expanded to cover migration and malformed snapshot rejection
+
+Next implementation target:
+- Optional migration diagnostics output during CLI load flows
 
 ---
 
@@ -162,5 +180,5 @@ Implemented so far:
 - Renderer tests validate PPM format and viewport clamping behavior
 
 Next implementation target:
-- Schema-version hardening and load validation expansion
+- Performance tuning and route diagnostics refinement
 

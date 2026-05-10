@@ -1,8 +1,12 @@
 #include <filesystem>
+#include <fstream>
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include "src/persistence/SaveLoadSystem.hpp"
+
+using nlohmann::json;
 
 TEST(SaveLoadSystemTests, SaveAndLoadRoundTripPreservesCoreState) {
   CityMap map({8, 8});
@@ -73,4 +77,130 @@ TEST(SaveLoadSystemTests, LoadSnapshotFromMissingFileFails) {
 
   std::filesystem::remove(missingPath);
   EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(missingPath.string(), snapshot));
+}
+
+TEST(SaveLoadSystemTests, MigratesLegacyVersionZeroSnapshotToCurrent) {
+  const std::filesystem::path filePath =
+    std::filesystem::temp_directory_path() / "urban_sim_core_legacy_v0_snapshot.json";
+
+  json root;
+  root["version"] = 0;
+  root["width"] = 4;
+  root["height"] = 4;
+  root["tiles"] = json::array();
+  for (int y = 0; y < 4; ++y) {
+    for (int x = 0; x < 4; ++x) {
+      root["tiles"].push_back(json{
+        {"x", x},
+        {"y", y},
+        {"type", 0},
+        {"zone", 0},
+        {"landValue", 100.0f},
+        {"pollution", 0.0f},
+        {"hasRoad", false}
+      });
+    }
+  }
+  root["buildings"] = json::array();
+
+  std::ofstream out(filePath);
+  ASSERT_TRUE(out.is_open());
+  out << root.dump(2);
+  out.close();
+
+  CitySnapshot snapshot;
+  ASSERT_TRUE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot));
+  EXPECT_EQ(snapshot.version, 1);
+  EXPECT_EQ(snapshot.width, 4);
+  EXPECT_EQ(snapshot.height, 4);
+  EXPECT_EQ(snapshot.tiles.size(), 16u);
+
+  CityMap map({4, 4});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  EXPECT_TRUE(SaveLoadSystem::applySnapshot(snapshot, map, roads, store, population));
+
+  std::filesystem::remove(filePath);
+}
+
+TEST(SaveLoadSystemTests, RejectsUnsupportedFutureSnapshotVersion) {
+  const std::filesystem::path filePath =
+    std::filesystem::temp_directory_path() / "urban_sim_core_unsupported_version_snapshot.json";
+
+  json root;
+  root["version"] = 99;
+  root["map"] = {{"width", 2}, {"height", 2}};
+  root["tiles"] = json::array();
+  for (int y = 0; y < 2; ++y) {
+    for (int x = 0; x < 2; ++x) {
+      root["tiles"].push_back(json{
+        {"x", x},
+        {"y", y},
+        {"type", 0},
+        {"zone", 0},
+        {"landValue", 100.0f},
+        {"pollution", 0.0f},
+        {"hasRoad", false},
+        {"connectedToRoad", false},
+        {"connectedToPower", true},
+        {"connectedToWater", true},
+        {"buildingId", 0}
+      });
+    }
+  }
+  root["buildings"] = json::array();
+  root["populationGroups"] = json::array();
+  root["roads"] = json::array();
+
+  std::ofstream out(filePath);
+  ASSERT_TRUE(out.is_open());
+  out << root.dump(2);
+  out.close();
+
+  CitySnapshot snapshot;
+  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot));
+
+  std::filesystem::remove(filePath);
+}
+
+TEST(SaveLoadSystemTests, RejectsSnapshotWithInvalidBuildingReference) {
+  const std::filesystem::path filePath =
+    std::filesystem::temp_directory_path() / "urban_sim_core_invalid_building_ref_snapshot.json";
+
+  json root;
+  root["version"] = 1;
+  root["map"] = {{"width", 3}, {"height", 3}};
+  root["tiles"] = json::array();
+  for (int y = 0; y < 3; ++y) {
+    for (int x = 0; x < 3; ++x) {
+      const uint32_t buildingId = (x == 1 && y == 1) ? 4242u : 0u;
+      root["tiles"].push_back(json{
+        {"x", x},
+        {"y", y},
+        {"type", 0},
+        {"zone", 1},
+        {"landValue", 100.0f},
+        {"pollution", 0.0f},
+        {"hasRoad", false},
+        {"connectedToRoad", false},
+        {"connectedToPower", true},
+        {"connectedToWater", true},
+        {"buildingId", buildingId}
+      });
+    }
+  }
+  root["buildings"] = json::array();
+  root["populationGroups"] = json::array();
+  root["roads"] = json::array();
+
+  std::ofstream out(filePath);
+  ASSERT_TRUE(out.is_open());
+  out << root.dump(2);
+  out.close();
+
+  CitySnapshot snapshot;
+  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot));
+
+  std::filesystem::remove(filePath);
 }

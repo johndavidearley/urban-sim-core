@@ -12,8 +12,8 @@
 - ✅ Added CLI service commands (`--add-service`, `--run-service-evaluation`, `--print-service-summary`)
 
 3. Persistence hardening
-- ⏭️ Add snapshot schema version migration guards
-- ⏭️ Expand load validation for malformed/incompatible data
+- ✅ Added snapshot schema version migration guards (legacy v0 -> v1)
+- ✅ Expanded load validation for malformed/incompatible data
 
 4. Visualization kickoff
 - ✅ Added first visualization scaffold (`MapRenderer`) with PPM export

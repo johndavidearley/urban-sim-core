@@ -1,12 +1,191 @@
 #include "SaveLoadSystem.hpp"
 
+#include <cstdlib>
 #include <fstream>
+#include <unordered_set>
 
 #include <nlohmann/json.hpp>
 
 using nlohmann::json;
 
 namespace {
+constexpr int kCurrentSnapshotVersion = 1;
+constexpr int kMinimumSupportedSnapshotVersion = 0;
+
+bool isTileTypeValid(int type) {
+  return type >= 0 && type <= 2;
+}
+
+bool isZoneValid(int zone) {
+  return zone >= 0 && zone <= 4;
+}
+
+bool isBuildingTypeValid(int type) {
+  return type >= static_cast<int>(BuildingType::Residential)
+      && type <= static_cast<int>(BuildingType::Industrial);
+}
+
+bool isIncomeBandValid(int band) {
+  return band >= static_cast<int>(IncomeBand::Low)
+      && band <= static_cast<int>(IncomeBand::High);
+}
+
+bool isInBounds(int x, int y, int width, int height) {
+  return x >= 0 && y >= 0 && x < width && y < height;
+}
+
+bool areAdjacentCardinal(const glm::ivec2& a, const glm::ivec2& b) {
+  const int dx = std::abs(a.x - b.x);
+  const int dy = std::abs(a.y - b.y);
+  return (dx + dy) == 1;
+}
+
+int64_t tileKey(int x, int y) {
+  return (static_cast<int64_t>(x) << 32) ^ static_cast<uint32_t>(y);
+}
+
+bool migrateSnapshotJsonToCurrent(json& root) {
+  if (!root.is_object()) {
+    return false;
+  }
+
+  const int sourceVersion = root.value("version", 0);
+  if (sourceVersion < kMinimumSupportedSnapshotVersion || sourceVersion > kCurrentSnapshotVersion) {
+    return false;
+  }
+
+  if (sourceVersion == 0) {
+    if (!root.contains("map")) {
+      if (!root.contains("width") || !root.contains("height")) {
+        return false;
+      }
+      root["map"] = {
+        {"width", root.at("width")},
+        {"height", root.at("height")}
+      };
+    }
+
+    if (!root.contains("tiles") || !root["tiles"].is_array()) {
+      return false;
+    }
+
+    for (auto& tileJson : root["tiles"]) {
+      if (!tileJson.is_object()) {
+        return false;
+      }
+      if (!tileJson.contains("connectedToPower")) {
+        tileJson["connectedToPower"] = true;
+      }
+      if (!tileJson.contains("connectedToWater")) {
+        tileJson["connectedToWater"] = true;
+      }
+      if (!tileJson.contains("connectedToRoad")) {
+        tileJson["connectedToRoad"] = tileJson.value("hasRoad", false);
+      }
+      if (!tileJson.contains("buildingId")) {
+        tileJson["buildingId"] = 0;
+      }
+    }
+
+    if (!root.contains("buildings")) {
+      root["buildings"] = json::array();
+    }
+    if (!root.contains("populationGroups")) {
+      root["populationGroups"] = json::array();
+    }
+    if (!root.contains("roads")) {
+      root["roads"] = json::array();
+    }
+
+    root["version"] = kCurrentSnapshotVersion;
+  }
+
+  return root.value("version", -1) == kCurrentSnapshotVersion;
+}
+
+bool validateSnapshot(const CitySnapshot& snapshot) {
+  if (snapshot.version != kCurrentSnapshotVersion) {
+    return false;
+  }
+
+  if (snapshot.width <= 0 || snapshot.height <= 0) {
+    return false;
+  }
+
+  const size_t expectedTileCount = static_cast<size_t>(snapshot.width) * static_cast<size_t>(snapshot.height);
+  if (snapshot.tiles.size() != expectedTileCount) {
+    return false;
+  }
+
+  std::unordered_set<int64_t> seenTiles;
+  seenTiles.reserve(snapshot.tiles.size());
+
+  std::unordered_set<uint32_t> buildingIds;
+  buildingIds.reserve(snapshot.buildings.size());
+
+  for (const Building& building : snapshot.buildings) {
+    if (building.id == EntityIdUtils::NullEntity) {
+      return false;
+    }
+    if (!isBuildingTypeValid(static_cast<int>(building.type))) {
+      return false;
+    }
+    if (!isInBounds(building.position.x, building.position.y, snapshot.width, snapshot.height)) {
+      return false;
+    }
+    if (building.capacity < 0 || building.occupancy < 0 || building.occupancy > building.capacity) {
+      return false;
+    }
+    buildingIds.insert(static_cast<uint32_t>(building.id));
+  }
+
+  for (const PopulationGroup& group : snapshot.populationGroups) {
+    if (group.id == EntityIdUtils::NullEntity) {
+      return false;
+    }
+    if (!isIncomeBandValid(static_cast<int>(group.band))) {
+      return false;
+    }
+    if (group.employed > group.size) {
+      return false;
+    }
+  }
+
+  for (const SerializedTile& tile : snapshot.tiles) {
+    if (!isInBounds(tile.x, tile.y, snapshot.width, snapshot.height)) {
+      return false;
+    }
+    if (!isTileTypeValid(tile.type) || !isZoneValid(tile.zone)) {
+      return false;
+    }
+    if (tile.buildingId != 0 && buildingIds.find(tile.buildingId) == buildingIds.end()) {
+      return false;
+    }
+
+    const int64_t key = tileKey(tile.x, tile.y);
+    if (!seenTiles.insert(key).second) {
+      return false;
+    }
+  }
+
+  for (const SerializedRoad& road : snapshot.roads) {
+    if (!isInBounds(road.from.x, road.from.y, snapshot.width, snapshot.height)) {
+      return false;
+    }
+    if (!isInBounds(road.to.x, road.to.y, snapshot.width, snapshot.height)) {
+      return false;
+    }
+    if (!areAdjacentCardinal(road.from, road.to)) {
+      return false;
+    }
+    if (road.currentLoad < 0.0f) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 json coordToJson(const glm::ivec2& coord) {
   return json{{"x", coord.x}, {"y", coord.y}};
 }
@@ -61,6 +240,7 @@ CitySnapshot SaveLoadSystem::captureSnapshot(
   const PopulationStore& population
 ) {
   CitySnapshot snapshot;
+  snapshot.version = kCurrentSnapshotVersion;
   const glm::ivec2 dims = map.getDimensions();
   snapshot.width = dims.x;
   snapshot.height = dims.y;
@@ -117,9 +297,13 @@ bool SaveLoadSystem::applySnapshot(
   if (snapshot.width != dims.x || snapshot.height != dims.y) {
     return false;
   }
+  if (!validateSnapshot(snapshot)) {
+    return false;
+  }
 
   store.clear();
   population.clear();
+  roads.resetCongestion();
 
   for (const SerializedTile& serialized : snapshot.tiles) {
     if (!map.isValid({serialized.x, serialized.y})) {
@@ -230,8 +414,12 @@ bool SaveLoadSystem::loadSnapshotFromFile(const std::string& filePath, CitySnaps
   try {
     in >> root;
 
+    if (!migrateSnapshotJsonToCurrent(root)) {
+      return false;
+    }
+
     snapshot = CitySnapshot{};
-    snapshot.version = root.value("version", 1);
+    snapshot.version = root.value("version", kCurrentSnapshotVersion);
     snapshot.width = root.at("map").at("width").get<int>();
     snapshot.height = root.at("map").at("height").get<int>();
 
@@ -251,15 +439,15 @@ bool SaveLoadSystem::loadSnapshotFromFile(const std::string& filePath, CitySnaps
       snapshot.tiles.push_back(tile);
     }
 
-    for (const auto& buildingJson : root.at("buildings")) {
+    for (const auto& buildingJson : root.value("buildings", json::array())) {
       snapshot.buildings.push_back(buildingFromJson(buildingJson));
     }
 
-    for (const auto& groupJson : root.at("populationGroups")) {
+    for (const auto& groupJson : root.value("populationGroups", json::array())) {
       snapshot.populationGroups.push_back(groupFromJson(groupJson));
     }
 
-    for (const auto& roadJson : root.at("roads")) {
+    for (const auto& roadJson : root.value("roads", json::array())) {
       SerializedRoad road;
       road.from = coordFromJson(roadJson.at("from"));
       road.to = coordFromJson(roadJson.at("to"));
@@ -270,7 +458,7 @@ bool SaveLoadSystem::loadSnapshotFromFile(const std::string& filePath, CitySnaps
     return false;
   }
 
-  return true;
+  return validateSnapshot(snapshot);
 }
 
 bool SaveLoadSystem::loadFromFile(
