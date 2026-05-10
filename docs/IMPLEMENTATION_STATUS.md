@@ -10,7 +10,7 @@ Last updated: May 10, 2026
 | **Phase 2: World Model** | ✅ Complete | 100% |
 | **Phase 3: Road System** | ✅ Complete | 100% |
 | **Phase 4: Zoning & Parcels** | ✅ Complete | 100% |
-| **Phase 5+: Advanced Systems** | ⏳ In Progress | 45% |
+| **Phase 5+: Advanced Systems** | ⏳ In Progress | 50% |
 
 ---
 
@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **71 tests passing** (10 test suites)
+✅ **81 tests passing** (11 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -95,24 +95,28 @@ Last updated: May 10, 2026
 - PathfindingTests: 8
 - GrowthSystemTests: 8
 - GrowthMetricsTests: 3
-- PopulationSystemTests: 5
+- PopulationSystemTests: 6
+- TrafficSystemTests: 10
 
 ---
 
 ## Current Focus
 
-### Backlog Slice 6: Population and Jobs Foundations
+### Backlog Slice 7: Traffic and Commute System
 
 Implemented so far:
-- Population model entities: `PopulationGroup` and `PopulationStore`
-- Multi-group composition with income bands (low/middle/high)
-- Deterministic population allocation system (`PopulationSystem`)
-- Housing assignment to residential occupancy and jobs assignment to non-residential occupancy
-- Income-band-based job matching constraints (commercial vs industrial preference)
-- Population summary wiring to city metrics (population, housing/jobs availability, unemployment)
-- CLI population commands: `--seed-population N`, `--print-population-summary`, `--print-population-groups`
-- Population allocation/composition/job-matching tests and CLI smoke verification
+- Traffic/commute data structures: `TrafficSummary`, `EdgeTrafficData`
+- RoadNetwork API extensions: `resetCongestion()`, `getAllEdgeTraffic()`
+- Deterministic commute simulation engine (`TrafficSystem`)
+- Commute pathfinding using existing Dijkstra with congestion awareness
+- Traffic load accumulation on edges from employed population commutes
+- Commute time and burden calculation (average commute time)
+- Edge congestion metrics aggregation
+- Metrics integration: commute burden and traffic congestion applied to city happiness
+- Top congested edges reporting
+- CLI traffic commands: `--run-commute-simulation`, `--print-traffic-summary`, `--print-top-edges N`
+- Traffic system tests: 10 comprehensive tests covering determinism, edge cases, and metrics
 
 Next implementation target:
-- Begin Slice 7: traffic and commute modeling foundations
+- Begin Slice 8: economy and finances system
 

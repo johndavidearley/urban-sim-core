@@ -92,17 +92,53 @@
 
 **Goal:** Introduce commute time and congestion impact from worker movement
 
-1. **Commute modeling**
-- Add assignment of employed groups to route demand
+1. **Commute modeling** ✅
+- ✅ Assignment of employed groups to commute routes
+- ✅ Deterministic seed-based commute distribution
 
-2. **Traffic accumulation**
-- Map commuter flows onto road network edges
+2. **Traffic accumulation** ✅
+- ✅ Commuter flows mapped onto road network edges
+- ✅ Per-edge load tracking with congestion calculation
 
-3. **Metrics impact**
-- Feed commute burden / congestion into city metrics
+3. **Metrics impact** ✅
+- ✅ Commute burden applied to city metrics
+- ✅ Congestion affects happiness calculation
+- ✅ Average commute time reported
 
-4. **Tests**
-- Deterministic commute and congestion behavior
+4. **Tests** ✅
+- ✅ 10 comprehensive TrafficSystemTests
+- ✅ Deterministic commute and congestion behavior
+- ✅ Edge cases (no buildings, no employment, etc.)
+
+5. **CLI Commands** ✅
+- ✅ `--run-commute-simulation` - Execute traffic simulation
+- ✅ `--print-traffic-summary` - Display commute metrics
+- ✅ `--print-top-edges N` - Show most congested roads
+
+**Slice 7 status:** ✅ Functionally complete for current scope.
+
+---
+
+## Current: Backlog Slice 8 - Economy and Finances
+
+**Goal:** Model city budget, taxation, and economic impact
+
+1. **City budget system**
+- Implement taxation from population/buildings
+- Track city revenue and expenses
+- Calculate balance/debt
+
+2. **Building maintenance costs**
+- Residential/commercial/industrial maintenance expenses
+- Variable costs based on age/condition (future)
+
+3. **Economic impact on growth**
+- City budget affects ability to provide services
+- Economic zones expand/contract based on finances
+
+4. **CLI commands**
+- `--print-budget-summary` - Show revenue/expenses/balance
+- `--print-economic-zones` - Show economic indicators
 
 ---
 

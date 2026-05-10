@@ -203,3 +203,25 @@ std::vector<glm::ivec2> RoadNetwork::getAllRoadTiles() const {
   
   return roads;
 }
+
+void RoadNetwork::resetCongestion() {
+  for (auto& [key, edge] : edges) {
+    edge.currentLoad = 0.0f;
+  }
+}
+
+std::vector<RoadNetwork::EdgeTrafficInfo> RoadNetwork::getAllEdgeTraffic() const {
+  std::vector<EdgeTrafficInfo> traffic;
+  
+  for (const auto& [key, edge] : edges) {
+    EdgeTrafficInfo info;
+    info.from = key.a;
+    info.to = key.b;
+    info.congestion = edge.getCongestion();
+    info.currentLoad = edge.currentLoad;
+    info.capacity = edge.capacity;
+    traffic.push_back(info);
+  }
+  
+  return traffic;
+}

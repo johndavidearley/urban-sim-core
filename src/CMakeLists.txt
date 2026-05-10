@@ -7,6 +7,7 @@ add_library(urban_sim_core
   entities/PopulationStore.cpp
   systems/GrowthSystem.cpp
   systems/PopulationSystem.cpp
+  systems/TrafficSystem.cpp
   world/CityMap.cpp
   world/Tile.cpp
   world/Zoning.cpp

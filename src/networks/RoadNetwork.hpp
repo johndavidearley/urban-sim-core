@@ -94,10 +94,21 @@ public:
   // Traffic
   void updateCongestion(glm::ivec2 from, glm::ivec2 to, float load);
   float getCongestion(glm::ivec2 from, glm::ivec2 to) const;
+  void resetCongestion();
   
   // Stats
   size_t getRoadCount() const;
   std::vector<glm::ivec2> getAllRoadTiles() const;
+  
+  // Traffic queries
+  struct EdgeTrafficInfo {
+    glm::ivec2 from;
+    glm::ivec2 to;
+    float congestion;
+    float currentLoad;
+    float capacity;
+  };
+  std::vector<EdgeTrafficInfo> getAllEdgeTraffic() const;
   
 private:
   const CityMap& cityMap;

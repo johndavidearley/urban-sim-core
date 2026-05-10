@@ -11,6 +11,7 @@
 #include "src/networks/Pathfinding.hpp"
 #include "src/systems/GrowthSystem.hpp"
 #include "src/systems/PopulationSystem.hpp"
+#include "src/systems/TrafficSystem.hpp"
 #include "src/metrics/CityMetrics.hpp"
 #include "src/metrics/GrowthMetrics.hpp"
 
@@ -35,6 +36,9 @@ void printHelp() {
             << "  --place-road X1 Y1 X2 Y2  Build a road segment between tiles\n"
             << "  --connectivity-map       Print connectivity status and exit\n"
             << "  --find-path X1 Y1 X2 Y2  Find shortest path from (X1,Y1) to (X2,Y2)\n"
+            << "  --run-commute-simulation Run commute simulation for all employed\n"
+            << "  --print-traffic-summary  Print traffic congestion and commute metrics\n"
+            << "  --print-top-edges N      Print top N most congested edges\n"
             << "  --help                   Show this help message\n";
 }
 
@@ -225,6 +229,31 @@ void printPopulationGroups(const PopulationStore& population) {
   }
 }
 
+void printTrafficSummary(const TrafficSummary& summary) {
+  std::cout << "Traffic Summary:\n";
+  std::cout << "  Commuting Population: " << summary.commutingPopulation << "\n";
+  std::cout << "  Average Commute Time: " << std::fixed << std::setprecision(2)
+            << summary.averageCommuteTime << "\n";
+  std::cout << "  Total Commute Burden: " << summary.totalCommuteBurden << "\n";
+  std::cout << "  Max Edge Congestion: " << std::fixed << std::setprecision(3)
+            << (summary.maxEdgeCongestion * 100.0f) << "%\n";
+  std::cout << "  Average Edge Congestion: " << std::fixed << std::setprecision(3)
+            << (summary.averageEdgeCongestion * 100.0f) << "%\n";
+  std::cout << "  Congested Edges: " << summary.congestionDetectedEdges << "\n";
+}
+
+void printTopCongestedEdges(const std::vector<EdgeTrafficData>& edges) {
+  std::cout << "Top Congested Edges:\n";
+  for (size_t i = 0; i < edges.size(); ++i) {
+    const auto& edge = edges[i];
+    std::cout << "  #" << (i + 1) << " (" << edge.from.x << "," << edge.from.y
+              << ")->(" << edge.to.x << "," << edge.to.y << ")"
+              << " congestion=" << std::fixed << std::setprecision(1)
+              << (edge.congestion * 100.0f) << "%"
+              << " commuters=" << edge.totalCommuters << "\n";
+  }
+}
+
 int main(int argc, char* argv[]) {
   // Parse arguments
   int mapSize = 64;
@@ -239,6 +268,9 @@ int main(int argc, char* argv[]) {
   bool printPopulationGroupsFlag = false;
   bool printBuildingsFlag = false;
   bool printConnectivityMapFlag = false;
+  bool runCommuteSimulationFlag = false;
+  bool printTrafficSummaryFlag = false;
+  int printTopEdgesCount = -1;
   int zoneX1 = -1, zoneY1 = -1, zoneX2 = -1, zoneY2 = -1;
   std::string zoneTypeRaw;
   int runGrowthSteps = 0;
@@ -297,6 +329,12 @@ int main(int argc, char* argv[]) {
       findPathY1 = std::atoi(argv[++i]);
       findPathX2 = std::atoi(argv[++i]);
       findPathY2 = std::atoi(argv[++i]);
+    } else if (arg == "--run-commute-simulation") {
+      runCommuteSimulationFlag = true;
+    } else if (arg == "--print-traffic-summary") {
+      printTrafficSummaryFlag = true;
+    } else if (arg == "--print-top-edges" && i + 1 < argc) {
+      printTopEdgesCount = std::atoi(argv[++i]);
     }
   }
   
@@ -421,6 +459,40 @@ int main(int argc, char* argv[]) {
       printPopulationGroups(population);
     }
 
+    if (runCommuteSimulationFlag) {
+      if (!hasPopulationSummary) {
+        std::cerr << "Error: --run-commute-simulation requires --seed-population N\n";
+        return 1;
+      }
+      TrafficSystem::simulateCommutes(
+        store, population, roads, seed
+      );
+      std::cout << "Commute simulation completed.\n";
+    }
+
+    if (printTrafficSummaryFlag) {
+      if (!hasPopulationSummary) {
+        std::cerr << "Error: --print-traffic-summary requires --run-commute-simulation\n";
+        return 1;
+      }
+      TrafficSummary trafficSummary = TrafficSystem::simulateCommutes(
+        store, population, roads, seed
+      );
+      printTrafficSummary(trafficSummary);
+    }
+
+    if (printTopEdgesCount > 0) {
+      if (!hasPopulationSummary) {
+        std::cerr << "Error: --print-top-edges requires --seed-population N\n";
+        return 1;
+      }
+      TrafficSystem::simulateCommutes(
+        store, population, roads, seed
+      );
+      auto topEdges = TrafficSystem::getTopCongestedEdges(roads, printTopEdgesCount);
+      printTopCongestedEdges(topEdges);
+    }
+
     if (findPathX1 >= 0) {
       Pathfinding::Path path = Pathfinding::findShortestPath(
         roads, {findPathX1, findPathY1}, {findPathX2, findPathY2}
@@ -432,7 +504,8 @@ int main(int argc, char* argv[]) {
     if (zoneX1 >= 0 || placeRoadX1 >= 0 || runGrowthSteps > 0 || printZonesFlag ||
         printDemandFlag || printConnectivityMapFlag || printBuildingsFlag ||
         printGrowthSummaryFlag || seedPopulation >= 0 || printPopulationSummaryFlag ||
-        printPopulationGroupsFlag) {
+        printPopulationGroupsFlag || runCommuteSimulationFlag || printTrafficSummaryFlag ||
+        printTopEdgesCount > 0) {
       return 0;
     }
     
