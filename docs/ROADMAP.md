@@ -176,8 +176,8 @@ Last updated: May 10, 2026
 
 ## Next Targets (Post-Backlog)
 
-1. Add in-window legend and controls panel for live visualizer
-2. Add demand, happiness, and route heatmap overlays
+1. Add demand, happiness, and route heatmap overlays
+2. Add pause/step controls for deterministic tick stepping in live mode
 3. Save schema versioning and migration guards
 4. Performance pass for larger maps and higher population counts
 5. District-level service policies and budget controls

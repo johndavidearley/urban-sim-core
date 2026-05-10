@@ -24,7 +24,7 @@
 - ✅ Added debug overlay toggles in SDL mode (`1` zone, `2` land value, `3` pollution)
 
 5. Visualization hardening
-- ⏭️ Add in-window text HUD (legend/metrics panel) without external font dependencies
+- ✅ Added in-window legend/controls HUD panel without external font dependencies
 - ✅ Added service coverage and congestion overlays fed from simulation outputs
 - ⏭️ Add pause/step controls and deterministic tick stepping in SDL mode
 - ⏭️ Add demand/happiness/route heatmap overlays for debugging simulation balance

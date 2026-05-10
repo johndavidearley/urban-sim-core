@@ -37,6 +37,7 @@ Controls:
 - `3`: pollution overlay
 - `4`: service coverage overlay
 - `5`: traffic congestion overlay
+- `H`: show/hide in-window legend panel
 - `Esc`: quit
 
 ### Run Tests

@@ -268,6 +268,103 @@ RGB tileColor(
   return color;
 }
 
+RGB overlaySampleColor(OverlayMode mode, float value) {
+  switch (mode) {
+    case OverlayMode::LandValue:
+      return landValueColor(50.0f + (value * 150.0f));
+    case OverlayMode::Pollution:
+      return pollutionColor(value);
+    case OverlayMode::ServiceCoverage:
+      return serviceCoverageColor(value);
+    case OverlayMode::TrafficCongestion:
+      return congestionColor(value);
+    case OverlayMode::Zone:
+    default:
+      return zoneColor(value < 0.33f ? 1 : (value < 0.66f ? 2 : 3));
+  }
+}
+
+void drawFilledRect(SDL_Renderer* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha = 255) {
+  SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, alpha);
+  SDL_Rect rect{x, y, w, h};
+  SDL_RenderFillRect(renderer, &rect);
+}
+
+void drawRectOutline(SDL_Renderer* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha = 255) {
+  SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, alpha);
+  SDL_Rect rect{x, y, w, h};
+  SDL_RenderDrawRect(renderer, &rect);
+}
+
+void drawGradientBar(SDL_Renderer* renderer, int x, int y, int w, int h, OverlayMode mode) {
+  for (int i = 0; i < w; ++i) {
+    const float t = (w > 1) ? static_cast<float>(i) / static_cast<float>(w - 1) : 0.0f;
+    const RGB c = overlaySampleColor(mode, t);
+    drawFilledRect(renderer, x + i, y, 1, h, c, 255);
+  }
+  drawRectOutline(renderer, x, y, w, h, {220, 220, 220}, 255);
+}
+
+void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int windowWidth, int windowHeight) {
+  (void)windowWidth;
+  (void)windowHeight;
+
+  constexpr int panelX = 12;
+  constexpr int panelY = 12;
+  constexpr int panelW = 420;
+  constexpr int panelH = 92;
+  drawFilledRect(renderer, panelX, panelY, panelW, panelH, {14, 16, 20}, 190);
+  drawRectOutline(renderer, panelX, panelY, panelW, panelH, {230, 230, 230}, 220);
+
+  // Overlay hotkey strip. Active mode gets bright outline.
+  constexpr int keyStartX = panelX + 10;
+  constexpr int keyY = panelY + 10;
+  constexpr int keyW = 52;
+  constexpr int keyH = 20;
+  constexpr int keyGap = 8;
+  const std::array<OverlayMode, 5> modes = {
+    OverlayMode::Zone,
+    OverlayMode::LandValue,
+    OverlayMode::Pollution,
+    OverlayMode::ServiceCoverage,
+    OverlayMode::TrafficCongestion,
+  };
+
+  for (size_t i = 0; i < modes.size(); ++i) {
+    const int x = keyStartX + static_cast<int>(i) * (keyW + keyGap);
+    const RGB marker = overlaySampleColor(modes[i], 0.75f);
+    drawFilledRect(renderer, x, keyY, keyW, keyH, {42, 46, 54}, 220);
+    drawFilledRect(renderer, x + 4, keyY + 4, 10, keyH - 8, marker, 255);
+
+    const bool active = (modes[i] == overlayMode);
+    drawRectOutline(renderer, x, keyY, keyW, keyH, active ? RGB{255, 230, 120} : RGB{120, 130, 145}, 255);
+
+    // Draw a minimal key indicator glyph as vertical bars (1..5 count).
+    for (size_t bar = 0; bar <= i; ++bar) {
+      drawFilledRect(renderer, x + 20 + static_cast<int>(bar) * 5, keyY + 5, 3, keyH - 10, {220, 220, 220}, 255);
+    }
+  }
+
+  // Lower strip shows current overlay scale hints.
+  constexpr int barX = panelX + 10;
+  constexpr int barY = panelY + 40;
+  constexpr int barW = 280;
+  constexpr int barH = 14;
+  drawGradientBar(renderer, barX, barY, barW, barH, overlayMode);
+
+  // Low/high indicator blocks for quick visual reference.
+  const RGB low = overlaySampleColor(overlayMode, 0.0f);
+  const RGB high = overlaySampleColor(overlayMode, 1.0f);
+  drawFilledRect(renderer, barX + barW + 10, barY, 16, barH, low, 255);
+  drawRectOutline(renderer, barX + barW + 10, barY, 16, barH, {220, 220, 220}, 255);
+  drawFilledRect(renderer, barX + barW + 32, barY, 16, barH, high, 255);
+  drawRectOutline(renderer, barX + barW + 32, barY, 16, barH, {220, 220, 220}, 255);
+
+  // Tiny indicator for legend toggle state and command location.
+  drawFilledRect(renderer, panelX + panelW - 72, panelY + panelH - 20, 60, 10, {80, 150, 110}, 220);
+  drawRectOutline(renderer, panelX + panelW - 72, panelY + panelH - 20, 60, 10, {220, 220, 220}, 255);
+}
+
 std::string makeHudTitle(
   const RoadNetwork& roads,
   const EntityStore& store,
@@ -308,7 +405,7 @@ std::string makeHudTitle(
       << " | Zoom:" << tilePixels
       << " | View:" << viewX << "," << viewY
       << " | Overlay:" << overlayModeName(overlayMode)
-      << " [1=zone 2=land 3=pollution 4=service 5=traffic]";
+      << " [1=zone 2=land 3=pollution 4=service 5=traffic H=legend]";
   return oss.str();
 }
 
@@ -438,11 +535,13 @@ int main(int argc, char* argv[]) {
     SDL_Quit();
     return 1;
   }
+  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
   int tilePixels = 12;
   int viewX = 0;
   int viewY = 0;
   OverlayMode overlayMode = OverlayMode::Zone;
+  bool showLegend = true;
   uint32_t lastHudRefreshMs = 0;
 
   bool running = true;
@@ -490,6 +589,9 @@ int main(int argc, char* argv[]) {
           case SDLK_5:
             overlayMode = OverlayMode::TrafficCongestion;
             break;
+          case SDLK_h:
+            showLegend = !showLegend;
+            break;
           default:
             break;
         }
@@ -519,6 +621,10 @@ int main(int argc, char* argv[]) {
         SDL_Rect rect{tx * tilePixels, ty * tilePixels, tilePixels, tilePixels};
         SDL_RenderFillRect(renderer, &rect);
       }
+    }
+
+    if (showLegend) {
+      drawLegendPanel(renderer, overlayMode, windowWidth, windowHeight);
     }
 
     const uint32_t nowMs = SDL_GetTicks();

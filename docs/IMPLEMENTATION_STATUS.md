@@ -116,12 +116,13 @@ Implemented so far:
 - Live visualizer renders map, roads, zones, and building types in real time
 - Keyboard controls implemented: arrows pan, +/- zoom, ESC quit
 - Real-time HUD metrics added through dynamic window-title updates
+- In-window legend panel added with overlay scale hints and active mode indicators
 - Debug overlay toggles added: zone (`1`), land value (`2`), pollution (`3`)
 - Service coverage overlay added in live visualizer (`4`)
 - Traffic congestion overlay added in live visualizer (`5`)
 
 Next implementation target:
-- In-window legend panel and additional demand/happiness overlays
+- Demand/happiness overlays plus deterministic pause/step controls
 
 ---
 
@@ -151,9 +152,10 @@ Implemented so far:
 - Optional SDL2 live visualizer target added: `UrbanSimCore-visualizer`
 - Live visualizer includes keyboard pan/zoom controls (arrows, +/-)
 - Live visualizer HUD metrics shown in window title (updated during runtime)
+- Live visualizer in-window legend panel for overlay controls and scale bands
 - Live visualizer debug overlays for zone, land value, pollution, service coverage, and traffic congestion
 - Renderer tests validate PPM format and viewport clamping behavior
 
 Next implementation target:
-- In-window legend panel and remaining advanced overlays
+- Remaining advanced overlays (demand, happiness, route heatmap)
 
