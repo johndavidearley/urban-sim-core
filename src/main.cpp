@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <iomanip>
 #include <algorithm>
+#include <array>
 #include "src/core/SimulationTime.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
@@ -57,6 +58,7 @@ void printHelp() {
             << "  --render-view X Y W H     Render viewport rectangle in tiles\n"
             << "  --save-city FILE          Save city snapshot JSON to FILE\n"
             << "  --load-city FILE          Load city snapshot JSON from FILE (prints migration diagnostics)\n"
+            << "  --inspect-snapshot FILE   Inspect snapshot schema and structural summary\n"
             << "  --verify-replay N         Run deterministic replay check using N growth steps\n"
             << "  --help                   Show this help message\n";
 }
@@ -363,6 +365,59 @@ void printBudgetSummary(const EconomyState& economy) {
             << (economy.economicHealth * 100.0f) << "%\n";
 }
 
+void printSnapshotInspection(const CitySnapshot& snapshot, const SnapshotLoadDiagnostics& diagnostics) {
+  size_t roadTileCount = 0;
+  size_t zonedTileCount = 0;
+  std::array<size_t, 5> zoneHistogram = {0, 0, 0, 0, 0};
+
+  for (const SerializedTile& tile : snapshot.tiles) {
+    if (tile.hasRoad) {
+      ++roadTileCount;
+    }
+    if (tile.zone > 0 && tile.zone < static_cast<int>(zoneHistogram.size())) {
+      ++zonedTileCount;
+      ++zoneHistogram[static_cast<size_t>(tile.zone)];
+    }
+  }
+
+  size_t residentialBuildings = 0;
+  size_t commercialBuildings = 0;
+  size_t industrialBuildings = 0;
+  for (const Building& building : snapshot.buildings) {
+    switch (building.type) {
+      case BuildingType::Residential:
+        ++residentialBuildings;
+        break;
+      case BuildingType::Commercial:
+        ++commercialBuildings;
+        break;
+      case BuildingType::Industrial:
+        ++industrialBuildings;
+        break;
+    }
+  }
+
+  std::cout << "Snapshot Inspection:\n";
+  std::cout << "  Schema: sourceVersion=" << diagnostics.sourceVersion
+            << ", targetVersion=" << diagnostics.targetVersion
+            << ", migrated=" << (diagnostics.migrationApplied ? "yes" : "no")
+            << ", path=" << diagnostics.migrationPath << "\n";
+  std::cout << "  Map: " << snapshot.width << "x" << snapshot.height
+            << " tiles=" << snapshot.tiles.size()
+            << " roads=" << snapshot.roads.size()
+            << " roadTiles=" << roadTileCount << "\n";
+  std::cout << "  Zoning: zonedTiles=" << zonedTileCount
+            << " (R=" << zoneHistogram[1]
+            << " C=" << zoneHistogram[2]
+            << " I=" << zoneHistogram[3]
+            << " P=" << zoneHistogram[4] << ")\n";
+  std::cout << "  Buildings: total=" << snapshot.buildings.size()
+            << " (R=" << residentialBuildings
+            << " C=" << commercialBuildings
+            << " I=" << industrialBuildings << ")\n";
+  std::cout << "  Population Groups: " << snapshot.populationGroups.size() << "\n";
+}
+
 int main(int argc, char* argv[]) {
   // Parse arguments
   int mapSize = 64;
@@ -391,6 +446,7 @@ int main(int argc, char* argv[]) {
   int verifyReplayGrowthSteps = -1;
   std::string saveCityPath;
   std::string loadCityPath;
+  std::string inspectSnapshotPath;
   std::vector<std::tuple<std::string, int, int, int>> serviceRequests;
   int printTopEdgesCount = -1;
   int zoneX1 = -1, zoneY1 = -1, zoneX2 = -1, zoneY2 = -1;
@@ -487,6 +543,8 @@ int main(int argc, char* argv[]) {
       saveCityPath = argv[++i];
     } else if (arg == "--load-city" && i + 1 < argc) {
       loadCityPath = argv[++i];
+    } else if (arg == "--inspect-snapshot" && i + 1 < argc) {
+      inspectSnapshotPath = argv[++i];
     } else if (arg == "--verify-replay" && i + 1 < argc) {
       verifyReplayGrowthSteps = std::atoi(argv[++i]);
     }
@@ -503,6 +561,17 @@ int main(int argc, char* argv[]) {
   }
   
   try {
+    if (!inspectSnapshotPath.empty()) {
+      CitySnapshot inspectedSnapshot;
+      SnapshotLoadDiagnostics inspectDiagnostics;
+      if (!SaveLoadSystem::loadSnapshotFromFile(inspectSnapshotPath, inspectedSnapshot, &inspectDiagnostics)) {
+        std::cerr << "Error: Failed to inspect city snapshot from '" << inspectSnapshotPath << "'\n";
+        return 1;
+      }
+      printSnapshotInspection(inspectedSnapshot, inspectDiagnostics);
+      return 0;
+    }
+
     CitySnapshot loadedSnapshot;
     SnapshotLoadDiagnostics snapshotDiagnostics;
     if (!loadCityPath.empty()) {

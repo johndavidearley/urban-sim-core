@@ -143,9 +143,10 @@ Implemented so far:
 	- road adjacency and load sanity checks
 - Save/load tests expanded to cover migration and malformed snapshot rejection
 - CLI load flow now prints migration diagnostics (source version, target version, migration path)
+- Added snapshot inspection command to print schema and structural snapshot summary without simulation run
 
 Next implementation target:
-- Snapshot inspection command(s) for persistence diagnostics
+- Performance pass and profiling for larger map/population workloads
 
 ---
 
