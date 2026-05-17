@@ -76,6 +76,50 @@ bool DistrictSystem::setDistrictServiceAllocation(DistrictId id, float percentag
   return true;
 }
 
+bool DistrictSystem::setDistrictServicePriorities(DistrictId id, const ServicePriority& priorities) {
+  District* district = getDistrict(id);
+  if (district == nullptr) {
+    return false;
+  }
+  district->servicePriorities = priorities;
+  return true;
+}
+
+bool DistrictSystem::assignFacilityToDistrict(DistrictId districtId, uint32_t facilityId) {
+  District* district = getDistrict(districtId);
+  if (district == nullptr) {
+    return false;
+  }
+  // Prevent duplicate assignment
+  auto it = std::find(district->assignedFacilityIds.begin(), district->assignedFacilityIds.end(), facilityId);
+  if (it != district->assignedFacilityIds.end()) {
+    return false;  // Already assigned
+  }
+  district->assignedFacilityIds.push_back(facilityId);
+  return true;
+}
+
+bool DistrictSystem::unassignFacilityFromDistrict(DistrictId districtId, uint32_t facilityId) {
+  District* district = getDistrict(districtId);
+  if (district == nullptr) {
+    return false;
+  }
+  auto it = std::find(district->assignedFacilityIds.begin(), district->assignedFacilityIds.end(), facilityId);
+  if (it == district->assignedFacilityIds.end()) {
+    return false;  // Not assigned
+  }
+  district->assignedFacilityIds.erase(it);
+  return true;
+}
+
+std::vector<uint32_t> DistrictSystem::getFacilitiesForDistrict(DistrictId id) {
+  const District* district = getDistrictConst(id);
+  if (district == nullptr) {
+    return {};
+  }
+  return district->assignedFacilityIds;
+}
+
 DistrictMetrics DistrictSystem::evaluateDistrictMetrics(
   DistrictId id,
   const CityMap& map,

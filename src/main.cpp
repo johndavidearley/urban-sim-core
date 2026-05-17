@@ -61,6 +61,9 @@ void printHelp() {
             << "  --create-district NAME X1 Y1 X2 Y2  Create a district (min to max corners)\n"
             << "  --list-districts         List all districts\n"
             << "  --print-district-summary DIST_ID  Print metrics for a district\n"
+            << "  --set-district-tax DIST_ID TYPE RATE  Set tax rate (residential|commercial|industrial)\n"
+            << "  --set-district-service DIST_ID FIRE POLICE HEALTH EDUCATION  Set service priorities (0-1)\n"
+            << "  --assign-facility DIST_ID FACILITY_ID  Assign service facility to district\n"
             << "  --render-map FILE         Render top-down city snapshot to PPM file\n"
             << "  --render-scale N          Pixel size per tile when rendering (default: 8)\n"
             << "  --render-view X Y W H     Render viewport rectangle in tiles\n"
@@ -616,6 +619,9 @@ int main(int argc, char* argv[]) {
   bool listDistrictsFlag = false;
   int printDistrictSummaryId = -1;
   std::vector<std::tuple<std::string, int, int, int, int>> createDistrictRequests;  // name, x1, y1, x2, y2
+  std::vector<std::tuple<int, std::string, float>> setDistrictTaxRequests;  // district_id, building_type, rate
+  std::vector<std::tuple<int, float, float, float, float>> setDistrictServiceRequests;  // district_id, fire, police, health, edu
+  std::vector<std::pair<int, int>> assignFacilityRequests;  // district_id, facility_id
   
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -693,6 +699,22 @@ int main(int argc, char* argv[]) {
       listDistrictsFlag = true;
     } else if (arg == "--print-district-summary" && i + 1 < argc) {
       printDistrictSummaryId = std::atoi(argv[++i]);
+    } else if (arg == "--set-district-tax" && i + 3 < argc) {
+      int districtId = std::atoi(argv[++i]);
+      std::string buildingType = argv[++i];
+      float rate = std::stof(argv[++i]);
+      setDistrictTaxRequests.emplace_back(districtId, buildingType, rate);
+    } else if (arg == "--set-district-service" && i + 5 < argc) {
+      int districtId = std::atoi(argv[++i]);
+      float fireWeight = std::stof(argv[++i]);
+      float policeWeight = std::stof(argv[++i]);
+      float healthWeight = std::stof(argv[++i]);
+      float educationWeight = std::stof(argv[++i]);
+      setDistrictServiceRequests.emplace_back(districtId, fireWeight, policeWeight, healthWeight, educationWeight);
+    } else if (arg == "--assign-facility" && i + 2 < argc) {
+      int districtId = std::atoi(argv[++i]);
+      int facilityId = std::atoi(argv[++i]);
+      assignFacilityRequests.emplace_back(districtId, facilityId);
     } else if (arg == "--run-economy-calculation") {
       runEconomyCalculationFlag = true;
     } else if (arg == "--print-budget-summary") {
@@ -1201,6 +1223,78 @@ int main(int argc, char* argv[]) {
       }
     }
 
+    // Handle district policy commands
+    if (!setDistrictTaxRequests.empty()) {
+      for (const auto& [districtId, buildingType, rate] : setDistrictTaxRequests) {
+        District* district = DistrictSystem::getDistrict(static_cast<DistrictId>(districtId));
+        if (district == nullptr) {
+          std::cerr << "Error: District " << districtId << " not found\n";
+          return 1;
+        }
+        
+        std::string typeUpper = buildingType;
+        std::transform(typeUpper.begin(), typeUpper.end(), typeUpper.begin(), 
+                      [](unsigned char c) { return std::toupper(c); });
+        
+        bool success = false;
+        if (typeUpper == "RESIDENTIAL") {
+          district->taxRates.residentialRate = std::max(0.0f, std::min(1.0f, rate));
+          success = true;
+        } else if (typeUpper == "COMMERCIAL") {
+          district->taxRates.commercialRate = std::max(0.0f, std::min(1.0f, rate));
+          success = true;
+        } else if (typeUpper == "INDUSTRIAL") {
+          district->taxRates.industrialRate = std::max(0.0f, std::min(1.0f, rate));
+          success = true;
+        } else {
+          std::cerr << "Error: Unknown building type '" << buildingType << "'\n";
+          return 1;
+        }
+        
+        if (success) {
+          std::cout << "Set " << buildingType << " tax rate to " << std::fixed << std::setprecision(1)
+                    << (rate * 100.0f) << "% for district " << districtId << "\n";
+        }
+      }
+    }
+
+    if (!setDistrictServiceRequests.empty()) {
+      for (const auto& [districtId, fireW, policeW, healthW, eduW] : setDistrictServiceRequests) {
+        District* district = DistrictSystem::getDistrict(static_cast<DistrictId>(districtId));
+        if (district == nullptr) {
+          std::cerr << "Error: District " << districtId << " not found\n";
+          return 1;
+        }
+        
+        ServicePriority priorities;
+        priorities.fireWeight = std::max(0.0f, fireW);
+        priorities.policeWeight = std::max(0.0f, policeW);
+        priorities.healthWeight = std::max(0.0f, healthW);
+        priorities.educationWeight = std::max(0.0f, eduW);
+        
+        district->servicePriorities = priorities;
+        std::cout << "Set service priorities for district " << districtId << ":\n";
+        std::cout << "  Fire: " << std::fixed << std::setprecision(2) << fireW << "\n";
+        std::cout << "  Police: " << std::fixed << std::setprecision(2) << policeW << "\n";
+        std::cout << "  Health: " << std::fixed << std::setprecision(2) << healthW << "\n";
+        std::cout << "  Education: " << std::fixed << std::setprecision(2) << eduW << "\n";
+      }
+    }
+
+    if (!assignFacilityRequests.empty()) {
+      for (const auto& [districtId, facilityId] : assignFacilityRequests) {
+        bool success = DistrictSystem::assignFacilityToDistrict(
+          static_cast<DistrictId>(districtId),
+          static_cast<uint32_t>(facilityId)
+        );
+        if (!success) {
+          std::cerr << "Error: Failed to assign facility " << facilityId << " to district " << districtId << "\n";
+          return 1;
+        }
+        std::cout << "Assigned facility " << facilityId << " to district " << districtId << "\n";
+      }
+    }
+
     if (listDistrictsFlag) {
       const auto& districts = DistrictSystem::getDistricts();
       if (districts.empty()) {
@@ -1276,7 +1370,8 @@ int main(int argc, char* argv[]) {
         printTopEdgesCount > 0 || runEconomyCalculationFlag || printBudgetSummaryFlag ||
         runServiceEvaluationFlag || printServiceSummaryFlag || !serviceRequests.empty() ||
         printCitySummaryFlag || !renderMapPath.empty() || !saveCityPath.empty() || !loadCityPath.empty() ||
-        !createDistrictRequests.empty() || listDistrictsFlag || printDistrictSummaryId >= 0) {
+        !createDistrictRequests.empty() || listDistrictsFlag || printDistrictSummaryId >= 0 ||
+        !setDistrictTaxRequests.empty() || !setDistrictServiceRequests.empty() || !assignFacilityRequests.empty()) {
       if (!saveIfRequested()) return 1;
       return 0;
     }

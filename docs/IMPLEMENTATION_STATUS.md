@@ -182,8 +182,23 @@ Implemented so far:
 - Unit tests added: 12 tests covering creation, deletion, tax/allocation setters, metrics evaluation, boundary checks
 - Test count increased: 114 -> 126 tests (all passing)
 
+✅ **Slice 12** - District service policies completed (infrastructure + CLI):
+- Extended `District` struct with `ServicePriority` weights (fire, police, health, education)
+- Extended `District` struct with `assignedFacilityIds` vector for facility assignment
+- New service policy API methods:
+	- `setDistrictServicePriorities()` - set per-district service weights
+	- `assignFacilityToDistrict()` - assign facility to district
+	- `unassignFacilityFromDistrict()` - remove facility from district
+	- `getFacilitiesForDistrict()` - list facilities assigned to district
+- CLI commands for district policy management:
+	- `--set-district-tax DIST_ID TYPE RATE` - adjust per-type tax rate for district
+	- `--set-district-service DIST_ID FIRE POLICE HEALTH EDUCATION` - set service priority weights
+	- `--assign-facility DIST_ID FACILITY_ID` - assign facility to district
+- All commands execute before list/summary commands for correct state
+- Test count remains: 126 tests (all passing, no regressions)
+
 Next implementation target:
-- District-level service policies integration (per-district facility priorities, budget allocation)
+- EconomySystem/ServiceSystem integration using district policy weights
 
 ---
 

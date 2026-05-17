@@ -12,6 +12,13 @@
 
 using DistrictId = uint32_t;
 
+struct ServicePriority {
+  float fireWeight = 1.0f;
+  float policeWeight = 1.0f;
+  float healthWeight = 1.0f;
+  float educationWeight = 1.0f;
+};
+
 struct District {
   DistrictId id = 0;
   std::string name;
@@ -20,6 +27,9 @@ struct District {
 
   TaxRates taxRates;
   float serviceAllocation = 0.5f; // 0.0 to 1.0 share of city service budget
+  ServicePriority servicePriorities;  // Weight allocation for service types
+
+  std::vector<uint32_t> assignedFacilityIds;  // Service facility IDs assigned to this district
 
   bool contains(glm::ivec2 coord) const {
     return coord.x >= minCorner.x && coord.x <= maxCorner.x &&
@@ -82,6 +92,18 @@ public:
 
   // Set service allocation percentage for a district
   static bool setDistrictServiceAllocation(DistrictId id, float percentage);
+
+  // Set service priorities for a district
+  static bool setDistrictServicePriorities(DistrictId id, const ServicePriority& priorities);
+
+  // Assign a service facility to a district
+  static bool assignFacilityToDistrict(DistrictId districtId, uint32_t facilityId);
+
+  // Unassign a service facility from a district
+  static bool unassignFacilityFromDistrict(DistrictId districtId, uint32_t facilityId);
+
+  // Get facilities assigned to a district
+  static std::vector<uint32_t> getFacilitiesForDistrict(DistrictId id);
 
   // Evaluate metrics for a single district
   static DistrictMetrics evaluateDistrictMetrics(
