@@ -231,9 +231,43 @@
 
 ---
 
+## Current: Backlog Slice 11 - District Management
+
+**Goal:** Add district-level policy controls for targeted urban planning
+
+1. **District system foundation** ✅
+- ✅ Created `DistrictSystem` module with core data model
+- ✅ `District` struct with rectangular bounds, tax rates (per building type), service allocation
+- ✅ Static CRUD API for districts: create, get, delete, list, update tax rates/allocation
+- ✅ District metrics evaluation: population, buildings by type, average land value, budget
+
+2. **CLI commands** ✅
+- ✅ `--create-district NAME X1 Y1 X2 Y2` - Create district (supports multiple)
+- ✅ `--list-districts` - Print all districts with bounds and policies
+- ✅ `--print-district-summary DIST_ID` - Print aggregated metrics for a district
+
+3. **Tests** ✅
+- ✅ Added 12 tests covering CRUD, boundary checks, metrics calculation
+- ✅ Test count: 114 -> 126 (all passing)
+
+4. **Next steps** ⏭️
+- ⏭️ Integrate per-district tax rate applications in `EconomySystem`
+- ⏭️ Add service facility assignment to districts
+- ⏭️ Add district-level budget allocation and constraints
+- ⏭️ Add CLI commands for tax rate and service policy management
+
+**Slice 11 status:** ✅ Foundation complete; policy integration pending.
+
+---
+
 ## Remaining Slices
 
-No backlog slices remain in the current 10-slice plan.
+Following completion of Slice 11, planned future work includes:
+
+- **Slice 12:** District service policies - Per-district service facility priorities and budget allocation
+- **Slice 13:** Traffic simulation improvements - Route caching, congestion feedback loops
+- **Slice 14:** Advanced growth - Multi-zone demand balancing, aging and demolition
+- **Slice 15:** Economy refinements - Interest rates, loans, development boom/bust cycles
 
 ---
 
@@ -251,4 +285,5 @@ No backlog slices remain in the current 10-slice plan.
 | 8 | Economy | ✅ Complete |
 | 9 | Metrics | ✅ Complete |
 | 10 | Save/Load | ✅ Complete |
+| 11 | District Management | ✅ Complete |
 

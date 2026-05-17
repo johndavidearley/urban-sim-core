@@ -11,6 +11,7 @@ add_executable(test_core
   EconomySystemTests.cpp
   MetricsSystemTests.cpp
   ServiceSystemTests.cpp
+  DistrictSystemTests.cpp
   SaveLoadSystemTests.cpp
   ReplayVerifierTests.cpp
   MapRendererTests.cpp

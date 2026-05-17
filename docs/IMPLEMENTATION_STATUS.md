@@ -164,8 +164,26 @@ Implemented so far:
 	- route heatmap now supports interactive origin/destination filter cycling from seeded building anchors
 	- HUD now includes current route filter state for quick context while profiling
 
+**Slice 5** - District system foundation (infrastructure + CLI):
+- New `DistrictSystem` module created with core data model:
+	- `District` struct: rectangular bounds, tax rates per type, service allocation percentage
+	- `DistrictMetrics` struct: aggregated district population, buildings, budget, coverage
+	- Static factory API for district CRUD: create, get, delete, list, update rates/allocation
+- District metrics evaluation implemented:
+	- Per-district population count by income band (via PopulationStore)
+	- Building type breakdown (residential/commercial/industrial) filtered by district bounds
+	- Average land value calculation from tile grid within bounds
+	- Budget calculations using district tax rates via EconomySystem
+	- Service coverage and happiness stubs (placeholders for future service subsystem integration)
+- CLI commands added for district management:
+	- `--create-district NAME X1 Y1 X2 Y2` - create district with rectangular bounds; supports multiple invocations
+	- `--list-districts` - print all districts with bounds, area, tax rates, and service allocation
+	- `--print-district-summary DIST_ID` - print aggregated metrics for a specific district
+- Unit tests added: 12 tests covering creation, deletion, tax/allocation setters, metrics evaluation, boundary checks
+- Test count increased: 114 -> 126 tests (all passing)
+
 Next implementation target:
-- District-level service policies and budget controls
+- District-level service policies integration (per-district facility priorities, budget allocation)
 
 ---
 

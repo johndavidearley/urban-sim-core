@@ -76,13 +76,22 @@ Use `--benchmark-phase5-focus` with one of `ALL`, `GROWTH`, `POPULATION`, `TRAFF
 
 Use `--traffic-origin X Y` and/or `--traffic-destination X Y` with `--print-top-edges N` to inspect congestion hotspots for specific commute route subsets.
 
+### District Management
+
+```bash
+./build/UrbanSimCore-cli --size 64 --seed 42 --create-district Downtown 5 5 25 25 --create-district Industrial 35 35 55 55 --list-districts
+./build/UrbanSimCore-cli --size 64 --seed 42 --run-growth 10 --seed-population 2000 --create-district Downtown 5 5 25 25 --print-district-summary 1
+```
+
+Create districts with `--create-district NAME X1 Y1 X2 Y2` (rectangular bounds). List all districts with `--list-districts`. Print district metrics with `--print-district-summary DIST_ID`.
+
 ## Project Structure
 
 - **src/core/** — Foundation (Time, Random, EntityId, Commands)
 - **src/world/** — Map, Tiles, Parcels, Districts
 - **src/entities/** — Building, PopulationGroup, Business, Vehicle
 - **src/networks/** — RoadNetwork, UtilityNetwork, Pathfinding
-- **src/systems/** — PopulationSystem, ZoningSystem, EconomySystem, etc.
+- **src/systems/** — PopulationSystem, ZoningSystem, EconomySystem, DistrictSystem, etc.
 - **src/metrics/** — CityMetrics aggregation
 - **src/persistence/** — SaveGame, Snapshot, Replay
 - **tests/** — Unit and integration tests

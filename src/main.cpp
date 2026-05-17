@@ -19,6 +19,7 @@
 #include "src/systems/EconomySystem.hpp"
 #include "src/systems/MetricsSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
+#include "src/systems/DistrictSystem.hpp"
 #include "src/persistence/SaveLoadSystem.hpp"
 #include "src/persistence/ReplayVerifier.hpp"
 #include "src/visualization/MapRenderer.hpp"
@@ -57,6 +58,9 @@ void printHelp() {
             << "  --run-service-evaluation  Evaluate service coverage from facilities\n"
             << "  --print-service-summary   Print service coverage and satisfaction\n"
             << "  --print-city-summary      Print consolidated city metrics summary\n"
+            << "  --create-district NAME X1 Y1 X2 Y2  Create a district (min to max corners)\n"
+            << "  --list-districts         List all districts\n"
+            << "  --print-district-summary DIST_ID  Print metrics for a district\n"
             << "  --render-map FILE         Render top-down city snapshot to PPM file\n"
             << "  --render-scale N          Pixel size per tile when rendering (default: 8)\n"
             << "  --render-view X Y W H     Render viewport rectangle in tiles\n"
@@ -609,6 +613,9 @@ int main(int argc, char* argv[]) {
   int seedPopulation = -1;
   int placeRoadX1 = -1, placeRoadY1 = -1, placeRoadX2 = -1, placeRoadY2 = -1;
   int findPathX1 = -1, findPathY1 = -1, findPathX2 = -1, findPathY2 = -1;
+  bool listDistrictsFlag = false;
+  int printDistrictSummaryId = -1;
+  std::vector<std::tuple<std::string, int, int, int, int>> createDistrictRequests;  // name, x1, y1, x2, y2
   
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -675,6 +682,17 @@ int main(int argc, char* argv[]) {
       trafficDestinationX = std::atoi(argv[++i]);
       trafficDestinationY = std::atoi(argv[++i]);
       hasTrafficDestinationFilter = true;
+    } else if (arg == "--create-district" && i + 5 < argc) {
+      std::string name = argv[++i];
+      int x1 = std::atoi(argv[++i]);
+      int y1 = std::atoi(argv[++i]);
+      int x2 = std::atoi(argv[++i]);
+      int y2 = std::atoi(argv[++i]);
+      createDistrictRequests.emplace_back(name, x1, y1, x2, y2);
+    } else if (arg == "--list-districts") {
+      listDistrictsFlag = true;
+    } else if (arg == "--print-district-summary" && i + 1 < argc) {
+      printDistrictSummaryId = std::atoi(argv[++i]);
     } else if (arg == "--run-economy-calculation") {
       runEconomyCalculationFlag = true;
     } else if (arg == "--print-budget-summary") {
@@ -1166,6 +1184,65 @@ int main(int argc, char* argv[]) {
       std::cout << MetricsSystem::createCitySummaryReport(summaryMetrics);
     }
 
+    // Handle district commands
+    if (!createDistrictRequests.empty()) {
+      for (const auto& [name, x1, y1, x2, y2] : createDistrictRequests) {
+        DistrictId districtId = DistrictSystem::createDistrict(
+          name,
+          {x1, y1},
+          {x2, y2}
+        );
+        if (districtId == 0) {
+          std::cerr << "Error: Failed to create district '" << name << "' (invalid bounds?)\n";
+          return 1;
+        }
+        std::cout << "Created district '" << name << "' with ID " << districtId << "\n";
+        std::cout << "  Bounds: (" << x1 << "," << y1 << ") to (" << x2 << "," << y2 << ")\n";
+      }
+    }
+
+    if (listDistrictsFlag) {
+      const auto& districts = DistrictSystem::getDistricts();
+      if (districts.empty()) {
+        std::cout << "No districts created.\n";
+      } else {
+        std::cout << "Districts (" << districts.size() << "):\n";
+        for (const auto& district : districts) {
+          std::cout << "  [" << district.id << "] " << district.name << "\n";
+          std::cout << "    Bounds: (" << district.minCorner.x << "," << district.minCorner.y
+                    << ") to (" << district.maxCorner.x << "," << district.maxCorner.y << ")\n";
+          std::cout << "    Area: " << district.area() << " tiles\n";
+          std::cout << "    Tax Rates: Res=" << std::fixed << std::setprecision(2) 
+                    << (district.taxRates.residentialRate * 100.0f) << "%  "
+                    << "Com=" << (district.taxRates.commercialRate * 100.0f) << "%  "
+                    << "Ind=" << (district.taxRates.industrialRate * 100.0f) << "%\n";
+          std::cout << "    Service Allocation: " << (district.serviceAllocation * 100.0f) << "%\n";
+        }
+      }
+    }
+
+    if (printDistrictSummaryId >= 0) {
+      DistrictMetrics metrics = DistrictSystem::evaluateDistrictMetrics(
+        static_cast<DistrictId>(printDistrictSummaryId),
+        map, store, population
+      );
+      
+      if (metrics.districtId == 0) {
+        std::cerr << "Error: District " << printDistrictSummaryId << " not found\n";
+        return 1;
+      }
+      
+      std::cout << "District Summary: " << metrics.districtName << "\n";
+      std::cout << "  Population: " << metrics.population << "\n";
+      std::cout << "  Buildings: " << metrics.buildings << " (Res: " << metrics.residentialBuildings
+                << ", Com: " << metrics.commercialBuildings << ", Ind: " << metrics.industrialBuildings << ")\n";
+      std::cout << "  Average Land Value: " << std::fixed << std::setprecision(1) << metrics.averageLandValue << "\n";
+      std::cout << "  Budget: Revenue=" << metrics.revenue << ", Expenses=" << metrics.expenses
+                << ", Balance=" << metrics.balance << "\n";
+      std::cout << "  Service Coverage: " << std::fixed << std::setprecision(1) << (metrics.serviceCoverage * 100.0f) << "%\n";
+      std::cout << "  Happiness: " << std::fixed << std::setprecision(1) << (metrics.happiness * 100.0f) << "%\n";
+    }
+
     if (!renderMapPath.empty()) {
       RenderOptions renderOptions;
       renderOptions.tilePixels = std::max(1, renderScale);
@@ -1198,7 +1275,8 @@ int main(int argc, char* argv[]) {
         printPopulationGroupsFlag || runCommuteSimulationFlag || printTrafficSummaryFlag ||
         printTopEdgesCount > 0 || runEconomyCalculationFlag || printBudgetSummaryFlag ||
         runServiceEvaluationFlag || printServiceSummaryFlag || !serviceRequests.empty() ||
-        printCitySummaryFlag || !renderMapPath.empty() || !saveCityPath.empty() || !loadCityPath.empty()) {
+        printCitySummaryFlag || !renderMapPath.empty() || !saveCityPath.empty() || !loadCityPath.empty() ||
+        !createDistrictRequests.empty() || listDistrictsFlag || printDistrictSummaryId >= 0) {
       if (!saveIfRequested()) return 1;
       return 0;
     }
