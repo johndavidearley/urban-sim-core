@@ -25,6 +25,13 @@ struct EdgeTrafficData {
   float totalCommuteTime = 0.0f;
 };
 
+struct RouteDiagnosticsFilter {
+  bool hasOrigin = false;
+  glm::ivec2 origin{0, 0};
+  bool hasDestination = false;
+  glm::ivec2 destination{0, 0};
+};
+
 class TrafficSystem {
 public:
   // Simulate commute flows for all employed population
@@ -43,5 +50,16 @@ public:
   static std::vector<EdgeTrafficData> getTopCongestedEdges(
     const RoadNetwork& network,
     size_t topN = 10
+  );
+
+  // Reconstruct commute paths and return top edges for a filtered route subset.
+  // This is diagnostics-only and does not mutate network congestion state.
+  static std::vector<EdgeTrafficData> getTopRouteDiagnosticEdges(
+    const EntityStore& store,
+    const PopulationStore& population,
+    const RoadNetwork& network,
+    const RouteDiagnosticsFilter& filter,
+    size_t topN = 10,
+    uint32_t seed = 0
   );
 };

@@ -62,6 +62,17 @@ ctest --verbose
 
 Use `--benchmark-phase5-focus` with one of `ALL`, `GROWTH`, `POPULATION`, `TRAFFIC`, `ECONOMY`, or `SERVICE` to isolate timing for a single subsystem while still executing the full simulation pipeline.
 
+### Traffic Route Diagnostics
+
+```bash
+./build/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5
+./build/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5 --traffic-origin 10 10
+./build/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5 --traffic-destination 15 10
+./build/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5 --traffic-origin 10 10 --traffic-destination 15 10
+```
+
+Use `--traffic-origin X Y` and/or `--traffic-destination X Y` with `--print-top-edges N` to inspect congestion hotspots for specific commute route subsets.
+
 ## Project Structure
 
 - **src/core/** — Foundation (Time, Random, EntityId, Commands)

@@ -37,6 +37,7 @@
 - ✅ Added benchmark focus toggle: `--benchmark-phase5-focus ALL|GROWTH|POPULATION|TRAFFIC|ECONOMY|SERVICE`
 - ✅ Optimized service coverage evaluation using cached facility BFS distance fields
 - ✅ Optimized traffic simulation inner-loop overhead (distribution reuse + direct building pointer sets + road-node precheck)
+- ✅ Added per-origin/per-destination route diagnostics filters for traffic edge reporting (`--traffic-origin`, `--traffic-destination`)
 
 ---
 

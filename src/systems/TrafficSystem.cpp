@@ -4,6 +4,41 @@
 #include <random>
 #include <numeric>
 
+namespace {
+
+bool vec2Less(const glm::ivec2& a, const glm::ivec2& b) {
+  if (a.x != b.x) {
+    return a.x < b.x;
+  }
+  return a.y < b.y;
+}
+
+RoadNetwork::EdgeKey makeCanonicalEdgeKey(glm::ivec2 from, glm::ivec2 to) {
+  if (vec2Less(to, from)) {
+    return RoadNetwork::EdgeKey{to, from};
+  }
+  return RoadNetwork::EdgeKey{from, to};
+}
+
+bool matchesRouteFilter(
+  const RouteDiagnosticsFilter& filter,
+  const Building* residential,
+  const Building* job
+) {
+  if (residential == nullptr || job == nullptr) {
+    return false;
+  }
+  if (filter.hasOrigin && residential->position != filter.origin) {
+    return false;
+  }
+  if (filter.hasDestination && job->position != filter.destination) {
+    return false;
+  }
+  return true;
+}
+
+} // namespace
+
 TrafficSummary TrafficSystem::simulateCommutes(
   EntityStore& store,
   PopulationStore& population,
@@ -176,6 +211,119 @@ std::vector<EdgeTrafficData> TrafficSystem::getTopCongestedEdges(
     });
 
   // Return top N
+  if (edges.size() > topN) {
+    edges.resize(topN);
+  }
+
+  return edges;
+}
+
+std::vector<EdgeTrafficData> TrafficSystem::getTopRouteDiagnosticEdges(
+  const EntityStore& store,
+  const PopulationStore& population,
+  const RoadNetwork& network,
+  const RouteDiagnosticsFilter& filter,
+  size_t topN,
+  uint32_t seed
+) {
+  std::vector<EdgeTrafficData> edges;
+
+  const auto& groups = population.getGroups();
+  const auto& buildings = store.getBuildings();
+
+  std::vector<const Building*> residentialBuildings;
+  std::vector<const Building*> jobBuildings;
+  residentialBuildings.reserve(buildings.size());
+  jobBuildings.reserve(buildings.size());
+
+  for (const auto& [id, building] : buildings) {
+    (void)id;
+    if (building.type == BuildingType::Residential) {
+      residentialBuildings.push_back(&building);
+    } else if (building.type == BuildingType::Commercial ||
+               building.type == BuildingType::Industrial) {
+      jobBuildings.push_back(&building);
+    }
+  }
+
+  if (residentialBuildings.empty() || jobBuildings.empty()) {
+    return edges;
+  }
+
+  std::mt19937 rng(seed);
+  std::uniform_int_distribution<size_t> residentialDist(0, residentialBuildings.size() - 1);
+  std::uniform_int_distribution<size_t> jobDist(0, jobBuildings.size() - 1);
+
+  std::unordered_map<RoadNetwork::EdgeKey, EdgeTrafficData, RoadNetwork::EdgeKeyHash> edgeTotals;
+
+  for (const auto& [groupId, group] : groups) {
+    (void)groupId;
+    if (group.employed == 0) {
+      continue;
+    }
+
+    const uint32_t workersPerCommute = std::max(1u, group.employed / 10u);
+    const uint32_t numCommutes = (group.employed + workersPerCommute - 1) / workersPerCommute;
+
+    for (uint32_t c = 0; c < numCommutes; ++c) {
+      const Building* residentialBldg = residentialBuildings[residentialDist(rng)];
+      const Building* jobBldg = jobBuildings[jobDist(rng)];
+
+      if (!matchesRouteFilter(filter, residentialBldg, jobBldg)) {
+        continue;
+      }
+
+      if (residentialBldg == nullptr || jobBldg == nullptr) {
+        continue;
+      }
+
+      if (!network.hasNode(residentialBldg->position) || !network.hasNode(jobBldg->position)) {
+        continue;
+      }
+
+      const auto path = Pathfinding::findShortestPath(
+        network,
+        residentialBldg->position,
+        jobBldg->position
+      );
+
+      if (!path.found || path.waypoints.size() < 2) {
+        continue;
+      }
+
+      const uint32_t commuters = std::min(workersPerCommute, group.employed - (c * workersPerCommute));
+      const float commuterLoad = static_cast<float>(commuters);
+      const float pathCommuteTime = path.totalDistance * commuterLoad;
+
+      for (size_t i = 0; i + 1 < path.waypoints.size(); ++i) {
+        const glm::ivec2 from = path.waypoints[i];
+        const glm::ivec2 to = path.waypoints[i + 1];
+        const RoadNetwork::EdgeKey key = makeCanonicalEdgeKey(from, to);
+
+        auto& edge = edgeTotals[key];
+        edge.from = key.a;
+        edge.to = key.b;
+        edge.totalCommuters += commuterLoad;
+        edge.totalCommuteTime += pathCommuteTime;
+      }
+    }
+  }
+
+  edges.reserve(edgeTotals.size());
+  for (auto& [key, edge] : edgeTotals) {
+    (void)key;
+    edge.congestion = std::min(1.0f, edge.totalCommuters / 10.0f);
+    edges.push_back(edge);
+  }
+
+  std::sort(edges.begin(), edges.end(),
+    [](const EdgeTrafficData& a, const EdgeTrafficData& b) {
+      if (a.congestion != b.congestion) {
+        return a.congestion > b.congestion;
+      }
+      return a.totalCommuters > b.totalCommuters;
+    });
+
   if (edges.size() > topN) {
     edges.resize(topN);
   }

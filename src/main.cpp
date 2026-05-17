@@ -49,6 +49,8 @@ void printHelp() {
             << "  --run-commute-simulation Run commute simulation for all employed\n"
             << "  --print-traffic-summary  Print traffic congestion and commute metrics\n"
             << "  --print-top-edges N      Print top N most congested edges\n"
+            << "  --traffic-origin X Y     Filter route diagnostics by origin coordinate\n"
+            << "  --traffic-destination X Y Filter route diagnostics by destination coordinate\n"
             << "  --run-economy-calculation Run economy/tax calculation\n"
             << "  --print-budget-summary    Print revenue/expense/economic health summary\n"
             << "  --add-service TYPE X Y DIST  Add service facility and max road distance\n"
@@ -413,6 +415,21 @@ void printTopCongestedEdges(const std::vector<EdgeTrafficData>& edges) {
   }
 }
 
+void printRouteDiagnosticsFilter(const RouteDiagnosticsFilter& filter) {
+  if (!filter.hasOrigin && !filter.hasDestination) {
+    return;
+  }
+
+  std::cout << "Route Diagnostics Filter:";
+  if (filter.hasOrigin) {
+    std::cout << " origin=(" << filter.origin.x << "," << filter.origin.y << ")";
+  }
+  if (filter.hasDestination) {
+    std::cout << " destination=(" << filter.destination.x << "," << filter.destination.y << ")";
+  }
+  std::cout << "\n";
+}
+
 void printBudgetSummary(const EconomyState& economy) {
   std::cout << "Budget Summary:\n";
   std::cout << "  Residential Tax Revenue: " << economy.residentialTaxRevenue << "\n";
@@ -582,6 +599,10 @@ int main(int argc, char* argv[]) {
   std::string inspectSnapshotPath;
   std::vector<std::tuple<std::string, int, int, int>> serviceRequests;
   int printTopEdgesCount = -1;
+  bool hasTrafficOriginFilter = false;
+  int trafficOriginX = -1, trafficOriginY = -1;
+  bool hasTrafficDestinationFilter = false;
+  int trafficDestinationX = -1, trafficDestinationY = -1;
   int zoneX1 = -1, zoneY1 = -1, zoneX2 = -1, zoneY2 = -1;
   std::string zoneTypeRaw;
   int runGrowthSteps = 0;
@@ -646,6 +667,14 @@ int main(int argc, char* argv[]) {
       printTrafficSummaryFlag = true;
     } else if (arg == "--print-top-edges" && i + 1 < argc) {
       printTopEdgesCount = std::atoi(argv[++i]);
+    } else if (arg == "--traffic-origin" && i + 2 < argc) {
+      trafficOriginX = std::atoi(argv[++i]);
+      trafficOriginY = std::atoi(argv[++i]);
+      hasTrafficOriginFilter = true;
+    } else if (arg == "--traffic-destination" && i + 2 < argc) {
+      trafficDestinationX = std::atoi(argv[++i]);
+      trafficDestinationY = std::atoi(argv[++i]);
+      hasTrafficDestinationFilter = true;
     } else if (arg == "--run-economy-calculation") {
       runEconomyCalculationFlag = true;
     } else if (arg == "--print-budget-summary") {
@@ -703,6 +732,10 @@ int main(int argc, char* argv[]) {
     std::cerr << "Error: benchmark ticks must be non-negative\n";
     return 1;
   }
+    if ((hasTrafficOriginFilter || hasTrafficDestinationFilter) && printTopEdgesCount <= 0) {
+      std::cerr << "Error: --traffic-origin/--traffic-destination require --print-top-edges N\n";
+      return 1;
+    }
   
   try {
     if (!inspectSnapshotPath.empty()) {
@@ -1033,13 +1066,46 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: --print-top-edges requires --seed-population N\n";
         return 1;
       }
-      if (!hasTrafficSummary) {
-        trafficSummary = TrafficSystem::simulateCommutes(
-          store, population, roads, seed
-        );
-        hasTrafficSummary = true;
+      RouteDiagnosticsFilter routeFilter;
+      if (hasTrafficOriginFilter) {
+        if (!map.isValid({trafficOriginX, trafficOriginY})) {
+          std::cerr << "Error: --traffic-origin coordinate is out of bounds\n";
+          return 1;
+        }
+        routeFilter.hasOrigin = true;
+        routeFilter.origin = {trafficOriginX, trafficOriginY};
       }
-      auto topEdges = TrafficSystem::getTopCongestedEdges(roads, printTopEdgesCount);
+      if (hasTrafficDestinationFilter) {
+        if (!map.isValid({trafficDestinationX, trafficDestinationY})) {
+          std::cerr << "Error: --traffic-destination coordinate is out of bounds\n";
+          return 1;
+        }
+        routeFilter.hasDestination = true;
+        routeFilter.destination = {trafficDestinationX, trafficDestinationY};
+      }
+
+      printRouteDiagnosticsFilter(routeFilter);
+
+      std::vector<EdgeTrafficData> topEdges;
+      if (routeFilter.hasOrigin || routeFilter.hasDestination) {
+        topEdges = TrafficSystem::getTopRouteDiagnosticEdges(
+          store,
+          population,
+          roads,
+          routeFilter,
+          static_cast<size_t>(printTopEdgesCount),
+          seed
+        );
+      } else {
+        if (!hasTrafficSummary) {
+          trafficSummary = TrafficSystem::simulateCommutes(
+            store, population, roads, seed
+          );
+          hasTrafficSummary = true;
+        }
+        topEdges = TrafficSystem::getTopCongestedEdges(roads, printTopEdgesCount);
+      }
+
       printTopCongestedEdges(topEdges);
     }
 

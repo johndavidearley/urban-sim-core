@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **111 tests passing** (17 test suites)
+✅ **114 tests passing** (17 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -155,9 +155,13 @@ Implemented so far:
 - Benchmark focus profiling examples validated:
 	- `--benchmark-phase5 24 --benchmark-phase5-focus TRAFFIC` isolates traffic timing while keeping full pipeline execution for stable state evolution
 	- `--benchmark-phase5 24 --benchmark-phase5-focus SERVICE` isolates service timing with the same scenario progression
+- Route diagnostics filters added for targeted analysis:
+	- `--print-top-edges N --traffic-origin X Y` limits diagnostics to commutes from a specific origin
+	- `--print-top-edges N --traffic-destination X Y` limits diagnostics to commutes ending at a specific destination
+	- combined origin + destination filters are supported for OD-pair hotspot inspection
 
 Next implementation target:
-- Add richer route diagnostics (per-origin/per-destination filtering)
+- Add visualization-side origin/destination route filters
 
 ---
 

@@ -278,3 +278,80 @@ TEST_F(TrafficSystemTests, MultiplePathwaysDistributeCommuters) {
   // Congestion may be 0 if load is well distributed, just verify structure
   EXPECT_GE(summary.maxEdgeCongestion, 0.0f);
 }
+
+// Test: Route diagnostics can filter by origin without mutating live network congestion
+TEST_F(TrafficSystemTests, RouteDiagnosticsFilterByOrigin) {
+  EntityStore store;
+  PopulationStore population;
+
+  store.createBuilding(BuildingType::Residential, {10, 10}, 100);
+  store.createBuilding(BuildingType::Commercial, {15, 10}, 100);
+  population.createGroup(IncomeBand::Middle, 120, 100);
+
+  RouteDiagnosticsFilter filter;
+  filter.hasOrigin = true;
+  filter.origin = {10, 10};
+
+  auto edges = TrafficSystem::getTopRouteDiagnosticEdges(
+    store,
+    population,
+    *network,
+    filter,
+    5,
+    42
+  );
+
+  EXPECT_FALSE(edges.empty());
+  EXPECT_EQ(network->getCongestion({10, 10}, {11, 10}), 0.0f);
+}
+
+// Test: Route diagnostics can filter by destination
+TEST_F(TrafficSystemTests, RouteDiagnosticsFilterByDestination) {
+  EntityStore store;
+  PopulationStore population;
+
+  store.createBuilding(BuildingType::Residential, {10, 10}, 100);
+  store.createBuilding(BuildingType::Commercial, {15, 10}, 100);
+  population.createGroup(IncomeBand::Low, 100, 80);
+
+  RouteDiagnosticsFilter filter;
+  filter.hasDestination = true;
+  filter.destination = {15, 10};
+
+  auto edges = TrafficSystem::getTopRouteDiagnosticEdges(
+    store,
+    population,
+    *network,
+    filter,
+    5,
+    7
+  );
+
+  EXPECT_FALSE(edges.empty());
+  EXPECT_GT(edges.front().totalCommuters, 0.0f);
+}
+
+// Test: Non-matching route diagnostics filter yields no edges
+TEST_F(TrafficSystemTests, RouteDiagnosticsFilterNoMatchesReturnsEmpty) {
+  EntityStore store;
+  PopulationStore population;
+
+  store.createBuilding(BuildingType::Residential, {10, 10}, 100);
+  store.createBuilding(BuildingType::Commercial, {15, 10}, 100);
+  population.createGroup(IncomeBand::Middle, 100, 80);
+
+  RouteDiagnosticsFilter filter;
+  filter.hasOrigin = true;
+  filter.origin = {1, 1};
+
+  auto edges = TrafficSystem::getTopRouteDiagnosticEdges(
+    store,
+    population,
+    *network,
+    filter,
+    5,
+    42
+  );
+
+  EXPECT_TRUE(edges.empty());
+}
