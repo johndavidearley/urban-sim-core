@@ -96,7 +96,7 @@ Last updated: May 10, 2026
 - GrowthSystemTests: 8
 - GrowthMetricsTests: 3
 - PopulationSystemTests: 6
-- TrafficSystemTests: 10
+- TrafficSystemTests: 13
 - EconomySystemTests: 17
 - MetricsSystemTests: 2
 - SaveLoadSystemTests: 2
@@ -124,6 +124,7 @@ Implemented so far:
 - Happiness overlay added in live visualizer (`7`)
 - Route heatmap overlay added in live visualizer (`8`)
 - Pause/resume and deterministic single-step tick controls added (`Space`, `.`/`N`)
+- Route heatmap filter controls added in live visualizer (`O` origin cycle, `D` destination cycle, `C` clear)
 
 Next implementation target:
 - Performance pass and advanced route diagnostics
@@ -159,9 +160,12 @@ Implemented so far:
 	- `--print-top-edges N --traffic-origin X Y` limits diagnostics to commutes from a specific origin
 	- `--print-top-edges N --traffic-destination X Y` limits diagnostics to commutes ending at a specific destination
 	- combined origin + destination filters are supported for OD-pair hotspot inspection
+- Visualization route filters added for live route heatmap exploration:
+	- route heatmap now supports interactive origin/destination filter cycling from seeded building anchors
+	- HUD now includes current route filter state for quick context while profiling
 
 Next implementation target:
-- Add visualization-side origin/destination route filters
+- District-level service policies and budget controls
 
 ---
 

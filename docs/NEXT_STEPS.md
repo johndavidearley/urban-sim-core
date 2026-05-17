@@ -38,6 +38,7 @@
 - ✅ Optimized service coverage evaluation using cached facility BFS distance fields
 - ✅ Optimized traffic simulation inner-loop overhead (distribution reuse + direct building pointer sets + road-node precheck)
 - ✅ Added per-origin/per-destination route diagnostics filters for traffic edge reporting (`--traffic-origin`, `--traffic-destination`)
+- ✅ Added visualization-side route filter controls for route heatmap (`O` origin cycle, `D` destination cycle, `C` clear)
 
 ---
 

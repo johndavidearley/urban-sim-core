@@ -40,6 +40,9 @@ Controls:
 - `6`: demand overlay
 - `7`: happiness overlay
 - `8`: route heatmap overlay
+- `O`: cycle route heatmap origin filter (residential anchors)
+- `D`: cycle route heatmap destination filter (job anchors)
+- `C`: clear route heatmap filters
 - `Space`: pause/resume live deterministic ticks
 - `.` or `N`: single simulation tick while paused
 - `H`: show/hide in-window legend panel

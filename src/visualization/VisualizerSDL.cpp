@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <queue>
 #include <sstream>
 #include <string>
@@ -138,6 +139,7 @@ struct LiveSimulationState {
   ServiceCoverageSummary serviceSummary;
   TrafficSummary trafficSummary;
   std::unordered_map<Coord, float, Vec2Hash> routeHeatByTile;
+  RouteDiagnosticsFilter routeFilter;
 };
 
 bool hasRoadAdjacency(const RoadNetwork& roads, Coord coord) {
@@ -328,6 +330,140 @@ std::unordered_map<Coord, float, Vec2Hash> buildRouteHeatByTile(const RoadNetwor
   }
 
   return heat;
+}
+
+std::unordered_map<Coord, float, Vec2Hash> buildRouteHeatByTileFromEdges(
+  const std::vector<EdgeTrafficData>& edges
+) {
+  std::unordered_map<Coord, float, Vec2Hash> heat;
+
+  float maxCommuters = 0.0f;
+  for (const auto& edge : edges) {
+    maxCommuters = std::max(maxCommuters, edge.totalCommuters);
+  }
+  if (maxCommuters <= 0.0f) {
+    return heat;
+  }
+
+  for (const auto& edge : edges) {
+    const float normalized = std::max(0.0f, std::min(1.0f, edge.totalCommuters / maxCommuters));
+    heat[edge.from] = std::max(heat[edge.from], normalized);
+    heat[edge.to] = std::max(heat[edge.to], normalized);
+  }
+
+  return heat;
+}
+
+bool coordLess(const Coord& a, const Coord& b) {
+  if (a.x != b.x) {
+    return a.x < b.x;
+  }
+  return a.y < b.y;
+}
+
+std::vector<Coord> collectBuildingCoords(const EntityStore& store, bool residentialOnly) {
+  std::vector<Coord> coords;
+  for (const auto& [id, building] : store.getBuildings()) {
+    (void)id;
+    if (residentialOnly) {
+      if (building.type == BuildingType::Residential) {
+        coords.push_back(building.position);
+      }
+    } else {
+      if (building.type == BuildingType::Commercial || building.type == BuildingType::Industrial) {
+        coords.push_back(building.position);
+      }
+    }
+  }
+
+  std::sort(coords.begin(), coords.end(), coordLess);
+  coords.erase(std::unique(coords.begin(), coords.end()), coords.end());
+  return coords;
+}
+
+void cycleOriginFilter(LiveSimulationState& liveState, const EntityStore& store) {
+  const std::vector<Coord> origins = collectBuildingCoords(store, true);
+  if (origins.empty()) {
+    liveState.routeFilter.hasOrigin = false;
+    return;
+  }
+
+  size_t index = 0;
+  if (liveState.routeFilter.hasOrigin) {
+    const auto it = std::find(origins.begin(), origins.end(), liveState.routeFilter.origin);
+    if (it != origins.end()) {
+      index = (static_cast<size_t>(std::distance(origins.begin(), it)) + 1u) % origins.size();
+    }
+  }
+
+  liveState.routeFilter.hasOrigin = true;
+  liveState.routeFilter.origin = origins[index];
+}
+
+void cycleDestinationFilter(LiveSimulationState& liveState, const EntityStore& store) {
+  const std::vector<Coord> destinations = collectBuildingCoords(store, false);
+  if (destinations.empty()) {
+    liveState.routeFilter.hasDestination = false;
+    return;
+  }
+
+  size_t index = 0;
+  if (liveState.routeFilter.hasDestination) {
+    const auto it = std::find(destinations.begin(), destinations.end(), liveState.routeFilter.destination);
+    if (it != destinations.end()) {
+      index = (static_cast<size_t>(std::distance(destinations.begin(), it)) + 1u) % destinations.size();
+    }
+  }
+
+  liveState.routeFilter.hasDestination = true;
+  liveState.routeFilter.destination = destinations[index];
+}
+
+void clearRouteFilters(LiveSimulationState& liveState) {
+  liveState.routeFilter.hasOrigin = false;
+  liveState.routeFilter.hasDestination = false;
+}
+
+void refreshRouteHeat(
+  const EntityStore& store,
+  const PopulationStore& population,
+  const RoadNetwork& roads,
+  LiveSimulationState& liveState,
+  uint32_t seed
+) {
+  if (!liveState.routeFilter.hasOrigin && !liveState.routeFilter.hasDestination) {
+    liveState.routeHeatByTile = buildRouteHeatByTile(roads);
+    return;
+  }
+
+  const size_t diagnosticLimit = roads.getRoadCount() + 32u;
+  const std::vector<EdgeTrafficData> edges = TrafficSystem::getTopRouteDiagnosticEdges(
+    store,
+    population,
+    roads,
+    liveState.routeFilter,
+    diagnosticLimit,
+    seed
+  );
+  liveState.routeHeatByTile = buildRouteHeatByTileFromEdges(edges);
+}
+
+std::string routeFilterLabel(const RouteDiagnosticsFilter& filter) {
+  if (!filter.hasOrigin && !filter.hasDestination) {
+    return "none";
+  }
+
+  std::ostringstream oss;
+  if (filter.hasOrigin) {
+    oss << "O(" << filter.origin.x << "," << filter.origin.y << ")";
+  }
+  if (filter.hasDestination) {
+    if (filter.hasOrigin) {
+      oss << "->";
+    }
+    oss << "D(" << filter.destination.x << "," << filter.destination.y << ")";
+  }
+  return oss.str();
 }
 
 float routeHeatAtTile(const std::unordered_map<Coord, float, Vec2Hash>& routeHeatByTile, Coord coord) {
@@ -631,6 +767,12 @@ void drawLegendPanel(SDL_Renderer* renderer, OverlayMode overlayMode, int window
   // Tiny indicator for legend toggle state and command location.
   drawFilledRect(renderer, panelX + panelW - 72, panelY + panelH - 20, 60, 10, {80, 150, 110}, 220);
   drawRectOutline(renderer, panelX + panelW - 72, panelY + panelH - 20, 60, 10, {220, 220, 220}, 255);
+
+  if (overlayMode == OverlayMode::RouteHeatmap) {
+    drawText(renderer, panelX + 312, panelY + 104, "O ORIGIN", {205, 220, 205}, 1);
+    drawText(renderer, panelX + 312, panelY + 116, "D DEST", {205, 220, 205}, 1);
+    drawText(renderer, panelX + 312, panelY + 128, "C CLEAR", {205, 220, 205}, 1);
+  }
 }
 
 void runSimulationTick(
@@ -651,7 +793,7 @@ void runSimulationTick(
 
   liveState.trafficSummary = TrafficSystem::simulateCommutes(store, population, roads, tickSeed + 3u);
   liveState.serviceSummary = ServiceSystem::evaluateCoverage(store, roads, facilities);
-  liveState.routeHeatByTile = buildRouteHeatByTile(roads);
+  refreshRouteHeat(store, population, roads, liveState, tickSeed + 3u);
 
   ++liveState.tick;
 }
@@ -664,7 +806,8 @@ std::string makeHudTitle(
   int tilePixels,
   int viewX,
   int viewY,
-  OverlayMode overlayMode
+  OverlayMode overlayMode,
+  const RouteDiagnosticsFilter& routeFilter
 ) {
   const auto& buildings = store.getBuildings();
   size_t residential = 0;
@@ -697,7 +840,8 @@ std::string makeHudTitle(
       << " | Zoom:" << tilePixels
       << " | View:" << viewX << "," << viewY
       << " | Overlay:" << overlayModeName(overlayMode)
-      << " [1-8 overlays Space pause . step H legend]";
+      << " | RouteFilter:" << routeFilterLabel(routeFilter)
+      << " [1-8 overlays Space pause . step H legend O/D cycle C clear]";
   return oss.str();
 }
 
@@ -799,7 +943,7 @@ int main(int argc, char* argv[]) {
   LiveSimulationState liveState;
   liveState.serviceSummary = ServiceSystem::evaluateCoverage(store, roads, facilities);
   liveState.trafficSummary = TrafficSystem::simulateCommutes(store, population, roads, 98765u);
-  liveState.routeHeatByTile = buildRouteHeatByTile(roads);
+  refreshRouteHeat(store, population, roads, liveState, 98765u);
 
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     std::cerr << "SDL init failed: " << SDL_GetError() << "\n";
@@ -904,6 +1048,18 @@ int main(int argc, char* argv[]) {
           case SDLK_h:
             showLegend = !showLegend;
             break;
+          case SDLK_o:
+            cycleOriginFilter(liveState, store);
+            refreshRouteHeat(store, population, roads, liveState, 1003u + (liveState.tick * 31u));
+            break;
+          case SDLK_d:
+            cycleDestinationFilter(liveState, store);
+            refreshRouteHeat(store, population, roads, liveState, 1003u + (liveState.tick * 31u));
+            break;
+          case SDLK_c:
+            clearRouteFilters(liveState);
+            refreshRouteHeat(store, population, roads, liveState, 1003u + (liveState.tick * 31u));
+            break;
           default:
             break;
         }
@@ -954,7 +1110,8 @@ int main(int argc, char* argv[]) {
         tilePixels,
         viewX,
         viewY,
-        overlayMode
+        overlayMode,
+        liveState.routeFilter
       );
       SDL_SetWindowTitle(window, hudTitle.c_str());
       lastHudRefreshMs = nowMs;

@@ -176,11 +176,11 @@ Last updated: May 10, 2026
 
 ## Next Targets (Post-Backlog)
 
-1. Add visualization-side origin/destination route filters
-2. District-level service policies and budget controls
-3. Add persistence integrity report command for batch snapshot auditing
-4. Extend benchmark reports with percentile timings over repeated runs
-5. Add route diagnostics export mode for offline analysis
+1. District-level service policies and budget controls
+2. Add persistence integrity report command for batch snapshot auditing
+3. Extend benchmark reports with percentile timings over repeated runs
+4. Add route diagnostics export mode for offline analysis
+5. Add commute demand-shaping policy experiments for scenario balancing
 
 ---
 
