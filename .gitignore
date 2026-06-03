@@ -25,6 +25,8 @@ CMakeUserPresets.json
 
 # Test outputs
 Testing/
+pressure_report*.csv
+sweep_out*/
 
 # External dependencies
 # Note: googletest is a git submodule, so it's tracked separately

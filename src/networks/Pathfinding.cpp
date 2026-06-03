@@ -94,6 +94,15 @@ Pathfinding::Path Pathfinding::findShortestPathWithCongestion(
   glm::ivec2 start,
   glm::ivec2 goal
 ) {
+  return findShortestPathWithCongestionWeight(network, start, goal, 0.5f);
+}
+
+Pathfinding::Path Pathfinding::findShortestPathWithCongestionWeight(
+  const RoadNetwork& network,
+  glm::ivec2 start,
+  glm::ivec2 goal,
+  float congestionWeight
+) {
   if (!network.hasNode(start) || !network.hasNode(goal)) {
     return Path();
   }
@@ -147,7 +156,7 @@ Pathfinding::Path Pathfinding::findShortestPathWithCongestion(
       
       // Base cost + congestion penalty
       float baseCost = 1.0f;
-      float congestionCost = network.getCongestion(current, neighbor) * 0.5f;
+      float congestionCost = network.getCongestion(current, neighbor) * std::max(0.0f, congestionWeight);
       float edgeCost = baseCost + congestionCost;
       
       float alt = dist[current] + edgeCost;

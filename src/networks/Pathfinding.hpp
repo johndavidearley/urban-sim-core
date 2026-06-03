@@ -32,6 +32,14 @@ public:
     glm::ivec2 start,
     glm::ivec2 goal
   );
+
+  // Find shortest path with caller-provided congestion penalty weight.
+  static Path findShortestPathWithCongestionWeight(
+    const RoadNetwork& network,
+    glm::ivec2 start,
+    glm::ivec2 goal,
+    float congestionWeight
+  );
   
   // Calculate Manhattan distance heuristic
   static float heuristic(glm::ivec2 a, glm::ivec2 b);

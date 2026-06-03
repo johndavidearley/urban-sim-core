@@ -29,13 +29,21 @@ find_package(nlohmann_json 3.2.0 QUIET)
 
 # Google Test (for testing)
 enable_testing()
-add_subdirectory(extern/googletest EXCLUDE_FROM_ALL)
+if(EXISTS "${CMAKE_SOURCE_DIR}/extern/googletest/CMakeLists.txt")
+  add_subdirectory(extern/googletest EXCLUDE_FROM_ALL)
+  set(URBAN_SIM_HAS_GTEST ON)
+else()
+  message(WARNING "googletest submodule not available; test targets will be skipped")
+  set(URBAN_SIM_HAS_GTEST OFF)
+endif()
 
 # Main source library
 add_subdirectory(src)
 
 # Tests
-add_subdirectory(tests)
+if(URBAN_SIM_HAS_GTEST)
+  add_subdirectory(tests)
+endif()
 
 # Summary
 message(STATUS "UrbanSimCore ${PROJECT_VERSION}")

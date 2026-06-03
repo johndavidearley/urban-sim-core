@@ -6,6 +6,32 @@
 
 namespace {
 
+struct RouteKey {
+  glm::ivec2 origin;
+  glm::ivec2 destination;
+  bool useCongestion = false;
+  uint16_t congestionWeightMilli = 0;
+
+  bool operator==(const RouteKey& other) const {
+    return origin == other.origin &&
+           destination == other.destination &&
+           useCongestion == other.useCongestion &&
+           congestionWeightMilli == other.congestionWeightMilli;
+  }
+};
+
+struct RouteKeyHash {
+  size_t operator()(const RouteKey& key) const {
+    Vec2Hash hash;
+    size_t value = hash(key.origin) ^ (hash(key.destination) << 1);
+    value ^= (static_cast<size_t>(key.useCongestion ? 1 : 0) << 2);
+    value ^= (static_cast<size_t>(key.congestionWeightMilli) << 3);
+    return value;
+  }
+};
+
+using RoutePathCache = std::unordered_map<RouteKey, Pathfinding::Path, RouteKeyHash>;
+
 bool vec2Less(const glm::ivec2& a, const glm::ivec2& b) {
   if (a.x != b.x) {
     return a.x < b.x;
@@ -35,6 +61,29 @@ bool matchesRouteFilter(
     return false;
   }
   return true;
+}
+
+const Pathfinding::Path& getOrComputeRoute(
+  const RoadNetwork& network,
+  glm::ivec2 origin,
+  glm::ivec2 destination,
+  bool useCongestion,
+  float congestionWeight,
+  RoutePathCache& cache
+) {
+  const uint16_t weightMilli = static_cast<uint16_t>(std::max(0.0f, congestionWeight) * 1000.0f + 0.5f);
+  const RouteKey key{origin, destination, useCongestion, weightMilli};
+  auto it = cache.find(key);
+  if (it != cache.end()) {
+    return it->second;
+  }
+
+  Pathfinding::Path computed = useCongestion
+    ? Pathfinding::findShortestPathWithCongestionWeight(network, origin, destination, congestionWeight)
+    : Pathfinding::findShortestPath(network, origin, destination);
+
+  auto inserted = cache.emplace(key, std::move(computed));
+  return inserted.first->second;
 }
 
 } // namespace
@@ -84,6 +133,13 @@ TrafficSummary TrafficSystem::simulateCommutes(
 
   std::uniform_int_distribution<size_t> residentialDist(0, residentialBuildings.size() - 1);
   std::uniform_int_distribution<size_t> jobDist(0, jobBuildings.size() - 1);
+  RoutePathCache routeCache;
+  routeCache.reserve(256);
+
+  // Adaptive routing feedback: escalate congestion sensitivity when peak edges saturate.
+  float adaptiveCongestionWeight = 0.5f;
+  const uint32_t feedbackEpochCommutes = 8;
+  uint32_t processedCommutes = 0;
 
   // For each population group, assign workers to jobs and simulate commutes
   for (const auto& [groupId, group] : groups) {
@@ -116,14 +172,24 @@ TrafficSummary TrafficSystem::simulateCommutes(
         continue;
       }
 
-      // Calculate commute path using pathfinding with congestion
-      auto path = Pathfinding::findShortestPathWithCongestion(
+      if (processedCommutes > 0 && (processedCommutes % feedbackEpochCommutes) == 0) {
+        routeCache.clear();
+      }
+
+      // Baseline cache: reuse pathfinding results for repeated OD pairs within this tick.
+      const Pathfinding::Path& path = getOrComputeRoute(
         network,
         residentialBldg->position,
-        jobBldg->position
+        jobBldg->position,
+        true,
+        adaptiveCongestionWeight,
+        routeCache
       );
 
       if (path.found && path.waypoints.size() > 1) {
+        bool invalidateCache = false;
+        float peakPathCongestion = 0.0f;
+
         // Accumulate traffic on path edges
         for (size_t i = 0; i < path.waypoints.size() - 1; ++i) {
           glm::ivec2 from = path.waypoints[i];
@@ -131,12 +197,29 @@ TrafficSummary TrafficSystem::simulateCommutes(
 
           // Update network edge with commuter load
           network.updateCongestion(from, to, static_cast<float>(workersPerCommute));
+          peakPathCongestion = std::max(peakPathCongestion, network.getCongestion(from, to));
+        }
+
+        const float previousWeight = adaptiveCongestionWeight;
+        if (peakPathCongestion >= 0.85f) {
+          adaptiveCongestionWeight = std::min(2.0f, adaptiveCongestionWeight + 0.20f);
+        } else if (peakPathCongestion <= 0.35f) {
+          adaptiveCongestionWeight = std::max(0.5f, adaptiveCongestionWeight - 0.05f);
+        }
+        if (std::abs(adaptiveCongestionWeight - previousWeight) > 0.0001f) {
+          invalidateCache = true;
         }
 
         // Add commute time (scaled by actual commuters in this batch)
         uint32_t commuters = std::min(workersPerCommute, group.employed - (c * workersPerCommute));
         totalCommuteTime += path.totalDistance * commuters;
+
+        if (invalidateCache) {
+          routeCache.clear();
+        }
       }
+
+      processedCommutes += 1;
     }
   }
 
@@ -253,6 +336,8 @@ std::vector<EdgeTrafficData> TrafficSystem::getTopRouteDiagnosticEdges(
   std::mt19937 rng(seed);
   std::uniform_int_distribution<size_t> residentialDist(0, residentialBuildings.size() - 1);
   std::uniform_int_distribution<size_t> jobDist(0, jobBuildings.size() - 1);
+  RoutePathCache routeCache;
+  routeCache.reserve(256);
 
   std::unordered_map<RoadNetwork::EdgeKey, EdgeTrafficData, RoadNetwork::EdgeKeyHash> edgeTotals;
 
@@ -281,10 +366,13 @@ std::vector<EdgeTrafficData> TrafficSystem::getTopRouteDiagnosticEdges(
         continue;
       }
 
-      const auto path = Pathfinding::findShortestPath(
+      const Pathfinding::Path& path = getOrComputeRoute(
         network,
         residentialBldg->position,
-        jobBldg->position
+        jobBldg->position,
+        false,
+        0.0f,
+        routeCache
       );
 
       if (!path.found || path.waypoints.size() < 2) {

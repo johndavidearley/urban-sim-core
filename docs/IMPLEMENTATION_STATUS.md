@@ -197,8 +197,172 @@ Implemented so far:
 - All commands execute before list/summary commands for correct state
 - Test count remains: 126 tests (all passing, no regressions)
 
+✅ **Slice 13** - District policy integration into economy/service completed:
+- District metrics now evaluate district-scoped economy inputs instead of full-city totals:
+	- district-local building set used for revenue/expense calculations
+	- district tax rates now materially affect district budget output
+	- district population/employment is estimated from residential-capacity share to avoid full-city overcounting
+- District metrics now evaluate service coverage from actual service simulation data when available:
+	- supports district-assigned facility IDs (1-based IDs from service add order)
+	- falls back to facilities physically inside district bounds when no assignments exist
+	- applies district service priority weights (fire/police/health/education) to weighted coverage
+	- applies district service allocation percentage as coverage scaling factor
+- District happiness is now derived from combined economy health + service coverage signal (instead of static stub values)
+- CLI district outputs improved:
+	- service facility add now prints deterministic facility IDs for district assignment
+	- district listing now shows priority weights and assigned facility IDs
+	- district summary now passes roads/facilities for policy-aware service metrics
+- District tests expanded with regression coverage for:
+	- district tax policy effect on district-local revenue
+	- assigned-facility + priority-weight impact on district service coverage/happiness
+
+✅ **Slice 14** - District budget allocation controls completed:
+- Extended district policy model with explicit service budget cap support (`serviceBudgetCap`)
+- Added district metrics budget fields for policy diagnostics:
+	- service budget target
+	- service budget allocated
+	- cap-applied indicator
+- District service effectiveness now scales by budget fulfillment ratio (`allocated/target`)
+- Added CLI policy tuning commands:
+	- `--set-district-allocation DIST_ID PERCENT`
+	- `--set-district-budget-cap DIST_ID AMOUNT`
+- District list/summary output now surfaces budget allocation/cap state for inspection
+- Added district tests for budget-cap setter and cap impact on service coverage
+
+✅ **Slice 15** - Citywide district shared-budget balancing completed:
+- Added shared budget balancing in `DistrictSystem::evaluateAllDistricts(..., sharedServiceBudgetPool)`
+- Implemented proportional allocation under constrained pool with cap-aware redistribution
+- Added rebalance recomputation of district service outcomes:
+	- allocated budget and cap-applied flag
+	- budget-fulfillment-scaled service coverage
+	- happiness recomputed from economic health + balanced service coverage
+- Added CLI diagnostics command:
+	- `--print-district-balancing POOL`
+	- prints per-district target/allocated/coverage/cap state and total allocated
+- Added district tests for shared-pool competition and cap-driven redistribution behavior
+
+✅ **Slice 16** - District budget pressure tied to growth demand shaping:
+- Added growth chance modifier infrastructure in `GrowthSystem` (`GrowthChanceModifier` regions)
+- Added CLI pressure-mode option for growth:
+	- `--district-pressure-pool POOL`
+	- During `--run-growth N`, district shared-budget fulfillment now scales per-district growth chance
+- Added cumulative CLI request handling fixes:
+	- multiple `--zone-rect` invocations are now applied in one run
+	- multiple `--place-road` invocations are now applied in one run
+	- axis-aligned `--place-road` ranges are expanded into adjacent edge segments
+- District mutation commands are now applied before growth execution so pressure mode uses current district policy state in the same invocation
+- Added growth test coverage for region-level chance suppression via modifiers
+
+✅ **Slice 17** - Pressure tuning and diagnostics pass completed:
+- Added tuned district growth pressure multiplier model in `DistrictSystem::computeGrowthPressureMultiplier(...)`:
+	- budget-fulfillment factor
+	- district sparsity boost
+	- cap-pressure penalty
+	- bounded multiplier range to reduce runaway concentration
+- Added CLI growth-pressure diagnostics:
+	- `--print-growth-pressure`
+	- prints per-step district multiplier/fulfillment/cap-state while running growth under `--district-pressure-pool`
+- Added district tests covering multiplier bounds/cap-awareness and fulfillment monotonicity
+
+✅ **Slice 18** - Policy export/report tooling for offline calibration completed:
+- Added growth pressure CSV export command:
+	- `--export-growth-pressure FILE`
+	- requires `--district-pressure-pool` + `--run-growth`
+- Export includes per-step per-district calibration data:
+	- multiplier
+	- budget fulfillment
+	- cap state
+	- target vs allocated budget
+	- district buildings/population snapshot fields
+- CSV output validated with mixed district-cap scenario for offline comparison workflows
+
+✅ **Slice 19** - Scenario diff tooling for pressure reports completed:
+- Added report comparison CLI command:
+	- `--compare-growth-pressure FILE_A FILE_B`
+- Implemented CSV parser + schema validation for exported pressure reports
+- Added district-level delta summary output for policy comparisons:
+	- average multiplier delta
+	- average fulfillment delta
+	- cap-hit rate delta
+	- allocation-share delta (`allocated/target`)
+- Comparison validated against identical reports (all deltas expectedly zero)
+
+✅ **Slice 20** - Batch comparison workflow support for policy sweep ranking completed:
+- Added ranking command for pressure-report sweeps:
+	- `--rank-growth-pressure BASE CANDIDATE` (repeatable for multiple candidates)
+- Added baseline-relative score model combining:
+	- fulfillment delta (positive)
+	- allocation-share delta (positive)
+	- multiplier delta (small positive)
+	- cap-hit-rate delta (negative penalty)
+- Added ranked output with per-candidate deltas and deterministic ordering
+- Validated ranking behavior with stricter-cap candidate vs identical baseline report
+
+✅ **Slice 21** - Automated policy sweep runner completed:
+- Added end-to-end sweep command:
+	- `--run-policy-sweep OUT_DIR`
+	- `--sweep-district DIST_ID`
+	- `--sweep-seeds A,B,C`
+	- `--sweep-caps A,B,C`
+	- `--sweep-allocations A,B,C`
+- Added scenario orchestration that:
+	- captures a baseline snapshot
+	- runs per-scenario growth-pressure simulations from that baseline
+	- exports per-scenario pressure CSV reports
+	- ranks all generated candidates against baseline using existing score model
+- Added sweep manifest export:
+	- `OUT_DIR/sweep_manifest.csv`
+	- includes scenario parameters, report paths, score, and summary deltas
+- Enriched sweep manifest with per-district subscore breakdown columns for the swept district:
+	- district sample count
+	- district-level multiplier/fulfillment/cap-rate/allocation-share deltas
+- Added optional all-district breakdown manifest mode:
+	- `--sweep-manifest-all-districts`
+	- emits `OUT_DIR/sweep_manifest_districts.csv` with one row per scenario per district
+	- includes district name, district sample count, and district-level deltas
+- Added district-level ranking view in CLI output:
+	- prints top and bottom districts by average delta score across sweep candidates
+	- includes fulfillment/cap-rate/allocation-share average deltas per district
+- Refactored growth pressure execution into reusable helper to support both direct growth runs and sweep execution
+- Validated with multi-dimensional smoke sweep (seeds/caps/allocations) producing reports, ranking output, and manifest
+
 Next implementation target:
-- EconomySystem/ServiceSystem integration using district policy weights
+- Begin Slice 15 economy refinements (interest/loan scaffolding baseline)
+
+✅ **Slice 13 (Phase Start)** - Traffic route caching baseline completed:
+- Added per-tick origin/destination route caching in `TrafficSystem` commute simulation path
+- Added route caching to route diagnostics path reconstruction for repeated OD requests
+- Cache scope kept tick-local to preserve deterministic behavior and avoid cross-run stale routing
+- Validated compile and traffic CLI smoke run (`--run-commute-simulation`, `--print-traffic-summary`, `--print-top-edges`)
+
+✅ **Slice 13 (Phase 2)** - Adaptive congestion feedback routing completed:
+- Added configurable congestion penalty pathfinding API:
+	- `Pathfinding::findShortestPathWithCongestionWeight(...)`
+- Added adaptive route-choice loop in `TrafficSystem::simulateCommutes(...)`:
+	- dynamically raises congestion penalty weight during peak edge saturation
+	- relaxes weight under lighter path congestion
+	- uses epoch-based cache invalidation to keep routing responsive to evolving loads
+- Preserved deterministic behavior with tick-local state and seeded commute selection
+- Validated compile and traffic CLI smoke run after fixing cache invalidation ordering regression
+
+✅ **Slice 14 (Phase Start)** - Multi-zone demand balancing baseline completed:
+- Added growth chance balancing factor that aligns spawned building mix with relative zone demand shares
+- Balancing model uses:
+	- demand share vs current built share gap (primary)
+	- mild zoned supply share gap adjustment (secondary)
+	- bounded multiplier clamping to avoid runaway zone swings
+- Added growth test coverage for high-demand zone bias across repeated mixed-zone growth steps
+- Validated compile and mixed-zone CLI growth smoke run (`--print-growth-summary`, `--print-buildings`)
+
+✅ **Slice 14 (Phase 2)** - Early aging/demolition scaffolding completed:
+- Added `EntityStore::removeBuilding(...)` support for growth-side teardown operations
+- Extended `GrowthStats` with demolition counters and surfaced demolition output in growth-step CLI logs
+- Added low-demand overbuild demolition pass in `GrowthSystem::runStep(...)`:
+	- eligible when zone demand is low and built coverage materially exceeds target coverage
+	- deterministic seeded chance, bounded to avoid runaway teardown
+	- skips unmanaged placeholder building IDs to avoid invalid snapshot/entity mismatches
+- Added growth test coverage for demolition behavior under sustained low-demand overbuilt conditions
+- Validated compile and growth CLI smoke runs showing live demolition events and stable summaries
 
 ---
 

@@ -1,11 +1,17 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <cstdint>
 #include <iomanip>
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cctype>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 #include "src/core/SimulationTime.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
@@ -39,6 +45,17 @@ void printHelp() {
             << "  --print-zones            Print zoning map and exit\n"
             << "  --print-demand           Print zoning demand stub and exit\n"
             << "  --run-growth N           Run N growth steps and print summary\n"
+            << "  --district-pressure-pool POOL  Apply district shared-budget pressure while running growth\n"
+            << "  --print-growth-pressure  Print per-step district pressure multipliers during growth\n"
+            << "  --export-growth-pressure FILE  Export per-step district pressure CSV for offline calibration\n"
+            << "  --compare-growth-pressure FILE_A FILE_B  Compare two growth-pressure CSV reports\n"
+            << "  --rank-growth-pressure BASE CANDIDATE  Rank candidate reports vs baseline (repeatable)\n"
+            << "  --run-policy-sweep OUT_DIR  Run seed/cap/allocation sweep and auto-rank reports\n"
+            << "  --sweep-district DIST_ID  District to mutate during sweep scenarios\n"
+            << "  --sweep-seeds A,B,C  Comma-separated seed list for sweep scenarios\n"
+            << "  --sweep-caps A,B,C  Comma-separated service cap list (-1 means uncapped)\n"
+            << "  --sweep-allocations A,B,C  Comma-separated allocation list (0.0-1.0)\n"
+            << "  --sweep-manifest-all-districts  Emit per-scenario per-district breakdown manifest\n"
             << "  --print-growth-summary   Print growth fill-rate summary\n"
             << "  --seed-population N      Allocate N residents to housing/jobs\n"
             << "  --print-population-summary  Print population/job summary\n"
@@ -61,9 +78,14 @@ void printHelp() {
             << "  --create-district NAME X1 Y1 X2 Y2  Create a district (min to max corners)\n"
             << "  --list-districts         List all districts\n"
             << "  --print-district-summary DIST_ID  Print metrics for a district\n"
+            << "  --print-district-balancing POOL  Print all district allocations under shared service budget pool\n"
             << "  --set-district-tax DIST_ID TYPE RATE  Set tax rate (residential|commercial|industrial)\n"
             << "  --set-district-service DIST_ID FIRE POLICE HEALTH EDUCATION  Set service priorities (0-1)\n"
+            << "  --set-district-allocation DIST_ID PERCENT  Set district service allocation share (0-1)\n"
+            << "  --set-district-budget-cap DIST_ID AMOUNT  Set district service budget cap (negative disables cap)\n"
             << "  --assign-facility DIST_ID FACILITY_ID  Assign service facility to district\n"
+            << "  --unassign-facility DIST_ID FACILITY_ID  Remove service facility from district\n"
+            << "  --print-district-facilities DIST_ID  Print facilities assigned to district\n"
             << "  --render-map FILE         Render top-down city snapshot to PPM file\n"
             << "  --render-scale N          Pixel size per tile when rendering (default: 8)\n"
             << "  --render-view X Y W H     Render viewport rectangle in tiles\n"
@@ -134,6 +156,847 @@ const char* benchmarkFocusToString(BenchmarkFocus focus) {
       return "SERVICE";
     default:
       return "ALL";
+  }
+}
+
+struct GrowthPressureReportRow {
+  int step = 0;
+  DistrictId districtId = 0;
+  std::string districtName;
+  float multiplier = 1.0f;
+  float fulfillment = 1.0f;
+  bool capApplied = false;
+  int64_t target = 0;
+  int64_t allocated = 0;
+  uint32_t buildings = 0;
+  uint32_t population = 0;
+};
+
+std::string csvEscape(const std::string& raw) {
+  std::string escaped;
+  escaped.reserve(raw.size() + 4);
+  escaped.push_back('"');
+  for (char c : raw) {
+    if (c == '"') {
+      escaped.push_back('"');
+    }
+    escaped.push_back(c);
+  }
+  escaped.push_back('"');
+  return escaped;
+}
+
+bool writeGrowthPressureReportCSV(
+  const std::string& filePath,
+  const std::vector<GrowthPressureReportRow>& rows
+) {
+  std::ofstream out(filePath);
+  if (!out.is_open()) {
+    return false;
+  }
+
+  out << "step,district_id,district_name,multiplier,fulfillment,cap_applied,target,allocated,buildings,population\n";
+  for (const GrowthPressureReportRow& row : rows) {
+    out << row.step << ","
+        << row.districtId << ","
+        << csvEscape(row.districtName) << ","
+        << std::fixed << std::setprecision(6) << row.multiplier << ","
+        << std::fixed << std::setprecision(6) << row.fulfillment << ","
+        << (row.capApplied ? 1 : 0) << ","
+        << row.target << ","
+        << row.allocated << ","
+        << row.buildings << ","
+        << row.population << "\n";
+  }
+
+  return static_cast<bool>(out);
+}
+
+std::vector<std::string> parseCSVLine(const std::string& line) {
+  std::vector<std::string> fields;
+  std::string current;
+  bool inQuotes = false;
+
+  for (size_t i = 0; i < line.size(); ++i) {
+    const char c = line[i];
+    if (c == '"') {
+      if (inQuotes && i + 1 < line.size() && line[i + 1] == '"') {
+        current.push_back('"');
+        ++i;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (c == ',' && !inQuotes) {
+      fields.push_back(current);
+      current.clear();
+      continue;
+    }
+
+    current.push_back(c);
+  }
+
+  fields.push_back(current);
+  return fields;
+}
+
+bool loadGrowthPressureReportCSV(
+  const std::string& filePath,
+  std::vector<GrowthPressureReportRow>& outRows,
+  std::string& outError
+) {
+  std::ifstream in(filePath);
+  if (!in.is_open()) {
+    outError = "failed to open file";
+    return false;
+  }
+
+  std::string line;
+  if (!std::getline(in, line)) {
+    outError = "empty file";
+    return false;
+  }
+
+  const std::vector<std::string> header = parseCSVLine(line);
+  if (header.size() != 10 ||
+      header[0] != "step" ||
+      header[1] != "district_id" ||
+      header[2] != "district_name" ||
+      header[3] != "multiplier" ||
+      header[4] != "fulfillment" ||
+      header[5] != "cap_applied" ||
+      header[6] != "target" ||
+      header[7] != "allocated" ||
+      header[8] != "buildings" ||
+      header[9] != "population") {
+    outError = "invalid header";
+    return false;
+  }
+
+  int lineNumber = 1;
+  while (std::getline(in, line)) {
+    ++lineNumber;
+    if (line.empty()) {
+      continue;
+    }
+
+    const std::vector<std::string> fields = parseCSVLine(line);
+    if (fields.size() != 10) {
+      outError = "invalid column count at line " + std::to_string(lineNumber);
+      return false;
+    }
+
+    try {
+      GrowthPressureReportRow row;
+      row.step = std::stoi(fields[0]);
+      row.districtId = static_cast<DistrictId>(std::stoul(fields[1]));
+      row.districtName = fields[2];
+      row.multiplier = std::stof(fields[3]);
+      row.fulfillment = std::stof(fields[4]);
+      row.capApplied = (std::stoi(fields[5]) != 0);
+      row.target = std::stoll(fields[6]);
+      row.allocated = std::stoll(fields[7]);
+      row.buildings = static_cast<uint32_t>(std::stoul(fields[8]));
+      row.population = static_cast<uint32_t>(std::stoul(fields[9]));
+      outRows.push_back(row);
+    } catch (...) {
+      outError = "parse error at line " + std::to_string(lineNumber);
+      return false;
+    }
+  }
+
+  if (outRows.empty()) {
+    outError = "no data rows";
+    return false;
+  }
+
+  return true;
+}
+
+struct GrowthPressureAggregate {
+  int samples = 0;
+  int capHits = 0;
+  int maxStep = 0;
+  double sumMultiplier = 0.0;
+  double sumFulfillment = 0.0;
+  double sumTarget = 0.0;
+  double sumAllocated = 0.0;
+};
+
+std::unordered_map<std::string, GrowthPressureAggregate> aggregateGrowthPressureRows(
+  const std::vector<GrowthPressureReportRow>& rows
+) {
+  std::unordered_map<std::string, GrowthPressureAggregate> aggregates;
+  for (const GrowthPressureReportRow& row : rows) {
+    const std::string key = std::to_string(row.districtId) + ":" + row.districtName;
+    GrowthPressureAggregate& agg = aggregates[key];
+    agg.samples += 1;
+    agg.capHits += row.capApplied ? 1 : 0;
+    agg.maxStep = std::max(agg.maxStep, row.step);
+    agg.sumMultiplier += row.multiplier;
+    agg.sumFulfillment += row.fulfillment;
+    agg.sumTarget += static_cast<double>(row.target);
+    agg.sumAllocated += static_cast<double>(row.allocated);
+  }
+  return aggregates;
+}
+
+void printGrowthPressureComparison(
+  const std::string& fileA,
+  const std::vector<GrowthPressureReportRow>& rowsA,
+  const std::string& fileB,
+  const std::vector<GrowthPressureReportRow>& rowsB
+) {
+  const auto aggA = aggregateGrowthPressureRows(rowsA);
+  const auto aggB = aggregateGrowthPressureRows(rowsB);
+
+  std::unordered_set<std::string> keys;
+  for (const auto& [key, _] : aggA) {
+    (void)_;
+    keys.insert(key);
+  }
+  for (const auto& [key, _] : aggB) {
+    (void)_;
+    keys.insert(key);
+  }
+
+  std::cout << "Growth Pressure Comparison:\n";
+  std::cout << "  A: " << fileA << " (rows=" << rowsA.size() << ")\n";
+  std::cout << "  B: " << fileB << " (rows=" << rowsB.size() << ")\n";
+
+  if (keys.empty()) {
+    std::cout << "  No comparable district data.\n";
+    return;
+  }
+
+  for (const std::string& key : keys) {
+    auto itA = aggA.find(key);
+    auto itB = aggB.find(key);
+    const bool hasA = itA != aggA.end();
+    const bool hasB = itB != aggB.end();
+
+    std::cout << "  District " << key << ": ";
+    if (!hasA || !hasB) {
+      std::cout << "missing in " << (hasA ? "B" : "A") << "\n";
+      continue;
+    }
+
+    const GrowthPressureAggregate& a = itA->second;
+    const GrowthPressureAggregate& b = itB->second;
+
+    const double avgMultiplierA = a.samples > 0 ? (a.sumMultiplier / static_cast<double>(a.samples)) : 0.0;
+    const double avgMultiplierB = b.samples > 0 ? (b.sumMultiplier / static_cast<double>(b.samples)) : 0.0;
+    const double avgFulfillmentA = a.samples > 0 ? (a.sumFulfillment / static_cast<double>(a.samples)) : 0.0;
+    const double avgFulfillmentB = b.samples > 0 ? (b.sumFulfillment / static_cast<double>(b.samples)) : 0.0;
+    const double capRateA = a.samples > 0 ? (static_cast<double>(a.capHits) / static_cast<double>(a.samples)) : 0.0;
+    const double capRateB = b.samples > 0 ? (static_cast<double>(b.capHits) / static_cast<double>(b.samples)) : 0.0;
+    const double allocationShareA = a.sumTarget > 0.0 ? (a.sumAllocated / a.sumTarget) : 0.0;
+    const double allocationShareB = b.sumTarget > 0.0 ? (b.sumAllocated / b.sumTarget) : 0.0;
+
+    std::cout << std::fixed << std::setprecision(3)
+              << "dMultiplier=" << (avgMultiplierB - avgMultiplierA)
+              << " dFulfillment=" << (avgFulfillmentB - avgFulfillmentA)
+              << " dCapRate=" << (capRateB - capRateA)
+              << " dAllocShare=" << (allocationShareB - allocationShareA)
+              << "\n";
+  }
+}
+
+struct GrowthPressureSummary {
+  int samples = 0;
+  int capHits = 0;
+  double avgMultiplier = 0.0;
+  double avgFulfillment = 0.0;
+  double allocationShare = 0.0;
+};
+
+struct GrowthPressureDelta {
+  double dMultiplier = 0.0;
+  double dFulfillment = 0.0;
+  double dCapRate = 0.0;
+  double dAllocShare = 0.0;
+};
+
+GrowthPressureSummary summarizeGrowthPressureRows(const std::vector<GrowthPressureReportRow>& rows) {
+  GrowthPressureSummary summary;
+  if (rows.empty()) {
+    return summary;
+  }
+
+  double sumMultiplier = 0.0;
+  double sumFulfillment = 0.0;
+  double sumTarget = 0.0;
+  double sumAllocated = 0.0;
+
+  summary.samples = static_cast<int>(rows.size());
+  for (const GrowthPressureReportRow& row : rows) {
+    sumMultiplier += static_cast<double>(row.multiplier);
+    sumFulfillment += static_cast<double>(row.fulfillment);
+    sumTarget += static_cast<double>(row.target);
+    sumAllocated += static_cast<double>(row.allocated);
+    if (row.capApplied) {
+      summary.capHits += 1;
+    }
+  }
+
+  summary.avgMultiplier = sumMultiplier / static_cast<double>(summary.samples);
+  summary.avgFulfillment = sumFulfillment / static_cast<double>(summary.samples);
+  summary.allocationShare = sumTarget > 0.0 ? (sumAllocated / sumTarget) : 0.0;
+  return summary;
+}
+
+double scoreGrowthPressureSummaryDelta(
+  const GrowthPressureSummary& baseline,
+  const GrowthPressureSummary& candidate
+) {
+  const double baselineCapRate = baseline.samples > 0
+    ? (static_cast<double>(baseline.capHits) / static_cast<double>(baseline.samples))
+    : 0.0;
+  const double candidateCapRate = candidate.samples > 0
+    ? (static_cast<double>(candidate.capHits) / static_cast<double>(candidate.samples))
+    : 0.0;
+
+  const double dMultiplier = candidate.avgMultiplier - baseline.avgMultiplier;
+  const double dFulfillment = candidate.avgFulfillment - baseline.avgFulfillment;
+  const double dCapRate = candidateCapRate - baselineCapRate;
+  const double dAllocShare = candidate.allocationShare - baseline.allocationShare;
+
+  // Positive score is better: higher fulfillment/allocation with lower cap-hit rate.
+  return (0.50 * dFulfillment) + (0.25 * dAllocShare) + (0.10 * dMultiplier) - (0.35 * dCapRate);
+}
+
+GrowthPressureDelta computeGrowthPressureDelta(
+  const GrowthPressureSummary& baseline,
+  const GrowthPressureSummary& candidate
+) {
+  const double baselineCapRate = baseline.samples > 0
+    ? (static_cast<double>(baseline.capHits) / static_cast<double>(baseline.samples))
+    : 0.0;
+  const double candidateCapRate = candidate.samples > 0
+    ? (static_cast<double>(candidate.capHits) / static_cast<double>(candidate.samples))
+    : 0.0;
+
+  GrowthPressureDelta delta;
+  delta.dMultiplier = candidate.avgMultiplier - baseline.avgMultiplier;
+  delta.dFulfillment = candidate.avgFulfillment - baseline.avgFulfillment;
+  delta.dCapRate = candidateCapRate - baselineCapRate;
+  delta.dAllocShare = candidate.allocationShare - baseline.allocationShare;
+  return delta;
+}
+
+GrowthPressureSummary summarizeGrowthPressureRowsForDistrict(
+  const std::vector<GrowthPressureReportRow>& rows,
+  DistrictId districtId
+) {
+  GrowthPressureSummary summary;
+
+  double sumMultiplier = 0.0;
+  double sumFulfillment = 0.0;
+  double sumTarget = 0.0;
+  double sumAllocated = 0.0;
+
+  for (const GrowthPressureReportRow& row : rows) {
+    if (row.districtId != districtId) {
+      continue;
+    }
+    summary.samples += 1;
+    sumMultiplier += static_cast<double>(row.multiplier);
+    sumFulfillment += static_cast<double>(row.fulfillment);
+    sumTarget += static_cast<double>(row.target);
+    sumAllocated += static_cast<double>(row.allocated);
+    if (row.capApplied) {
+      summary.capHits += 1;
+    }
+  }
+
+  if (summary.samples == 0) {
+    return summary;
+  }
+
+  summary.avgMultiplier = sumMultiplier / static_cast<double>(summary.samples);
+  summary.avgFulfillment = sumFulfillment / static_cast<double>(summary.samples);
+  summary.allocationShare = sumTarget > 0.0 ? (sumAllocated / sumTarget) : 0.0;
+  return summary;
+}
+
+std::unordered_map<DistrictId, GrowthPressureSummary> summarizeGrowthPressureRowsByDistrict(
+  const std::vector<GrowthPressureReportRow>& rows
+) {
+  struct Accumulator {
+    int samples = 0;
+    int capHits = 0;
+    double sumMultiplier = 0.0;
+    double sumFulfillment = 0.0;
+    double sumTarget = 0.0;
+    double sumAllocated = 0.0;
+  };
+
+  std::unordered_map<DistrictId, Accumulator> accumulators;
+  for (const GrowthPressureReportRow& row : rows) {
+    Accumulator& acc = accumulators[row.districtId];
+    acc.samples += 1;
+    acc.capHits += row.capApplied ? 1 : 0;
+    acc.sumMultiplier += static_cast<double>(row.multiplier);
+    acc.sumFulfillment += static_cast<double>(row.fulfillment);
+    acc.sumTarget += static_cast<double>(row.target);
+    acc.sumAllocated += static_cast<double>(row.allocated);
+  }
+
+  std::unordered_map<DistrictId, GrowthPressureSummary> result;
+  result.reserve(accumulators.size());
+  for (const auto& [districtId, acc] : accumulators) {
+    GrowthPressureSummary summary;
+    summary.samples = acc.samples;
+    summary.capHits = acc.capHits;
+    if (summary.samples > 0) {
+      summary.avgMultiplier = acc.sumMultiplier / static_cast<double>(summary.samples);
+      summary.avgFulfillment = acc.sumFulfillment / static_cast<double>(summary.samples);
+      summary.allocationShare = acc.sumTarget > 0.0 ? (acc.sumAllocated / acc.sumTarget) : 0.0;
+    }
+    result[districtId] = summary;
+  }
+
+  return result;
+}
+
+void printGrowthPressureRanking(
+  const std::string& baselinePath,
+  const std::vector<GrowthPressureReportRow>& baselineRows,
+  const std::vector<std::pair<std::string, std::vector<GrowthPressureReportRow>>>& candidates
+) {
+  struct RankedResult {
+    std::string path;
+    double score = 0.0;
+    double dMultiplier = 0.0;
+    double dFulfillment = 0.0;
+    double dCapRate = 0.0;
+    double dAllocShare = 0.0;
+    int rows = 0;
+  };
+
+  const GrowthPressureSummary baseline = summarizeGrowthPressureRows(baselineRows);
+  const double baselineCapRate = baseline.samples > 0
+    ? (static_cast<double>(baseline.capHits) / static_cast<double>(baseline.samples))
+    : 0.0;
+
+  std::vector<RankedResult> ranked;
+  ranked.reserve(candidates.size());
+
+  for (const auto& [path, rows] : candidates) {
+    const GrowthPressureSummary candidate = summarizeGrowthPressureRows(rows);
+    const double candidateCapRate = candidate.samples > 0
+      ? (static_cast<double>(candidate.capHits) / static_cast<double>(candidate.samples))
+      : 0.0;
+
+    RankedResult result;
+    result.path = path;
+    result.rows = static_cast<int>(rows.size());
+    result.dMultiplier = candidate.avgMultiplier - baseline.avgMultiplier;
+    result.dFulfillment = candidate.avgFulfillment - baseline.avgFulfillment;
+    result.dCapRate = candidateCapRate - baselineCapRate;
+    result.dAllocShare = candidate.allocationShare - baseline.allocationShare;
+    result.score = scoreGrowthPressureSummaryDelta(baseline, candidate);
+    ranked.push_back(result);
+  }
+
+  std::sort(ranked.begin(), ranked.end(), [](const RankedResult& a, const RankedResult& b) {
+    if (a.score == b.score) {
+      return a.path < b.path;
+    }
+    return a.score > b.score;
+  });
+
+  std::cout << "Growth Pressure Ranking:\n";
+  std::cout << "  Baseline: " << baselinePath << " (rows=" << baselineRows.size() << ")\n";
+  for (size_t i = 0; i < ranked.size(); ++i) {
+    const RankedResult& r = ranked[i];
+    std::cout << "  #" << (i + 1) << " " << r.path
+              << " score=" << std::fixed << std::setprecision(4) << r.score
+              << " dMult=" << std::setprecision(3) << r.dMultiplier
+              << " dFulfill=" << r.dFulfillment
+              << " dCapRate=" << r.dCapRate
+              << " dAllocShare=" << r.dAllocShare
+              << " rows=" << r.rows << "\n";
+  }
+}
+
+void printDistrictDeltaRanking(
+  const std::vector<GrowthPressureReportRow>& baselineRows,
+  const std::vector<std::pair<std::string, std::vector<GrowthPressureReportRow>>>& candidates,
+  size_t limit
+) {
+  if (candidates.empty()) {
+    return;
+  }
+
+  struct DistrictAccumulator {
+    int scenarios = 0;
+    double sumScore = 0.0;
+    double sumMultiplier = 0.0;
+    double sumFulfillment = 0.0;
+    double sumCapRate = 0.0;
+    double sumAllocShare = 0.0;
+  };
+
+  struct DistrictRankRow {
+    DistrictId districtId = 0;
+    std::string districtName;
+    int scenarios = 0;
+    double avgScore = 0.0;
+    double avgMultiplier = 0.0;
+    double avgFulfillment = 0.0;
+    double avgCapRate = 0.0;
+    double avgAllocShare = 0.0;
+  };
+
+  std::unordered_map<DistrictId, std::string> districtNames;
+  for (const District& district : DistrictSystem::getDistricts()) {
+    districtNames[district.id] = district.name;
+  }
+
+  const auto baselineByDistrict = summarizeGrowthPressureRowsByDistrict(baselineRows);
+  std::unordered_map<DistrictId, DistrictAccumulator> accumulators;
+
+  for (const auto& [path, rows] : candidates) {
+    (void)path;
+    const auto candidateByDistrict = summarizeGrowthPressureRowsByDistrict(rows);
+    std::unordered_set<DistrictId> districtIds;
+    for (const auto& [districtId, _] : baselineByDistrict) {
+      (void)_;
+      districtIds.insert(districtId);
+    }
+    for (const auto& [districtId, _] : candidateByDistrict) {
+      (void)_;
+      districtIds.insert(districtId);
+    }
+
+    for (DistrictId districtId : districtIds) {
+      GrowthPressureSummary baselineSummary;
+      auto baseIt = baselineByDistrict.find(districtId);
+      if (baseIt != baselineByDistrict.end()) {
+        baselineSummary = baseIt->second;
+      }
+
+      GrowthPressureSummary candidateSummary;
+      auto candidateIt = candidateByDistrict.find(districtId);
+      if (candidateIt != candidateByDistrict.end()) {
+        candidateSummary = candidateIt->second;
+      }
+
+      const GrowthPressureDelta delta = computeGrowthPressureDelta(baselineSummary, candidateSummary);
+      const double score = scoreGrowthPressureSummaryDelta(baselineSummary, candidateSummary);
+
+      DistrictAccumulator& acc = accumulators[districtId];
+      acc.scenarios += 1;
+      acc.sumScore += score;
+      acc.sumMultiplier += delta.dMultiplier;
+      acc.sumFulfillment += delta.dFulfillment;
+      acc.sumCapRate += delta.dCapRate;
+      acc.sumAllocShare += delta.dAllocShare;
+    }
+  }
+
+  std::vector<DistrictRankRow> ranked;
+  ranked.reserve(accumulators.size());
+  for (const auto& [districtId, acc] : accumulators) {
+    if (acc.scenarios <= 0) {
+      continue;
+    }
+
+    DistrictRankRow row;
+    row.districtId = districtId;
+    auto nameIt = districtNames.find(districtId);
+    row.districtName = (nameIt != districtNames.end()) ? nameIt->second : std::to_string(districtId);
+    row.scenarios = acc.scenarios;
+    row.avgScore = acc.sumScore / static_cast<double>(acc.scenarios);
+    row.avgMultiplier = acc.sumMultiplier / static_cast<double>(acc.scenarios);
+    row.avgFulfillment = acc.sumFulfillment / static_cast<double>(acc.scenarios);
+    row.avgCapRate = acc.sumCapRate / static_cast<double>(acc.scenarios);
+    row.avgAllocShare = acc.sumAllocShare / static_cast<double>(acc.scenarios);
+    ranked.push_back(row);
+  }
+
+  if (ranked.empty()) {
+    return;
+  }
+
+  std::sort(ranked.begin(), ranked.end(), [](const DistrictRankRow& a, const DistrictRankRow& b) {
+    if (a.avgScore == b.avgScore) {
+      return a.districtId < b.districtId;
+    }
+    return a.avgScore > b.avgScore;
+  });
+
+  const size_t topCount = std::min(limit, ranked.size());
+  std::cout << "District Delta Ranking (avg vs baseline across " << candidates.size() << " scenarios):\n";
+  std::cout << "  Top districts:\n";
+  for (size_t i = 0; i < topCount; ++i) {
+    const DistrictRankRow& row = ranked[i];
+    std::cout << "    #" << (i + 1)
+              << " D" << row.districtId << " " << row.districtName
+              << " avgScore=" << std::fixed << std::setprecision(4) << row.avgScore
+              << " dFulfill=" << std::setprecision(3) << row.avgFulfillment
+              << " dCapRate=" << row.avgCapRate
+              << " dAllocShare=" << row.avgAllocShare
+              << " scenarios=" << row.scenarios << "\n";
+  }
+
+  size_t bottomCount = std::min(limit, ranked.size());
+  if (ranked.size() <= topCount) {
+    bottomCount = std::min<size_t>(1, ranked.size());
+  }
+  std::cout << "  Bottom districts:\n";
+  for (size_t i = 0; i < bottomCount; ++i) {
+    const size_t idx = ranked.size() - 1 - i;
+
+    const DistrictRankRow& row = ranked[idx];
+    std::cout << "    #" << (i + 1)
+              << " D" << row.districtId << " " << row.districtName
+              << " avgScore=" << std::fixed << std::setprecision(4) << row.avgScore
+              << " dFulfill=" << std::setprecision(3) << row.avgFulfillment
+              << " dCapRate=" << row.avgCapRate
+              << " dAllocShare=" << row.avgAllocShare
+              << " scenarios=" << row.scenarios << "\n";
+  }
+}
+
+std::string trimString(const std::string& raw) {
+  size_t begin = 0;
+  while (begin < raw.size() && std::isspace(static_cast<unsigned char>(raw[begin])) != 0) {
+    ++begin;
+  }
+
+  size_t end = raw.size();
+  while (end > begin && std::isspace(static_cast<unsigned char>(raw[end - 1])) != 0) {
+    --end;
+  }
+
+  return raw.substr(begin, end - begin);
+}
+
+bool parseUint32List(const std::string& raw, std::vector<uint32_t>& outValues) {
+  outValues.clear();
+
+  std::stringstream ss(raw);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    const std::string trimmed = trimString(token);
+    if (trimmed.empty()) {
+      continue;
+    }
+
+    try {
+      const unsigned long value = std::stoul(trimmed);
+      outValues.push_back(static_cast<uint32_t>(value));
+    } catch (...) {
+      return false;
+    }
+  }
+
+  return !outValues.empty();
+}
+
+bool parseInt64List(const std::string& raw, std::vector<int64_t>& outValues) {
+  outValues.clear();
+
+  std::stringstream ss(raw);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    const std::string trimmed = trimString(token);
+    if (trimmed.empty()) {
+      continue;
+    }
+
+    try {
+      const long long value = std::stoll(trimmed);
+      outValues.push_back(static_cast<int64_t>(value));
+    } catch (...) {
+      return false;
+    }
+  }
+
+  return !outValues.empty();
+}
+
+bool parseFloatList(const std::string& raw, std::vector<float>& outValues) {
+  outValues.clear();
+
+  std::stringstream ss(raw);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    const std::string trimmed = trimString(token);
+    if (trimmed.empty()) {
+      continue;
+    }
+
+    try {
+      const float value = std::stof(trimmed);
+      outValues.push_back(value);
+    } catch (...) {
+      return false;
+    }
+  }
+
+  return !outValues.empty();
+}
+
+std::string sanitizeToken(const std::string& raw) {
+  std::string out;
+  out.reserve(raw.size());
+  for (char c : raw) {
+    if (std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '-' || c == '_') {
+      out.push_back(c);
+    } else {
+      out.push_back('_');
+    }
+  }
+  return out;
+}
+
+void runGrowthStepsWithPressure(
+  CityMap& map,
+  RoadNetwork& roads,
+  EntityStore& store,
+  PopulationStore& population,
+  const std::vector<ServiceFacility>& serviceFacilities,
+  int runGrowthSteps,
+  uint32_t baseSeed,
+  int64_t districtPressurePool,
+  bool printGrowthPressureFlag,
+  bool printStepOutput,
+  std::vector<GrowthPressureReportRow>* outRows
+) {
+  if (districtPressurePool >= 0 && printStepOutput) {
+    std::cout << "Applying district growth pressure with shared pool "
+              << districtPressurePool << "\n";
+  }
+
+  if (outRows != nullptr) {
+    outRows->clear();
+    outRows->reserve(static_cast<size_t>(runGrowthSteps) * std::max<size_t>(1, DistrictSystem::getDistricts().size()));
+  }
+
+  for (int step = 0; step < runGrowthSteps; ++step) {
+    const ZoneDemand demand = Zoning::calculateDemand(baseSeed + static_cast<uint32_t>(step));
+
+    std::vector<GrowthChanceModifier> growthModifiers;
+    if (districtPressurePool >= 0) {
+      const auto balancedMetrics = DistrictSystem::evaluateAllDistricts(
+        map,
+        store,
+        population,
+        &roads,
+        &serviceFacilities,
+        districtPressurePool
+      );
+
+      std::unordered_map<DistrictId, float> districtChanceMultiplier;
+      for (const DistrictMetrics& metrics : balancedMetrics) {
+        const District* district = DistrictSystem::getDistrictConst(metrics.districtId);
+        if (district == nullptr) {
+          continue;
+        }
+        districtChanceMultiplier[metrics.districtId] =
+          DistrictSystem::computeGrowthPressureMultiplier(*district, metrics);
+      }
+
+      if (printGrowthPressureFlag) {
+        std::cout << "  Pressure step " << (step + 1) << ": ";
+        bool first = true;
+        for (const DistrictMetrics& metrics : balancedMetrics) {
+          auto it = districtChanceMultiplier.find(metrics.districtId);
+          if (it == districtChanceMultiplier.end()) {
+            continue;
+          }
+          if (!first) {
+            std::cout << " | ";
+          }
+
+          float fulfillment = 1.0f;
+          if (metrics.serviceBudgetTarget > 0) {
+            fulfillment = static_cast<float>(metrics.serviceBudgetAllocated) /
+              static_cast<float>(metrics.serviceBudgetTarget);
+          }
+          fulfillment = std::max(0.0f, std::min(1.0f, fulfillment));
+
+          std::cout << "D" << metrics.districtId
+                    << " m=" << std::fixed << std::setprecision(2) << it->second
+                    << " f=" << std::setprecision(2) << fulfillment
+                    << " cap=" << (metrics.serviceBudgetCapApplied ? "y" : "n");
+          first = false;
+        }
+        std::cout << "\n";
+      }
+
+      if (outRows != nullptr) {
+        for (const DistrictMetrics& metrics : balancedMetrics) {
+          auto it = districtChanceMultiplier.find(metrics.districtId);
+          if (it == districtChanceMultiplier.end()) {
+            continue;
+          }
+
+          float fulfillment = 1.0f;
+          if (metrics.serviceBudgetTarget > 0) {
+            fulfillment = static_cast<float>(metrics.serviceBudgetAllocated) /
+              static_cast<float>(metrics.serviceBudgetTarget);
+          }
+          fulfillment = std::max(0.0f, std::min(1.0f, fulfillment));
+
+          GrowthPressureReportRow row;
+          row.step = step + 1;
+          row.districtId = metrics.districtId;
+          row.districtName = metrics.districtName;
+          row.multiplier = it->second;
+          row.fulfillment = fulfillment;
+          row.capApplied = metrics.serviceBudgetCapApplied;
+          row.target = metrics.serviceBudgetTarget;
+          row.allocated = metrics.serviceBudgetAllocated;
+          row.buildings = metrics.buildings;
+          row.population = metrics.population;
+          outRows->push_back(row);
+        }
+      }
+
+      const auto& districts = DistrictSystem::getDistricts();
+      growthModifiers.reserve(districts.size());
+      for (const District& district : districts) {
+        auto it = districtChanceMultiplier.find(district.id);
+        if (it == districtChanceMultiplier.end()) {
+          continue;
+        }
+
+        GrowthChanceModifier modifier;
+        modifier.minCorner = district.minCorner;
+        modifier.maxCorner = district.maxCorner;
+        modifier.multiplier = it->second;
+        growthModifiers.push_back(modifier);
+      }
+    }
+
+    const GrowthStats stats = GrowthSystem::runStep(
+      map,
+      roads,
+      store,
+      demand,
+      baseSeed + static_cast<uint32_t>(step),
+      0.5f,
+      growthModifiers.empty() ? nullptr : &growthModifiers
+    );
+
+    if (printStepOutput) {
+      std::cout << "Growth step " << (step + 1)
+                << ": evaluated=" << stats.evaluatedTiles
+                << " spawned=" << stats.totalSpawned()
+                << " (R=" << stats.spawnedResidential
+                << ", C=" << stats.spawnedCommercial
+                << ", I=" << stats.spawnedIndustrial << ")"
+                << " demolished=" << stats.totalDemolished()
+                << " (R=" << stats.demolishedResidential
+                << ", C=" << stats.demolishedCommercial
+                << ", I=" << stats.demolishedIndustrial << ")\n";
+    }
   }
 }
 
@@ -610,18 +1473,35 @@ int main(int argc, char* argv[]) {
   int trafficOriginX = -1, trafficOriginY = -1;
   bool hasTrafficDestinationFilter = false;
   int trafficDestinationX = -1, trafficDestinationY = -1;
-  int zoneX1 = -1, zoneY1 = -1, zoneX2 = -1, zoneY2 = -1;
-  std::string zoneTypeRaw;
+  std::vector<std::tuple<int, int, int, int, std::string>> zoneRequests;  // x1, y1, x2, y2, type
   int runGrowthSteps = 0;
+  int64_t districtPressurePool = -1;
+  bool printGrowthPressureFlag = false;
+  std::string exportGrowthPressurePath;
+  std::string compareGrowthPressurePathA;
+  std::string compareGrowthPressurePathB;
+  std::string rankGrowthPressureBasePath;
+  std::vector<std::string> rankGrowthPressureCandidatePaths;
+  std::string runPolicySweepOutputDir;
+  int sweepDistrictId = -1;
+  std::vector<uint32_t> sweepSeeds;
+  std::vector<int64_t> sweepCaps;
+  std::vector<float> sweepAllocations;
+  bool sweepManifestAllDistricts = false;
   int seedPopulation = -1;
-  int placeRoadX1 = -1, placeRoadY1 = -1, placeRoadX2 = -1, placeRoadY2 = -1;
+  std::vector<std::tuple<int, int, int, int>> placeRoadRequests;  // x1, y1, x2, y2
   int findPathX1 = -1, findPathY1 = -1, findPathX2 = -1, findPathY2 = -1;
   bool listDistrictsFlag = false;
   int printDistrictSummaryId = -1;
+  int printDistrictFacilitiesId = -1;
+  int64_t printDistrictBalancingPool = -1;
   std::vector<std::tuple<std::string, int, int, int, int>> createDistrictRequests;  // name, x1, y1, x2, y2
   std::vector<std::tuple<int, std::string, float>> setDistrictTaxRequests;  // district_id, building_type, rate
   std::vector<std::tuple<int, float, float, float, float>> setDistrictServiceRequests;  // district_id, fire, police, health, edu
+  std::vector<std::pair<int, float>> setDistrictAllocationRequests;  // district_id, allocation
+  std::vector<std::pair<int, int64_t>> setDistrictBudgetCapRequests;  // district_id, cap
   std::vector<std::pair<int, int>> assignFacilityRequests;  // district_id, facility_id
+  std::vector<std::pair<int, int>> unassignFacilityRequests;  // district_id, facility_id
   
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -641,11 +1521,12 @@ int main(int argc, char* argv[]) {
       printTileX = std::atoi(argv[++i]);
       printTileY = std::atoi(argv[++i]);
     } else if (arg == "--zone-rect" && i + 5 < argc) {
-      zoneX1 = std::atoi(argv[++i]);
-      zoneY1 = std::atoi(argv[++i]);
-      zoneX2 = std::atoi(argv[++i]);
-      zoneY2 = std::atoi(argv[++i]);
-      zoneTypeRaw = argv[++i];
+      int x1 = std::atoi(argv[++i]);
+      int y1 = std::atoi(argv[++i]);
+      int x2 = std::atoi(argv[++i]);
+      int y2 = std::atoi(argv[++i]);
+      std::string type = argv[++i];
+      zoneRequests.emplace_back(x1, y1, x2, y2, type);
     } else if (arg == "--print-zones") {
       printZonesFlag = true;
     } else if (arg == "--print-demand") {
@@ -660,15 +1541,56 @@ int main(int argc, char* argv[]) {
       printPopulationGroupsFlag = true;
     } else if (arg == "--run-growth" && i + 1 < argc) {
       runGrowthSteps = std::atoi(argv[++i]);
+    } else if (arg == "--district-pressure-pool" && i + 1 < argc) {
+      districtPressurePool = std::strtoll(argv[++i], nullptr, 10);
+    } else if (arg == "--print-growth-pressure") {
+      printGrowthPressureFlag = true;
+    } else if (arg == "--export-growth-pressure" && i + 1 < argc) {
+      exportGrowthPressurePath = argv[++i];
+    } else if (arg == "--compare-growth-pressure" && i + 2 < argc) {
+      compareGrowthPressurePathA = argv[++i];
+      compareGrowthPressurePathB = argv[++i];
+    } else if (arg == "--rank-growth-pressure" && i + 2 < argc) {
+      const std::string basePath = argv[++i];
+      const std::string candidatePath = argv[++i];
+      if (rankGrowthPressureBasePath.empty()) {
+        rankGrowthPressureBasePath = basePath;
+      } else if (rankGrowthPressureBasePath != basePath) {
+        std::cerr << "Error: --rank-growth-pressure must use the same BASE for all entries\n";
+        return 1;
+      }
+      rankGrowthPressureCandidatePaths.push_back(candidatePath);
+    } else if (arg == "--run-policy-sweep" && i + 1 < argc) {
+      runPolicySweepOutputDir = argv[++i];
+    } else if (arg == "--sweep-district" && i + 1 < argc) {
+      sweepDistrictId = std::atoi(argv[++i]);
+    } else if (arg == "--sweep-seeds" && i + 1 < argc) {
+      if (!parseUint32List(argv[++i], sweepSeeds)) {
+        std::cerr << "Error: --sweep-seeds expects a comma-separated list of integers\n";
+        return 1;
+      }
+    } else if (arg == "--sweep-caps" && i + 1 < argc) {
+      if (!parseInt64List(argv[++i], sweepCaps)) {
+        std::cerr << "Error: --sweep-caps expects a comma-separated list of integers\n";
+        return 1;
+      }
+    } else if (arg == "--sweep-allocations" && i + 1 < argc) {
+      if (!parseFloatList(argv[++i], sweepAllocations)) {
+        std::cerr << "Error: --sweep-allocations expects a comma-separated list of decimal values\n";
+        return 1;
+      }
+    } else if (arg == "--sweep-manifest-all-districts") {
+      sweepManifestAllDistricts = true;
     } else if (arg == "--print-buildings") {
       printBuildingsFlag = true;
     } else if (arg == "--connectivity-map") {
       printConnectivityMapFlag = true;
     } else if (arg == "--place-road" && i + 4 < argc) {
-      placeRoadX1 = std::atoi(argv[++i]);
-      placeRoadY1 = std::atoi(argv[++i]);
-      placeRoadX2 = std::atoi(argv[++i]);
-      placeRoadY2 = std::atoi(argv[++i]);
+      int x1 = std::atoi(argv[++i]);
+      int y1 = std::atoi(argv[++i]);
+      int x2 = std::atoi(argv[++i]);
+      int y2 = std::atoi(argv[++i]);
+      placeRoadRequests.emplace_back(x1, y1, x2, y2);
     } else if (arg == "--find-path" && i + 4 < argc) {
       findPathX1 = std::atoi(argv[++i]);
       findPathY1 = std::atoi(argv[++i]);
@@ -699,6 +1621,10 @@ int main(int argc, char* argv[]) {
       listDistrictsFlag = true;
     } else if (arg == "--print-district-summary" && i + 1 < argc) {
       printDistrictSummaryId = std::atoi(argv[++i]);
+    } else if (arg == "--print-district-facilities" && i + 1 < argc) {
+      printDistrictFacilitiesId = std::atoi(argv[++i]);
+    } else if (arg == "--print-district-balancing" && i + 1 < argc) {
+      printDistrictBalancingPool = std::strtoll(argv[++i], nullptr, 10);
     } else if (arg == "--set-district-tax" && i + 3 < argc) {
       int districtId = std::atoi(argv[++i]);
       std::string buildingType = argv[++i];
@@ -711,10 +1637,22 @@ int main(int argc, char* argv[]) {
       float healthWeight = std::stof(argv[++i]);
       float educationWeight = std::stof(argv[++i]);
       setDistrictServiceRequests.emplace_back(districtId, fireWeight, policeWeight, healthWeight, educationWeight);
+    } else if (arg == "--set-district-allocation" && i + 2 < argc) {
+      int districtId = std::atoi(argv[++i]);
+      float allocation = std::stof(argv[++i]);
+      setDistrictAllocationRequests.emplace_back(districtId, allocation);
+    } else if (arg == "--set-district-budget-cap" && i + 2 < argc) {
+      int districtId = std::atoi(argv[++i]);
+      int64_t cap = std::strtoll(argv[++i], nullptr, 10);
+      setDistrictBudgetCapRequests.emplace_back(districtId, cap);
     } else if (arg == "--assign-facility" && i + 2 < argc) {
       int districtId = std::atoi(argv[++i]);
       int facilityId = std::atoi(argv[++i]);
       assignFacilityRequests.emplace_back(districtId, facilityId);
+    } else if (arg == "--unassign-facility" && i + 2 < argc) {
+      int districtId = std::atoi(argv[++i]);
+      int facilityId = std::atoi(argv[++i]);
+      unassignFacilityRequests.emplace_back(districtId, facilityId);
     } else if (arg == "--run-economy-calculation") {
       runEconomyCalculationFlag = true;
     } else if (arg == "--print-budget-summary") {
@@ -772,12 +1710,108 @@ int main(int argc, char* argv[]) {
     std::cerr << "Error: benchmark ticks must be non-negative\n";
     return 1;
   }
+  if (districtPressurePool >= 0 && runGrowthSteps <= 0) {
+    std::cerr << "Error: --district-pressure-pool requires --run-growth N\n";
+    return 1;
+  }
+  if (printGrowthPressureFlag && districtPressurePool < 0) {
+    std::cerr << "Error: --print-growth-pressure requires --district-pressure-pool POOL\n";
+    return 1;
+  }
+  if (!exportGrowthPressurePath.empty() && districtPressurePool < 0) {
+    std::cerr << "Error: --export-growth-pressure requires --district-pressure-pool POOL\n";
+    return 1;
+  }
+  if (!exportGrowthPressurePath.empty() && runGrowthSteps <= 0) {
+    std::cerr << "Error: --export-growth-pressure requires --run-growth N\n";
+    return 1;
+  }
+  if ((!compareGrowthPressurePathA.empty() && compareGrowthPressurePathB.empty()) ||
+      (compareGrowthPressurePathA.empty() && !compareGrowthPressurePathB.empty())) {
+    std::cerr << "Error: --compare-growth-pressure requires two file paths\n";
+    return 1;
+  }
+  if (!rankGrowthPressureBasePath.empty() && rankGrowthPressureCandidatePaths.empty()) {
+    std::cerr << "Error: --rank-growth-pressure requires at least one candidate\n";
+    return 1;
+  }
+  if (!runPolicySweepOutputDir.empty()) {
+    if (runGrowthSteps <= 0) {
+      std::cerr << "Error: --run-policy-sweep requires --run-growth N\n";
+      return 1;
+    }
+    if (districtPressurePool < 0) {
+      std::cerr << "Error: --run-policy-sweep requires --district-pressure-pool POOL\n";
+      return 1;
+    }
+    if (sweepDistrictId <= 0) {
+      std::cerr << "Error: --run-policy-sweep requires --sweep-district DIST_ID\n";
+      return 1;
+    }
+    if (sweepSeeds.empty()) {
+      std::cerr << "Error: --run-policy-sweep requires --sweep-seeds A,B,C\n";
+      return 1;
+    }
+  }
     if ((hasTrafficOriginFilter || hasTrafficDestinationFilter) && printTopEdgesCount <= 0) {
       std::cerr << "Error: --traffic-origin/--traffic-destination require --print-top-edges N\n";
       return 1;
     }
   
   try {
+    if (!rankGrowthPressureBasePath.empty()) {
+      std::vector<GrowthPressureReportRow> baselineRows;
+      std::string baselineError;
+      if (!loadGrowthPressureReportCSV(rankGrowthPressureBasePath, baselineRows, baselineError)) {
+        std::cerr << "Error: Failed to load baseline pressure report ('" << rankGrowthPressureBasePath
+                  << "'): " << baselineError << "\n";
+        return 1;
+      }
+
+      std::vector<std::pair<std::string, std::vector<GrowthPressureReportRow>>> candidates;
+      candidates.reserve(rankGrowthPressureCandidatePaths.size());
+
+      for (const std::string& candidatePath : rankGrowthPressureCandidatePaths) {
+        std::vector<GrowthPressureReportRow> candidateRows;
+        std::string candidateError;
+        if (!loadGrowthPressureReportCSV(candidatePath, candidateRows, candidateError)) {
+          std::cerr << "Error: Failed to load candidate pressure report ('" << candidatePath
+                    << "'): " << candidateError << "\n";
+          return 1;
+        }
+        candidates.emplace_back(candidatePath, std::move(candidateRows));
+      }
+
+      printGrowthPressureRanking(rankGrowthPressureBasePath, baselineRows, candidates);
+      return 0;
+    }
+
+    if (!compareGrowthPressurePathA.empty()) {
+      std::vector<GrowthPressureReportRow> rowsA;
+      std::vector<GrowthPressureReportRow> rowsB;
+      std::string errorA;
+      std::string errorB;
+
+      if (!loadGrowthPressureReportCSV(compareGrowthPressurePathA, rowsA, errorA)) {
+        std::cerr << "Error: Failed to load pressure report A ('" << compareGrowthPressurePathA
+                  << "'): " << errorA << "\n";
+        return 1;
+      }
+      if (!loadGrowthPressureReportCSV(compareGrowthPressurePathB, rowsB, errorB)) {
+        std::cerr << "Error: Failed to load pressure report B ('" << compareGrowthPressurePathB
+                  << "'): " << errorB << "\n";
+        return 1;
+      }
+
+      printGrowthPressureComparison(
+        compareGrowthPressurePathA,
+        rowsA,
+        compareGrowthPressurePathB,
+        rowsB
+      );
+      return 0;
+    }
+
     if (!inspectSnapshotPath.empty()) {
       CitySnapshot inspectedSnapshot;
       SnapshotLoadDiagnostics inspectDiagnostics;
@@ -928,6 +1962,7 @@ int main(int argc, char* argv[]) {
     bool hasTrafficSummary = false;
     bool hasEconomyState = false;
     bool hasServiceSummary = false;
+    bool districtMutationsApplied = false;
 
     std::vector<ServiceFacility> serviceFacilities;
     serviceFacilities.reserve(serviceRequests.size());
@@ -970,6 +2005,10 @@ int main(int argc, char* argv[]) {
       facility.position = {x, y};
       facility.maxTravelDistance = std::max(0, dist);
       serviceFacilities.push_back(facility);
+      std::cout << "Added service facility #" << serviceFacilities.size()
+                << " (" << ServiceSystem::serviceTypeToString(type)
+                << ") at (" << x << "," << y << ")"
+                << " distance=" << facility.maxTravelDistance << "\n";
     }
     
     // Handle inspection commands
@@ -985,45 +2024,532 @@ int main(int argc, char* argv[]) {
       return 0;
     }
 
-    if (zoneX1 >= 0) {
-      ZoneType zoneType = ZoneType::None;
-      if (!Zoning::parseZoneType(zoneTypeRaw, zoneType)) {
-        std::cerr << "Error: Unknown zone type '" << zoneTypeRaw
-                  << "'. Use NONE, RESIDENTIAL, COMMERCIAL, INDUSTRIAL, or PARK.\n";
-        return 1;
+    // Apply district mutations before growth so growth-pressure uses current district state.
+    if (!createDistrictRequests.empty()) {
+      for (const auto& [name, x1, y1, x2, y2] : createDistrictRequests) {
+        DistrictId districtId = DistrictSystem::createDistrict(
+          name,
+          {x1, y1},
+          {x2, y2}
+        );
+        if (districtId == 0) {
+          std::cerr << "Error: Failed to create district '" << name << "' (invalid bounds?)\n";
+          return 1;
+        }
+        std::cout << "Created district '" << name << "' with ID " << districtId << "\n";
+        std::cout << "  Bounds: (" << x1 << "," << y1 << ") to (" << x2 << "," << y2 << ")\n";
       }
+      districtMutationsApplied = true;
+      createDistrictRequests.clear();
+    }
 
-      int zonedCount = 0;
-      if (!Zoning::applyZoneRect(map, {zoneX1, zoneY1}, {zoneX2, zoneY2}, zoneType, &zonedCount)) {
-        std::cerr << "Error: Zone rectangle is out of bounds\n";
-        return 1;
+    if (!setDistrictTaxRequests.empty()) {
+      for (const auto& [districtId, buildingType, rate] : setDistrictTaxRequests) {
+        District* district = DistrictSystem::getDistrict(static_cast<DistrictId>(districtId));
+        if (district == nullptr) {
+          std::cerr << "Error: District " << districtId << " not found\n";
+          return 1;
+        }
+
+        std::string typeUpper = buildingType;
+        std::transform(typeUpper.begin(), typeUpper.end(), typeUpper.begin(),
+                      [](unsigned char c) { return std::toupper(c); });
+
+        bool success = false;
+        if (typeUpper == "RESIDENTIAL") {
+          district->taxRates.residentialRate = std::max(0.0f, std::min(1.0f, rate));
+          success = true;
+        } else if (typeUpper == "COMMERCIAL") {
+          district->taxRates.commercialRate = std::max(0.0f, std::min(1.0f, rate));
+          success = true;
+        } else if (typeUpper == "INDUSTRIAL") {
+          district->taxRates.industrialRate = std::max(0.0f, std::min(1.0f, rate));
+          success = true;
+        } else {
+          std::cerr << "Error: Unknown building type '" << buildingType << "'\n";
+          return 1;
+        }
+
+        if (success) {
+          std::cout << "Set " << buildingType << " tax rate to " << std::fixed << std::setprecision(1)
+                    << (rate * 100.0f) << "% for district " << districtId << "\n";
+        }
       }
+      districtMutationsApplied = true;
+      setDistrictTaxRequests.clear();
+    }
 
-      std::cout << "Applied zone " << Zoning::zoneToString(static_cast<int>(zoneType))
-                << " to " << zonedCount << " tiles.\n";
+    if (!setDistrictServiceRequests.empty()) {
+      for (const auto& [districtId, fireW, policeW, healthW, eduW] : setDistrictServiceRequests) {
+        District* district = DistrictSystem::getDistrict(static_cast<DistrictId>(districtId));
+        if (district == nullptr) {
+          std::cerr << "Error: District " << districtId << " not found\n";
+          return 1;
+        }
+
+        ServicePriority priorities;
+        priorities.fireWeight = std::max(0.0f, fireW);
+        priorities.policeWeight = std::max(0.0f, policeW);
+        priorities.healthWeight = std::max(0.0f, healthW);
+        priorities.educationWeight = std::max(0.0f, eduW);
+
+        district->servicePriorities = priorities;
+        std::cout << "Set service priorities for district " << districtId << ":\n";
+        std::cout << "  Fire: " << std::fixed << std::setprecision(2) << fireW << "\n";
+        std::cout << "  Police: " << std::fixed << std::setprecision(2) << policeW << "\n";
+        std::cout << "  Health: " << std::fixed << std::setprecision(2) << healthW << "\n";
+        std::cout << "  Education: " << std::fixed << std::setprecision(2) << eduW << "\n";
+      }
+      districtMutationsApplied = true;
+      setDistrictServiceRequests.clear();
+    }
+
+    if (!setDistrictAllocationRequests.empty()) {
+      for (const auto& [districtId, allocation] : setDistrictAllocationRequests) {
+        bool success = DistrictSystem::setDistrictServiceAllocation(
+          static_cast<DistrictId>(districtId),
+          allocation
+        );
+        if (!success) {
+          std::cerr << "Error: District " << districtId << " not found\n";
+          return 1;
+        }
+
+        const District* district = DistrictSystem::getDistrictConst(static_cast<DistrictId>(districtId));
+        std::cout << "Set service allocation for district " << districtId << " to "
+                  << std::fixed << std::setprecision(1)
+                  << ((district != nullptr ? district->serviceAllocation : allocation) * 100.0f)
+                  << "%\n";
+      }
+      districtMutationsApplied = true;
+      setDistrictAllocationRequests.clear();
+    }
+
+    if (!setDistrictBudgetCapRequests.empty()) {
+      for (const auto& [districtId, cap] : setDistrictBudgetCapRequests) {
+        bool success = DistrictSystem::setDistrictServiceBudgetCap(
+          static_cast<DistrictId>(districtId),
+          cap
+        );
+        if (!success) {
+          std::cerr << "Error: District " << districtId << " not found\n";
+          return 1;
+        }
+
+        if (cap < 0) {
+          std::cout << "Disabled service budget cap for district " << districtId << "\n";
+        } else {
+          std::cout << "Set service budget cap for district " << districtId << " to " << cap << "\n";
+        }
+      }
+      districtMutationsApplied = true;
+      setDistrictBudgetCapRequests.clear();
+    }
+
+    if (!assignFacilityRequests.empty()) {
+      for (const auto& [districtId, facilityId] : assignFacilityRequests) {
+        bool success = DistrictSystem::assignFacilityToDistrict(
+          static_cast<DistrictId>(districtId),
+          static_cast<uint32_t>(facilityId)
+        );
+        if (!success) {
+          std::cerr << "Error: Failed to assign facility " << facilityId << " to district " << districtId << "\n";
+          return 1;
+        }
+        std::cout << "Assigned facility " << facilityId << " to district " << districtId << "\n";
+      }
+      districtMutationsApplied = true;
+      assignFacilityRequests.clear();
+    }
+
+    if (!unassignFacilityRequests.empty()) {
+      for (const auto& [districtId, facilityId] : unassignFacilityRequests) {
+        bool success = DistrictSystem::unassignFacilityFromDistrict(
+          static_cast<DistrictId>(districtId),
+          static_cast<uint32_t>(facilityId)
+        );
+        if (!success) {
+          std::cerr << "Error: Failed to unassign facility " << facilityId
+                    << " from district " << districtId << "\n";
+          return 1;
+        }
+        std::cout << "Unassigned facility " << facilityId << " from district " << districtId << "\n";
+      }
+      districtMutationsApplied = true;
+      unassignFacilityRequests.clear();
+    }
+
+    if (!zoneRequests.empty()) {
+      for (const auto& [x1, y1, x2, y2, zoneTypeRaw] : zoneRequests) {
+        ZoneType zoneType = ZoneType::None;
+        if (!Zoning::parseZoneType(zoneTypeRaw, zoneType)) {
+          std::cerr << "Error: Unknown zone type '" << zoneTypeRaw
+                    << "'. Use NONE, RESIDENTIAL, COMMERCIAL, INDUSTRIAL, or PARK.\n";
+          return 1;
+        }
+
+        int zonedCount = 0;
+        if (!Zoning::applyZoneRect(map, {x1, y1}, {x2, y2}, zoneType, &zonedCount)) {
+          std::cerr << "Error: Zone rectangle is out of bounds\n";
+          return 1;
+        }
+
+        std::cout << "Applied zone " << Zoning::zoneToString(static_cast<int>(zoneType))
+                  << " to " << zonedCount << " tiles.\n";
+      }
     }
     
-    if (placeRoadX1 >= 0) {
-      roads.buildRoad({placeRoadX1, placeRoadY1}, {placeRoadX2, placeRoadY2});
-      roads.updateConnectivity({placeRoadX1, placeRoadY1});
-      std::cout << "Road built from (" << placeRoadX1 << "," << placeRoadY1 
-                << ") to (" << placeRoadX2 << "," << placeRoadY2 << ")\n";
+    if (!placeRoadRequests.empty()) {
+      for (const auto& [x1, y1, x2, y2] : placeRoadRequests) {
+        if (x1 == x2 && y1 == y2) {
+          continue;
+        }
+
+        if (x1 == x2 || y1 == y2) {
+          const int dx = (x2 > x1) ? 1 : (x2 < x1 ? -1 : 0);
+          const int dy = (y2 > y1) ? 1 : (y2 < y1 ? -1 : 0);
+
+          int cx = x1;
+          int cy = y1;
+          while (cx != x2 || cy != y2) {
+            const int nx = cx + dx;
+            const int ny = cy + dy;
+            roads.buildRoad({cx, cy}, {nx, ny});
+            cx = nx;
+            cy = ny;
+          }
+        } else {
+          roads.buildRoad({x1, y1}, {x2, y2});
+        }
+
+        roads.updateConnectivity({x1, y1});
+        std::cout << "Road built from (" << x1 << "," << y1
+                  << ") to (" << x2 << "," << y2 << ")\n";
+      }
       std::cout << "Total roads: " << roads.getRoadCount() << "\n";
+    }
+
+    if (!runPolicySweepOutputDir.empty()) {
+      const District* baselineDistrict = DistrictSystem::getDistrictConst(static_cast<DistrictId>(sweepDistrictId));
+      if (baselineDistrict == nullptr) {
+        std::cerr << "Error: Sweep district " << sweepDistrictId << " not found\n";
+        return 1;
+      }
+
+      const int64_t baselineCap = baselineDistrict->serviceBudgetCap;
+      const float baselineAllocation = baselineDistrict->serviceAllocation;
+
+      if (sweepCaps.empty()) {
+        sweepCaps.push_back(baselineCap);
+      }
+      if (sweepAllocations.empty()) {
+        sweepAllocations.push_back(baselineAllocation);
+      }
+
+      for (float& allocation : sweepAllocations) {
+        allocation = std::max(0.0f, std::min(1.0f, allocation));
+      }
+
+      std::error_code fsError;
+      std::filesystem::create_directories(runPolicySweepOutputDir, fsError);
+      if (fsError) {
+        std::cerr << "Error: Failed to create sweep output directory '" << runPolicySweepOutputDir
+                  << "': " << fsError.message() << "\n";
+        return 1;
+      }
+
+      const CitySnapshot baselineSnapshot = SaveLoadSystem::captureSnapshot(map, roads, store, population);
+
+      struct SweepResult {
+        std::string label;
+        std::string path;
+        uint32_t scenarioSeed = 0;
+        int64_t cap = -1;
+        float allocation = 0.0f;
+        std::vector<GrowthPressureReportRow> rows;
+      };
+
+      auto runSweepScenario = [&](uint32_t scenarioSeed, int64_t cap, float allocation, const std::string& label, const std::string& path) -> SweepResult {
+        CityMap scenarioMap({mapSize, mapSize});
+        RoadNetwork scenarioRoads(scenarioMap);
+        EntityStore scenarioStore;
+        PopulationStore scenarioPopulation;
+
+        if (!SaveLoadSystem::applySnapshot(baselineSnapshot, scenarioMap, scenarioRoads, scenarioStore, scenarioPopulation)) {
+          throw std::runtime_error("failed to apply baseline snapshot");
+        }
+
+        if (!DistrictSystem::setDistrictServiceBudgetCap(static_cast<DistrictId>(sweepDistrictId), cap)) {
+          throw std::runtime_error("failed to apply sweep service cap");
+        }
+        if (!DistrictSystem::setDistrictServiceAllocation(static_cast<DistrictId>(sweepDistrictId), allocation)) {
+          throw std::runtime_error("failed to apply sweep service allocation");
+        }
+
+        SweepResult result;
+        result.label = label;
+        result.path = path;
+        result.scenarioSeed = scenarioSeed;
+        result.cap = cap;
+        result.allocation = allocation;
+
+        runGrowthStepsWithPressure(
+          scenarioMap,
+          scenarioRoads,
+          scenarioStore,
+          scenarioPopulation,
+          serviceFacilities,
+          runGrowthSteps,
+          scenarioSeed,
+          districtPressurePool,
+          false,
+          false,
+          &result.rows
+        );
+
+        if (!writeGrowthPressureReportCSV(path, result.rows)) {
+          throw std::runtime_error("failed to write growth pressure report");
+        }
+
+        return result;
+      };
+
+      std::cout << "Running policy sweep in " << runPolicySweepOutputDir << "\n";
+      std::cout << "  District: " << sweepDistrictId << "\n";
+      std::cout << "  Baseline: seed=" << seed
+                << " cap=" << baselineCap
+                << " allocation=" << std::fixed << std::setprecision(3) << baselineAllocation << "\n";
+
+      const std::string baselinePath = (std::filesystem::path(runPolicySweepOutputDir) / "baseline.csv").string();
+      SweepResult baselineResult;
+      try {
+        baselineResult = runSweepScenario(seed, baselineCap, baselineAllocation, "baseline", baselinePath);
+      } catch (const std::exception& ex) {
+        std::cerr << "Error: Policy sweep baseline failed: " << ex.what() << "\n";
+        return 1;
+      }
+      std::cout << "  Wrote baseline report: " << baselinePath
+                << " (rows=" << baselineResult.rows.size() << ")\n";
+
+      std::vector<SweepResult> candidateResults;
+      size_t scenarioOrdinal = 0;
+      for (uint32_t scenarioSeed : sweepSeeds) {
+        for (int64_t cap : sweepCaps) {
+          for (float allocation : sweepAllocations) {
+            if (scenarioSeed == seed && cap == baselineCap && std::abs(allocation - baselineAllocation) < 0.0001f) {
+              continue;
+            }
+
+            ++scenarioOrdinal;
+            std::ostringstream fileName;
+            fileName << "scenario_" << scenarioOrdinal
+                     << "_seed" << scenarioSeed
+                     << "_cap" << cap
+                     << "_alloc" << sanitizeToken(std::to_string(allocation))
+                     << ".csv";
+            const std::string reportPath = (std::filesystem::path(runPolicySweepOutputDir) / fileName.str()).string();
+
+            try {
+              SweepResult result = runSweepScenario(scenarioSeed, cap, allocation, fileName.str(), reportPath);
+              std::cout << "  Wrote scenario report: " << reportPath
+                        << " (rows=" << result.rows.size() << ")\n";
+              candidateResults.push_back(std::move(result));
+            } catch (const std::exception& ex) {
+              std::cerr << "Error: Policy sweep scenario failed for seed=" << scenarioSeed
+                        << " cap=" << cap << " allocation=" << allocation
+                        << ": " << ex.what() << "\n";
+              return 1;
+            }
+          }
+        }
+      }
+
+      std::vector<std::pair<std::string, std::vector<GrowthPressureReportRow>>> rankingCandidates;
+      rankingCandidates.reserve(candidateResults.size());
+      for (const SweepResult& result : candidateResults) {
+        rankingCandidates.emplace_back(result.path, result.rows);
+      }
+
+      if (!rankingCandidates.empty()) {
+        printGrowthPressureRanking(baselinePath, baselineResult.rows, rankingCandidates);
+        printDistrictDeltaRanking(baselineResult.rows, rankingCandidates, 3);
+      } else {
+        std::cout << "Growth Pressure Ranking: no candidate scenarios generated beyond baseline\n";
+      }
+
+      const GrowthPressureSummary baselineSummary = summarizeGrowthPressureRows(baselineResult.rows);
+      const GrowthPressureSummary baselineDistrictSummary = summarizeGrowthPressureRowsForDistrict(
+        baselineResult.rows,
+        static_cast<DistrictId>(sweepDistrictId)
+      );
+
+      const std::string manifestPath = (std::filesystem::path(runPolicySweepOutputDir) / "sweep_manifest.csv").string();
+      std::ofstream manifest(manifestPath);
+      if (!manifest.is_open()) {
+        std::cerr << "Error: Failed to write sweep manifest to '" << manifestPath << "'\n";
+        return 1;
+      }
+
+      manifest << "scenario,seed,district_id,cap,allocation,report_path,score,d_multiplier,d_fulfillment,d_cap_rate,d_alloc_share,district_samples,d_district_multiplier,d_district_fulfillment,d_district_cap_rate,d_district_alloc_share\n";
+      manifest << "baseline," << seed << "," << sweepDistrictId << "," << baselineCap << ","
+               << std::fixed << std::setprecision(6) << baselineAllocation << ","
+               << csvEscape(baselinePath) << ",0.000000,0.000000,0.000000,0.000000,0.000000,"
+               << baselineDistrictSummary.samples
+               << ",0.000000,0.000000,0.000000,0.000000\n";
+
+      for (const SweepResult& result : candidateResults) {
+        const GrowthPressureSummary candidateSummary = summarizeGrowthPressureRows(result.rows);
+        const GrowthPressureSummary candidateDistrictSummary = summarizeGrowthPressureRowsForDistrict(
+          result.rows,
+          static_cast<DistrictId>(sweepDistrictId)
+        );
+
+        const GrowthPressureDelta overallDelta = computeGrowthPressureDelta(baselineSummary, candidateSummary);
+        const GrowthPressureDelta districtDelta = computeGrowthPressureDelta(baselineDistrictSummary, candidateDistrictSummary);
+        const double score = scoreGrowthPressureSummaryDelta(baselineSummary, candidateSummary);
+
+        manifest << csvEscape(result.label) << ","
+                 << result.scenarioSeed << ","
+                 << sweepDistrictId << ","
+                 << result.cap << ","
+                 << std::fixed << std::setprecision(6) << result.allocation << ","
+                 << csvEscape(result.path) << ","
+                 << std::fixed << std::setprecision(6) << score << ","
+                 << overallDelta.dMultiplier << ","
+                 << overallDelta.dFulfillment << ","
+                 << overallDelta.dCapRate << ","
+                 << overallDelta.dAllocShare << ","
+                 << candidateDistrictSummary.samples << ","
+                 << districtDelta.dMultiplier << ","
+                 << districtDelta.dFulfillment << ","
+                 << districtDelta.dCapRate << ","
+                 << districtDelta.dAllocShare << "\n";
+      }
+
+      std::cout << "Wrote sweep manifest: " << manifestPath << "\n";
+
+      if (sweepManifestAllDistricts) {
+        const std::string districtManifestPath =
+          (std::filesystem::path(runPolicySweepOutputDir) / "sweep_manifest_districts.csv").string();
+        std::ofstream districtManifest(districtManifestPath);
+        if (!districtManifest.is_open()) {
+          std::cerr << "Error: Failed to write district sweep manifest to '" << districtManifestPath << "'\n";
+          return 1;
+        }
+
+        districtManifest << "scenario,seed,district_id,district_name,cap,allocation,report_path,score,district_samples,d_district_multiplier,d_district_fulfillment,d_district_cap_rate,d_district_alloc_share\n";
+
+        std::unordered_map<DistrictId, std::string> districtNames;
+        for (const District& district : DistrictSystem::getDistricts()) {
+          districtNames[district.id] = district.name;
+        }
+
+        const auto baselineByDistrict = summarizeGrowthPressureRowsByDistrict(baselineResult.rows);
+        for (const auto& [districtId, summary] : baselineByDistrict) {
+          std::string districtName = std::to_string(districtId);
+          auto nameIt = districtNames.find(districtId);
+          if (nameIt != districtNames.end()) {
+            districtName = nameIt->second;
+          }
+
+          districtManifest << "baseline," << seed << "," << districtId << ","
+                           << csvEscape(districtName) << ","
+                           << baselineCap << ","
+                           << std::fixed << std::setprecision(6) << baselineAllocation << ","
+                           << csvEscape(baselinePath) << ",0.000000,"
+                           << summary.samples
+                           << ",0.000000,0.000000,0.000000,0.000000\n";
+        }
+
+        for (const SweepResult& result : candidateResults) {
+          const GrowthPressureSummary candidateSummary = summarizeGrowthPressureRows(result.rows);
+          const double score = scoreGrowthPressureSummaryDelta(baselineSummary, candidateSummary);
+
+          const auto candidateByDistrict = summarizeGrowthPressureRowsByDistrict(result.rows);
+          std::unordered_set<DistrictId> districtIds;
+          for (const auto& [districtId, _] : baselineByDistrict) {
+            (void)_;
+            districtIds.insert(districtId);
+          }
+          for (const auto& [districtId, _] : candidateByDistrict) {
+            (void)_;
+            districtIds.insert(districtId);
+          }
+
+          for (DistrictId districtId : districtIds) {
+            GrowthPressureSummary baselineDistrictForRow;
+            auto baseIt = baselineByDistrict.find(districtId);
+            if (baseIt != baselineByDistrict.end()) {
+              baselineDistrictForRow = baseIt->second;
+            }
+
+            GrowthPressureSummary candidateDistrictSummary;
+            auto candidateIt = candidateByDistrict.find(districtId);
+            if (candidateIt != candidateByDistrict.end()) {
+              candidateDistrictSummary = candidateIt->second;
+            }
+
+            const GrowthPressureDelta districtDelta = computeGrowthPressureDelta(
+              baselineDistrictForRow,
+              candidateDistrictSummary
+            );
+
+            std::string districtName = std::to_string(districtId);
+            auto nameIt = districtNames.find(districtId);
+            if (nameIt != districtNames.end()) {
+              districtName = nameIt->second;
+            }
+
+            districtManifest << csvEscape(result.label) << ","
+                             << result.scenarioSeed << ","
+                             << districtId << ","
+                             << csvEscape(districtName) << ","
+                             << result.cap << ","
+                             << std::fixed << std::setprecision(6) << result.allocation << ","
+                             << csvEscape(result.path) << ","
+                             << std::fixed << std::setprecision(6) << score << ","
+                             << candidateDistrictSummary.samples << ","
+                             << districtDelta.dMultiplier << ","
+                             << districtDelta.dFulfillment << ","
+                             << districtDelta.dCapRate << ","
+                             << districtDelta.dAllocShare << "\n";
+          }
+        }
+
+        std::cout << "Wrote district sweep manifest: " << districtManifestPath << "\n";
+      }
+      return 0;
     }
     
     if (runGrowthSteps > 0) {
-      for (int step = 0; step < runGrowthSteps; ++step) {
-        const ZoneDemand demand = Zoning::calculateDemand(seed + static_cast<uint32_t>(step));
-        const GrowthStats stats = GrowthSystem::runStep(
-          map, roads, store, demand, seed + static_cast<uint32_t>(step), 0.5f
-        );
+      std::vector<GrowthPressureReportRow> growthPressureRows;
+      std::vector<GrowthPressureReportRow>* outRows = nullptr;
+      if (!exportGrowthPressurePath.empty()) {
+        outRows = &growthPressureRows;
+      }
 
-        std::cout << "Growth step " << (step + 1)
-                  << ": evaluated=" << stats.evaluatedTiles
-                  << " spawned=" << stats.totalSpawned()
-                  << " (R=" << stats.spawnedResidential
-                  << ", C=" << stats.spawnedCommercial
-                  << ", I=" << stats.spawnedIndustrial << ")\n";
+      runGrowthStepsWithPressure(
+        map,
+        roads,
+        store,
+        population,
+        serviceFacilities,
+        runGrowthSteps,
+        seed,
+        districtPressurePool,
+        printGrowthPressureFlag,
+        true,
+        outRows
+      );
+
+      if (!exportGrowthPressurePath.empty()) {
+        if (!writeGrowthPressureReportCSV(exportGrowthPressurePath, growthPressureRows)) {
+          std::cerr << "Error: Failed to export growth pressure report to '"
+                    << exportGrowthPressurePath << "'\n";
+          return 1;
+        }
+        std::cout << "Exported growth pressure report to " << exportGrowthPressurePath
+                  << " (rows=" << growthPressureRows.size() << ")\n";
       }
     }
 
@@ -1281,6 +2807,44 @@ int main(int argc, char* argv[]) {
       }
     }
 
+    if (!setDistrictAllocationRequests.empty()) {
+      for (const auto& [districtId, allocation] : setDistrictAllocationRequests) {
+        bool success = DistrictSystem::setDistrictServiceAllocation(
+          static_cast<DistrictId>(districtId),
+          allocation
+        );
+        if (!success) {
+          std::cerr << "Error: District " << districtId << " not found\n";
+          return 1;
+        }
+
+        const District* district = DistrictSystem::getDistrictConst(static_cast<DistrictId>(districtId));
+        std::cout << "Set service allocation for district " << districtId << " to "
+                  << std::fixed << std::setprecision(1)
+                  << ((district != nullptr ? district->serviceAllocation : allocation) * 100.0f)
+                  << "%\n";
+      }
+    }
+
+    if (!setDistrictBudgetCapRequests.empty()) {
+      for (const auto& [districtId, cap] : setDistrictBudgetCapRequests) {
+        bool success = DistrictSystem::setDistrictServiceBudgetCap(
+          static_cast<DistrictId>(districtId),
+          cap
+        );
+        if (!success) {
+          std::cerr << "Error: District " << districtId << " not found\n";
+          return 1;
+        }
+
+        if (cap < 0) {
+          std::cout << "Disabled service budget cap for district " << districtId << "\n";
+        } else {
+          std::cout << "Set service budget cap for district " << districtId << " to " << cap << "\n";
+        }
+      }
+    }
+
     if (!assignFacilityRequests.empty()) {
       for (const auto& [districtId, facilityId] : assignFacilityRequests) {
         bool success = DistrictSystem::assignFacilityToDistrict(
@@ -1311,6 +2875,28 @@ int main(int argc, char* argv[]) {
                     << "Com=" << (district.taxRates.commercialRate * 100.0f) << "%  "
                     << "Ind=" << (district.taxRates.industrialRate * 100.0f) << "%\n";
           std::cout << "    Service Allocation: " << (district.serviceAllocation * 100.0f) << "%\n";
+          std::cout << "    Service Budget Cap: ";
+          if (district.serviceBudgetCap < 0) {
+            std::cout << "none\n";
+          } else {
+            std::cout << district.serviceBudgetCap << "\n";
+          }
+          std::cout << "    Service Priorities: Fire=" << district.servicePriorities.fireWeight
+                    << " Police=" << district.servicePriorities.policeWeight
+                    << " Health=" << district.servicePriorities.healthWeight
+                    << " Education=" << district.servicePriorities.educationWeight << "\n";
+          std::cout << "    Assigned Facilities: ";
+          if (district.assignedFacilityIds.empty()) {
+            std::cout << "none\n";
+          } else {
+            for (size_t idx = 0; idx < district.assignedFacilityIds.size(); ++idx) {
+              if (idx > 0) {
+                std::cout << ", ";
+              }
+              std::cout << district.assignedFacilityIds[idx];
+            }
+            std::cout << "\n";
+          }
         }
       }
     }
@@ -1318,7 +2904,9 @@ int main(int argc, char* argv[]) {
     if (printDistrictSummaryId >= 0) {
       DistrictMetrics metrics = DistrictSystem::evaluateDistrictMetrics(
         static_cast<DistrictId>(printDistrictSummaryId),
-        map, store, population
+        map, store, population,
+        &roads,
+        &serviceFacilities
       );
       
       if (metrics.districtId == 0) {
@@ -1333,8 +2921,57 @@ int main(int argc, char* argv[]) {
       std::cout << "  Average Land Value: " << std::fixed << std::setprecision(1) << metrics.averageLandValue << "\n";
       std::cout << "  Budget: Revenue=" << metrics.revenue << ", Expenses=" << metrics.expenses
                 << ", Balance=" << metrics.balance << "\n";
+      std::cout << "  Service Budget: Target=" << metrics.serviceBudgetTarget
+                << ", Allocated=" << metrics.serviceBudgetAllocated
+                << ", CapApplied=" << (metrics.serviceBudgetCapApplied ? "yes" : "no") << "\n";
       std::cout << "  Service Coverage: " << std::fixed << std::setprecision(1) << (metrics.serviceCoverage * 100.0f) << "%\n";
       std::cout << "  Happiness: " << std::fixed << std::setprecision(1) << (metrics.happiness * 100.0f) << "%\n";
+    }
+
+    if (printDistrictBalancingPool >= 0) {
+      const std::vector<DistrictMetrics> balancedMetrics = DistrictSystem::evaluateAllDistricts(
+        map,
+        store,
+        population,
+        &roads,
+        &serviceFacilities,
+        printDistrictBalancingPool
+      );
+
+      std::cout << "District Balancing (shared pool=" << printDistrictBalancingPool << "):\n";
+      if (balancedMetrics.empty()) {
+        std::cout << "  No districts created.\n";
+      } else {
+        int64_t totalAllocated = 0;
+        for (const DistrictMetrics& metrics : balancedMetrics) {
+          totalAllocated += metrics.serviceBudgetAllocated;
+          std::cout << "  [" << metrics.districtId << "] " << metrics.districtName
+                    << " target=" << metrics.serviceBudgetTarget
+                    << " allocated=" << metrics.serviceBudgetAllocated
+                    << " coverage=" << std::fixed << std::setprecision(1)
+                    << (metrics.serviceCoverage * 100.0f) << "%"
+                    << " capApplied=" << (metrics.serviceBudgetCapApplied ? "yes" : "no")
+                    << "\n";
+        }
+        std::cout << "  Total Allocated: " << totalAllocated << "\n";
+      }
+    }
+
+    if (printDistrictFacilitiesId >= 0) {
+      const District* district = DistrictSystem::getDistrictConst(static_cast<DistrictId>(printDistrictFacilitiesId));
+      if (district == nullptr) {
+        std::cerr << "Error: District " << printDistrictFacilitiesId << " not found\n";
+        return 1;
+      }
+
+      std::cout << "District Facilities: [" << district->id << "] " << district->name << "\n";
+      if (district->assignedFacilityIds.empty()) {
+        std::cout << "  none\n";
+      } else {
+        for (uint32_t id : district->assignedFacilityIds) {
+          std::cout << "  " << id << "\n";
+        }
+      }
     }
 
     if (!renderMapPath.empty()) {
@@ -1363,7 +3000,7 @@ int main(int argc, char* argv[]) {
       return 0;
     }
 
-    if (zoneX1 >= 0 || placeRoadX1 >= 0 || runGrowthSteps > 0 || printZonesFlag ||
+    if (!zoneRequests.empty() || !placeRoadRequests.empty() || runGrowthSteps > 0 || printZonesFlag ||
         printDemandFlag || printConnectivityMapFlag || printBuildingsFlag ||
         printGrowthSummaryFlag || seedPopulation >= 0 || printPopulationSummaryFlag ||
         printPopulationGroupsFlag || runCommuteSimulationFlag || printTrafficSummaryFlag ||
@@ -1371,7 +3008,11 @@ int main(int argc, char* argv[]) {
         runServiceEvaluationFlag || printServiceSummaryFlag || !serviceRequests.empty() ||
         printCitySummaryFlag || !renderMapPath.empty() || !saveCityPath.empty() || !loadCityPath.empty() ||
         !createDistrictRequests.empty() || listDistrictsFlag || printDistrictSummaryId >= 0 ||
-        !setDistrictTaxRequests.empty() || !setDistrictServiceRequests.empty() || !assignFacilityRequests.empty()) {
+        printDistrictFacilitiesId >= 0 ||
+        printDistrictBalancingPool >= 0 ||
+        !setDistrictTaxRequests.empty() || !setDistrictServiceRequests.empty() ||
+        !setDistrictAllocationRequests.empty() || !setDistrictBudgetCapRequests.empty() ||
+        !assignFacilityRequests.empty() || !unassignFacilityRequests.empty() || districtMutationsApplied) {
       if (!saveIfRequested()) return 1;
       return 0;
     }

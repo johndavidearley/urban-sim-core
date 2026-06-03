@@ -15,6 +15,10 @@ EntityId EntityStore::createBuilding(BuildingType type, Coord position, int capa
   return id;
 }
 
+bool EntityStore::removeBuilding(EntityId id) {
+  return buildings.erase(id) > 0;
+}
+
 void EntityStore::clear() {
   buildings.clear();
 }

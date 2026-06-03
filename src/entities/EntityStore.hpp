@@ -10,6 +10,7 @@ private:
 
 public:
   EntityId createBuilding(BuildingType type, Coord position, int capacity);
+  bool removeBuilding(EntityId id);
   void clear();
   void upsertBuilding(const Building& building);
 

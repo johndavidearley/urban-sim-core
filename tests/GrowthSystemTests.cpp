@@ -214,3 +214,113 @@ TEST(GrowthSystemTests, MultiStepGrowthIsDeterministicAcrossRuns) {
   EXPECT_EQ(spawnedA, spawnedB);
   EXPECT_EQ(storeA.getBuildingCount(), storeB.getBuildingCount());
 }
+
+TEST(GrowthSystemTests, ChanceModifiersCanSuppressGrowthInRegion) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  roads.buildRoad({2, 2}, {3, 2});
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 3}, {2, 3}, ZoneType::Residential));
+
+  ZoneDemand demand;
+  demand.residential = 1.0f;
+  demand.commercial = 0.0f;
+  demand.industrial = 0.0f;
+
+  std::vector<GrowthChanceModifier> modifiers;
+  modifiers.push_back(GrowthChanceModifier{{0, 0}, {7, 7}, 0.0f});
+
+  const GrowthStats stats = GrowthSystem::runStep(map, roads, store, demand, 7, 1.0f, &modifiers);
+
+  EXPECT_EQ(stats.totalSpawned(), 0);
+  EXPECT_EQ(store.getBuildingCount(), 0u);
+}
+
+TEST(GrowthSystemTests, MultiZoneDemandBalancingBiasesHigherDemandZone) {
+  CityMap map({18, 18});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  for (int x = 2; x < 15; ++x) {
+    roads.buildRoad({x, 2}, {x + 1, 2});
+    roads.buildRoad({x, 9}, {x + 1, 9});
+  }
+
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 3}, {15, 3}, ZoneType::Residential));
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 10}, {15, 10}, ZoneType::Commercial));
+
+  ZoneDemand demand;
+  demand.residential = 0.95f;
+  demand.commercial = 0.20f;
+  demand.industrial = 0.05f;
+
+  int spawnedResidential = 0;
+  int spawnedCommercial = 0;
+  for (int step = 0; step < 50; ++step) {
+    const GrowthStats stats = GrowthSystem::runStep(
+      map,
+      roads,
+      store,
+      demand,
+      static_cast<uint32_t>(700 + step),
+      0.9f
+    );
+    spawnedResidential += stats.spawnedResidential;
+    spawnedCommercial += stats.spawnedCommercial;
+  }
+
+  EXPECT_GT(spawnedResidential, spawnedCommercial);
+}
+
+TEST(GrowthSystemTests, LowDemandOverbuiltZoneCanDemolishBuildings) {
+  CityMap map({16, 16});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  for (int x = 2; x < 13; ++x) {
+    roads.buildRoad({x, 2}, {x + 1, 2});
+  }
+
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 3}, {13, 3}, ZoneType::Residential));
+
+  ZoneDemand highDemand;
+  highDemand.residential = 1.0f;
+  highDemand.commercial = 0.0f;
+  highDemand.industrial = 0.0f;
+
+  for (int step = 0; step < 6; ++step) {
+    (void)GrowthSystem::runStep(
+      map,
+      roads,
+      store,
+      highDemand,
+      static_cast<uint32_t>(900 + step),
+      1.0f
+    );
+  }
+
+  const size_t beforeDemolition = store.getBuildingCount();
+  ASSERT_GT(beforeDemolition, 0u);
+
+  ZoneDemand lowDemand;
+  lowDemand.residential = 0.01f;
+  lowDemand.commercial = 0.0f;
+  lowDemand.industrial = 0.0f;
+
+  int totalDemolished = 0;
+  for (int step = 0; step < 30; ++step) {
+    const GrowthStats stats = GrowthSystem::runStep(
+      map,
+      roads,
+      store,
+      lowDemand,
+      static_cast<uint32_t>(1000 + step),
+      0.3f
+    );
+    totalDemolished += stats.totalDemolished();
+  }
+
+  EXPECT_GT(totalDemolished, 0);
+  EXPECT_LT(store.getBuildingCount(), beforeDemolition);
+}

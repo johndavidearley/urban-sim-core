@@ -27,6 +27,7 @@ struct District {
 
   TaxRates taxRates;
   float serviceAllocation = 0.5f; // 0.0 to 1.0 share of city service budget
+  int64_t serviceBudgetCap = -1;  // Negative value means uncapped
   ServicePriority servicePriorities;  // Weight allocation for service types
 
   std::vector<uint32_t> assignedFacilityIds;  // Service facility IDs assigned to this district
@@ -62,6 +63,11 @@ struct DistrictMetrics {
   int64_t revenue = 0;
   int64_t expenses = 0;
   int64_t balance = 0;
+  int64_t serviceBudgetTarget = 0;
+  int64_t serviceBudgetAllocated = 0;
+  bool serviceBudgetCapApplied = false;
+  float economicHealth = 0.5f;
+  float serviceCoveragePotential = 0.0f;
 
   float averageLandValue = 100.0f;
   float serviceCoverage = 0.0f;
@@ -96,6 +102,9 @@ public:
   // Set service priorities for a district
   static bool setDistrictServicePriorities(DistrictId id, const ServicePriority& priorities);
 
+  // Set absolute service budget cap for a district (negative disables cap)
+  static bool setDistrictServiceBudgetCap(DistrictId id, int64_t cap);
+
   // Assign a service facility to a district
   static bool assignFacilityToDistrict(DistrictId districtId, uint32_t facilityId);
 
@@ -110,14 +119,25 @@ public:
     DistrictId id,
     const CityMap& map,
     const EntityStore& store,
-    const PopulationStore& population
+    const PopulationStore& population,
+    const RoadNetwork* roads = nullptr,
+    const std::vector<ServiceFacility>* facilities = nullptr
   );
 
   // Evaluate all district metrics
   static std::vector<DistrictMetrics> evaluateAllDistricts(
     const CityMap& map,
     const EntityStore& store,
-    const PopulationStore& population
+    const PopulationStore& population,
+    const RoadNetwork* roads = nullptr,
+    const std::vector<ServiceFacility>* facilities = nullptr,
+    int64_t sharedServiceBudgetPool = -1
+  );
+
+  // Compute a tuned growth pressure multiplier for a district from balanced metrics.
+  static float computeGrowthPressureMultiplier(
+    const District& district,
+    const DistrictMetrics& metrics
   );
 
   // Clear all districts

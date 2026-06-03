@@ -251,10 +251,25 @@
 - ✅ Test count: 114 -> 126 (all passing)
 
 4. **Next steps** ⏭️
-- ⏭️ Integrate per-district tax rate applications in `EconomySystem`
-- ⏭️ Add service facility assignment to districts
-- ⏭️ Add district-level budget allocation and constraints
-- ⏭️ Add CLI commands for tax rate and service policy management
+- ✅ Integrate per-district tax rate applications in district metrics path
+- ✅ Integrate service facility assignment and priority-weighted service coverage in district metrics path
+- ✅ Add district-level budget allocation and constraints
+- ✅ Add CLI policy controls for district budget envelopes and spending caps
+- ✅ Add citywide balancing rules for competing district allocations under shared budget pools
+- ✅ Add policy experiments that tie district budget pressure to growth/demand shaping
+- ✅ Run pressure tuning pass to stabilize district growth distribution under asymmetric caps
+- ✅ Add policy export/report tooling for offline pressure calibration and scenario comparison
+- ✅ Add scenario diff tooling to compare pressure reports across seeds/policies
+- ✅ Add batch comparison workflow support for policy sweep ranking
+- ✅ Add automated policy sweep runner to generate and rank scenarios end-to-end
+- ✅ Add sweep manifest enrichment with per-district subscore breakdown
+- ✅ Add optional multi-district manifest breakdown mode for all districts in each scenario
+- ✅ Add district-level ranking view in CLI output (top/bottom districts by delta)
+- ✅ Begin Slice 13 traffic improvements (route caching baseline)
+- ✅ Add congestion feedback loop pass for adaptive route choice under peak load
+- ✅ Begin Slice 14 advanced growth improvements (multi-zone demand balancing baseline)
+- ✅ Add early aging/demolition scaffolding pass for overbuilt, low-demand parcels
+- ⏭️ Begin Slice 15 economy refinements (interest/loan scaffolding baseline)
 
 **Slice 11 status:** ✅ Foundation complete; policy integration pending.
 
@@ -263,14 +278,21 @@
 ## Remaining Slices
 
 Following completion of Slice 11, planned future work includes:
--Following completion of Slice 11, planned future work includes:
-+Following completion of Slice 12, planned future work includes:
-
 - **Slice 12:** District service policies - Per-district service facility priorities and budget allocation
+	- ✅ Begun: facility assignment lifecycle CLI (`--unassign-facility`, `--print-district-facilities`) with unit coverage
+	- ✅ Automated policy sweep runner added (`--run-policy-sweep`, seed/cap/allocation sweep parameters)
+	- ✅ Sweep manifest now includes per-district subscore delta columns for the swept district
+	- ✅ Optional all-district breakdown manifest mode added (`--sweep-manifest-all-districts`)
+	- ✅ District-level ranking view added in CLI output (top/bottom districts by average delta)
+	- ✅ Handed off into Slice 13 traffic improvements
 - **Slice 13:** Traffic simulation improvements - Route caching, congestion feedback loops
-
-| 12 | District Service Policies | ✅ Complete |
+	- ✅ Route caching baseline added for repeated OD path queries in commute simulation and diagnostics
+	- ✅ Adaptive congestion feedback loop added for route choice under peak load
+	- ✅ Handed off into Slice 14 advanced growth improvements
 - **Slice 14:** Advanced growth - Multi-zone demand balancing, aging and demolition
+	- ✅ Multi-zone demand balancing baseline added in growth chance model
+	- ✅ Early aging/demolition scaffolding added for overbuilt, low-demand parcels
+	- ⏭️ Next: begin Slice 15 economy refinements (interest/loan scaffolding baseline)
 - **Slice 15:** Economy refinements - Interest rates, loans, development boom/bust cycles
 
 ---
@@ -290,4 +312,5 @@ Following completion of Slice 11, planned future work includes:
 | 9 | Metrics | ✅ Complete |
 | 10 | Save/Load | ✅ Complete |
 | 11 | District Management | ✅ Complete |
+| 12 | District Service Policies | 🚧 In Progress |
 
