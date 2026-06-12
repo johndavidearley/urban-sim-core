@@ -28,6 +28,9 @@ target_include_directories(urban_sim_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
+# PUBLIC: tests include <nlohmann/json.hpp> directly to author snapshot fixtures.
+target_link_libraries(urban_sim_core PUBLIC nlohmann_json::nlohmann_json)
+
 # CLI executable
 add_executable(UrbanSimCore-cli
   main.cpp

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Smoke-test save/load round-trip
+        shell: bash
+        run: |
+          BIN=build/bin/UrbanSimCore-cli
+          [ -f "$BIN" ] || BIN=build/bin/Release/UrbanSimCore-cli.exe
+          "$BIN" --size 16 --seed 7 --run-growth 3 --save-city snapshot.json
+          "$BIN" --size 16 --load-city snapshot.json

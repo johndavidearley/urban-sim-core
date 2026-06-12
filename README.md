@@ -7,10 +7,18 @@ A high-performance simulation engine for modeling living cities. Designed to sim
 ### Build
 
 ```bash
+git clone --recursive <repo-url>
+# or, if already cloned without --recursive:
+git submodule update --init --recursive
+
 mkdir -p build && cd build
 cmake ..
 cmake --build . --config Release
 ```
+
+The googletest submodule is required to build the test suite; without it, test
+targets are skipped. nlohmann/json is required for snapshot persistence and is
+fetched automatically at configure time if not installed locally.
 
 ### Run Headless Simulation
 
