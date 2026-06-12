@@ -38,30 +38,40 @@ void applySharedBudgetBalancing(std::vector<DistrictMetrics>& metrics, const std
     return;
   }
 
+  // Apportion the pool by remaining (uncapped) demand so a capped district
+  // still receives its full fair share up to its cap; the surplus it cannot
+  // absorb flows to the other districts on later passes.
   while (remainingPool > 0) {
-    int64_t totalUnmet = 0;
+    int64_t totalDemand = 0;
     for (size_t i = 0; i < metrics.size(); ++i) {
-      const int64_t unmet = std::max<int64_t>(0, std::min(requested[i] - allocated[i], capRemaining[i]));
-      totalUnmet += unmet;
+      if (capRemaining[i] > 0) {
+        totalDemand += std::max<int64_t>(0, requested[i] - allocated[i]);
+      }
     }
 
-    if (totalUnmet == 0) {
+    if (totalDemand == 0) {
       break;
     }
 
     int64_t distributedThisPass = 0;
     for (size_t i = 0; i < metrics.size() && remainingPool > 0; ++i) {
-      const int64_t unmet = std::max<int64_t>(0, std::min(requested[i] - allocated[i], capRemaining[i]));
-      if (unmet <= 0) {
+      if (capRemaining[i] <= 0) {
+        continue;
+      }
+      const int64_t demand = std::max<int64_t>(0, requested[i] - allocated[i]);
+      if (demand <= 0) {
         continue;
       }
 
-      int64_t proportional = (remainingPool * unmet) / totalUnmet;
+      int64_t proportional = (remainingPool * demand) / totalDemand;
       if (proportional <= 0) {
         proportional = 1;
       }
 
-      const int64_t grant = std::min<int64_t>(proportional, std::min<int64_t>(unmet, remainingPool));
+      const int64_t grant = std::min(
+        std::min(proportional, demand),
+        std::min(capRemaining[i], remainingPool)
+      );
       allocated[i] += grant;
       capRemaining[i] -= grant;
       remainingPool -= grant;
