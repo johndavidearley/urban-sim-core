@@ -5,77 +5,83 @@
 #include <cmath>
 #include <limits>
 
+namespace {
+
 // Custom comparator for priority queue with glm::ivec2
 struct PQCompare {
-  bool operator()(const std::pair<float, glm::ivec2>& a, 
+  bool operator()(const std::pair<float, glm::ivec2>& a,
                   const std::pair<float, glm::ivec2>& b) const {
     return a.first > b.first;  // Min-heap based on distance
   }
 };
 
-float Pathfinding::heuristic(glm::ivec2 a, glm::ivec2 b) {
-  // Manhattan distance
-  return std::abs(a.x - b.x) + std::abs(a.y - b.y);
-}
-
-Pathfinding::Path Pathfinding::findShortestPath(
+// Dijkstra over the road grid. Every edge costs 1.0 plus an optional
+// congestion penalty scaled by congestionWeight (<= 0 disables the penalty
+// and skips the per-edge congestion lookup).
+Pathfinding::Path runDijkstra(
   const RoadNetwork& network,
   glm::ivec2 start,
-  glm::ivec2 goal
+  glm::ivec2 goal,
+  float congestionWeight
 ) {
   if (!network.hasNode(start) || !network.hasNode(goal)) {
-    return Path();
+    return Pathfinding::Path();
   }
-  
+
   if (start == goal) {
-    return Path({start}, 0.0f);
+    return Pathfinding::Path({start}, 0.0f);
   }
-  
-  // Dijkstra's algorithm
+
+  const bool useCongestion = congestionWeight > 0.0f;
+
   std::unordered_map<glm::ivec2, float, Vec2Hash> dist;
   std::unordered_map<glm::ivec2, glm::ivec2, Vec2Hash> prev;
-  
+
   using PQItem = std::pair<float, glm::ivec2>;
   std::priority_queue<PQItem, std::vector<PQItem>, PQCompare> pq;
-  
-  // Initialize
+
   dist[start] = 0.0f;
   pq.push({0.0f, start});
-  
+
   while (!pq.empty()) {
     auto [d, current] = pq.top();
     pq.pop();
-    
+
     if (current == goal) {
       // Reconstruct path
       std::vector<glm::ivec2> path;
       glm::ivec2 node = goal;
-      
+
       while (true) {
         path.push_back(node);
         if (node == start) break;
-        
+
         auto it = prev.find(node);
         if (it == prev.end()) break;
         node = it->second;
       }
-      
+
       std::reverse(path.begin(), path.end());
-      return Path(path, d);
+      return Pathfinding::Path(path, d);
     }
-    
+
     if (d > dist[current]) {
       continue;
     }
-    
+
     const RoadNetwork::Node* currentNode = network.getNode(current);
     if (!currentNode) continue;
-    
+
     for (const RoadNodeId& neighborId : currentNode->adjacent) {
       glm::ivec2 neighbor = neighborId.coord;
-      
-      float alt = dist[current] + 1.0f; // Each edge has length 1
-      
+
+      float edgeCost = 1.0f;
+      if (useCongestion) {
+        edgeCost += network.getCongestion(current, neighbor) * congestionWeight;
+      }
+
+      float alt = dist[current] + edgeCost;
+
       auto distIt = dist.find(neighbor);
       if (distIt == dist.end() || alt < distIt->second) {
         dist[neighbor] = alt;
@@ -84,9 +90,24 @@ Pathfinding::Path Pathfinding::findShortestPath(
       }
     }
   }
-  
+
   // No path found
-  return Path();
+  return Pathfinding::Path();
+}
+
+} // namespace
+
+float Pathfinding::heuristic(glm::ivec2 a, glm::ivec2 b) {
+  // Manhattan distance
+  return static_cast<float>(std::abs(a.x - b.x) + std::abs(a.y - b.y));
+}
+
+Pathfinding::Path Pathfinding::findShortestPath(
+  const RoadNetwork& network,
+  glm::ivec2 start,
+  glm::ivec2 goal
+) {
+  return runDijkstra(network, start, goal, 0.0f);
 }
 
 Pathfinding::Path Pathfinding::findShortestPathWithCongestion(
@@ -94,7 +115,7 @@ Pathfinding::Path Pathfinding::findShortestPathWithCongestion(
   glm::ivec2 start,
   glm::ivec2 goal
 ) {
-  return findShortestPathWithCongestionWeight(network, start, goal, 0.5f);
+  return runDijkstra(network, start, goal, 0.5f);
 }
 
 Pathfinding::Path Pathfinding::findShortestPathWithCongestionWeight(
@@ -103,73 +124,5 @@ Pathfinding::Path Pathfinding::findShortestPathWithCongestionWeight(
   glm::ivec2 goal,
   float congestionWeight
 ) {
-  if (!network.hasNode(start) || !network.hasNode(goal)) {
-    return Path();
-  }
-  
-  if (start == goal) {
-    return Path({start}, 0.0f);
-  }
-  
-  // Dijkstra with congestion cost
-  std::unordered_map<glm::ivec2, float, Vec2Hash> dist;
-  std::unordered_map<glm::ivec2, glm::ivec2, Vec2Hash> prev;
-  
-  using PQItem = std::pair<float, glm::ivec2>;
-  std::priority_queue<PQItem, std::vector<PQItem>, PQCompare> pq;
-  
-  // Initialize
-  dist[start] = 0.0f;
-  pq.push({0.0f, start});
-  
-  while (!pq.empty()) {
-    auto [d, current] = pq.top();
-    pq.pop();
-    
-    if (current == goal) {
-      // Reconstruct path
-      std::vector<glm::ivec2> path;
-      glm::ivec2 node = goal;
-      
-      while (true) {
-        path.push_back(node);
-        if (node == start) break;
-        
-        auto it = prev.find(node);
-        if (it == prev.end()) break;
-        node = it->second;
-      }
-      
-      std::reverse(path.begin(), path.end());
-      return Path(path, d);
-    }
-    
-    if (d > dist[current]) {
-      continue;
-    }
-    
-    const RoadNetwork::Node* currentNode = network.getNode(current);
-    if (!currentNode) continue;
-    
-    for (const RoadNodeId& neighborId : currentNode->adjacent) {
-      glm::ivec2 neighbor = neighborId.coord;
-      
-      // Base cost + congestion penalty
-      float baseCost = 1.0f;
-      float congestionCost = network.getCongestion(current, neighbor) * std::max(0.0f, congestionWeight);
-      float edgeCost = baseCost + congestionCost;
-      
-      float alt = dist[current] + edgeCost;
-      
-      auto distIt = dist.find(neighbor);
-      if (distIt == dist.end() || alt < distIt->second) {
-        dist[neighbor] = alt;
-        prev[neighbor] = current;
-        pq.push({alt, neighbor});
-      }
-    }
-  }
-  
-  // No path found
-  return Path();
+  return runDijkstra(network, start, goal, std::max(0.0f, congestionWeight));
 }
