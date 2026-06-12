@@ -68,7 +68,6 @@ uint64_t runScenarioAndChecksum(const ReplayConfig& config) {
     const ZoneDemand demand = Zoning::calculateDemand(config.seed + static_cast<uint32_t>(step));
     GrowthSystem::runStep(
       map,
-      roads,
       store,
       demand,
       config.seed + static_cast<uint32_t>(step),

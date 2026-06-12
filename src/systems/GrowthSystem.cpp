@@ -296,15 +296,12 @@ float chanceModifierForCoord(Coord coord, const std::vector<GrowthChanceModifier
 
 GrowthStats GrowthSystem::runStep(
   CityMap& map,
-  const RoadNetwork& roads,
   EntityStore& store,
   const ZoneDemand& demand,
   uint32_t seed,
   float baseChance,
   const std::vector<GrowthChanceModifier>* chanceModifiers
 ) {
-  (void)roads;
-
   GrowthStats stats;
   DeterministicRandom rng(seed);
   ZoneBalance balance = collectZoneBalance(map);

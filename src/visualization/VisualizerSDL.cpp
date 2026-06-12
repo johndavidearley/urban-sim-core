@@ -786,7 +786,7 @@ void runSimulationTick(
   const uint32_t tickSeed = 1000u + (liveState.tick * 31u);
 
   const ZoneDemand demand = Zoning::calculateDemand(tickSeed);
-  GrowthSystem::runStep(map, roads, store, demand, tickSeed + 1u, 0.18f);
+  GrowthSystem::runStep(map, store, demand, tickSeed + 1u, 0.18f);
 
   const uint32_t requestedPopulation = 480u + ((liveState.tick % 6u) * 20u);
   PopulationSystem::allocate(store, population, requestedPopulation, tickSeed + 2u);
@@ -870,7 +870,7 @@ bool seedScenario(CityMap& map, RoadNetwork& roads, EntityStore& store, Populati
   constexpr uint32_t seed = 42;
   for (int i = 0; i < 12; ++i) {
     const ZoneDemand demand = Zoning::calculateDemand(seed + static_cast<uint32_t>(i));
-    GrowthSystem::runStep(map, roads, store, demand, seed + static_cast<uint32_t>(i), 0.45f);
+    GrowthSystem::runStep(map, store, demand, seed + static_cast<uint32_t>(i), 0.45f);
   }
 
   // Seed guaranteed commute-capable buildings directly on the road spine for live traffic overlays.

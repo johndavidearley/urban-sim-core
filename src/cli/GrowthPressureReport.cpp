@@ -667,7 +667,6 @@ void runGrowthStepsWithPressure(
 
     const GrowthStats stats = GrowthSystem::runStep(
       map,
-      roads,
       store,
       demand,
       baseSeed + static_cast<uint32_t>(step),

@@ -117,11 +117,11 @@ int runPhase5Benchmark(int mapSize, uint32_t seed, int benchmarkTicks, Benchmark
 
     if (focus == BenchmarkFocus::All || focus == BenchmarkFocus::Growth) {
       auto t0 = std::chrono::steady_clock::now();
-      (void)GrowthSystem::runStep(benchmarkMap, benchmarkRoads, benchmarkStore, demand, tickSeed, 0.30f);
+      (void)GrowthSystem::runStep(benchmarkMap, benchmarkStore, demand, tickSeed, 0.30f);
       auto t1 = std::chrono::steady_clock::now();
       growthMs += std::chrono::duration<double, std::milli>(t1 - t0).count();
     } else {
-      (void)GrowthSystem::runStep(benchmarkMap, benchmarkRoads, benchmarkStore, demand, tickSeed, 0.30f);
+      (void)GrowthSystem::runStep(benchmarkMap, benchmarkStore, demand, tickSeed, 0.30f);
     }
 
     const uint32_t requestedPopulation = static_cast<uint32_t>(std::max(1000, mapSize * mapSize / 2))

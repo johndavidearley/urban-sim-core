@@ -19,7 +19,7 @@ TEST(GrowthSystemTests, SpawnsWhenZonedAndRoadAccessible) {
   demand.commercial = 0.0f;
   demand.industrial = 0.0f;
 
-  const GrowthStats stats = GrowthSystem::runStep(map, roads, store, demand, 7, 1.0f);
+  const GrowthStats stats = GrowthSystem::runStep(map, store, demand, 7, 1.0f);
 
   EXPECT_EQ(stats.spawnedResidential, 1);
   EXPECT_EQ(stats.totalSpawned(), 1);
@@ -39,7 +39,7 @@ TEST(GrowthSystemTests, NoSpawnWithoutRoadAccess) {
   demand.commercial = 1.0f;
   demand.industrial = 0.0f;
 
-  const GrowthStats stats = GrowthSystem::runStep(map, roads, store, demand, 11, 1.0f);
+  const GrowthStats stats = GrowthSystem::runStep(map, store, demand, 11, 1.0f);
 
   EXPECT_EQ(stats.totalSpawned(), 0);
   EXPECT_EQ(store.getBuildingCount(), 0u);
@@ -59,7 +59,7 @@ TEST(GrowthSystemTests, NoSpawnForUnzonedTiles) {
   demand.commercial = 1.0f;
   demand.industrial = 1.0f;
 
-  const GrowthStats stats = GrowthSystem::runStep(map, roads, store, demand, 13, 1.0f);
+  const GrowthStats stats = GrowthSystem::runStep(map, store, demand, 13, 1.0f);
 
   EXPECT_EQ(stats.totalSpawned(), 0);
   EXPECT_EQ(store.getBuildingCount(), 0u);
@@ -88,8 +88,8 @@ TEST(GrowthSystemTests, DeterministicForSameSeed) {
   demand.commercial = 0.0f;
   demand.industrial = 0.6f;
 
-  const GrowthStats first = GrowthSystem::runStep(mapA, roadsA, storeA, demand, 99, 0.8f);
-  const GrowthStats second = GrowthSystem::runStep(mapB, roadsB, storeB, demand, 99, 0.8f);
+  const GrowthStats first = GrowthSystem::runStep(mapA, storeA, demand, 99, 0.8f);
+  const GrowthStats second = GrowthSystem::runStep(mapB, storeB, demand, 99, 0.8f);
 
   EXPECT_EQ(first.totalSpawned(), second.totalSpawned());
   EXPECT_EQ(first.spawnedIndustrial, second.spawnedIndustrial);
@@ -109,7 +109,7 @@ TEST(GrowthSystemTests, VeryLowDemandSuppressesGrowth) {
   demand.commercial = 0.0f;
   demand.industrial = 0.0f;
 
-  const GrowthStats stats = GrowthSystem::runStep(map, roads, store, demand, 5, 1.0f);
+  const GrowthStats stats = GrowthSystem::runStep(map, store, demand, 5, 1.0f);
 
   EXPECT_EQ(stats.totalSpawned(), 0);
   EXPECT_EQ(store.getBuildingCount(), 0u);
@@ -142,7 +142,7 @@ TEST(GrowthSystemTests, SaturatedZonePreventsMoreGrowth) {
   demand.commercial = 0.0f;
   demand.industrial = 0.1f;
 
-  const GrowthStats stats = GrowthSystem::runStep(map, roads, store, demand, 9, 1.0f);
+  const GrowthStats stats = GrowthSystem::runStep(map, store, demand, 9, 1.0f);
 
   EXPECT_EQ(stats.totalSpawned(), 0);
   EXPECT_EQ(store.getBuildingCount(), 0u);
@@ -168,7 +168,7 @@ TEST(GrowthSystemTests, MultiStepGrowthSpawnsAndStabilizes) {
     demand.industrial = 0.0f;
 
     const GrowthStats stats = GrowthSystem::runStep(
-      map, roads, store, demand, static_cast<uint32_t>(100 + step), 1.0f
+      map, store, demand, static_cast<uint32_t>(100 + step), 1.0f
     );
     totalSpawned += stats.totalSpawned();
   }
@@ -204,10 +204,10 @@ TEST(GrowthSystemTests, MultiStepGrowthIsDeterministicAcrossRuns) {
     demand.industrial = 0.0f;
 
     spawnedA += GrowthSystem::runStep(
-      mapA, roadsA, storeA, demand, static_cast<uint32_t>(200 + step), 1.0f
+      mapA, storeA, demand, static_cast<uint32_t>(200 + step), 1.0f
     ).totalSpawned();
     spawnedB += GrowthSystem::runStep(
-      mapB, roadsB, storeB, demand, static_cast<uint32_t>(200 + step), 1.0f
+      mapB, storeB, demand, static_cast<uint32_t>(200 + step), 1.0f
     ).totalSpawned();
   }
 
@@ -231,7 +231,7 @@ TEST(GrowthSystemTests, ChanceModifiersCanSuppressGrowthInRegion) {
   std::vector<GrowthChanceModifier> modifiers;
   modifiers.push_back(GrowthChanceModifier{{0, 0}, {7, 7}, 0.0f});
 
-  const GrowthStats stats = GrowthSystem::runStep(map, roads, store, demand, 7, 1.0f, &modifiers);
+  const GrowthStats stats = GrowthSystem::runStep(map, store, demand, 7, 1.0f, &modifiers);
 
   EXPECT_EQ(stats.totalSpawned(), 0);
   EXPECT_EQ(store.getBuildingCount(), 0u);
@@ -260,7 +260,6 @@ TEST(GrowthSystemTests, MultiZoneDemandBalancingBiasesHigherDemandZone) {
   for (int step = 0; step < 50; ++step) {
     const GrowthStats stats = GrowthSystem::runStep(
       map,
-      roads,
       store,
       demand,
       static_cast<uint32_t>(700 + step),
@@ -292,7 +291,6 @@ TEST(GrowthSystemTests, LowDemandOverbuiltZoneCanDemolishBuildings) {
   for (int step = 0; step < 6; ++step) {
     (void)GrowthSystem::runStep(
       map,
-      roads,
       store,
       highDemand,
       static_cast<uint32_t>(900 + step),
@@ -312,7 +310,6 @@ TEST(GrowthSystemTests, LowDemandOverbuiltZoneCanDemolishBuildings) {
   for (int step = 0; step < 30; ++step) {
     const GrowthStats stats = GrowthSystem::runStep(
       map,
-      roads,
       store,
       lowDemand,
       static_cast<uint32_t>(1000 + step),

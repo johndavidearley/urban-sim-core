@@ -40,7 +40,6 @@ class GrowthSystem {
 public:
   static GrowthStats runStep(
     CityMap& map,
-    const RoadNetwork& roads,
     EntityStore& store,
     const ZoneDemand& demand,
     uint32_t seed,
