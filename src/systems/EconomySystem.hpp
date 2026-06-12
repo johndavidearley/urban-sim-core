@@ -33,6 +33,7 @@ struct TaxRates {
   float residentialRate = 0.05f; // 5% property tax
   float commercialRate = 0.08f;  // 8% commercial tax
   float industrialRate = 0.06f;  // 6% industrial tax
+  float incomeRate = 0.10f;      // 10% income tax on estimated population wealth
 
   float maintenanceResidential = 50.0f;  // Fixed cost per building
   float maintenanceCommercial = 100.0f;

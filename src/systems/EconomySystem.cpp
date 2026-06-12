@@ -45,7 +45,7 @@ EconomyState EconomySystem::calculateEconomy(
   // Add population-based income tax (from employed population)
   int64_t populationWealth = estimatePopulationWealth(population);
   const uint32_t employedPopulation = population.getTotalEmployed();
-  int64_t populationIncomeTax = static_cast<int64_t>(populationWealth * 0.10f); // 10% income tax
+  int64_t populationIncomeTax = static_cast<int64_t>(populationWealth * rates.incomeRate);
 
   state.totalTaxRevenue = state.residentialTaxRevenue + state.commercialTaxRevenue +
                           state.industrialTaxRevenue + populationIncomeTax;
