@@ -34,6 +34,12 @@ target_link_libraries(urban_sim_core PUBLIC nlohmann_json::nlohmann_json)
 # CLI executable
 add_executable(UrbanSimCore-cli
   main.cpp
+  cli/Benchmark.cpp
+  cli/CityPrinters.cpp
+  cli/CliUtils.cpp
+  cli/DistrictCommands.cpp
+  cli/GrowthPressureReport.cpp
+  cli/PolicySweep.cpp
 )
 
 target_link_libraries(UrbanSimCore-cli PRIVATE urban_sim_core)

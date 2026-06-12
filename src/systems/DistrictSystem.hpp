@@ -74,65 +74,67 @@ struct DistrictMetrics {
   float happiness = 0.5f;
 };
 
+// Owns the districts of a single city. Instantiate one per simulated city
+// alongside the entity/population stores.
 class DistrictSystem {
 public:
   // Create a new district
-  static DistrictId createDistrict(
+  DistrictId createDistrict(
     const std::string& name,
     glm::ivec2 minCorner,
     glm::ivec2 maxCorner
   );
 
   // Get all districts
-  static const std::vector<District>& getDistricts();
+  const std::vector<District>& getDistricts() const;
 
   // Get district by ID
-  static District* getDistrict(DistrictId id);
-  static const District* getDistrictConst(DistrictId id);
+  District* getDistrict(DistrictId id);
+  const District* getDistrictConst(DistrictId id) const;
 
   // Delete a district
-  static bool deleteDistrict(DistrictId id);
+  bool deleteDistrict(DistrictId id);
 
   // Set tax rates for a district
-  static bool setDistrictTaxRates(DistrictId id, const TaxRates& rates);
+  bool setDistrictTaxRates(DistrictId id, const TaxRates& rates);
 
   // Set service allocation percentage for a district
-  static bool setDistrictServiceAllocation(DistrictId id, float percentage);
+  bool setDistrictServiceAllocation(DistrictId id, float percentage);
 
   // Set service priorities for a district
-  static bool setDistrictServicePriorities(DistrictId id, const ServicePriority& priorities);
+  bool setDistrictServicePriorities(DistrictId id, const ServicePriority& priorities);
 
   // Set absolute service budget cap for a district (negative disables cap)
-  static bool setDistrictServiceBudgetCap(DistrictId id, int64_t cap);
+  bool setDistrictServiceBudgetCap(DistrictId id, int64_t cap);
 
   // Assign a service facility to a district
-  static bool assignFacilityToDistrict(DistrictId districtId, uint32_t facilityId);
+  bool assignFacilityToDistrict(DistrictId districtId, uint32_t facilityId);
 
   // Unassign a service facility from a district
-  static bool unassignFacilityFromDistrict(DistrictId districtId, uint32_t facilityId);
+  bool unassignFacilityFromDistrict(DistrictId districtId, uint32_t facilityId);
 
   // Get facilities assigned to a district
-  static std::vector<uint32_t> getFacilitiesForDistrict(DistrictId id);
+  std::vector<uint32_t> getFacilitiesForDistrict(DistrictId id) const;
 
   // Evaluate metrics for a single district
-  static DistrictMetrics evaluateDistrictMetrics(
+  DistrictMetrics evaluateDistrictMetrics(
     DistrictId id,
     const CityMap& map,
     const EntityStore& store,
     const PopulationStore& population,
     const RoadNetwork* roads = nullptr,
     const std::vector<ServiceFacility>* facilities = nullptr
-  );
+  ) const;
 
   // Evaluate all district metrics
-  static std::vector<DistrictMetrics> evaluateAllDistricts(
+  std::vector<DistrictMetrics> evaluateAllDistricts(
     const CityMap& map,
     const EntityStore& store,
     const PopulationStore& population,
     const RoadNetwork* roads = nullptr,
     const std::vector<ServiceFacility>* facilities = nullptr,
     int64_t sharedServiceBudgetPool = -1
-  );
+  ) const;
 
   // Compute a tuned growth pressure multiplier for a district from balanced metrics.
   static float computeGrowthPressureMultiplier(
@@ -141,9 +143,9 @@ public:
   );
 
   // Clear all districts
-  static void clearDistricts();
+  void clearDistricts();
 
 private:
-  static std::vector<District> districts;
-  static DistrictId nextDistrictId;
+  std::vector<District> districts;
+  DistrictId nextDistrictId = 1;
 };

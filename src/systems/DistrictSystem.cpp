@@ -108,9 +108,6 @@ void applySharedBudgetBalancing(std::vector<DistrictMetrics>& metrics, const std
 }
 } // namespace
 
-std::vector<District> DistrictSystem::districts;
-DistrictId DistrictSystem::nextDistrictId = 1;
-
 DistrictId DistrictSystem::createDistrict(
   const std::string& name,
   glm::ivec2 minCorner,
@@ -132,7 +129,7 @@ DistrictId DistrictSystem::createDistrict(
   return district.id;
 }
 
-const std::vector<District>& DistrictSystem::getDistricts() {
+const std::vector<District>& DistrictSystem::getDistricts() const {
   return districts;
 }
 
@@ -145,7 +142,7 @@ District* DistrictSystem::getDistrict(DistrictId id) {
   return nullptr;
 }
 
-const District* DistrictSystem::getDistrictConst(DistrictId id) {
+const District* DistrictSystem::getDistrictConst(DistrictId id) const {
   for (const auto& d : districts) {
     if (d.id == id) {
       return &d;
@@ -229,7 +226,7 @@ bool DistrictSystem::unassignFacilityFromDistrict(DistrictId districtId, uint32_
   return true;
 }
 
-std::vector<uint32_t> DistrictSystem::getFacilitiesForDistrict(DistrictId id) {
+std::vector<uint32_t> DistrictSystem::getFacilitiesForDistrict(DistrictId id) const {
   const District* district = getDistrictConst(id);
   if (district == nullptr) {
     return {};
@@ -244,7 +241,7 @@ DistrictMetrics DistrictSystem::evaluateDistrictMetrics(
   const PopulationStore& population,
   const RoadNetwork* roads,
   const std::vector<ServiceFacility>* facilities
-) {
+) const {
   DistrictMetrics metrics;
   metrics.districtId = id;
 
@@ -417,7 +414,7 @@ std::vector<DistrictMetrics> DistrictSystem::evaluateAllDistricts(
   const RoadNetwork* roads,
   const std::vector<ServiceFacility>* facilities,
   int64_t sharedServiceBudgetPool
-) {
+) const {
   std::vector<DistrictMetrics> result;
   for (const auto& district : districts) {
     result.push_back(evaluateDistrictMetrics(district.id, map, store, population, roads, facilities));

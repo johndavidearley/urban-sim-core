@@ -7,38 +7,33 @@
 
 class DistrictSystemTests : public ::testing::Test {
 protected:
-  void SetUp() override {
-    DistrictSystem::clearDistricts();
-  }
-
-  void TearDown() override {
-    DistrictSystem::clearDistricts();
-  }
+  // Each test gets a fresh instance, so no clear-between-tests bookkeeping.
+  DistrictSystem districtSystem;
 };
 
 // Test: Create a district
 TEST_F(DistrictSystemTests, CanCreateDistrict) {
-  DistrictId id = DistrictSystem::createDistrict("Downtown", {0, 0}, {10, 10});
+  DistrictId id = districtSystem.createDistrict("Downtown", {0, 0}, {10, 10});
   ASSERT_NE(id, 0u);
 
-  const auto& districts = DistrictSystem::getDistricts();
+  const auto& districts = districtSystem.getDistricts();
   ASSERT_EQ(districts.size(), 1u);
   ASSERT_EQ(districts[0].id, id);
 }
 
 // Test: Invalid district boundaries are rejected
 TEST_F(DistrictSystemTests, InvalidBoundariesRejected) {
-  DistrictId id = DistrictSystem::createDistrict("Invalid", {10, 10}, {5, 5});
+  DistrictId id = districtSystem.createDistrict("Invalid", {10, 10}, {5, 5});
   EXPECT_EQ(id, 0u);
 
-  const auto& districts = DistrictSystem::getDistricts();
+  const auto& districts = districtSystem.getDistricts();
   EXPECT_EQ(districts.size(), 0u);
 }
 
 // Test: District contains/coordinates work correctly
 TEST_F(DistrictSystemTests, DistrictBoundaryChecks) {
-  DistrictId id = DistrictSystem::createDistrict("Test", {5, 5}, {15, 15});
-  District* district = DistrictSystem::getDistrict(id);
+  DistrictId id = districtSystem.createDistrict("Test", {5, 5}, {15, 15});
+  District* district = districtSystem.getDistrict(id);
 
   ASSERT_NE(district, nullptr);
   EXPECT_TRUE(district->contains({5, 5}));
@@ -52,8 +47,8 @@ TEST_F(DistrictSystemTests, DistrictBoundaryChecks) {
 
 // Test: District area calculation
 TEST_F(DistrictSystemTests, DistrictAreaCalculation) {
-  DistrictId id = DistrictSystem::createDistrict("Test", {0, 0}, {9, 9});
-  District* district = DistrictSystem::getDistrict(id);
+  DistrictId id = districtSystem.createDistrict("Test", {0, 0}, {9, 9});
+  District* district = districtSystem.getDistrict(id);
 
   ASSERT_NE(district, nullptr);
   EXPECT_EQ(district->width(), 10);
@@ -63,25 +58,25 @@ TEST_F(DistrictSystemTests, DistrictAreaCalculation) {
 
 // Test: Delete district
 TEST_F(DistrictSystemTests, CanDeleteDistrict) {
-  DistrictId id = DistrictSystem::createDistrict("Temp", {0, 0}, {10, 10});
+  DistrictId id = districtSystem.createDistrict("Temp", {0, 0}, {10, 10});
   EXPECT_NE(id, 0u);
 
-  EXPECT_TRUE(DistrictSystem::deleteDistrict(id));
-  EXPECT_EQ(DistrictSystem::getDistricts().size(), 0u);
-  EXPECT_FALSE(DistrictSystem::deleteDistrict(id)); // Already deleted
+  EXPECT_TRUE(districtSystem.deleteDistrict(id));
+  EXPECT_EQ(districtSystem.getDistricts().size(), 0u);
+  EXPECT_FALSE(districtSystem.deleteDistrict(id)); // Already deleted
 }
 
 // Test: Set tax rates for district
 TEST_F(DistrictSystemTests, CanSetDistrictTaxRates) {
-  DistrictId id = DistrictSystem::createDistrict("Test", {0, 0}, {10, 10});
+  DistrictId id = districtSystem.createDistrict("Test", {0, 0}, {10, 10});
 
   TaxRates rates;
   rates.residentialRate = 0.10f;
   rates.commercialRate = 0.12f;
 
-  EXPECT_TRUE(DistrictSystem::setDistrictTaxRates(id, rates));
+  EXPECT_TRUE(districtSystem.setDistrictTaxRates(id, rates));
 
-  const District* district = DistrictSystem::getDistrictConst(id);
+  const District* district = districtSystem.getDistrictConst(id);
   ASSERT_NE(district, nullptr);
   EXPECT_EQ(district->taxRates.residentialRate, 0.10f);
   EXPECT_EQ(district->taxRates.commercialRate, 0.12f);
@@ -89,46 +84,46 @@ TEST_F(DistrictSystemTests, CanSetDistrictTaxRates) {
 
 // Test: Set service allocation for district
 TEST_F(DistrictSystemTests, CanSetServiceAllocation) {
-  DistrictId id = DistrictSystem::createDistrict("Test", {0, 0}, {10, 10});
+  DistrictId id = districtSystem.createDistrict("Test", {0, 0}, {10, 10});
 
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceAllocation(id, 0.75f));
+  EXPECT_TRUE(districtSystem.setDistrictServiceAllocation(id, 0.75f));
 
-  const District* district = DistrictSystem::getDistrictConst(id);
+  const District* district = districtSystem.getDistrictConst(id);
   ASSERT_NE(district, nullptr);
   EXPECT_EQ(district->serviceAllocation, 0.75f);
 }
 
 // Test: Service allocation clamping
 TEST_F(DistrictSystemTests, ServiceAllocationClamping) {
-  DistrictId id = DistrictSystem::createDistrict("Test", {0, 0}, {10, 10});
+  DistrictId id = districtSystem.createDistrict("Test", {0, 0}, {10, 10});
 
-  DistrictSystem::setDistrictServiceAllocation(id, 1.5f);
-  const District* district = DistrictSystem::getDistrictConst(id);
+  districtSystem.setDistrictServiceAllocation(id, 1.5f);
+  const District* district = districtSystem.getDistrictConst(id);
   EXPECT_EQ(district->serviceAllocation, 1.0f);
 
-  DistrictSystem::setDistrictServiceAllocation(id, -0.5f);
+  districtSystem.setDistrictServiceAllocation(id, -0.5f);
   EXPECT_EQ(district->serviceAllocation, 0.0f);
 }
 
 TEST_F(DistrictSystemTests, CanSetServiceBudgetCap) {
-  DistrictId id = DistrictSystem::createDistrict("Budgeted", {0, 0}, {10, 10});
+  DistrictId id = districtSystem.createDistrict("Budgeted", {0, 0}, {10, 10});
 
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceBudgetCap(id, 1200));
-  const District* district = DistrictSystem::getDistrictConst(id);
+  EXPECT_TRUE(districtSystem.setDistrictServiceBudgetCap(id, 1200));
+  const District* district = districtSystem.getDistrictConst(id);
   ASSERT_NE(district, nullptr);
   EXPECT_EQ(district->serviceBudgetCap, 1200);
 
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceBudgetCap(id, -1));
+  EXPECT_TRUE(districtSystem.setDistrictServiceBudgetCap(id, -1));
   EXPECT_EQ(district->serviceBudgetCap, -1);
 }
 
 // Test: Multiple districts can exist simultaneously
 TEST_F(DistrictSystemTests, MultipleDistrictsCoexist) {
-  DistrictId id1 = DistrictSystem::createDistrict("D1", {0, 0}, {10, 10});
-  DistrictId id2 = DistrictSystem::createDistrict("D2", {15, 15}, {25, 25});
-  DistrictId id3 = DistrictSystem::createDistrict("D3", {5, 20}, {15, 30});
+  DistrictId id1 = districtSystem.createDistrict("D1", {0, 0}, {10, 10});
+  DistrictId id2 = districtSystem.createDistrict("D2", {15, 15}, {25, 25});
+  DistrictId id3 = districtSystem.createDistrict("D3", {5, 20}, {15, 30});
 
-  const auto& districts = DistrictSystem::getDistricts();
+  const auto& districts = districtSystem.getDistricts();
   EXPECT_EQ(districts.size(), 3u);
 
   EXPECT_NE(id1, id2);
@@ -142,9 +137,9 @@ TEST_F(DistrictSystemTests, EvaluateDistrictMetricsEmptyCity) {
   EntityStore store;
   PopulationStore population;
 
-  DistrictId id = DistrictSystem::createDistrict("Empty", {5, 5}, {10, 10});
+  DistrictId id = districtSystem.createDistrict("Empty", {5, 5}, {10, 10});
 
-  DistrictMetrics metrics = DistrictSystem::evaluateDistrictMetrics(
+  DistrictMetrics metrics = districtSystem.evaluateDistrictMetrics(
     id, map, store, population
   );
 
@@ -167,9 +162,9 @@ TEST_F(DistrictSystemTests, EvaluateDistrictMetricsWithBuildings) {
   // Create building outside district
   store.createBuilding(BuildingType::Residential, {20, 20}, 100);
 
-  DistrictId id = DistrictSystem::createDistrict("Mixed", {5, 5}, {10, 10});
+  DistrictId id = districtSystem.createDistrict("Mixed", {5, 5}, {10, 10});
 
-  DistrictMetrics metrics = DistrictSystem::evaluateDistrictMetrics(
+  DistrictMetrics metrics = districtSystem.evaluateDistrictMetrics(
     id, map, store, population
   );
 
@@ -185,13 +180,13 @@ TEST_F(DistrictSystemTests, EvaluateAllDistricts) {
   EntityStore store;
   PopulationStore population;
 
-  DistrictId id1 = DistrictSystem::createDistrict("D1", {0, 0}, {10, 10});
-  DistrictId id2 = DistrictSystem::createDistrict("D2", {15, 15}, {20, 20});
+  DistrictId id1 = districtSystem.createDistrict("D1", {0, 0}, {10, 10});
+  DistrictId id2 = districtSystem.createDistrict("D2", {15, 15}, {20, 20});
 
   store.createBuilding(BuildingType::Residential, {5, 5}, 100);
   store.createBuilding(BuildingType::Commercial, {16, 16}, 50);
 
-  std::vector<DistrictMetrics> allMetrics = DistrictSystem::evaluateAllDistricts(
+  std::vector<DistrictMetrics> allMetrics = districtSystem.evaluateAllDistricts(
     map, store, population
   );
 
@@ -219,19 +214,19 @@ TEST_F(DistrictSystemTests, DistrictTaxRatesApplyToDistrictScopedEconomy) {
 
   population.createGroup(IncomeBand::Middle, 400, 300);
 
-  DistrictId lowTaxDistrictId = DistrictSystem::createDistrict("LowTax", {0, 0}, {10, 10});
-  DistrictId highTaxDistrictId = DistrictSystem::createDistrict("HighTax", {16, 16}, {28, 28});
+  DistrictId lowTaxDistrictId = districtSystem.createDistrict("LowTax", {0, 0}, {10, 10});
+  DistrictId highTaxDistrictId = districtSystem.createDistrict("HighTax", {16, 16}, {28, 28});
 
   TaxRates lowRates;
   lowRates.commercialRate = 0.03f;
-  EXPECT_TRUE(DistrictSystem::setDistrictTaxRates(lowTaxDistrictId, lowRates));
+  EXPECT_TRUE(districtSystem.setDistrictTaxRates(lowTaxDistrictId, lowRates));
 
   TaxRates highRates;
   highRates.commercialRate = 0.15f;
-  EXPECT_TRUE(DistrictSystem::setDistrictTaxRates(highTaxDistrictId, highRates));
+  EXPECT_TRUE(districtSystem.setDistrictTaxRates(highTaxDistrictId, highRates));
 
-  DistrictMetrics lowMetrics = DistrictSystem::evaluateDistrictMetrics(lowTaxDistrictId, map, store, population);
-  DistrictMetrics highMetrics = DistrictSystem::evaluateDistrictMetrics(highTaxDistrictId, map, store, population);
+  DistrictMetrics lowMetrics = districtSystem.evaluateDistrictMetrics(lowTaxDistrictId, map, store, population);
+  DistrictMetrics highMetrics = districtSystem.evaluateDistrictMetrics(highTaxDistrictId, map, store, population);
 
   EXPECT_EQ(lowMetrics.commercialBuildings, 1u);
   EXPECT_EQ(highMetrics.commercialBuildings, 1u);
@@ -254,33 +249,33 @@ TEST_F(DistrictSystemTests, AssignedFacilitiesAndServicePrioritiesAffectDistrict
   roads.buildRoad({18, 18}, {18, 17});
   roads.buildRoad({18, 17}, {18, 16});
 
-  DistrictId districtAId = DistrictSystem::createDistrict("A", {0, 0}, {10, 10});
-  DistrictId districtBId = DistrictSystem::createDistrict("B", {12, 12}, {23, 23});
+  DistrictId districtAId = districtSystem.createDistrict("A", {0, 0}, {10, 10});
+  DistrictId districtBId = districtSystem.createDistrict("B", {12, 12}, {23, 23});
 
   ServicePriority fireOnly;
   fireOnly.fireWeight = 1.0f;
   fireOnly.policeWeight = 0.0f;
   fireOnly.healthWeight = 0.0f;
   fireOnly.educationWeight = 0.0f;
-  EXPECT_TRUE(DistrictSystem::setDistrictServicePriorities(districtAId, fireOnly));
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceAllocation(districtAId, 1.0f));
+  EXPECT_TRUE(districtSystem.setDistrictServicePriorities(districtAId, fireOnly));
+  EXPECT_TRUE(districtSystem.setDistrictServiceAllocation(districtAId, 1.0f));
 
   ServicePriority healthOnly;
   healthOnly.fireWeight = 0.0f;
   healthOnly.policeWeight = 0.0f;
   healthOnly.healthWeight = 1.0f;
   healthOnly.educationWeight = 0.0f;
-  EXPECT_TRUE(DistrictSystem::setDistrictServicePriorities(districtBId, healthOnly));
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceAllocation(districtBId, 1.0f));
+  EXPECT_TRUE(districtSystem.setDistrictServicePriorities(districtBId, healthOnly));
+  EXPECT_TRUE(districtSystem.setDistrictServiceAllocation(districtBId, 1.0f));
 
   std::vector<ServiceFacility> facilities;
   facilities.push_back(ServiceFacility{ServiceType::Fire, {3, 5}, 5, 1.0f});
   facilities.push_back(ServiceFacility{ServiceType::Health, {18, 16}, 5, 1.0f});
 
-  EXPECT_TRUE(DistrictSystem::assignFacilityToDistrict(districtAId, 1));
-  EXPECT_TRUE(DistrictSystem::assignFacilityToDistrict(districtBId, 2));
+  EXPECT_TRUE(districtSystem.assignFacilityToDistrict(districtAId, 1));
+  EXPECT_TRUE(districtSystem.assignFacilityToDistrict(districtBId, 2));
 
-  DistrictMetrics districtAMetrics = DistrictSystem::evaluateDistrictMetrics(
+  DistrictMetrics districtAMetrics = districtSystem.evaluateDistrictMetrics(
     districtAId,
     map,
     store,
@@ -289,7 +284,7 @@ TEST_F(DistrictSystemTests, AssignedFacilitiesAndServicePrioritiesAffectDistrict
     &facilities
   );
 
-  DistrictMetrics districtBMetrics = DistrictSystem::evaluateDistrictMetrics(
+  DistrictMetrics districtBMetrics = districtSystem.evaluateDistrictMetrics(
     districtBId,
     map,
     store,
@@ -305,23 +300,23 @@ TEST_F(DistrictSystemTests, AssignedFacilitiesAndServicePrioritiesAffectDistrict
 }
 
 TEST_F(DistrictSystemTests, CanUnassignPreviouslyAssignedFacility) {
-  DistrictId id = DistrictSystem::createDistrict("Ops", {0, 0}, {10, 10});
+  DistrictId id = districtSystem.createDistrict("Ops", {0, 0}, {10, 10});
   ASSERT_NE(id, 0u);
 
-  EXPECT_TRUE(DistrictSystem::assignFacilityToDistrict(id, 7));
+  EXPECT_TRUE(districtSystem.assignFacilityToDistrict(id, 7));
 
-  const District* district = DistrictSystem::getDistrictConst(id);
+  const District* district = districtSystem.getDistrictConst(id);
   ASSERT_NE(district, nullptr);
   EXPECT_EQ(district->assignedFacilityIds.size(), 1u);
   EXPECT_EQ(*district->assignedFacilityIds.begin(), 7u);
 
-  EXPECT_TRUE(DistrictSystem::unassignFacilityFromDistrict(id, 7));
+  EXPECT_TRUE(districtSystem.unassignFacilityFromDistrict(id, 7));
 
-  district = DistrictSystem::getDistrictConst(id);
+  district = districtSystem.getDistrictConst(id);
   ASSERT_NE(district, nullptr);
   EXPECT_TRUE(district->assignedFacilityIds.empty());
 
-  EXPECT_FALSE(DistrictSystem::unassignFacilityFromDistrict(id, 7));
+  EXPECT_FALSE(districtSystem.unassignFacilityFromDistrict(id, 7));
 }
 
 TEST_F(DistrictSystemTests, ServiceBudgetCapConstrainsCoverageAndBudgetAllocation) {
@@ -337,21 +332,21 @@ TEST_F(DistrictSystemTests, ServiceBudgetCapConstrainsCoverageAndBudgetAllocatio
 
   population.createGroup(IncomeBand::Middle, 200, 160);
 
-  DistrictId id = DistrictSystem::createDistrict("CapTest", {0, 0}, {12, 12});
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceAllocation(id, 1.0f));
+  DistrictId id = districtSystem.createDistrict("CapTest", {0, 0}, {12, 12});
+  EXPECT_TRUE(districtSystem.setDistrictServiceAllocation(id, 1.0f));
 
   ServicePriority priorities;
   priorities.fireWeight = 1.0f;
   priorities.policeWeight = 1.0f;
   priorities.healthWeight = 1.0f;
   priorities.educationWeight = 1.0f;
-  EXPECT_TRUE(DistrictSystem::setDistrictServicePriorities(id, priorities));
+  EXPECT_TRUE(districtSystem.setDistrictServicePriorities(id, priorities));
 
   std::vector<ServiceFacility> facilities;
   facilities.push_back(ServiceFacility{ServiceType::Fire, {6, 8}, 6, 1.0f});
-  EXPECT_TRUE(DistrictSystem::assignFacilityToDistrict(id, 1));
+  EXPECT_TRUE(districtSystem.assignFacilityToDistrict(id, 1));
 
-  DistrictMetrics uncapped = DistrictSystem::evaluateDistrictMetrics(
+  DistrictMetrics uncapped = districtSystem.evaluateDistrictMetrics(
     id,
     map,
     store,
@@ -363,9 +358,9 @@ TEST_F(DistrictSystemTests, ServiceBudgetCapConstrainsCoverageAndBudgetAllocatio
   EXPECT_GT(uncapped.serviceBudgetTarget, 0);
   EXPECT_FALSE(uncapped.serviceBudgetCapApplied);
 
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceBudgetCap(id, 1));
+  EXPECT_TRUE(districtSystem.setDistrictServiceBudgetCap(id, 1));
 
-  DistrictMetrics capped = DistrictSystem::evaluateDistrictMetrics(
+  DistrictMetrics capped = districtSystem.evaluateDistrictMetrics(
     id,
     map,
     store,
@@ -397,19 +392,19 @@ TEST_F(DistrictSystemTests, SharedPoolBalancingDistributesWithinPoolLimit) {
 
   population.createGroup(IncomeBand::Middle, 500, 420);
 
-  DistrictId idA = DistrictSystem::createDistrict("A", {0, 0}, {10, 10});
-  DistrictId idB = DistrictSystem::createDistrict("B", {12, 12}, {23, 23});
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceAllocation(idA, 1.0f));
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceAllocation(idB, 1.0f));
+  DistrictId idA = districtSystem.createDistrict("A", {0, 0}, {10, 10});
+  DistrictId idB = districtSystem.createDistrict("B", {12, 12}, {23, 23});
+  EXPECT_TRUE(districtSystem.setDistrictServiceAllocation(idA, 1.0f));
+  EXPECT_TRUE(districtSystem.setDistrictServiceAllocation(idB, 1.0f));
 
   std::vector<ServiceFacility> facilities;
   facilities.push_back(ServiceFacility{ServiceType::Fire, {4, 6}, 6, 1.0f});
   facilities.push_back(ServiceFacility{ServiceType::Health, {18, 16}, 6, 1.0f});
-  EXPECT_TRUE(DistrictSystem::assignFacilityToDistrict(idA, 1));
-  EXPECT_TRUE(DistrictSystem::assignFacilityToDistrict(idB, 2));
+  EXPECT_TRUE(districtSystem.assignFacilityToDistrict(idA, 1));
+  EXPECT_TRUE(districtSystem.assignFacilityToDistrict(idB, 2));
 
   const int64_t sharedPool = 10;
-  const std::vector<DistrictMetrics> balanced = DistrictSystem::evaluateAllDistricts(
+  const std::vector<DistrictMetrics> balanced = districtSystem.evaluateAllDistricts(
     map,
     store,
     population,
@@ -445,20 +440,20 @@ TEST_F(DistrictSystemTests, SharedPoolBalancingRedistributesWhenCapReached) {
 
   population.createGroup(IncomeBand::Middle, 600, 500);
 
-  DistrictId idA = DistrictSystem::createDistrict("A", {0, 0}, {10, 10});
-  DistrictId idB = DistrictSystem::createDistrict("B", {12, 12}, {23, 23});
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceAllocation(idA, 1.0f));
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceAllocation(idB, 1.0f));
-  EXPECT_TRUE(DistrictSystem::setDistrictServiceBudgetCap(idA, 3));
+  DistrictId idA = districtSystem.createDistrict("A", {0, 0}, {10, 10});
+  DistrictId idB = districtSystem.createDistrict("B", {12, 12}, {23, 23});
+  EXPECT_TRUE(districtSystem.setDistrictServiceAllocation(idA, 1.0f));
+  EXPECT_TRUE(districtSystem.setDistrictServiceAllocation(idB, 1.0f));
+  EXPECT_TRUE(districtSystem.setDistrictServiceBudgetCap(idA, 3));
 
   std::vector<ServiceFacility> facilities;
   facilities.push_back(ServiceFacility{ServiceType::Fire, {4, 6}, 6, 1.0f});
   facilities.push_back(ServiceFacility{ServiceType::Fire, {18, 16}, 6, 1.0f});
-  EXPECT_TRUE(DistrictSystem::assignFacilityToDistrict(idA, 1));
-  EXPECT_TRUE(DistrictSystem::assignFacilityToDistrict(idB, 2));
+  EXPECT_TRUE(districtSystem.assignFacilityToDistrict(idA, 1));
+  EXPECT_TRUE(districtSystem.assignFacilityToDistrict(idB, 2));
 
   const int64_t sharedPool = 12;
-  const std::vector<DistrictMetrics> balanced = DistrictSystem::evaluateAllDistricts(
+  const std::vector<DistrictMetrics> balanced = districtSystem.evaluateAllDistricts(
     map,
     store,
     population,
@@ -498,7 +493,7 @@ TEST_F(DistrictSystemTests, GrowthPressureMultiplierStaysBoundedAndCapAware) {
   metrics.serviceBudgetCapApplied = true;
   metrics.buildings = 8;
 
-  const float multiplier = DistrictSystem::computeGrowthPressureMultiplier(district, metrics);
+  const float multiplier = districtSystem.computeGrowthPressureMultiplier(district, metrics);
   EXPECT_GE(multiplier, 0.45f);
   EXPECT_LE(multiplier, 1.15f);
   EXPECT_LT(multiplier, 0.85f);
@@ -518,8 +513,8 @@ TEST_F(DistrictSystemTests, GrowthPressureMultiplierRewardsFulfillmentForSparseD
   DistrictMetrics high = low;
   high.serviceBudgetAllocated = 90;
 
-  const float lowMultiplier = DistrictSystem::computeGrowthPressureMultiplier(district, low);
-  const float highMultiplier = DistrictSystem::computeGrowthPressureMultiplier(district, high);
+  const float lowMultiplier = districtSystem.computeGrowthPressureMultiplier(district, low);
+  const float highMultiplier = districtSystem.computeGrowthPressureMultiplier(district, high);
 
   EXPECT_GT(highMultiplier, lowMultiplier);
 }
