@@ -18,6 +18,8 @@ EconomyState EconomySystem::calculateEconomy(
   int64_t totalCapacity = 0;
   int64_t totalOccupancy = 0;
 
+  // Currency math runs in double: float's 24-bit mantissa loses integer
+  // precision above ~16.7M, which city-scale values exceed.
   for (const auto& [id, building] : buildings) {
     int64_t buildingValue = estimateBuildingValue(building.type, building.capacity);
     totalCapacity += std::max(0, building.capacity);
@@ -26,17 +28,17 @@ EconomyState EconomySystem::calculateEconomy(
     switch (building.type) {
       case BuildingType::Residential:
         residentialCount++;
-        state.residentialTaxRevenue += static_cast<int64_t>(buildingValue * rates.residentialRate);
+        state.residentialTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.residentialRate);
         state.residentialMaintenance += static_cast<int64_t>(rates.maintenanceResidential);
         break;
       case BuildingType::Commercial:
         commercialCount++;
-        state.commercialTaxRevenue += static_cast<int64_t>(buildingValue * rates.commercialRate);
+        state.commercialTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.commercialRate);
         state.commercialMaintenance += static_cast<int64_t>(rates.maintenanceCommercial);
         break;
       case BuildingType::Industrial:
         industrialCount++;
-        state.industrialTaxRevenue += static_cast<int64_t>(buildingValue * rates.industrialRate);
+        state.industrialTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.industrialRate);
         state.industrialMaintenance += static_cast<int64_t>(rates.maintenanceIndustrial);
         break;
     }
@@ -45,7 +47,7 @@ EconomyState EconomySystem::calculateEconomy(
   // Add population-based income tax (from employed population)
   int64_t populationWealth = estimatePopulationWealth(population);
   const uint32_t employedPopulation = population.getTotalEmployed();
-  int64_t populationIncomeTax = static_cast<int64_t>(populationWealth * rates.incomeRate);
+  int64_t populationIncomeTax = static_cast<int64_t>(static_cast<double>(populationWealth) * rates.incomeRate);
 
   state.totalTaxRevenue = state.residentialTaxRevenue + state.commercialTaxRevenue +
                           state.industrialTaxRevenue + populationIncomeTax;
@@ -136,7 +138,8 @@ int64_t EconomySystem::estimatePopulationWealth(
         break;
     }
 
-    int64_t groupWealth = static_cast<int64_t>(group.employed * propertyValuePerCapita * incomeMultiplier);
+    int64_t groupWealth = static_cast<int64_t>(
+      static_cast<double>(group.employed) * propertyValuePerCapita * incomeMultiplier);
     totalWealth += groupWealth;
   }
 
@@ -162,5 +165,5 @@ int64_t EconomySystem::estimateBuildingValue(
   }
 
   // Value scales with capacity
-  return static_cast<int64_t>(baseValue * capacity * typeMultiplier);
+  return static_cast<int64_t>(static_cast<double>(baseValue) * capacity * typeMultiplier);
 }
