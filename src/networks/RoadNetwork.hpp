@@ -1,6 +1,8 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <algorithm>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 #include <queue>
@@ -16,17 +18,23 @@ struct RoadNodeId {
   }
 };
 
-// Hash function for RoadNodeId
-struct RoadNodeIdHash {
-  size_t operator()(const RoadNodeId& id) const {
-    return std::hash<int>()(id.coord.x) ^ (std::hash<int>()(id.coord.y) << 1);
-  }
-};
+// Combine two hashes; std::hash<int> is identity on some standard libraries,
+// so plain XOR/shift mixing collides heavily on grid coordinates.
+inline size_t hashCombine(size_t seed, size_t value) {
+  return seed ^ (value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2));
+}
 
 // Hash function for glm::ivec2
 struct Vec2Hash {
   size_t operator()(const glm::ivec2& v) const {
-    return std::hash<int>()(v.x) ^ (std::hash<int>()(v.y) << 1);
+    return hashCombine(std::hash<int>()(v.x), std::hash<int>()(v.y));
+  }
+};
+
+// Hash function for RoadNodeId
+struct RoadNodeIdHash {
+  size_t operator()(const RoadNodeId& id) const {
+    return Vec2Hash{}(id.coord);
   }
 };
 
@@ -68,10 +76,12 @@ public:
   
   struct EdgeKeyHash {
     size_t operator()(const EdgeKey& key) const {
-      // Symmetric hash for undirected edges
-      size_t h1 = std::hash<int>()(key.a.x) ^ (std::hash<int>()(key.a.y) << 1);
-      size_t h2 = std::hash<int>()(key.b.x) ^ (std::hash<int>()(key.b.y) << 1);
-      return std::min(h1, h2) ^ std::max(h1, h2);
+      // Symmetric hash for undirected edges: combine endpoint hashes in a
+      // canonical (min, max) order so (a,b) and (b,a) hash identically.
+      Vec2Hash vecHash;
+      const size_t h1 = vecHash(key.a);
+      const size_t h2 = vecHash(key.b);
+      return hashCombine(std::min(h1, h2), std::max(h1, h2));
     }
   };
   

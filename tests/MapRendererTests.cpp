@@ -38,6 +38,8 @@ TEST(MapRendererTests, WritesPpmWithExpectedDimensions) {
   EXPECT_EQ(height, 16);  // 4 * 4
   EXPECT_EQ(maxValue, 255);
 
+  // Windows refuses to delete a file that still has an open handle.
+  in.close();
   std::filesystem::remove(filePath);
 }
 
@@ -71,5 +73,7 @@ TEST(MapRendererTests, ViewportClampsAndRendersSubset) {
   EXPECT_EQ(height, 6);  // clamped to 2 tiles * 3 pixels
   EXPECT_EQ(maxValue, 255);
 
+  // Windows refuses to delete a file that still has an open handle.
+  in.close();
   std::filesystem::remove(filePath);
 }

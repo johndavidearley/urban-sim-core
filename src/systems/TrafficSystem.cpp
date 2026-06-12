@@ -23,9 +23,9 @@ struct RouteKey {
 struct RouteKeyHash {
   size_t operator()(const RouteKey& key) const {
     Vec2Hash hash;
-    size_t value = hash(key.origin) ^ (hash(key.destination) << 1);
-    value ^= (static_cast<size_t>(key.useCongestion ? 1 : 0) << 2);
-    value ^= (static_cast<size_t>(key.congestionWeightMilli) << 3);
+    size_t value = hashCombine(hash(key.origin), hash(key.destination));
+    value = hashCombine(value, static_cast<size_t>(key.useCongestion ? 1 : 0));
+    value = hashCombine(value, static_cast<size_t>(key.congestionWeightMilli));
     return value;
   }
 };
@@ -61,6 +61,27 @@ bool matchesRouteFilter(
     return false;
   }
   return true;
+}
+
+// Entity stores are hash maps, so iteration order varies with absolute ID
+// values (and across standard libraries). Commute sampling consumes seeded RNG
+// draws per element, so iterate in creation (ID) order to keep replays
+// deterministic.
+void sortBuildingsById(std::vector<const Building*>& buildings) {
+  std::sort(buildings.begin(), buildings.end(),
+    [](const Building* a, const Building* b) { return a->id < b->id; });
+}
+
+std::vector<const PopulationGroup*> groupsInIdOrder(const PopulationStore& population) {
+  std::vector<const PopulationGroup*> ordered;
+  ordered.reserve(population.getGroups().size());
+  for (const auto& [id, group] : population.getGroups()) {
+    (void)id;
+    ordered.push_back(&group);
+  }
+  std::sort(ordered.begin(), ordered.end(),
+    [](const PopulationGroup* a, const PopulationGroup* b) { return a->id < b->id; });
+  return ordered;
 }
 
 const Pathfinding::Path& getOrComputeRoute(
@@ -100,7 +121,7 @@ TrafficSummary TrafficSystem::simulateCommutes(
   network.resetCongestion();
 
   // Get all population groups
-  const auto& groups = population.getGroups();
+  const std::vector<const PopulationGroup*> groups = groupsInIdOrder(population);
   uint32_t totalCommuters = 0;
   float totalCommuteTime = 0.0f;
 
@@ -131,6 +152,9 @@ TrafficSummary TrafficSystem::simulateCommutes(
     return summary;
   }
 
+  sortBuildingsById(residentialBuildings);
+  sortBuildingsById(jobBuildings);
+
   std::uniform_int_distribution<size_t> residentialDist(0, residentialBuildings.size() - 1);
   std::uniform_int_distribution<size_t> jobDist(0, jobBuildings.size() - 1);
   RoutePathCache routeCache;
@@ -142,8 +166,8 @@ TrafficSummary TrafficSystem::simulateCommutes(
   uint32_t processedCommutes = 0;
 
   // For each population group, assign workers to jobs and simulate commutes
-  for (const auto& [groupId, group] : groups) {
-    (void)groupId;
+  for (const PopulationGroup* groupPtr : groups) {
+    const PopulationGroup& group = *groupPtr;
     // Only people who are employed commute
     if (group.employed == 0) {
       continue;
@@ -311,7 +335,7 @@ std::vector<EdgeTrafficData> TrafficSystem::getTopRouteDiagnosticEdges(
 ) {
   std::vector<EdgeTrafficData> edges;
 
-  const auto& groups = population.getGroups();
+  const std::vector<const PopulationGroup*> groups = groupsInIdOrder(population);
   const auto& buildings = store.getBuildings();
 
   std::vector<const Building*> residentialBuildings;
@@ -333,6 +357,9 @@ std::vector<EdgeTrafficData> TrafficSystem::getTopRouteDiagnosticEdges(
     return edges;
   }
 
+  sortBuildingsById(residentialBuildings);
+  sortBuildingsById(jobBuildings);
+
   std::mt19937 rng(seed);
   std::uniform_int_distribution<size_t> residentialDist(0, residentialBuildings.size() - 1);
   std::uniform_int_distribution<size_t> jobDist(0, jobBuildings.size() - 1);
@@ -341,8 +368,8 @@ std::vector<EdgeTrafficData> TrafficSystem::getTopRouteDiagnosticEdges(
 
   std::unordered_map<RoadNetwork::EdgeKey, EdgeTrafficData, RoadNetwork::EdgeKeyHash> edgeTotals;
 
-  for (const auto& [groupId, group] : groups) {
-    (void)groupId;
+  for (const PopulationGroup* groupPtr : groups) {
+    const PopulationGroup& group = *groupPtr;
     if (group.employed == 0) {
       continue;
     }
