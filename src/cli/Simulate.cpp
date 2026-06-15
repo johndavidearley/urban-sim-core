@@ -34,7 +34,8 @@ bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& 
   }
   out << "tick,demand_residential,demand_commercial,demand_industrial,"
          "population,employed,residential_buildings,commercial_buildings,industrial_buildings,"
-         "road_tiles,budget_balance,traffic_congestion,avg_pollution\n";
+         "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
+         "service_coverage,service_facilities\n";
   for (const SimTickMetrics& row : rows) {
     out << row.tick << ","
         << std::fixed << std::setprecision(4)
@@ -42,7 +43,8 @@ bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& 
         << row.population << "," << row.employed << ","
         << row.residentialBuildings << "," << row.commercialBuildings << "," << row.industrialBuildings << ","
         << row.roadTiles << "," << row.budgetBalance << ","
-        << row.trafficCongestion << "," << row.avgPollution << "\n";
+        << row.trafficCongestion << "," << row.avgPollution << ","
+        << row.serviceCoverage << "," << row.serviceFacilities << "\n";
   }
   return static_cast<bool>(out);
 }
@@ -102,7 +104,9 @@ int runCitySimulation(
               << " C=" << last.commercialBuildings
               << " I=" << last.industrialBuildings << ")"
               << " roadTiles=" << last.roadTiles
-              << " residentialPollution=" << std::fixed << std::setprecision(2) << last.avgPollution << "\n";
+              << " residentialPollution=" << std::fixed << std::setprecision(2) << last.avgPollution
+              << " serviceCoverage=" << last.serviceCoverage
+              << " (" << last.serviceFacilities << " facilities)\n";
   }
 
   const SimPhaseTimings& t = result.timings;
@@ -116,6 +120,7 @@ int runCitySimulation(
   std::cout << "    Population: " << t.populationMs << " ms\n";
   std::cout << "    Traffic:    " << t.trafficMs << " ms\n";
   std::cout << "    Economy:    " << t.economyMs << " ms\n";
+  std::cout << "    Services:   " << t.serviceMs << " ms\n";
 
   if (!reportPath.empty()) {
     if (!writeReportCSV(reportPath, result.rows)) {

@@ -104,6 +104,21 @@ TEST(CitySimulatorTests, PopulationMigratesGraduallyNotInstantFill) {
   EXPECT_LT(first.population, first.residentialBuildings * 8u);
 }
 
+// The city should provision public services as it grows, giving real coverage.
+TEST(CitySimulatorTests, ProvidesServicesAsItGrows) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 50, fastOptions());
+
+  ASSERT_FALSE(result.rows.empty());
+  const SimTickMetrics& last = result.rows.back();
+  EXPECT_GT(last.serviceFacilities, 0u);
+  EXPECT_GT(last.serviceCoverage, 0.0f);
+}
+
 // Pollution-aware zoning should push industry into dirtier areas than housing.
 TEST(CitySimulatorTests, IndustryAndHousingSegregateByPollution) {
   CityMap map({64, 64});

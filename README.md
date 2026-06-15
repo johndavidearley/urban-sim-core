@@ -94,9 +94,12 @@ commercial), and the loop compounds until land runs out.
 
 Residents migrate in gradually rather than instantly filling new housing, at a
 rate set by the city's desirability — jobs being plentiful, traffic not too
-congested, and pollution low. Industry emits pollution, and zoning steers
-housing onto the cleanest land and industry onto the dirtiest, so districts
-self-segregate over time; city pollution then feeds back to slow migration.
+congested, pollution low, and public services well-covered. Industry emits
+pollution, and zoning steers housing onto the cleanest land and industry onto
+the dirtiest, so districts self-segregate over time. The city also builds
+fire/police/health/education facilities as it grows (spread across the
+developed area); their coverage feeds desirability, and pollution and
+under-coverage both feed back to slow migration.
 
 It prints an evolution table (RCI demand, population, building counts, roads,
 budget) plus a per-phase timing breakdown, so the same run doubles as an

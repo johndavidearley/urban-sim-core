@@ -4,11 +4,13 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include "src/systems/EconomySystem.hpp"
 #include "src/systems/GrowthSystem.hpp"
 #include "src/systems/PopulationSystem.hpp"
+#include "src/systems/ServiceSystem.hpp"
 #include "src/systems/TrafficSystem.hpp"
 
 namespace {
@@ -225,6 +227,71 @@ float averageResidentialPollution(const CityMap& map, const EntityStore& store) 
   return n > 0 ? static_cast<float>(sum / n) : 0.0f;
 }
 
+// Pick a road-accessible land site for a new service facility: the first sits
+// at the center, later ones go to the developed tile farthest from all existing
+// facilities, spreading coverage across the city.
+Coord chooseFacilitySite(
+  const CityMap& map,
+  const std::vector<ServiceFacility>& facilities,
+  Coord center,
+  int extent
+) {
+  const glm::ivec2 dims = map.getDimensions();
+  const int x0 = std::max(0, center.x - extent);
+  const int x1 = std::min(dims.x - 1, center.x + extent);
+  const int y0 = std::max(0, center.y - extent);
+  const int y1 = std::min(dims.y - 1, center.y + extent);
+
+  Coord best = center;
+  long bestScore = -1;
+  for (int y = y0; y <= y1; ++y) {
+    for (int x = x0; x <= x1; ++x) {
+      if (map.getTile({x, y}).type == 2) continue;        // water
+      if (!hasRoadAccess(map, {x, y})) continue;
+      long score;
+      if (facilities.empty()) {
+        // Prefer the center for the first facility (smallest distance wins).
+        const long dc = (x - center.x) * (x - center.x) + (y - center.y) * (y - center.y);
+        score = -dc;
+      } else {
+        long nearest = std::numeric_limits<long>::max();
+        for (const ServiceFacility& f : facilities) {
+          const long d = (x - f.position.x) * (x - f.position.x) + (y - f.position.y) * (y - f.position.y);
+          nearest = std::min(nearest, d);
+        }
+        score = nearest;  // maximize distance to the closest existing facility
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = {x, y};
+      }
+    }
+  }
+  return best;
+}
+
+// Keep roughly one facility per `popPerFacility` residents, cycling through the
+// four service types so coverage of each grows together.
+void placeFacilitiesIfNeeded(
+  const CityMap& map,
+  std::vector<ServiceFacility>& facilities,
+  uint32_t population,
+  Coord center,
+  int extent,
+  int coverageRadius
+) {
+  const uint32_t popPerFacility = 150;
+  const size_t target = population / popPerFacility;
+  while (facilities.size() < target) {
+    ServiceFacility facility;
+    facility.type = static_cast<ServiceType>(facilities.size() % 4);
+    facility.position = chooseFacilitySite(map, facilities, center, extent);
+    facility.maxTravelDistance = coverageRadius;
+    facility.quality = 1.0f;
+    facilities.push_back(facility);
+  }
+}
+
 // Zone up to `batch` of the nearest candidate tiles, splitting counts by demand
 // but placing the cleanest tiles residential and the most polluted industrial,
 // so housing and industry self-segregate as the pollution field develops.
@@ -332,7 +399,10 @@ SimResult CitySimulator::run(
     result.timings.roadMs += elapsedMs(t0, Clock::now());
   }
 
-  float lastCongestion = 0.0f;  // previous tick's peak congestion, feeds desirability
+  float lastCongestion = 0.0f;          // previous tick's peak congestion, feeds desirability
+  float lastServiceSatisfaction = 0.5f; // previous tick's service satisfaction, feeds desirability
+  std::vector<ServiceFacility> facilities;
+  const int serviceRadius = spacing * 3;
 
   for (int tick = 0; tick < ticks; ++tick) {
     const uint32_t tickSeed = seed + static_cast<uint32_t>(tick);
@@ -383,6 +453,7 @@ SimResult CitySimulator::run(
       float desirability = attractivenessFromUnemployment(unemployment);
       desirability *= clamp01(1.0f - 0.4f * lastCongestion);
       desirability *= clamp01(1.0f - 0.5f * averageResidentialPollution(map, store));
+      desirability *= clamp01(0.6f + 0.4f * lastServiceSatisfaction);
 
       const float headroom = cap.resCapacity > prevPop ? static_cast<float>(cap.resCapacity - prevPop) : 0.0f;
       float requested;
@@ -395,6 +466,16 @@ SimResult CitySimulator::run(
         std::max(0.0f, std::min(static_cast<float>(cap.resCapacity), requested)));
       PopulationSystem::allocate(store, population, requestedPop, tickSeed + 1u);
       result.timings.populationMs += elapsedMs(t0, Clock::now());
+    }
+
+    // Provide public services as the city grows; coverage feeds desirability.
+    ServiceCoverageSummary service;
+    {
+      const auto t0 = Clock::now();
+      placeFacilitiesIfNeeded(map, facilities, population.getTotalPopulation(), center, extent, serviceRadius);
+      service = ServiceSystem::evaluateCoverage(store, roads, facilities);
+      lastServiceSatisfaction = service.satisfaction;
+      result.timings.serviceMs += elapsedMs(t0, Clock::now());
     }
 
     TrafficSummary traffic;
@@ -427,6 +508,8 @@ SimResult CitySimulator::run(
     row.budgetBalance = economy.balance;
     row.trafficCongestion = traffic.maxEdgeCongestion;
     row.avgPollution = averageResidentialPollution(map, store);
+    row.serviceCoverage = service.overallCoverage;
+    row.serviceFacilities = static_cast<uint32_t>(facilities.size());
     result.rows.push_back(row);
   }
 
