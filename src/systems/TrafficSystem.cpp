@@ -88,39 +88,41 @@ const Pathfinding::Path& getOrComputeRoute(
   const RoadNetwork& network,
   glm::ivec2 origin,
   glm::ivec2 destination,
-  bool useCongestion,
   float congestionWeight,
   RoutePathCache& cache
 ) {
   const uint16_t weightMilli = static_cast<uint16_t>(std::max(0.0f, congestionWeight) * 1000.0f + 0.5f);
-  const RouteKey key{origin, destination, useCongestion, weightMilli};
+  const RouteKey key{origin, destination, true, weightMilli};
   auto it = cache.find(key);
   if (it != cache.end()) {
     return it->second;
   }
 
-  Pathfinding::Path computed = useCongestion
-    ? Pathfinding::findShortestPathWithCongestionWeight(network, origin, destination, congestionWeight)
-    : Pathfinding::findShortestPath(network, origin, destination);
+  Pathfinding::Path computed =
+    Pathfinding::findShortestPathWithCongestionWeight(network, origin, destination, congestionWeight);
 
   auto inserted = cache.emplace(key, std::move(computed));
   return inserted.first->second;
 }
 
-} // namespace
-
-TrafficSummary TrafficSystem::simulateCommutes(
-  EntityStore& store,
-  PopulationStore& population,
+// Core commute loop shared by the live simulation and route diagnostics so
+// both produce identical routes (same RNG draws, same congestion-adaptive
+// routing). Mutates the given network's congestion as commutes accumulate;
+// diagnostics pass a scratch copy. The visitor is invoked for every routed
+// commute with the chosen buildings, path, and commuter count.
+template <typename CommuteVisitor>
+TrafficSummary runCommuteLoop(
+  const EntityStore& store,
+  const PopulationStore& population,
   RoadNetwork& network,
-  uint32_t seed
+  uint32_t seed,
+  CommuteVisitor&& visit
 ) {
   TrafficSummary summary;
 
   // Reset network congestion for this tick
   network.resetCongestion();
 
-  // Get all population groups
   const std::vector<const PopulationGroup*> groups = groupsInIdOrder(population);
   uint32_t totalCommuters = 0;
   float totalCommuteTime = 0.0f;
@@ -139,7 +141,7 @@ TrafficSummary TrafficSystem::simulateCommutes(
     (void)id;
     if (building.type == BuildingType::Residential) {
       residentialBuildings.push_back(&building);
-    } else if (building.type == BuildingType::Commercial || 
+    } else if (building.type == BuildingType::Commercial ||
                building.type == BuildingType::Industrial) {
       jobBuildings.push_back(&building);
     }
@@ -160,8 +162,12 @@ TrafficSummary TrafficSystem::simulateCommutes(
   RoutePathCache routeCache;
   routeCache.reserve(256);
 
-  // Adaptive routing feedback: escalate congestion sensitivity when peak edges saturate.
+  // Adaptive routing feedback: escalate congestion sensitivity when peak
+  // edges saturate. The weight is held fixed within each epoch so the route
+  // cache stays valid; pending adjustments apply (and invalidate the cache)
+  // only at epoch boundaries.
   float adaptiveCongestionWeight = 0.5f;
+  float pendingCongestionWeight = 0.5f;
   const uint32_t feedbackEpochCommutes = 8;
   uint32_t processedCommutes = 0;
 
@@ -187,31 +193,27 @@ TrafficSummary TrafficSystem::simulateCommutes(
       // Select destination job building (deterministically from seed)
       const Building* jobBldg = jobBuildings[jobDist(rng)];
 
-      if (residentialBldg == nullptr || jobBldg == nullptr) {
-        continue;
-      }
-
       // Most spawned buildings are not guaranteed to be on road nodes; avoid costly pathfinding attempts.
       if (!network.hasNode(residentialBldg->position) || !network.hasNode(jobBldg->position)) {
         continue;
       }
 
-      if (processedCommutes > 0 && (processedCommutes % feedbackEpochCommutes) == 0) {
+      if (processedCommutes > 0 && (processedCommutes % feedbackEpochCommutes) == 0 &&
+          std::abs(pendingCongestionWeight - adaptiveCongestionWeight) > 0.0001f) {
+        adaptiveCongestionWeight = pendingCongestionWeight;
         routeCache.clear();
       }
 
-      // Baseline cache: reuse pathfinding results for repeated OD pairs within this tick.
+      // Route cache: reuse pathfinding results for repeated OD pairs while the weight is stable.
       const Pathfinding::Path& path = getOrComputeRoute(
         network,
         residentialBldg->position,
         jobBldg->position,
-        true,
         adaptiveCongestionWeight,
         routeCache
       );
 
       if (path.found && path.waypoints.size() > 1) {
-        bool invalidateCache = false;
         float peakPathCongestion = 0.0f;
 
         // Accumulate traffic on path edges
@@ -224,23 +226,17 @@ TrafficSummary TrafficSystem::simulateCommutes(
           peakPathCongestion = std::max(peakPathCongestion, network.getCongestion(from, to));
         }
 
-        const float previousWeight = adaptiveCongestionWeight;
         if (peakPathCongestion >= 0.85f) {
-          adaptiveCongestionWeight = std::min(2.0f, adaptiveCongestionWeight + 0.20f);
+          pendingCongestionWeight = std::min(2.0f, pendingCongestionWeight + 0.20f);
         } else if (peakPathCongestion <= 0.35f) {
-          adaptiveCongestionWeight = std::max(0.5f, adaptiveCongestionWeight - 0.05f);
-        }
-        if (std::abs(adaptiveCongestionWeight - previousWeight) > 0.0001f) {
-          invalidateCache = true;
+          pendingCongestionWeight = std::max(0.5f, pendingCongestionWeight - 0.05f);
         }
 
         // Add commute time (scaled by actual commuters in this batch)
         uint32_t commuters = std::min(workersPerCommute, group.employed - (c * workersPerCommute));
         totalCommuteTime += path.totalDistance * commuters;
 
-        if (invalidateCache) {
-          routeCache.clear();
-        }
+        visit(residentialBldg, jobBldg, path, commuters);
       }
 
       processedCommutes += 1;
@@ -271,11 +267,28 @@ TrafficSummary TrafficSystem::simulateCommutes(
   }
 
   summary.maxEdgeCongestion = maxCongestion;
-  summary.averageEdgeCongestion = congestionDetected > 0 ? 
+  summary.averageEdgeCongestion = congestionDetected > 0 ?
     totalCongestion / static_cast<float>(congestionDetected) : 0.0f;
   summary.congestionDetectedEdges = congestionDetected;
 
   return summary;
+}
+
+} // namespace
+
+TrafficSummary TrafficSystem::simulateCommutes(
+  EntityStore& store,
+  PopulationStore& population,
+  RoadNetwork& network,
+  uint32_t seed
+) {
+  return runCommuteLoop(
+    store,
+    population,
+    network,
+    seed,
+    [](const Building*, const Building*, const Pathfinding::Path&, uint32_t) {}
+  );
 }
 
 void TrafficSystem::applyToMetrics(const TrafficSummary& summary, CityMetrics& metrics) {
@@ -312,7 +325,7 @@ std::vector<EdgeTrafficData> TrafficSystem::getTopCongestedEdges(
   }
 
   // Sort by congestion descending
-  std::sort(edges.begin(), edges.end(), 
+  std::sort(edges.begin(), edges.end(),
     [](const EdgeTrafficData& a, const EdgeTrafficData& b) {
       return a.congestion > b.congestion;
     });
@@ -333,80 +346,23 @@ std::vector<EdgeTrafficData> TrafficSystem::getTopRouteDiagnosticEdges(
   size_t topN,
   uint32_t seed
 ) {
-  std::vector<EdgeTrafficData> edges;
-
-  const std::vector<const PopulationGroup*> groups = groupsInIdOrder(population);
-  const auto& buildings = store.getBuildings();
-
-  std::vector<const Building*> residentialBuildings;
-  std::vector<const Building*> jobBuildings;
-  residentialBuildings.reserve(buildings.size());
-  jobBuildings.reserve(buildings.size());
-
-  for (const auto& [id, building] : buildings) {
-    (void)id;
-    if (building.type == BuildingType::Residential) {
-      residentialBuildings.push_back(&building);
-    } else if (building.type == BuildingType::Commercial ||
-               building.type == BuildingType::Industrial) {
-      jobBuildings.push_back(&building);
-    }
-  }
-
-  if (residentialBuildings.empty() || jobBuildings.empty()) {
-    return edges;
-  }
-
-  sortBuildingsById(residentialBuildings);
-  sortBuildingsById(jobBuildings);
-
-  std::mt19937 rng(seed);
-  std::uniform_int_distribution<size_t> residentialDist(0, residentialBuildings.size() - 1);
-  std::uniform_int_distribution<size_t> jobDist(0, jobBuildings.size() - 1);
-  RoutePathCache routeCache;
-  routeCache.reserve(256);
-
   std::unordered_map<RoadNetwork::EdgeKey, EdgeTrafficData, RoadNetwork::EdgeKeyHash> edgeTotals;
 
-  for (const PopulationGroup* groupPtr : groups) {
-    const PopulationGroup& group = *groupPtr;
-    if (group.employed == 0) {
-      continue;
-    }
+  // Replay the exact commute simulation (same seed, same congestion-adaptive
+  // routing) on a scratch copy of the network so diagnostics report the
+  // routes commuters actually take without mutating live congestion state.
+  RoadNetwork scratchNetwork(network);
 
-    const uint32_t workersPerCommute = std::max(1u, group.employed / 10u);
-    const uint32_t numCommutes = (group.employed + workersPerCommute - 1) / workersPerCommute;
-
-    for (uint32_t c = 0; c < numCommutes; ++c) {
-      const Building* residentialBldg = residentialBuildings[residentialDist(rng)];
-      const Building* jobBldg = jobBuildings[jobDist(rng)];
-
-      if (!matchesRouteFilter(filter, residentialBldg, jobBldg)) {
-        continue;
+  (void)runCommuteLoop(
+    store,
+    population,
+    scratchNetwork,
+    seed,
+    [&](const Building* residential, const Building* job, const Pathfinding::Path& path, uint32_t commuters) {
+      if (!matchesRouteFilter(filter, residential, job)) {
+        return;
       }
 
-      if (residentialBldg == nullptr || jobBldg == nullptr) {
-        continue;
-      }
-
-      if (!network.hasNode(residentialBldg->position) || !network.hasNode(jobBldg->position)) {
-        continue;
-      }
-
-      const Pathfinding::Path& path = getOrComputeRoute(
-        network,
-        residentialBldg->position,
-        jobBldg->position,
-        false,
-        0.0f,
-        routeCache
-      );
-
-      if (!path.found || path.waypoints.size() < 2) {
-        continue;
-      }
-
-      const uint32_t commuters = std::min(workersPerCommute, group.employed - (c * workersPerCommute));
       const float commuterLoad = static_cast<float>(commuters);
       const float pathCommuteTime = path.totalDistance * commuterLoad;
 
@@ -422,8 +378,9 @@ std::vector<EdgeTrafficData> TrafficSystem::getTopRouteDiagnosticEdges(
         edge.totalCommuteTime += pathCommuteTime;
       }
     }
-  }
+  );
 
+  std::vector<EdgeTrafficData> edges;
   edges.reserve(edgeTotals.size());
   for (auto& [key, edge] : edgeTotals) {
     (void)key;
