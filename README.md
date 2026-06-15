@@ -76,6 +76,28 @@ be zoned or built on, so growth routes around lakes. Tune water coverage with
 `--terrain-water FRAC` (0.0–1.0, implies `--generate-terrain`). Generation runs
 only on a fresh map; loading a snapshot restores its saved terrain instead.
 
+### Autonomous Demand-Driven Simulation
+
+```bash
+./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 80
+./build/UrbanSimCore-cli --size 64 --seed 7 --generate-terrain --simulate 80 --simulate-report run.csv
+./build/UrbanSimCore-cli --size 96 --seed 7 --simulate 50 --simulate-no-traffic
+```
+
+`--simulate N` grows a city autonomously from a near-empty map for N ticks. Each
+tick it derives residential/commercial/industrial demand from the city's own
+state (housing, jobs, employment), extends a road grid outward, zones land in
+proportion to demand, lets the growth system build, repopulates housing and
+jobs, and records a metrics row. The result is an emergent city: residential
+demand seeds the first homes, residents create demand for jobs (industrial, then
+commercial), and the loop compounds until land runs out.
+
+It prints an evolution table (RCI demand, population, building counts, roads,
+budget) plus a per-phase timing breakdown, so the same run doubles as an
+end-to-end performance profile. Combine with `--generate-terrain` to grow around
+water; add `--simulate-report FILE` for a per-tick CSV, or `--simulate-no-traffic`
+to skip the (dominant) commute phase.
+
 ### Phase 5 Benchmarking
 
 ```bash

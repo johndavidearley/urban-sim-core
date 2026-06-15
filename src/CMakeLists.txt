@@ -12,6 +12,7 @@ add_library(urban_sim_core
   systems/MetricsSystem.cpp
   systems/ServiceSystem.cpp
   systems/DistrictSystem.cpp
+  systems/CitySimulator.cpp
   world/CityMap.cpp
   world/Tile.cpp
   world/Zoning.cpp
@@ -41,6 +42,7 @@ add_executable(UrbanSimCore-cli
   cli/DistrictCommands.cpp
   cli/GrowthPressureReport.cpp
   cli/PolicySweep.cpp
+  cli/Simulate.cpp
 )
 
 target_link_libraries(UrbanSimCore-cli PRIVATE urban_sim_core)

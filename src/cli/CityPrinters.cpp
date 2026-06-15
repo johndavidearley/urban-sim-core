@@ -71,6 +71,9 @@ void printHelp() {
             << "  --benchmark-phase5 N      Run N-tick Phase 5 performance benchmark\n"
             << "  --benchmark-phase5-focus PHASE  Time only one phase: ALL|GROWTH|POPULATION|TRAFFIC|ECONOMY|SERVICE\n"
             << "  --verify-replay N         Run deterministic replay check using N growth steps\n"
+            << "  --simulate N              Run autonomous RCI-demand-driven city for N ticks\n"
+            << "  --simulate-report FILE    Write per-tick simulation metrics to CSV\n"
+            << "  --simulate-no-traffic     Skip the commute phase during --simulate\n"
             << "  --help                   Show this help message\n";
 }
 

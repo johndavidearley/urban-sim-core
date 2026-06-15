@@ -13,6 +13,7 @@
 #include "src/cli/DistrictCommands.hpp"
 #include "src/cli/GrowthPressureReport.hpp"
 #include "src/cli/PolicySweep.hpp"
+#include "src/cli/Simulate.hpp"
 #include "src/core/SimulationTime.hpp"
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
@@ -59,6 +60,9 @@ int main(int argc, char* argv[]) {
   bool hasRenderView = false;
   int renderViewX = 0, renderViewY = 0, renderViewW = -1, renderViewH = -1;
   int verifyReplayGrowthSteps = -1;
+  int simulateTicks = -1;
+  std::string simulateReportPath;
+  bool simulateNoTraffic = false;
   int benchmarkPhase5Ticks = -1;
   BenchmarkFocus benchmarkPhase5Focus = BenchmarkFocus::All;
   std::string saveCityPath;
@@ -292,6 +296,12 @@ int main(int argc, char* argv[]) {
       }
     } else if (arg == "--verify-replay" && i + 1 < argc) {
       verifyReplayGrowthSteps = std::atoi(argv[++i]);
+    } else if (arg == "--simulate" && i + 1 < argc) {
+      simulateTicks = std::atoi(argv[++i]);
+    } else if (arg == "--simulate-report" && i + 1 < argc) {
+      simulateReportPath = argv[++i];
+    } else if (arg == "--simulate-no-traffic") {
+      simulateNoTraffic = true;
     }
   }
 
@@ -423,6 +433,18 @@ int main(int argc, char* argv[]) {
 
     if (benchmarkPhase5Ticks >= 0) {
       return runPhase5Benchmark(mapSize, seed, benchmarkPhase5Ticks, benchmarkPhase5Focus);
+    }
+
+    if (simulateTicks >= 0) {
+      return runCitySimulation(
+        mapSize,
+        seed,
+        simulateTicks,
+        generateTerrainFlag,
+        terrainWaterFraction,
+        !simulateNoTraffic,
+        simulateReportPath
+      );
     }
 
     CitySnapshot loadedSnapshot;
