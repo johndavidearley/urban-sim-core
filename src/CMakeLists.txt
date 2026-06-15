@@ -15,6 +15,7 @@ add_library(urban_sim_core
   world/CityMap.cpp
   world/Tile.cpp
   world/Zoning.cpp
+  world/TerrainGenerator.cpp
   networks/RoadNetwork.cpp
   networks/Pathfinding.cpp
   metrics/GrowthMetrics.cpp

@@ -30,6 +30,7 @@
 #include "src/systems/TrafficSystem.hpp"
 #include "src/visualization/MapRenderer.hpp"
 #include "src/world/CityMap.hpp"
+#include "src/world/TerrainGenerator.hpp"
 #include "src/world/Zoning.hpp"
 
 int main(int argc, char* argv[]) {
@@ -70,6 +71,8 @@ int main(int argc, char* argv[]) {
   bool hasTrafficDestinationFilter = false;
   int trafficDestinationX = -1, trafficDestinationY = -1;
   std::vector<std::tuple<int, int, int, int, std::string>> zoneRequests;  // x1, y1, x2, y2, type
+  bool generateTerrainFlag = false;
+  float terrainWaterFraction = 0.18f;
   int runGrowthSteps = 0;
   int64_t districtPressurePool = -1;
   bool printGrowthPressureFlag = false;
@@ -117,6 +120,11 @@ int main(int argc, char* argv[]) {
       int y2 = std::atoi(argv[++i]);
       std::string type = argv[++i];
       zoneRequests.emplace_back(x1, y1, x2, y2, type);
+    } else if (arg == "--generate-terrain") {
+      generateTerrainFlag = true;
+    } else if (arg == "--terrain-water" && i + 1 < argc) {
+      terrainWaterFraction = std::stof(argv[++i]);
+      generateTerrainFlag = true;
     } else if (arg == "--print-zones") {
       printZonesFlag = true;
     } else if (arg == "--print-demand") {
@@ -489,6 +497,15 @@ int main(int argc, char* argv[]) {
       populationSummary = buildPopulationSummaryFromState(store, population);
       hasPopulationSummary = true;
       std::cout << "Loaded city snapshot from " << loadCityPath << "\n";
+    } else if (generateTerrainFlag) {
+      // Generate terrain on a fresh map only; a loaded snapshot already carries its own.
+      TerrainParams terrainParams;
+      terrainParams.waterFraction = terrainWaterFraction;
+      const TerrainStats terrainStats = TerrainGenerator::generate(map, seed, terrainParams);
+      std::cout << "Generated terrain (seed " << seed << "): "
+                << terrainStats.waterTiles << " water, "
+                << terrainStats.terrainTiles << " terrain, "
+                << terrainStats.buildableTiles << " buildable tiles\n";
     }
 
     for (const auto& [typeRaw, x, y, dist] : serviceRequests) {
@@ -872,7 +889,7 @@ int main(int argc, char* argv[]) {
       return 0;
     }
 
-    if (!zoneRequests.empty() || !placeRoadRequests.empty() || runGrowthSteps > 0 || printZonesFlag ||
+    if (!zoneRequests.empty() || generateTerrainFlag || !placeRoadRequests.empty() || runGrowthSteps > 0 || printZonesFlag ||
         printDemandFlag || printConnectivityMapFlag || printBuildingsFlag ||
         printGrowthSummaryFlag || seedPopulation >= 0 || printPopulationSummaryFlag ||
         printPopulationGroupsFlag || runCommuteSimulationFlag || printTrafficSummaryFlag ||

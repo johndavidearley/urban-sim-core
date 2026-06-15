@@ -85,6 +85,9 @@ bool Zoning::applyZoneRect(CityMap& map, Coord a, Coord b, ZoneType zone, int* z
   for (int y = minCorner.y; y <= maxCorner.y; ++y) {
     for (int x = minCorner.x; x <= maxCorner.x; ++x) {
       Tile& tile = map.getTile({x, y});
+      if (tile.type == 2) {  // cannot zone water
+        continue;
+      }
       tile.zone = static_cast<int>(zone);
       tile.landValue = defaultLandValueForZone(zone);
       ++applied;

@@ -354,6 +354,9 @@ GrowthStats GrowthSystem::runStep(
       if (tile.buildingId != EntityIdUtils::NullEntity) {
         continue;
       }
+      if (tile.type == 2) {  // water is not buildable
+        continue;
+      }
       if (zone == ZoneType::None || zone == ZoneType::Park) {
         continue;
       }

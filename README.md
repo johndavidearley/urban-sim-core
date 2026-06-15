@@ -63,6 +63,19 @@ cd build
 ctest --verbose
 ```
 
+### Procedural Terrain
+
+```bash
+./build/UrbanSimCore-cli --size 40 --seed 7 --generate-terrain --print-map
+./build/UrbanSimCore-cli --size 40 --seed 7 --terrain-water 0.30 --render-map city.ppm
+```
+
+`--generate-terrain` stamps water and rough terrain onto the map from a seeded,
+smoothed height field — deterministic for a given `--seed`. Water tiles cannot
+be zoned or built on, so growth routes around lakes. Tune water coverage with
+`--terrain-water FRAC` (0.0–1.0, implies `--generate-terrain`). Generation runs
+only on a fresh map; loading a snapshot restores its saved terrain instead.
+
 ### Phase 5 Benchmarking
 
 ```bash

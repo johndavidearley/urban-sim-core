@@ -15,6 +15,8 @@ void printHelp() {
             << "  --seed SEED              Random seed (default: 42)\n"
             << "  --print-map              Print ASCII map representation and exit\n"
             << "  --print-tile X Y         Print detailed info for tile at (X,Y)\n"
+            << "  --generate-terrain       Procedurally generate water/terrain from --seed\n"
+            << "  --terrain-water FRAC     Target water coverage 0.0-1.0 (implies --generate-terrain)\n"
             << "  --zone-rect X1 Y1 X2 Y2 TYPE  Apply zoning to rectangle\n"
             << "  --print-zones            Print zoning map and exit\n"
             << "  --print-demand           Print zoning demand stub and exit\n"

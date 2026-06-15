@@ -3,6 +3,7 @@ add_executable(test_core
   CoreTests.cpp
   EntityStoreTests.cpp
   WorldTests.cpp
+  TerrainGeneratorTests.cpp
   NetworkTests.cpp
   GrowthSystemTests.cpp
   GrowthMetricsTests.cpp
