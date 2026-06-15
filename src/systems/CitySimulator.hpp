@@ -23,6 +23,7 @@ struct SimTickMetrics {
   uint32_t roadTiles = 0;
   int64_t budgetBalance = 0;
   float trafficCongestion = 0.0f;
+  float avgPollution = 0.0f;  // mean pollution where residents live
 };
 
 struct SimPhaseTimings {

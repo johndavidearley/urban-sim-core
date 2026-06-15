@@ -92,11 +92,17 @@ jobs, and records a metrics row. The result is an emergent city: residential
 demand seeds the first homes, residents create demand for jobs (industrial, then
 commercial), and the loop compounds until land runs out.
 
+Residents migrate in gradually rather than instantly filling new housing, at a
+rate set by the city's desirability — jobs being plentiful, traffic not too
+congested, and pollution low. Industry emits pollution, and zoning steers
+housing onto the cleanest land and industry onto the dirtiest, so districts
+self-segregate over time; city pollution then feeds back to slow migration.
+
 It prints an evolution table (RCI demand, population, building counts, roads,
 budget) plus a per-phase timing breakdown, so the same run doubles as an
 end-to-end performance profile. Combine with `--generate-terrain` to grow around
-water; add `--simulate-report FILE` for a per-tick CSV, or `--simulate-no-traffic`
-to skip the (dominant) commute phase.
+water; add `--simulate-report FILE` for a per-tick CSV (including pollution), or
+`--simulate-no-traffic` to skip the (dominant) commute phase.
 
 ### Phase 5 Benchmarking
 

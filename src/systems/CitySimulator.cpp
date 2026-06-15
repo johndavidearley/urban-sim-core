@@ -178,43 +178,92 @@ uint32_t emptyZonedTiles(const CityMap& map, Coord center, int extent) {
   return count;
 }
 
-// Zone up to `batch` candidate tiles, interleaving R/C/I in proportion to demand.
+// Recompute the pollution field from scratch each tick: industry is a heavy
+// emitter, commerce a light one, spread over a small radius with linear falloff.
+void updatePollution(CityMap& map, const EntityStore& store) {
+  const glm::ivec2 dims = map.getDimensions();
+  for (int y = 0; y < dims.y; ++y) {
+    for (int x = 0; x < dims.x; ++x) {
+      map.getTile({x, y}).pollution = 0.0f;
+    }
+  }
+
+  const int radius = 3;
+  for (const auto& [id, building] : store.getBuildings()) {
+    (void)id;
+    float emit = 0.0f;
+    if (building.type == BuildingType::Industrial) emit = 1.0f;
+    else if (building.type == BuildingType::Commercial) emit = 0.25f;
+    if (emit <= 0.0f) continue;
+
+    const Coord c = building.position;
+    for (int dy = -radius; dy <= radius; ++dy) {
+      for (int dx = -radius; dx <= radius; ++dx) {
+        const int x = c.x + dx;
+        const int y = c.y + dy;
+        if (!map.isValid({x, y})) continue;
+        const float dist = std::sqrt(static_cast<float>(dx * dx + dy * dy));
+        if (dist > static_cast<float>(radius)) continue;
+        const float contribution = emit * (1.0f - dist / static_cast<float>(radius + 1));
+        Tile& tile = map.getTile({x, y});
+        tile.pollution = std::min(1.0f, tile.pollution + contribution);
+      }
+    }
+  }
+}
+
+float averageResidentialPollution(const CityMap& map, const EntityStore& store) {
+  double sum = 0.0;
+  uint32_t n = 0;
+  for (const auto& [id, building] : store.getBuildings()) {
+    (void)id;
+    if (building.type == BuildingType::Residential) {
+      sum += map.getTile(building.position).pollution;
+      ++n;
+    }
+  }
+  return n > 0 ? static_cast<float>(sum / n) : 0.0f;
+}
+
+// Zone up to `batch` of the nearest candidate tiles, splitting counts by demand
+// but placing the cleanest tiles residential and the most polluted industrial,
+// so housing and industry self-segregate as the pollution field develops.
 void autoZone(CityMap& map, const std::vector<Coord>& candidates, const ZoneDemand& demand, int batch) {
   const float total = std::max(0.0f, demand.residential) +
                       std::max(0.0f, demand.commercial) +
                       std::max(0.0f, demand.industrial);
-  if (total <= 1e-3f) {
+  const int limit = std::min(static_cast<int>(candidates.size()), batch);
+  if (total <= 1e-3f || limit <= 0) {
     return;
   }
 
-  const std::array<float, 3> share = {
-    std::max(0.0f, demand.residential) / total,
-    std::max(0.0f, demand.commercial) / total,
-    std::max(0.0f, demand.industrial) / total
-  };
-  const std::array<ZoneType, 3> zoneOf = {
-    ZoneType::Residential, ZoneType::Commercial, ZoneType::Industrial
-  };
-  std::array<int, 3> assigned = {0, 0, 0};
+  int nR = static_cast<int>(std::lround(limit * std::max(0.0f, demand.residential) / total));
+  int nI = static_cast<int>(std::lround(limit * std::max(0.0f, demand.industrial) / total));
+  if (nR + nI > limit) {
+    nI = std::min(nI, limit);
+    nR = std::min(nR, limit - nI);
+  }
+  const int nC = limit - nR - nI;
 
-  const int limit = std::min(static_cast<int>(candidates.size()), batch);
+  // The nearest `limit` candidates keep growth compact; sort them by pollution
+  // so the assignment below segregates dirty industry from clean housing.
+  std::vector<Coord> batchTiles(candidates.begin(), candidates.begin() + limit);
+  std::sort(batchTiles.begin(), batchTiles.end(), [&map](const Coord& a, const Coord& b) {
+    const float pa = map.getTile(a).pollution;
+    const float pb = map.getTile(b).pollution;
+    if (pa != pb) return pa < pb;
+    if (a.y != b.y) return a.y < b.y;
+    return a.x < b.x;
+  });
+
   for (int i = 0; i < limit; ++i) {
-    const int placed = assigned[0] + assigned[1] + assigned[2];
-    // Pick the type whose demand share is least satisfied so far.
-    int best = 0;
-    float bestGap = -2.0f;
-    for (int t = 0; t < 3; ++t) {
-      const float assignedShare = placed > 0 ? static_cast<float>(assigned[t]) / static_cast<float>(placed) : 0.0f;
-      const float gap = share[t] - assignedShare;
-      if (gap > bestGap) {
-        bestGap = gap;
-        best = t;
-      }
-    }
-    Tile& tile = map.getTile(candidates[i]);
-    tile.zone = static_cast<int>(zoneOf[best]);
-    tile.landValue = Zoning::defaultLandValueForZone(zoneOf[best]);
-    ++assigned[best];
+    ZoneType zone;
+    if (i < nR) zone = ZoneType::Residential;
+    else if (i < nR + nC) zone = ZoneType::Commercial;
+    else zone = ZoneType::Industrial;
+    Tile& tile = map.getTile(batchTiles[i]);
+    tile.zone = static_cast<int>(zone);
+    tile.landValue = Zoning::defaultLandValueForZone(zone);
   }
 }
 
@@ -304,9 +353,11 @@ SimResult CitySimulator::run(
       result.timings.roadMs += elapsedMs(t0, Clock::now());
     }
 
-    // Zone land in proportion to demand.
+    // Refresh the pollution field, then zone land in proportion to demand,
+    // steering housing to clean tiles and industry to dirty ones.
     {
       const auto t0 = Clock::now();
+      updatePollution(map, store);
       const std::vector<Coord> candidates = zonableCandidates(map, center, extent);
       autoZone(map, candidates, demand, options.zoneBatchPerTick);
       result.timings.zoningMs += elapsedMs(t0, Clock::now());
@@ -331,6 +382,7 @@ SimResult CitySimulator::run(
       const float unemployment = prevPop > 0 ? clamp01(static_cast<float>(prevPop - prevEmployed) / prevPop) : 0.0f;
       float desirability = attractivenessFromUnemployment(unemployment);
       desirability *= clamp01(1.0f - 0.4f * lastCongestion);
+      desirability *= clamp01(1.0f - 0.5f * averageResidentialPollution(map, store));
 
       const float headroom = cap.resCapacity > prevPop ? static_cast<float>(cap.resCapacity - prevPop) : 0.0f;
       float requested;
@@ -374,6 +426,7 @@ SimResult CitySimulator::run(
     row.roadTiles = static_cast<uint32_t>(roads.getRoadCount());
     row.budgetBalance = economy.balance;
     row.trafficCongestion = traffic.maxEdgeCongestion;
+    row.avgPollution = averageResidentialPollution(map, store);
     result.rows.push_back(row);
   }
 

@@ -104,6 +104,36 @@ TEST(CitySimulatorTests, PopulationMigratesGraduallyNotInstantFill) {
   EXPECT_LT(first.population, first.residentialBuildings * 8u);
 }
 
+// Pollution-aware zoning should push industry into dirtier areas than housing.
+TEST(CitySimulatorTests, IndustryAndHousingSegregateByPollution) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  CitySimulator::run(map, roads, store, population, 7, 50, fastOptions());
+
+  double residentialPollution = 0.0;
+  double industrialPollution = 0.0;
+  uint32_t residentialCount = 0;
+  uint32_t industrialCount = 0;
+  for (const auto& [id, building] : store.getBuildings()) {
+    (void)id;
+    const float p = map.getTile(building.position).pollution;
+    if (building.type == BuildingType::Residential) {
+      residentialPollution += p;
+      ++residentialCount;
+    } else if (building.type == BuildingType::Industrial) {
+      industrialPollution += p;
+      ++industrialCount;
+    }
+  }
+
+  ASSERT_GT(residentialCount, 0u);
+  ASSERT_GT(industrialCount, 0u);
+  EXPECT_LT(residentialPollution / residentialCount, industrialPollution / industrialCount);
+}
+
 TEST(CitySimulatorTests, NeverBuildsOnWater) {
   CityMap map({48, 48});
   TerrainParams params;

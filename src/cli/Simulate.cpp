@@ -34,7 +34,7 @@ bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& 
   }
   out << "tick,demand_residential,demand_commercial,demand_industrial,"
          "population,employed,residential_buildings,commercial_buildings,industrial_buildings,"
-         "road_tiles,budget_balance,traffic_congestion\n";
+         "road_tiles,budget_balance,traffic_congestion,avg_pollution\n";
   for (const SimTickMetrics& row : rows) {
     out << row.tick << ","
         << std::fixed << std::setprecision(4)
@@ -42,7 +42,7 @@ bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& 
         << row.population << "," << row.employed << ","
         << row.residentialBuildings << "," << row.commercialBuildings << "," << row.industrialBuildings << ","
         << row.roadTiles << "," << row.budgetBalance << ","
-        << row.trafficCongestion << "\n";
+        << row.trafficCongestion << "," << row.avgPollution << "\n";
   }
   return static_cast<bool>(out);
 }
@@ -101,7 +101,8 @@ int runCitySimulation(
               << " (R=" << last.residentialBuildings
               << " C=" << last.commercialBuildings
               << " I=" << last.industrialBuildings << ")"
-              << " roadTiles=" << last.roadTiles << "\n";
+              << " roadTiles=" << last.roadTiles
+              << " residentialPollution=" << std::fixed << std::setprecision(2) << last.avgPollution << "\n";
   }
 
   const SimPhaseTimings& t = result.timings;
