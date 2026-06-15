@@ -54,6 +54,13 @@ float clamp01(float v) {
   return std::max(0.0f, std::min(1.0f, v));
 }
 
+// City desirability from unemployment: 1.0 at full employment, falling to 0 as
+// unemployment approaches 40% (the population system leaves some structural
+// unemployment even when total jobs suffice).
+float attractivenessFromUnemployment(float unemployment) {
+  return clamp01(1.0f - unemployment / 0.40f);
+}
+
 bool isLand(const CityMap& map, int x, int y) {
   return map.isValid({x, y}) && map.getTile({x, y}).type != 2;
 }
@@ -227,13 +234,14 @@ ZoneDemand CitySimulator::evaluateDemand(const EntityStore& store, const Populat
   // commercial and industrial (~0.5 of population each).
   const float unemployment = pop > 0.0f ? clamp01((pop - employed) / pop) : 0.0f;
 
-  // Residential: the city keeps attracting residents while jobs are reasonably
-  // plentiful; it stalls as unemployment climbs toward 40% (the population
-  // system leaves some structural unemployment even when total jobs suffice).
-  // A startup floor seeds the first homes while the town is tiny.
-  const float attractiveness = clamp01(1.0f - unemployment / 0.40f);
+  // Residential: build housing when the city is attractive (jobs plentiful) AND
+  // existing homes are filling up. Empty housing (low occupancy) suppresses
+  // further construction so housing tracks the migrating population rather than
+  // racing ahead of it. A startup floor seeds the first homes while tiny.
+  const float attractiveness = attractivenessFromUnemployment(unemployment);
+  const float housingOccupancy = cap.resCapacity > 0 ? clamp01(pop / static_cast<float>(cap.resCapacity)) : 0.0f;
   const float resStartup = (cap.resCapacity < 40) ? 0.8f : 0.0f;
-  demand.residential = clamp01(std::max(resStartup, attractiveness));
+  demand.residential = clamp01(std::max(resStartup, attractiveness * housingOccupancy));
 
   // Commercial: retail jobs serving residents. Target ~50% of population.
   const float comTarget = 0.5f * pop;
@@ -275,6 +283,8 @@ SimResult CitySimulator::run(
     result.timings.roadMs += elapsedMs(t0, Clock::now());
   }
 
+  float lastCongestion = 0.0f;  // previous tick's peak congestion, feeds desirability
+
   for (int tick = 0; tick < ticks; ++tick) {
     const uint32_t tickSeed = seed + static_cast<uint32_t>(tick);
 
@@ -309,11 +319,29 @@ SimResult CitySimulator::run(
       result.timings.growthMs += elapsedMs(t0, Clock::now());
     }
 
-    // Fill housing and jobs (population follows the homes that now exist).
+    // Migration: residents move in (or out) gradually rather than instantly
+    // filling new housing. The rate scales with city desirability - jobs being
+    // plentiful, and traffic not too congested - so housing vacancy is a real
+    // signal that paces both migration and further residential construction.
     {
       const auto t0 = Clock::now();
       const CapacitySummary cap = summarize(store);
-      PopulationSystem::allocate(store, population, cap.resCapacity, tickSeed + 1u);
+      const uint32_t prevPop = population.getTotalPopulation();
+      const uint32_t prevEmployed = population.getTotalEmployed();
+      const float unemployment = prevPop > 0 ? clamp01(static_cast<float>(prevPop - prevEmployed) / prevPop) : 0.0f;
+      float desirability = attractivenessFromUnemployment(unemployment);
+      desirability *= clamp01(1.0f - 0.4f * lastCongestion);
+
+      const float headroom = cap.resCapacity > prevPop ? static_cast<float>(cap.resCapacity - prevPop) : 0.0f;
+      float requested;
+      if (desirability < 0.05f && prevPop > 0) {
+        requested = static_cast<float>(prevPop) * 0.98f;  // stagnant city slowly loses residents
+      } else {
+        requested = static_cast<float>(prevPop) + 0.25f * desirability * headroom + 3.0f * desirability;
+      }
+      const uint32_t requestedPop = static_cast<uint32_t>(
+        std::max(0.0f, std::min(static_cast<float>(cap.resCapacity), requested)));
+      PopulationSystem::allocate(store, population, requestedPop, tickSeed + 1u);
       result.timings.populationMs += elapsedMs(t0, Clock::now());
     }
 
@@ -322,6 +350,7 @@ SimResult CitySimulator::run(
       const auto t0 = Clock::now();
       traffic = TrafficSystem::simulateCommutes(store, population, roads, tickSeed + 2u);
       result.timings.trafficMs += elapsedMs(t0, Clock::now());
+      lastCongestion = traffic.maxEdgeCongestion;
     }
 
     EconomyState economy;

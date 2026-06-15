@@ -86,6 +86,24 @@ TEST(CitySimulatorTests, SameSeedProducesIdenticalCity) {
   EXPECT_EQ(a.roadTiles, b.roadTiles);
 }
 
+// Residents migrate in gradually, so newly built housing is not instantly full
+// (which the old instant-fill behavior would produce).
+TEST(CitySimulatorTests, PopulationMigratesGraduallyNotInstantFill) {
+  CityMap map({48, 48});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 5, fastOptions());
+
+  ASSERT_FALSE(result.rows.empty());
+  // Default residential capacity is 8 per building; early on the population
+  // should sit well below the housing it has built (vacancy from migration lag).
+  const SimTickMetrics& first = result.rows.front();
+  ASSERT_GT(first.residentialBuildings, 0u);
+  EXPECT_LT(first.population, first.residentialBuildings * 8u);
+}
+
 TEST(CitySimulatorTests, NeverBuildsOnWater) {
   CityMap map({48, 48});
   TerrainParams params;
