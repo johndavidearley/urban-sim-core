@@ -162,7 +162,7 @@ TEST_F(EconomySystemTests, BuildingValueScalesWithCapacity) {
 
   // Value should roughly double when capacity doubles
   EXPECT_GT(value100, value50);
-  EXPECT_NEAR(value100 / value50, 2.0f, 0.1f);
+  EXPECT_NEAR(static_cast<double>(value100) / static_cast<double>(value50), 2.0, 0.1);
 }
 
 // Test: Different building types have different values

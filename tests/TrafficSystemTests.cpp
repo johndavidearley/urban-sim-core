@@ -55,7 +55,7 @@ TEST_F(TrafficSystemTests, NoJobBuildingsProducesZeroCommutes) {
   );
   
   // Create population group
-  auto groupId = population.createGroup(IncomeBand::Middle, 50, 0);
+  population.createGroup(IncomeBand::Middle, 50, 0);
 
   TrafficSummary summary = TrafficSystem::simulateCommutes(
     store, population, *network, 42

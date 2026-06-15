@@ -18,7 +18,7 @@ struct SimulationTime {
   }
   
   uint32_t getCurrentMonth() const {
-    return (tickCount / ticksPerMonth);
+    return static_cast<uint32_t>(tickCount / ticksPerMonth);
   }
   
   bool isDayBoundary() const {

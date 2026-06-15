@@ -29,7 +29,7 @@ bool applyDistrictMutations(DistrictSystem& districtSystem, const DistrictMutati
 
     std::string typeUpper = buildingType;
     std::transform(typeUpper.begin(), typeUpper.end(), typeUpper.begin(),
-                  [](unsigned char c) { return std::toupper(c); });
+                  [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 
     if (typeUpper == "RESIDENTIAL") {
       district->taxRates.residentialRate = std::max(0.0f, std::min(1.0f, rate));
