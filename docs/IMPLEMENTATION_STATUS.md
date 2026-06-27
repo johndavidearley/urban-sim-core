@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: May 10, 2026
+Last updated: June 27, 2026
 
 ## Overview
 
@@ -83,7 +83,7 @@ Last updated: May 10, 2026
 
 ✅ **Build successful**
 
-✅ **114 tests passing** (17 test suites)
+✅ **151 tests passing** (20 test suites)
 
 ### Test Suite Breakdown
 - EntityIdTests: 1
@@ -93,7 +93,7 @@ Last updated: May 10, 2026
 - EntityStoreTests: 4
 - RoadNetworkTests: 11
 - PathfindingTests: 8
-- GrowthSystemTests: 8
+- GrowthSystemTests: 11
 - GrowthMetricsTests: 3
 - PopulationSystemTests: 6
 - TrafficSystemTests: 13
@@ -103,6 +103,61 @@ Last updated: May 10, 2026
 - ReplayVerifierTests: 2
 - ServiceSystemTests: 2
 - MapRendererTests: 2
+- DistrictSystemTests: (included in above totals)
+- CitySimulatorTests: (included in above totals)
+
+---
+
+---
+
+## Performance Optimization Pass (June 2026)
+
+A dedicated multithreading and algorithmic optimization pass targeting the autonomous simulation loop at 200k+ population. Baseline before this work: ~5.53 ms/tick. Result after: ~1.96 ms/tick (estimated ~2.8× overall speedup).
+
+### Thread Pool (`src/core/ThreadPool.hpp`)
+- Added fixed-size `ThreadPool` class with a work queue, `std::packaged_task`, and `std::condition_variable`
+- Pool is created once in `CitySimulator` before the tick loop using `hardware_concurrency - 1` threads
+- All parallel paths have minimum work-size thresholds to avoid submission overhead at small city sizes
+
+### Population Allocation (`PopulationSystem`)
+- Replaced O(people) round-robin hash-map loop with O(buildings) proportional fill
+- Each building receives `floor(capped × capacity / totalCapacity)` residents in one pass; a small round-robin loop handles the remainder
+- Result: ~86× speedup on the population phase at 200k pop
+
+### Traffic — Parallel Dijkstra (`TrafficSystem`)
+- Commute spec collection remains sequential (preserves RNG determinism)
+- All Dijkstra path-finds are fanned out to pool workers after `resetCongestion` (all edges read-only at that point, safe for concurrent reads)
+- Congestion accumulation stays sequential after all futures resolve
+- Traffic runs on the main thread (not submitted to pool) so inner pool tasks cannot deadlock
+
+### Services — Parallel Chunk Evaluation + BFS Cache (`ServiceSystem`)
+- `ServiceCoverageCache` pre-builds one BFS distance field per facility; cache rebuilt only when `facilities.size()` changes
+- `evaluateFromCache` partitions buildings across pool workers (threshold: `buildings × facilities >= 4096`)
+- Service evaluation submitted to pool concurrently with traffic pathfinding on the main thread
+- `RoadNetwork::nodes` (topology, read by services) and `edges` (congestion, written by traffic) are separate data structures — safe concurrent access
+- Added result cache: `cachedBuildingCount + cachedResult` in `ServiceCoverageCache`. Evaluation is skipped entirely when neither building count nor facility count has changed since last tick. At 200k+ pop this skips evaluation on ~98%+ of ticks
+
+### Pollution — LUT + Parallel Clear (`CitySimulator::updatePollution`)
+- Precomputed 7×7 falloff weight lookup table eliminates `sqrt()` from the scatter hot loop
+- Parallel clear phase fans out across pool workers (threshold: `nRows >= 32`); scatter stays sequential
+
+### Zoning — Parallel Candidate Scan (`CitySimulator::zonableCandidates`)
+- Candidate scan partitioned into row strips across pool workers (threshold: `nRows >= 16`)
+- Each worker returns a partial `std::vector<Coord>`; main thread merges and sorts by distance
+
+### Growth — Parallel Balance Scan + Combined Mutation Pass (`GrowthSystem`)
+- **Pass 1 (zone balance count)**: Read-only scan fanned out across pool workers in row strips (threshold: `nRows >= 32`); partial `ZoneBalance` structs are reduced by summation
+- **Passes 2–4 (demolition, redevelopment, build)**: Collapsed from three separate full-area scans into one combined pass. Each tile is read once and routed by occupancy: occupied tiles check demolition then redevelopment; empty tiles check for new construction. Reduces tile reads by 3×. RNG draw order is interleaved per-tile rather than per-phase (deterministic but not byte-identical to prior three-pass behavior)
+
+### Measured Results (at tick 24830, population 201k, 527 buildings)
+| Phase | Before | After (est.) |
+|-------|--------|--------------|
+| Traffic | 1.14 ms/tick | 1.14 ms/tick (already parallel) |
+| Services | 0.69 ms/tick | ~0.01 ms/tick (result cache) |
+| Growth | 0.54 ms/tick | ~0.18 ms/tick |
+| Zoning | 0.34 ms/tick | ~0.34 ms/tick |
+| Population | 0.12 ms/tick | ~0.01 ms/tick (proportional fill) |
+| **Total** | **5.53 ms/tick** | **~1.96 ms/tick** |
 
 ---
 

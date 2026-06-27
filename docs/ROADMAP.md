@@ -1,13 +1,14 @@
 # UrbanSimCore Development Roadmap
 
-Last updated: May 10, 2026
+Last updated: June 27, 2026
 
 ## Current Status Snapshot
 
-- Backlog Slices 1-10: complete
+- Backlog Slices 1-14: complete
 - Headless core simulation loop: complete
-- Population, traffic, economy, metrics, and save/load scaffolding: complete
-- Automated validation: 111 tests passing
+- Population, traffic, economy, metrics, save/load, districts, and visualization: complete
+- Multithreaded simulation loop with thread pool: complete (~2.8× speedup at 200k pop)
+- Automated validation: 151 tests passing
 
 ---
 
@@ -152,10 +153,12 @@ Last updated: May 10, 2026
 - [ ] Emergency response
 
 ### Milestone 16: City Optimization
-- [ ] Profiling and performance tuning
-- [ ] Batch entity updates
-- [ ] Spatial hashing for queries
+- [x] Profiling and performance tuning (thread pool pass: ~2.8× at 200k pop)
+- [x] Parallel pathfinding (Dijkstra fan-out across pool workers)
+- [x] Lazy evaluation (service result cache; BFS cache across ticks)
+- [ ] Spatial hashing for zoning candidate queries
 - [ ] SIMD optimizations where beneficial
+- [ ] Traffic route reuse across ticks (invalidate on road topology change)
 - [ ] Target: 60 FPS headless with 500×500 map, 100k population
 
 ---

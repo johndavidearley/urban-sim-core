@@ -1,6 +1,7 @@
 #include "src/systems/GrowthSystem.hpp"
 
 #include <algorithm>
+#include <future>
 
 #include "src/core/Random.hpp"
 
@@ -224,6 +225,16 @@ void incrementDemolishedCount(GrowthStats& stats, ZoneType zone) {
   }
 }
 
+void incrementRedevelopedCount(GrowthStats& stats, ZoneType zone) {
+  if (zone == ZoneType::Residential) {
+    ++stats.redevelopedResidential;
+  } else if (zone == ZoneType::Commercial) {
+    ++stats.redevelopedCommercial;
+  } else if (zone == ZoneType::Industrial) {
+    ++stats.redevelopedIndustrial;
+  }
+}
+
 float coveragePressure(ZoneType zone, const ZoneBalance& balance, const ZoneDemand& demand) {
   int zoned = 0;
   int built = 0;
@@ -258,25 +269,6 @@ float coveragePressure(ZoneType zone, const ZoneBalance& balance, const ZoneDema
   return std::clamp(deficit / targetCoverage, 0.0f, 1.0f);
 }
 
-ZoneBalance collectZoneBalance(const CityMap& map) {
-  ZoneBalance balance;
-  const glm::ivec2 dims = map.getDimensions();
-
-  for (int y = 0; y < dims.y; ++y) {
-    for (int x = 0; x < dims.x; ++x) {
-      const Tile& tile = map.getTile({x, y});
-      const ZoneType zone = static_cast<ZoneType>(tile.zone);
-
-      incrementZonedCount(balance, zone);
-      if (tile.buildingId != EntityIdUtils::NullEntity) {
-        incrementBuiltCount(balance, zone);
-      }
-    }
-  }
-
-  return balance;
-}
-
 float chanceModifierForCoord(Coord coord, const std::vector<GrowthChanceModifier>* modifiers) {
   if (modifiers == nullptr || modifiers->empty()) {
     return 1.0f;
@@ -300,103 +292,158 @@ GrowthStats GrowthSystem::runStep(
   const ZoneDemand& demand,
   uint32_t seed,
   float baseChance,
-  const std::vector<GrowthChanceModifier>* chanceModifiers
+  const std::vector<GrowthChanceModifier>* chanceModifiers,
+  Coord activeMin,
+  Coord activeMax,
+  ThreadPool* pool
 ) {
   GrowthStats stats;
   DeterministicRandom rng(seed);
-  ZoneBalance balance = collectZoneBalance(map);
 
   const glm::ivec2 dims = map.getDimensions();
-  const float clampedBaseChance = std::clamp(baseChance, 0.0f, 1.0f);
 
-  // Early aging/demolition scaffold: reclaim parcels in low-demand, overbuilt zones.
-  for (int y = 0; y < dims.y; ++y) {
-    for (int x = 0; x < dims.x; ++x) {
-      Tile& tile = map.getTile({x, y});
-      const ZoneType zone = static_cast<ZoneType>(tile.zone);
+  // Resolve scan bounds: default sentinel {-1,-1} means full map.
+  const int x0 = (activeMin.x < 0) ? 0           : std::max(0, activeMin.x);
+  const int y0 = (activeMin.y < 0) ? 0           : std::max(0, activeMin.y);
+  const int x1 = (activeMax.x < 0) ? dims.x - 1 : std::min(dims.x - 1, activeMax.x);
+  const int y1 = (activeMax.y < 0) ? dims.y - 1 : std::min(dims.y - 1, activeMax.y);
 
-      if (tile.buildingId == EntityIdUtils::NullEntity) {
-        continue;
+  // Count zoned/built tiles only within the active region.
+  // Pass 1 is read-only: fan it out across pool workers using row strips.
+  ZoneBalance balance;
+  {
+    const int nRows = y1 - y0 + 1;
+    constexpr int kMinRowsPerChunk = 16;
+    const int nChunks = (pool != nullptr && nRows >= kMinRowsPerChunk * 2)
+      ? std::max(1, std::min(static_cast<int>(pool->threadCount()), nRows / kMinRowsPerChunk))
+      : 1;
+
+    if (nChunks <= 1) {
+      for (int y = y0; y <= y1; ++y) {
+        for (int x = x0; x <= x1; ++x) {
+          const Tile& tile = map.getTile({x, y});
+          const ZoneType zone = static_cast<ZoneType>(tile.zone);
+          incrementZonedCount(balance, zone);
+          if (tile.buildingId != EntityIdUtils::NullEntity)
+            incrementBuiltCount(balance, zone);
+        }
       }
-      if (zone == ZoneType::None || zone == ZoneType::Park) {
-        continue;
+    } else {
+      std::vector<std::future<ZoneBalance>> futures;
+      futures.reserve(nChunks);
+      const int rowsPerChunk = (nRows + nChunks - 1) / nChunks;
+      for (int c = 0; c < nChunks; ++c) {
+        const int rowBegin = y0 + c * rowsPerChunk;
+        const int rowEnd   = std::min(y1, rowBegin + rowsPerChunk - 1);
+        if (rowBegin > y1) break;
+        futures.push_back(pool->submit([&map, x0, x1, rowBegin, rowEnd]() {
+          const CityMap& cmap = map;
+          ZoneBalance p;
+          for (int y = rowBegin; y <= rowEnd; ++y) {
+            for (int x = x0; x <= x1; ++x) {
+              const Tile& tile = cmap.getTile({x, y});
+              const ZoneType zone = static_cast<ZoneType>(tile.zone);
+              incrementZonedCount(p, zone);
+              if (tile.buildingId != EntityIdUtils::NullEntity)
+                incrementBuiltCount(p, zone);
+            }
+          }
+          return p;
+        }));
       }
-
-      // Preserve snapshot placeholders that are not backed by a managed entity record.
-      if (store.getBuilding(tile.buildingId) == nullptr) {
-        continue;
+      for (auto& f : futures) {
+        const ZoneBalance p = f.get();
+        balance.zonedResidential += p.zonedResidential;
+        balance.zonedCommercial  += p.zonedCommercial;
+        balance.zonedIndustrial  += p.zonedIndustrial;
+        balance.builtResidential += p.builtResidential;
+        balance.builtCommercial  += p.builtCommercial;
+        balance.builtIndustrial  += p.builtIndustrial;
       }
-
-      const float chance = demolitionPressure(zone, balance, demand);
-      if (chance <= 0.0f) {
-        continue;
-      }
-
-      if (!rng.chance(chance)) {
-        continue;
-      }
-
-      if (!store.removeBuilding(tile.buildingId)) {
-        continue;
-      }
-
-      tile.buildingId = EntityIdUtils::NullEntity;
-      decrementBuiltCount(balance, zone);
-      incrementDemolishedCount(stats, zone);
     }
   }
 
-  for (int y = 0; y < dims.y; ++y) {
-    for (int x = 0; x < dims.x; ++x) {
+  const float clampedBaseChance = std::clamp(baseChance, 0.0f, 1.0f);
+
+  // Combined mutation pass: demolition → redevelopment → build in a single tile
+  // scan. Reduces cache pressure by 3× versus three separate passes; each tile
+  // is read once and the appropriate action is taken based on occupancy.
+  // Note: RNG draws are interleaved per-tile rather than per-phase, which
+  // changes city evolution vs. the three-pass original (still deterministic).
+  const float rebuildBaseChance = 0.05f;
+  for (int y = y0; y <= y1; ++y) {
+    for (int x = x0; x <= x1; ++x) {
       Tile& tile = map.getTile({x, y});
       const ZoneType zone = static_cast<ZoneType>(tile.zone);
 
       if (tile.buildingId != EntityIdUtils::NullEntity) {
-        continue;
-      }
-      if (tile.type == 2) {  // water is not buildable
-        continue;
-      }
-      if (zone == ZoneType::None || zone == ZoneType::Park) {
-        continue;
-      }
-      if (!hasRoadAccess(map, {x, y})) {
-        continue;
-      }
+        // Occupied tile: check demolition, then redevelopment if survived.
+        if (zone == ZoneType::None || zone == ZoneType::Park) continue;
+        if (store.getBuilding(tile.buildingId) == nullptr) continue;
 
-      ++stats.evaluatedTiles;
+        bool demolished = false;
+        const float demolChance = demolitionPressure(zone, balance, demand);
+        if (demolChance > 0.0f && rng.chance(demolChance)) {
+          if (store.removeBuilding(tile.buildingId)) {
+            tile.buildingId = EntityIdUtils::NullEntity;
+            decrementBuiltCount(balance, zone);
+            incrementDemolishedCount(stats, zone);
+            demolished = true;
+          }
+        }
 
-      const float demandWeight = demandForZone(zone, demand);
-      if (demandWeight < 0.05f) {
-        continue;
-      }
+        if (!demolished) {
+          // Redevelopment: when demand is sustained and the zone is saturated,
+          // replace at 2× capacity. Capped at 64× default (6 doublings).
+          const Building* existing = store.getBuilding(tile.buildingId);
+          if (existing != nullptr) {
+            const float demandWeight = demandForZone(zone, demand);
+            if (demandWeight >= 0.10f) {
+              const int maxCap = defaultCapacity(zone) * 64;
+              if (existing->capacity < maxCap) {
+                const int   zoned      = zonedCountForZone(balance, zone);
+                const int   built      = builtCountForZone(balance, zone);
+                const float saturation = zoned > 0
+                  ? static_cast<float>(built) / static_cast<float>(zoned) : 1.0f;
+                if (rng.chance(rebuildBaseChance * demandWeight * saturation)) {
+                  const int newCapacity = std::min(maxCap, existing->capacity * 2);
+                  if (store.removeBuilding(tile.buildingId)) {
+                    tile.buildingId = store.createBuilding(toBuildingType(zone), {x, y}, newCapacity);
+                    incrementRedevelopedCount(stats, zone);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // Empty tile: check for new construction.
+        if (tile.type == 2) continue;
+        if (zone == ZoneType::None || zone == ZoneType::Park) continue;
+        if (!hasRoadAccess(map, {x, y})) continue;
 
-      const float pressure = coveragePressure(zone, balance, demand);
-      if (pressure <= 0.0f) {
-        continue;
-      }
+        ++stats.evaluatedTiles;
 
-      const float chance = std::clamp(
-        clampedBaseChance * demandWeight * pressure * roadQualityFactor(map, {x, y}) *
-          demandBalancingFactor(zone, balance, demand) *
-          chanceModifierForCoord({x, y}, chanceModifiers),
-        0.0f,
-        1.0f
-      );
-      if (!rng.chance(chance)) {
-        continue;
-      }
+        const float demandWeight = demandForZone(zone, demand);
+        if (demandWeight < 0.05f) continue;
 
-      const EntityId id = store.createBuilding(toBuildingType(zone), {x, y}, defaultCapacity(zone));
-      tile.buildingId = id;
-      incrementBuiltCount(balance, zone);
+        const float pressure = coveragePressure(zone, balance, demand);
+        if (pressure <= 0.0f) continue;
 
-      if (zone == ZoneType::Residential) {
-        ++stats.spawnedResidential;
-      } else if (zone == ZoneType::Commercial) {
-        ++stats.spawnedCommercial;
-      } else if (zone == ZoneType::Industrial) {
-        ++stats.spawnedIndustrial;
+        const float chance = std::clamp(
+          clampedBaseChance * demandWeight * pressure * roadQualityFactor(map, {x, y}) *
+            demandBalancingFactor(zone, balance, demand) *
+            chanceModifierForCoord({x, y}, chanceModifiers),
+          0.0f, 1.0f
+        );
+        if (!rng.chance(chance)) continue;
+
+        tile.buildingId = store.createBuilding(toBuildingType(zone), {x, y}, defaultCapacity(zone));
+        incrementBuiltCount(balance, zone);
+
+        if (zone == ZoneType::Residential)     ++stats.spawnedResidential;
+        else if (zone == ZoneType::Commercial) ++stats.spawnedCommercial;
+        else if (zone == ZoneType::Industrial) ++stats.spawnedIndustrial;
       }
     }
   }

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <future>
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -133,83 +134,120 @@ const char* ServiceSystem::serviceTypeToString(ServiceType type) {
   }
 }
 
+void ServiceSystem::buildCache(
+  const RoadNetwork& roads,
+  const std::vector<ServiceFacility>& facilities,
+  ServiceCoverageCache& cache
+) {
+  cache.entries.clear();
+  cache.entries.reserve(facilities.size());
+  for (const ServiceFacility& facility : facilities) {
+    Coord anchor;
+    if (!resolveRoadAnchor(roads, facility.position, anchor)) {
+      continue;
+    }
+    auto distField = buildDistanceField(roads, anchor, facility.maxTravelDistance);
+    if (!distField.empty()) {
+      cache.entries.push_back({facility.type, std::move(distField)});
+    }
+  }
+  cache.builtForFacilityCount = facilities.size();
+}
+
 ServiceCoverageSummary ServiceSystem::evaluateCoverage(
   const EntityStore& store,
   const RoadNetwork& roads,
   const std::vector<ServiceFacility>& facilities
 ) {
-  struct FacilityCache {
-    ServiceType type = ServiceType::Fire;
-    std::unordered_map<Coord, int, Vec2Hash> distanceField;
-  };
+  ServiceCoverageCache cache;
+  buildCache(roads, facilities, cache);
+  return evaluateFromCache(store, roads, cache);
+}
 
+ServiceCoverageSummary ServiceSystem::evaluateFromCache(
+  const EntityStore& store,
+  const RoadNetwork& roads,
+  const ServiceCoverageCache& cache,
+  ThreadPool* pool
+) {
   ServiceCoverageSummary summary;
   summary.totalBuildings = static_cast<uint32_t>(store.getBuildings().size());
-
   if (summary.totalBuildings == 0) {
     summary.satisfaction = 0.5f;
     return summary;
   }
 
-  std::array<uint32_t, 4> coveredByType = {0, 0, 0, 0};
-
-  std::vector<FacilityCache> facilityCaches;
-  facilityCaches.reserve(facilities.size());
-  for (const ServiceFacility& facility : facilities) {
-    Coord facilityAnchor;
-    if (!resolveRoadAnchor(roads, facility.position, facilityAnchor)) {
-      continue;
-    }
-
-    FacilityCache cache;
-    cache.type = facility.type;
-    cache.distanceField = buildDistanceField(roads, facilityAnchor, facility.maxTravelDistance);
-    if (!cache.distanceField.empty()) {
-      facilityCaches.push_back(std::move(cache));
-    }
+  // Collect building pointers once for indexed access.
+  std::vector<const Building*> buildings;
+  buildings.reserve(summary.totalBuildings);
+  for (const auto& [id, b] : store.getBuildings()) {
+    (void)id;
+    buildings.push_back(&b);
   }
 
-  for (const auto& [id, building] : store.getBuildings()) {
-    (void)id;
-    Coord buildingAnchor;
-    if (!resolveRoadAnchor(roads, building.position, buildingAnchor)) {
-      continue;
-    }
+  struct Partial {
+    uint32_t serviced = 0;
+    std::array<uint32_t, 4> byType = {0, 0, 0, 0};
+  };
 
-    bool anyCoverage = false;
-    std::array<bool, 4> hasTypeCoverage = {false, false, false, false};
-
-    for (const FacilityCache& facility : facilityCaches) {
-      if (facility.distanceField.find(buildingAnchor) == facility.distanceField.end()) {
-        continue;
+  // Evaluate a contiguous slice of the buildings vector.
+  auto evalSlice = [&](size_t begin, size_t end) {
+    Partial p;
+    for (size_t i = begin; i < end; ++i) {
+      Coord anchor;
+      if (!resolveRoadAnchor(roads, buildings[i]->position, anchor)) continue;
+      std::array<bool, 4> hit = {false, false, false, false};
+      bool any = false;
+      for (const ServiceCoverageCache::Entry& entry : cache.entries) {
+        if (entry.distanceField.count(anchor) == 0) continue;
+        hit[typeIndex(entry.type)] = true;
+        any = true;
       }
-
-      const int idx = typeIndex(facility.type);
-      hasTypeCoverage[idx] = true;
-      anyCoverage = true;
+      if (any) ++p.serviced;
+      for (int t = 0; t < 4; ++t) { if (hit[t]) ++p.byType[t]; }
     }
+    return p;
+  };
 
-    if (anyCoverage) {
-      ++summary.servicedBuildings;
+  const size_t n = buildings.size();
+  // Only fan out to threads when there is enough work to amortize task
+  // submission overhead (~4k lookup pairs ≈ buildings × facility entries).
+  const size_t totalPairs = n * cache.entries.size();
+  const size_t nChunks = (pool != nullptr && totalPairs >= 4096)
+    ? std::min(static_cast<size_t>(pool->threadCount()), (n + 63) / 64)
+    : 1;
+
+  std::array<uint32_t, 4> coveredByType = {0, 0, 0, 0};
+
+  if (nChunks <= 1) {
+    const Partial p = evalSlice(0, n);
+    summary.servicedBuildings = p.serviced;
+    coveredByType = p.byType;
+  } else {
+    std::vector<std::future<Partial>> futures;
+    futures.reserve(nChunks);
+    const size_t chunkSize = (n + nChunks - 1) / nChunks;
+    for (size_t c = 0; c < nChunks; ++c) {
+      const size_t begin = c * chunkSize;
+      const size_t end = std::min(begin + chunkSize, n);
+      if (begin >= end) break;
+      futures.push_back(pool->submit([=, &evalSlice]() { return evalSlice(begin, end); }));
     }
-
-    for (int i = 0; i < static_cast<int>(hasTypeCoverage.size()); ++i) {
-      if (hasTypeCoverage[i]) {
-        ++coveredByType[i];
-      }
+    for (auto& f : futures) {
+      const Partial p = f.get();
+      summary.servicedBuildings += p.serviced;
+      for (int t = 0; t < 4; ++t) coveredByType[t] += p.byType[t];
     }
   }
 
   const float denom = static_cast<float>(summary.totalBuildings);
-  summary.fireCoverage = coveredByType[typeIndex(ServiceType::Fire)] / denom;
-  summary.policeCoverage = coveredByType[typeIndex(ServiceType::Police)] / denom;
-  summary.healthCoverage = coveredByType[typeIndex(ServiceType::Health)] / denom;
+  summary.fireCoverage      = coveredByType[typeIndex(ServiceType::Fire)]      / denom;
+  summary.policeCoverage    = coveredByType[typeIndex(ServiceType::Police)]    / denom;
+  summary.healthCoverage    = coveredByType[typeIndex(ServiceType::Health)]    / denom;
   summary.educationCoverage = coveredByType[typeIndex(ServiceType::Education)] / denom;
-
-  summary.overallCoverage =
-    (summary.fireCoverage + summary.policeCoverage + summary.healthCoverage + summary.educationCoverage) / 4.0f;
-
-  summary.satisfaction = std::clamp(0.25f + (summary.overallCoverage * 0.75f), 0.0f, 1.0f);
+  summary.overallCoverage   = (summary.fireCoverage + summary.policeCoverage +
+                                summary.healthCoverage + summary.educationCoverage) / 4.0f;
+  summary.satisfaction = std::clamp(0.25f + summary.overallCoverage * 0.75f, 0.0f, 1.0f);
   return summary;
 }
 

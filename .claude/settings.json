@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(./build/bin/UrbanSimCore-cli --simulate 500 --size 64 --generate-terrain)",
+      "Bash(cmake --build build --target urban_sim_core)",
+      "Bash(./build/bin/test_core --gtest_filter=\"GrowthSystem*\")"
+    ]
+  }
+}

@@ -4,9 +4,12 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <future>
 #include <limits>
+#include <thread>
 #include <vector>
 
+#include "src/core/ThreadPool.hpp"
 #include "src/systems/EconomySystem.hpp"
 #include "src/systems/GrowthSystem.hpp"
 #include "src/systems/PopulationSystem.hpp"
@@ -129,23 +132,46 @@ void layRoadGrid(CityMap& map, RoadNetwork& roads, Coord center, int extent, int
 }
 
 // Empty, buildable, road-adjacent, currently-unzoned tiles within the developed box.
-std::vector<Coord> zonableCandidates(const CityMap& map, Coord center, int extent) {
+// The scan is read-only on map tiles, so row strips run safely in parallel.
+std::vector<Coord> zonableCandidates(const CityMap& map, Coord center, int extent,
+                                     ThreadPool& pool) {
   const glm::ivec2 dims = map.getDimensions();
   const int x0 = std::max(0, center.x - extent);
   const int x1 = std::min(dims.x - 1, center.x + extent);
   const int y0 = std::max(0, center.y - extent);
   const int y1 = std::min(dims.y - 1, center.y + extent);
 
+  const int nRows   = y1 - y0 + 1;
+  const int minRowsPerChunk = 8;
+  const int nChunks = (nRows >= minRowsPerChunk * 2)
+    ? std::max(1, std::min(static_cast<int>(pool.threadCount()), nRows / minRowsPerChunk))
+    : 1;
+  const int rowsPerChunk = (nRows + nChunks - 1) / nChunks;
+
+  std::vector<std::future<std::vector<Coord>>> futs;
+  futs.reserve(static_cast<size_t>(nChunks));
+  for (int c = 0; c < nChunks; ++c) {
+    const int ry0 = y0 + c * rowsPerChunk;
+    const int ry1 = std::min(y0 + (c + 1) * rowsPerChunk - 1, y1);
+    if (ry0 > ry1) break;
+    futs.push_back(pool.submit([&map, x0, x1, ry0, ry1]() {
+      std::vector<Coord> partial;
+      for (int y = ry0; y <= ry1; ++y) {
+        for (int x = x0; x <= x1; ++x) {
+          const Tile& tile = map.getTile({x, y});
+          if (tile.type == 2 || tile.zone != 0 || tile.buildingId != 0) continue;
+          if (!hasRoadAccess(map, {x, y})) continue;
+          partial.push_back({x, y});
+        }
+      }
+      return partial;
+    }));
+  }
+
   std::vector<Coord> candidates;
-  for (int y = y0; y <= y1; ++y) {
-    for (int x = x0; x <= x1; ++x) {
-      const Tile& tile = map.getTile({x, y});
-      if (tile.type == 2) continue;                 // water
-      if (tile.zone != 0) continue;                 // already zoned
-      if (tile.buildingId != 0) continue;           // already built
-      if (!hasRoadAccess(map, {x, y})) continue;    // unreachable
-      candidates.push_back({x, y});
-    }
+  for (auto& f : futs) {
+    auto partial = f.get();
+    candidates.insert(candidates.end(), partial.begin(), partial.end());
   }
 
   // Compact growth: zone tiles nearest the center first.
@@ -182,33 +208,71 @@ uint32_t emptyZonedTiles(const CityMap& map, Coord center, int extent) {
 
 // Recompute the pollution field from scratch each tick: industry is a heavy
 // emitter, commerce a light one, spread over a small radius with linear falloff.
-void updatePollution(CityMap& map, const EntityStore& store) {
-  const glm::ivec2 dims = map.getDimensions();
-  for (int y = 0; y < dims.y; ++y) {
-    for (int x = 0; x < dims.x; ++x) {
-      map.getTile({x, y}).pollution = 0.0f;
+//
+// The clear phase is parallelized across row strips (no overlap, no races).
+// The scatter phase stays sequential: there are rarely more than ~100 emitters,
+// each affecting a 7×7 patch, and concurrent writes to the same tile would
+// race.  A precomputed weight LUT removes all sqrt() calls from the hot loop.
+void updatePollution(CityMap& map, const EntityStore& store,
+                     int x0, int y0, int x1, int y1, ThreadPool& pool) {
+  // Precompute per-(dx,dy) falloff weights for radius 3. Values outside the
+  // circle are 0; computed once, reused for every emitter this tick.
+  constexpr int kRadius = 3;
+  constexpr int kDiam   = kRadius * 2 + 1;
+  float lut[kDiam][kDiam];
+  for (int dy = -kRadius; dy <= kRadius; ++dy) {
+    for (int dx = -kRadius; dx <= kRadius; ++dx) {
+      const float d = std::sqrt(static_cast<float>(dx * dx + dy * dy));
+      lut[dy + kRadius][dx + kRadius] =
+        (d > static_cast<float>(kRadius)) ? 0.0f : (1.0f - d / static_cast<float>(kRadius + 1));
     }
   }
 
-  const int radius = 3;
+  // Parallel clear: partition rows across pool workers.
+  const int nRows   = y1 - y0 + 1;
+  // Parallel clear only pays off when there are enough rows to fill each
+  // worker's chunk without drowning in task-submission overhead.
+  const int minRowsPerChunk = 16;
+  const int nChunks = (nRows >= minRowsPerChunk * 2)
+    ? std::max(1, std::min(static_cast<int>(pool.threadCount()), nRows / minRowsPerChunk))
+    : 1;
+  {
+    std::vector<std::future<void>> futs;
+    futs.reserve(static_cast<size_t>(nChunks));
+    const int rowsPerChunk = (nRows + nChunks - 1) / nChunks;
+    for (int c = 0; c < nChunks; ++c) {
+      const int ry0 = y0 + c * rowsPerChunk;
+      const int ry1 = std::min(y0 + (c + 1) * rowsPerChunk - 1, y1);
+      if (ry0 > ry1) break;
+      futs.push_back(pool.submit([&map, x0, x1, ry0, ry1]() {
+        for (int y = ry0; y <= ry1; ++y) {
+          for (int x = x0; x <= x1; ++x) {
+            map.getTile({x, y}).pollution = 0.0f;
+          }
+        }
+      }));
+    }
+    for (auto& f : futs) f.get();
+  }
+
+  // Sequential scatter using the LUT (no sqrt in the hot loop).
   for (const auto& [id, building] : store.getBuildings()) {
     (void)id;
     float emit = 0.0f;
-    if (building.type == BuildingType::Industrial) emit = 1.0f;
-    else if (building.type == BuildingType::Commercial) emit = 0.25f;
+    if      (building.type == BuildingType::Industrial) emit = 1.0f;
+    else if (building.type == BuildingType::Commercial)  emit = 0.25f;
     if (emit <= 0.0f) continue;
 
     const Coord c = building.position;
-    for (int dy = -radius; dy <= radius; ++dy) {
-      for (int dx = -radius; dx <= radius; ++dx) {
-        const int x = c.x + dx;
-        const int y = c.y + dy;
-        if (!map.isValid({x, y})) continue;
-        const float dist = std::sqrt(static_cast<float>(dx * dx + dy * dy));
-        if (dist > static_cast<float>(radius)) continue;
-        const float contribution = emit * (1.0f - dist / static_cast<float>(radius + 1));
-        Tile& tile = map.getTile({x, y});
-        tile.pollution = std::min(1.0f, tile.pollution + contribution);
+    for (int dy = -kRadius; dy <= kRadius; ++dy) {
+      for (int dx = -kRadius; dx <= kRadius; ++dx) {
+        const float w = lut[dy + kRadius][dx + kRadius];
+        if (w <= 0.0f) continue;
+        const int tx = c.x + dx;
+        const int ty = c.y + dy;
+        if (tx < x0 || tx > x1 || ty < y0 || ty > y1) continue;
+        Tile& tile = map.getTile({tx, ty});
+        tile.pollution = std::min(1.0f, tile.pollution + emit * w);
       }
     }
   }
@@ -280,7 +344,7 @@ void placeFacilitiesIfNeeded(
   int extent,
   int coverageRadius
 ) {
-  const uint32_t popPerFacility = 150;
+  const uint32_t popPerFacility = 1000;
   const size_t target = population / popPerFacility;
   while (facilities.size() < target) {
     ServiceFacility facility;
@@ -383,6 +447,7 @@ SimResult CitySimulator::run(
   const SimOptions& options
 ) {
   SimResult result;
+  const bool infinite = (ticks < 0);
   result.rows.reserve(static_cast<size_t>(std::max(0, ticks)));
 
   const int spacing = std::max(2, options.gridSpacing);
@@ -402,9 +467,16 @@ SimResult CitySimulator::run(
   float lastCongestion = 0.0f;          // previous tick's peak congestion, feeds desirability
   float lastServiceSatisfaction = 0.5f; // previous tick's service satisfaction, feeds desirability
   std::vector<ServiceFacility> facilities;
+  ServiceCoverageCache coverageCache;
   const int serviceRadius = spacing * 3;
 
-  for (int tick = 0; tick < ticks; ++tick) {
+  // Thread pool for parallel pathfinding (traffic) and building coverage
+  // (services), and for running both concurrently within each tick.
+  // Sized to hardware concurrency minus 1 (main thread drives the loop).
+  const unsigned int hwc = std::thread::hardware_concurrency();
+  ThreadPool pool(std::max(1u, hwc > 0 ? hwc - 1 : 3u));
+
+  for (int tick = 0; infinite || tick < ticks; ++tick) {
     const uint32_t tickSeed = seed + static_cast<uint32_t>(tick);
 
     const ZoneDemand demand = evaluateDemand(store, population);
@@ -423,12 +495,19 @@ SimResult CitySimulator::run(
       result.timings.roadMs += elapsedMs(t0, Clock::now());
     }
 
+    // Active region bounds — all tile-scanning passes clamp to this box so the
+    // work scales with the developed area rather than the full map.
+    const int ax0 = std::max(0, center.x - extent);
+    const int ay0 = std::max(0, center.y - extent);
+    const int ax1 = std::min(dims.x - 1, center.x + extent);
+    const int ay1 = std::min(dims.y - 1, center.y + extent);
+
     // Refresh the pollution field, then zone land in proportion to demand,
     // steering housing to clean tiles and industry to dirty ones.
     {
       const auto t0 = Clock::now();
-      updatePollution(map, store);
-      const std::vector<Coord> candidates = zonableCandidates(map, center, extent);
+      updatePollution(map, store, ax0, ay0, ax1, ay1, pool);
+      const std::vector<Coord> candidates = zonableCandidates(map, center, extent, pool);
       autoZone(map, candidates, demand, options.zoneBatchPerTick);
       result.timings.zoningMs += elapsedMs(t0, Clock::now());
     }
@@ -436,7 +515,8 @@ SimResult CitySimulator::run(
     // Build on zoned, road-accessible land in proportion to demand.
     {
       const auto t0 = Clock::now();
-      GrowthSystem::runStep(map, store, demand, tickSeed, options.buildChance);
+      GrowthSystem::runStep(map, store, demand, tickSeed, options.buildChance,
+                            nullptr, {ax0, ay0}, {ax1, ay1}, &pool);
       result.timings.growthMs += elapsedMs(t0, Clock::now());
     }
 
@@ -444,6 +524,8 @@ SimResult CitySimulator::run(
     // filling new housing. The rate scales with city desirability - jobs being
     // plentiful, and traffic not too congested - so housing vacancy is a real
     // signal that paces both migration and further residential construction.
+    // The desirability computation and requested-population math run every tick
+    // (cheap arithmetic); the expensive full allocation only runs on the interval.
     {
       const auto t0 = Clock::now();
       const CapacitySummary cap = summarize(store);
@@ -458,32 +540,78 @@ SimResult CitySimulator::run(
       const float headroom = cap.resCapacity > prevPop ? static_cast<float>(cap.resCapacity - prevPop) : 0.0f;
       float requested;
       if (desirability < 0.05f && prevPop > 0) {
-        requested = static_cast<float>(prevPop) * 0.98f;  // stagnant city slowly loses residents
+        requested = static_cast<float>(prevPop) * 0.98f;
       } else {
         requested = static_cast<float>(prevPop) + 0.25f * desirability * headroom + 3.0f * desirability;
       }
       const uint32_t requestedPop = static_cast<uint32_t>(
         std::max(0.0f, std::min(static_cast<float>(cap.resCapacity), requested)));
-      PopulationSystem::allocate(store, population, requestedPop, tickSeed + 1u);
+
+      if (tick % std::max(1, options.populationInterval) == 0) {
+        PopulationSystem::allocate(store, population, requestedPop, tickSeed + 1u);
+      }
       result.timings.populationMs += elapsedMs(t0, Clock::now());
     }
 
-    // Provide public services as the city grows; coverage feeds desirability.
-    ServiceCoverageSummary service;
-    {
+    // Services and traffic are independent (services reads road topology;
+    // traffic resets/writes edge congestion). Run services as a pool task so
+    // it overlaps with traffic's parallel Dijkstra phase on the main thread.
+    const bool serviceActive = (tick % std::max(1, options.serviceInterval) == 0);
+    const bool trafficActive = options.runTraffic && (tick % std::max(1, options.trafficInterval) == 0);
+
+    // Coverage only changes when buildings are added/removed or facilities
+    // change. Redevelopment replaces at the same position so it doesn't
+    // invalidate the result. Snapshot the count before service prep so the
+    // check is consistent with what's in the cache.
+    const size_t currentBuildingCount = store.getBuildings().size();
+
+    // Service prep: facility placement and BFS cache rebuild are state-mutating
+    // and must complete before the concurrent evaluation starts.
+    if (serviceActive) {
       const auto t0 = Clock::now();
       placeFacilitiesIfNeeded(map, facilities, population.getTotalPopulation(), center, extent, serviceRadius);
-      service = ServiceSystem::evaluateCoverage(store, roads, facilities);
-      lastServiceSatisfaction = service.satisfaction;
+      if (facilities.size() != coverageCache.builtForFacilityCount) {
+        ServiceSystem::buildCache(roads, facilities, coverageCache);
+        coverageCache.cachedBuildingCount = static_cast<size_t>(-1);  // distance fields changed
+      }
       result.timings.serviceMs += elapsedMs(t0, Clock::now());
     }
 
+    // Submit service evaluation to a pool worker so it runs concurrently with
+    // the traffic pathfinding that follows on the main thread.
+    // Skip if neither buildings nor facilities changed since the last evaluation.
+    std::future<std::pair<ServiceCoverageSummary, double>> serviceFuture;
+    if (serviceActive && currentBuildingCount != coverageCache.cachedBuildingCount) {
+      serviceFuture = pool.submit([&store, &roads, &coverageCache, &pool, currentBuildingCount]() {
+        const auto t0 = Clock::now();
+        auto svc = ServiceSystem::evaluateFromCache(store, roads, coverageCache, &pool);
+        coverageCache.cachedBuildingCount = currentBuildingCount;
+        coverageCache.cachedResult = svc;
+        return std::make_pair(svc, elapsedMs(t0, Clock::now()));
+      });
+    }
+
+    // Traffic runs on the main thread so it can safely wait for inner pool
+    // tasks (parallel Dijkstra) without risking pool deadlock.
     TrafficSummary traffic;
-    if (options.runTraffic) {
+    if (trafficActive) {
       const auto t0 = Clock::now();
-      traffic = TrafficSystem::simulateCommutes(store, population, roads, tickSeed + 2u);
+      traffic = TrafficSystem::simulateCommutes(store, population, roads, tickSeed + 2u, &pool);
       result.timings.trafficMs += elapsedMs(t0, Clock::now());
       lastCongestion = traffic.maxEdgeCongestion;
+    }
+
+    // Collect the service result (likely already done while traffic ran).
+    ServiceCoverageSummary service;
+    if (serviceFuture.valid()) {
+      auto [svc, ms] = serviceFuture.get();
+      service = svc;
+      lastServiceSatisfaction = service.satisfaction;
+      result.timings.serviceMs += ms;
+    } else if (serviceActive) {
+      // Building set and facilities unchanged: reuse cached result at zero cost.
+      service = coverageCache.cachedResult;
+      lastServiceSatisfaction = service.satisfaction;
     }
 
     EconomyState economy;
@@ -510,7 +638,12 @@ SimResult CitySimulator::run(
     row.avgPollution = averageResidentialPollution(map, store);
     row.serviceCoverage = service.overallCoverage;
     row.serviceFacilities = static_cast<uint32_t>(facilities.size());
-    result.rows.push_back(row);
+    if (!infinite) {
+      result.rows.push_back(row);
+    }
+    if (options.tickCallback && !options.tickCallback(row)) {
+      break;
+    }
   }
 
   return result;

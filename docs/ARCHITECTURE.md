@@ -448,13 +448,54 @@ class Snapshot {
 
 ## Performance Considerations
 
-- Use `unordered_map` for O(1) entity lookups.
-- Batch pathfinding queries when possible.
-- Lazy-evaluate metrics (only when queried or needed).
-- Use spatial hashing for local neighborhood queries.
-- Profile with `perf` or `VTune` before optimizing.
+### Concurrency Architecture
 
-**Initial target:** 60 FPS headless with a 200×200 map, 10,000 population.
+The simulation tick runs on the main thread. A `ThreadPool` (fixed size, `hardware_concurrency - 1` workers) is created once before the tick loop and reused every tick. Systems use it for embarrassingly parallel sub-phases:
+
+| System | What's parallel | What stays sequential |
+|--------|----------------|----------------------|
+| Traffic | Dijkstra path-finds (all edges read-only after reset) | Spec collection (RNG), congestion accumulation |
+| Services | Building coverage evaluation (partitioned across workers) | BFS cache rebuild, facility placement |
+| Pollution | Clear pass (row strips) | Scatter (writes shared pollution field) |
+| Zoning | Candidate scan (row strips, partial vector merge) | Tile mutation, sort by distance |
+| Growth | Zone balance scan (row strips, partial struct reduce) | Mutation passes (EntityStore not thread-safe) |
+
+**Traffic and services run concurrently**: services are submitted to the pool as a `std::future` immediately after BFS cache prep; traffic runs on the main thread (safe to wait for inner Dijkstra tasks); `future.get()` joins before the economy phase.
+
+**Deadlock prevention**: only the main thread submits work that waits for pool results. Pool tasks never submit inner tasks. This guarantees progress on any pool size ≥ 1.
+
+**Work-size gating**: every parallel path has a minimum work threshold (e.g., `nRows >= 32` for row-strip scans, `buildings × facilities >= 4096` for service chunks) to avoid submission overhead dominating at small city sizes.
+
+### Key Caching Strategies
+
+- **Service result cache**: `ServiceCoverageCache` stores `cachedBuildingCount + cachedResult`. Coverage is skipped entirely when neither building count nor facility count changed since the last evaluation. At 200k+ population this skips ~98% of service evaluations with no observable quality loss (coverage only changes when buildings are added/removed or facilities move).
+- **Service BFS cache**: One BFS distance field per facility, rebuilt only when `facilities.size()` changes. Amortizes O(edges) BFS cost across all ticks between facility placements.
+- **Population proportional fill**: O(buildings) instead of O(people). Each building receives `floor(capped × capacity / totalCapacity)` residents in a single pass; a small round-robin loop handles remainders. Eliminates the per-person hash map lookup loop.
+- **Pollution LUT**: 7×7 precomputed falloff weight table eliminates `sqrt()` from the scatter hot loop.
+
+### Measured Throughput
+
+At 200k+ population on an 8-core machine (7 pool workers):
+
+```
+Total: ~1.96 ms/tick  (~2.8× vs. single-threaded baseline of 5.53 ms/tick)
+  Traffic:     1.14 ms  (parallel Dijkstra; dominant bottleneck)
+  Services:   ~0.01 ms  (result cache hit on stable ticks)
+  Growth:     ~0.18 ms  (parallel scan + single combined mutation pass)
+  Zoning:     ~0.34 ms
+  Population: ~0.01 ms
+```
+
+### Remaining Bottlenecks
+
+- **Traffic (58% of total)**: Parallel Dijkstra already implemented. Further gains would require route reuse across ticks (detect topology changes, invalidate selectively) or reducing commute sample count.
+- **Zoning (17% of total)**: `autoZone` tile mutation is sequential; candidate scan is already parallel. Spatial indexing could reduce the scan to dirty tiles only.
+
+### General Guidelines
+
+- `unordered_map` for O(1) entity lookups; iteration order is non-deterministic so sort by ID before seeded RNG walks.
+- All randomness is seeded; sort entity collections by ID before consuming RNG draws to preserve replay determinism.
+- Profile before adding complexity — the two optimizations with the largest impact (proportional fill, service result cache) were both algorithmic, not structural.
 
 ---
 

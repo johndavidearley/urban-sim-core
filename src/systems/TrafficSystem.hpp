@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include <unordered_map>
+#include "src/core/ThreadPool.hpp"
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
@@ -34,13 +35,17 @@ struct RouteDiagnosticsFilter {
 
 class TrafficSystem {
 public:
-  // Simulate commute flows for all employed population
-  // Updates road network congestion, returns traffic summary
+  // Simulate commute flows for all employed population.
+  // Updates road network congestion, returns traffic summary.
+  // If pool is non-null, Dijkstra calls are fanned out across pool workers
+  // (specs are collected sequentially to preserve RNG determinism; congestion
+  // accumulation is sequential after all paths are found).
   static TrafficSummary simulateCommutes(
     EntityStore& store,
     PopulationStore& population,
     RoadNetwork& network,
-    uint32_t seed = 0
+    uint32_t seed = 0,
+    ThreadPool* pool = nullptr
   );
 
   // Apply traffic metrics to city metrics

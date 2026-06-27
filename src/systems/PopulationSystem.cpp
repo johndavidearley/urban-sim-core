@@ -50,27 +50,43 @@ void assignOccupancy(
     return;
   }
 
-  size_t index = static_cast<size_t>(seed % static_cast<uint32_t>(ids.size()));
-  uint32_t remaining = people;
+  // Collect building pointers and total capacity in one pass (O(buildings) hash lookups,
+  // not O(people) as in per-person round-robin).
+  struct Slot { Building* b; };
+  std::vector<Slot> slots;
+  slots.reserve(ids.size());
+  uint32_t totalCap = 0;
+  for (EntityId id : ids) {
+    Building* b = store.getBuilding(id);
+    if (b != nullptr && b->capacity > 0) {
+      slots.push_back({b});
+      totalCap += static_cast<uint32_t>(b->capacity);
+    }
+  }
+  if (slots.empty() || totalCap == 0) {
+    return;
+  }
 
+  // Proportional fill: each building gets floor(capped * capacity / totalCap).
+  const uint32_t capped = std::min(people, totalCap);
+  uint32_t assigned = 0;
+  for (const Slot& s : slots) {
+    const uint32_t share = (capped * static_cast<uint32_t>(s.b->capacity)) / totalCap;
+    s.b->occupancy = static_cast<int>(share);
+    assigned += share;
+  }
+
+  // Distribute remainder round-robin so total is exact.
+  uint32_t remaining = capped - assigned;
+  size_t idx = static_cast<size_t>(seed % static_cast<uint32_t>(slots.size()));
   while (remaining > 0) {
-    bool placedAny = false;
-    for (size_t i = 0; i < ids.size() && remaining > 0; ++i) {
-      const size_t slot = (index + i) % ids.size();
-      Building* building = store.getBuilding(ids[slot]);
-      if (building == nullptr || building->capacity <= building->occupancy) {
-        continue;
-      }
-
-      ++building->occupancy;
+    Building* b = slots[idx % slots.size()].b;
+    if (b->occupancy < b->capacity) {
+      ++b->occupancy;
       --remaining;
-      placedAny = true;
     }
-
-    if (!placedAny) {
-      break;
-    }
-    index = (index + 1) % ids.size();
+    ++idx;
+    if (idx == slots.size() * 2) break; // guard against infinite loop when all full
   }
 }
 

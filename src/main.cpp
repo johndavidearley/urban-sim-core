@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <string>
 #include <tuple>
@@ -15,6 +16,7 @@
 #include "src/cli/PolicySweep.hpp"
 #include "src/cli/Simulate.hpp"
 #include "src/core/SimulationTime.hpp"
+#include "src/core/TileScale.hpp"
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/metrics/CityMetrics.hpp"
@@ -38,6 +40,7 @@ int main(int argc, char* argv[]) {
   // Parse arguments
   int mapSize = 64;
   int numTicks = 100;
+  int gridSpacingOverride = -1;  // -1 = use SimOptions default
   uint32_t seed = 42;
   bool printMapFlag = false;
   int printTileX = -1, printTileY = -1;
@@ -61,8 +64,13 @@ int main(int argc, char* argv[]) {
   int renderViewX = 0, renderViewY = 0, renderViewW = -1, renderViewH = -1;
   int verifyReplayGrowthSteps = -1;
   int simulateTicks = -1;
+  bool simulateInfinite = false;
   std::string simulateReportPath;
   bool simulateNoTraffic = false;
+  double simulateSpeed = 0.0;
+  int simulateTrafficInterval = 1;
+  int simulateServiceInterval = 1;
+  int simulatePopulationInterval = 1;
   int benchmarkPhase5Ticks = -1;
   BenchmarkFocus benchmarkPhase5Focus = BenchmarkFocus::All;
   std::string saveCityPath;
@@ -108,6 +116,8 @@ int main(int argc, char* argv[]) {
       return 0;
     } else if (arg == "--size" && i + 1 < argc) {
       mapSize = std::atoi(argv[++i]);
+    } else if (arg == "--grid-spacing" && i + 1 < argc) {
+      gridSpacingOverride = std::atoi(argv[++i]);
     } else if (arg == "--ticks" && i + 1 < argc) {
       numTicks = std::atoi(argv[++i]);
     } else if (arg == "--seed" && i + 1 < argc) {
@@ -298,10 +308,23 @@ int main(int argc, char* argv[]) {
       verifyReplayGrowthSteps = std::atoi(argv[++i]);
     } else if (arg == "--simulate" && i + 1 < argc) {
       simulateTicks = std::atoi(argv[++i]);
+    } else if (arg == "--simulate-infinite") {
+      simulateInfinite = true;
+    } else if (arg == "--simulate-speed" && i + 1 < argc) {
+      simulateSpeed = std::stod(argv[++i]);
+    } else if (arg == "--simulate-traffic-interval" && i + 1 < argc) {
+      simulateTrafficInterval = std::atoi(argv[++i]);
+    } else if (arg == "--simulate-service-interval" && i + 1 < argc) {
+      simulateServiceInterval = std::atoi(argv[++i]);
+    } else if (arg == "--simulate-population-interval" && i + 1 < argc) {
+      simulatePopulationInterval = std::atoi(argv[++i]);
     } else if (arg == "--simulate-report" && i + 1 < argc) {
       simulateReportPath = argv[++i];
     } else if (arg == "--simulate-no-traffic") {
       simulateNoTraffic = true;
+    } else {
+      std::cerr << "Error: Unknown argument '" << arg << "'\n";
+      return 1;
     }
   }
 
@@ -435,15 +458,21 @@ int main(int argc, char* argv[]) {
       return runPhase5Benchmark(mapSize, seed, benchmarkPhase5Ticks, benchmarkPhase5Focus);
     }
 
-    if (simulateTicks >= 0) {
+    if (simulateTicks >= 0 || simulateInfinite) {
+      const int gridSpacing = (gridSpacingOverride > 0) ? gridSpacingOverride : 4;
       return runCitySimulation(
         mapSize,
         seed,
-        simulateTicks,
+        simulateInfinite ? -1 : simulateTicks,
         generateTerrainFlag,
         terrainWaterFraction,
         !simulateNoTraffic,
-        simulateReportPath
+        simulateReportPath,
+        gridSpacing,
+        simulateSpeed,
+        simulateTrafficInterval,
+        simulateServiceInterval,
+        simulatePopulationInterval
       );
     }
 
@@ -481,7 +510,16 @@ int main(int argc, char* argv[]) {
     }
 
     // Initialize city
-    std::cout << "Initializing city (" << mapSize << "x" << mapSize << ")...\n";
+    {
+      const float sideKm = tileToKm(mapSize);
+      const float areaKm2 = mapAreaKm2(mapSize, mapSize);
+      const int blockMeters = ((gridSpacingOverride > 0) ? gridSpacingOverride : 4)
+                              * static_cast<int>(kMetersPerTile);
+      std::cout << "Initializing city (" << mapSize << "x" << mapSize
+                << ", " << std::fixed << std::setprecision(1) << sideKm << " x " << sideKm
+                << " km, " << std::setprecision(0) << areaKm2 << " km\xc2\xb2"
+                << ", " << blockMeters << " m blocks)...\n";
+    }
     CityMap map({mapSize, mapSize});
     RoadNetwork roads(map);
     EntityStore store;
