@@ -21,11 +21,11 @@
 // Each vehicle carries an explicit lane index on its current edge: it picks
 // the least-loaded lane when entering an edge, and switches lanes mid-edge
 // (overtaking) when another lane on the same edge is meaningfully less
-// crowded. Vehicles within the same lane are not given distinct in-lane
-// positions (no minimum following gap or literal 2D placement) - only the
-// aggregate (edge, lane, progress) is tracked, so two vehicles sharing a lane
-// can sit at the same progress value rather than queuing behind one another
-// at a fixed distance.
+// crowded. Within a lane, vehicles car-follow: a follower's speed each step
+// is capped so it cannot close to within `minFollowingGap` of whichever
+// vehicle is immediately ahead of it in the same lane, so a slow or stopped
+// leader (e.g. queued at a red) visibly backs up traffic behind it rather
+// than every vehicle in the lane sharing one aggregate progress value.
 
 enum class VehicleType : int {
   Car = 0,
@@ -68,6 +68,7 @@ public:
     float congestionSlowing = 0.20f;  // speed penalty per vehicle beyond lane capacity
     float minSpeed = 0.05f;           // floor so gridlock still crawls
     int lanesPerRoad = 2;              // vehicles an edge carries before congestion kicks in
+    float minFollowingGap = 0.15f;     // min in-lane spacing (fraction of an edge) a follower keeps behind its leader
     bool enableSignals = true;         // gate intersections with alternating signals
     int signalPeriod = 6;              // steps of green per axis at each signal
     int emergencyIncidents = 0;        // number of emergency dispatches to spawn (needs facilities)

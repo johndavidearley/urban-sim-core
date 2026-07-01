@@ -13,5 +13,6 @@ int runMicroTrafficDemo(
   float waterFraction,
   int maxSteps,
   int emergencyIncidents = 0,
-  int lanesPerRoad = -1  // -1 keeps TrafficMicroSim::Options' default
+  int lanesPerRoad = -1,       // -1 keeps TrafficMicroSim::Options' default
+  float minFollowingGap = -1.0f  // negative keeps TrafficMicroSim::Options' default
 );

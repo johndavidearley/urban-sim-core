@@ -229,6 +229,59 @@ TEST(TrafficMicroSimTests, VehiclesSpreadAcrossLanesRatherThanBunching) {
   EXPECT_LE(summary.averageTripSteps, 16.0f);
 }
 
+TEST(TrafficMicroSimTests, FollowersHoldDistinctPositionsRatherThanOverlapping) {
+  // Same 10-vehicle, 1-lane lockstep setup as LaneCapacityReducesCongestionDelay:
+  // with only one lane, every vehicle shares it (no lane-changing escape), so
+  // this isolates car-following specifically. All 10 vehicles compute the
+  // identical congestion-formula speed each step (same shared lane), so with
+  // NO following gap (gap=0) their capped-target and desired progress are
+  // always equal - they move as one glued block and arrive on the exact same
+  // step (averageTripSteps == stepsSimulated, a degenerate "all vehicles sit
+  // at the same progress value" signature). With a real gap, followers are
+  // held back from their leader, so arrivals spread out over a range of
+  // steps instead (averageTripSteps meaningfully below stepsSimulated) - the
+  // direct, observable proof that vehicles now hold distinct in-lane
+  // positions rather than overlapping.
+  //
+  // (Total average delay is not simply "more gap = slower": a real gap also
+  // lets the front of the queue pull away and stop sharing the edge with the
+  // stragglers once it's alone there, so it can speed back up - a queue that
+  // dissolves from the front, same as real traffic. The synchronized-arrival
+  // signature below isolates the gap's effect without that confound.)
+  CityMap map({8, 3});
+  RoadNetwork roads(map);
+  for (int x = 0; x < 6; ++x) {
+    roads.buildRoad({x, 0}, {x + 1, 0});
+  }
+
+  EntityStore store;
+  store.createBuilding(BuildingType::Residential, {0, 1}, 100);
+  store.createBuilding(BuildingType::Commercial, {6, 1}, 100);
+
+  PopulationStore population;
+  population.createGroup(IncomeBand::Middle, 40, 40);  // 40 employed -> 10 vehicles, one route
+
+  TrafficMicroSim::Options noGap;
+  noGap.lanesPerRoad = 1;
+  noGap.minFollowingGap = 0.0f;
+  const MicroTrafficSummary overlapping = TrafficMicroSim::simulate(store, population, roads, 5, noGap);
+
+  TrafficMicroSim::Options withGap;
+  withGap.lanesPerRoad = 1;
+  withGap.minFollowingGap = 0.15f;
+  const MicroTrafficSummary queued = TrafficMicroSim::simulate(store, population, roads, 5, withGap);
+
+  ASSERT_EQ(overlapping.vehicles, 10u);
+  ASSERT_EQ(queued.vehicles, 10u);
+  EXPECT_EQ(overlapping.arrived, overlapping.vehicles);
+  EXPECT_EQ(queued.arrived, queued.vehicles);
+
+  // No gap: every vehicle moves identically and arrives on the same step.
+  EXPECT_NEAR(overlapping.averageTripSteps, static_cast<float>(overlapping.stepsSimulated), 1.0f);
+  // Real gap: arrivals spread out, so the average trails the last arrival.
+  EXPECT_LT(queued.averageTripSteps, static_cast<float>(queued.stepsSimulated) - 2.0f);
+}
+
 TEST(TrafficMicroSimTests, DeterministicForSameSeed) {
   auto runOnce = [](uint32_t seed) {
     CityMap map({48, 48});

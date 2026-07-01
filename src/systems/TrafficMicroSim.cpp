@@ -330,26 +330,12 @@ MicroTrafficSummary TrafficMicroSim::simulate(
 
     const uint32_t currentStep = static_cast<uint32_t>(step);
     const int lanes = std::max(1, options.lanesPerRoad);
-    for (Vehicle& v : vehicles) {
-      if (v.arrived) continue;
 
-      float speed = options.baseSpeed;
-      if (v.type == VehicleType::Emergency) {
-        speed = options.baseSpeed * options.emergencySpeedMultiplier;
-      } else {
-        const RoadNetwork::EdgeKey currentEdge = edgeOf(v);
-        maybeChangeLane(v, currentEdge, lanes, laneOccupancy);
-
-        // Each lane behaves like its own single-file channel: more than one
-        // vehicle sharing it slows both down.
-        const int sharing = laneOccupancy[{currentEdge, v.lane}];
-        const int excess = sharing - 1;
-        if (excess > 0) {
-          speed = options.baseSpeed / (1.0f + options.congestionSlowing * static_cast<float>(excess));
-        }
-      }
-      speed = std::max(options.minSpeed, speed);
-
+    // Applies `speed` to v's progress and, if it crosses one or more nodes
+    // this step, handles signal stops, arrival, and lane re-assignment on the
+    // next edge. Shared by both the immediate (Emergency) and deferred,
+    // car-following-capped (Car) movement paths below.
+    auto applyVehicleMovement = [&](Vehicle& v, float speed) {
       v.progress += speed;
       while (v.progress >= 1.0f && !v.arrived) {
         // Vehicle reaches node route[segment+1].
@@ -383,6 +369,89 @@ MicroTrafficSummary TrafficMicroSim::simulate(
 
         if (v.type != VehicleType::Emergency) {
           assignLane(v, edgeOf(v), lanes, laneOccupancy);  // entering the next edge
+        }
+      }
+    };
+
+    // Stage A: Emergency vehicles move immediately (they ignore lanes,
+    // congestion, and car-following entirely - "weave through traffic"). Car
+    // vehicles pick/switch lanes and get a congestion-based desired speed
+    // (in fixed vehicle order, exactly as before), but defer actually moving
+    // until Stage B, so car-following can cap them against their leader.
+    std::vector<float> pendingSpeed(vehicles.size(), 0.0f);
+    std::vector<size_t> carIndices;
+    carIndices.reserve(vehicles.size());
+    std::unordered_map<EdgeLaneKey, std::vector<size_t>, EdgeLaneKeyHash> groups;
+
+    for (size_t i = 0; i < vehicles.size(); ++i) {
+      Vehicle& v = vehicles[i];
+      if (v.arrived) continue;
+
+      if (v.type == VehicleType::Emergency) {
+        const float speed = std::max(options.minSpeed, options.baseSpeed * options.emergencySpeedMultiplier);
+        applyVehicleMovement(v, speed);
+        continue;
+      }
+
+      const RoadNetwork::EdgeKey currentEdge = edgeOf(v);
+      maybeChangeLane(v, currentEdge, lanes, laneOccupancy);
+
+      // Each lane behaves like its own single-file channel: more than one
+      // vehicle sharing it slows all of them down.
+      const int sharing = laneOccupancy[{currentEdge, v.lane}];
+      const int excess = sharing - 1;
+      float speed = options.baseSpeed;
+      if (excess > 0) {
+        speed = options.baseSpeed / (1.0f + options.congestionSlowing * static_cast<float>(excess));
+      }
+      speed = std::max(options.minSpeed, speed);
+
+      pendingSpeed[i] = speed;
+      carIndices.push_back(i);
+      groups[{currentEdge, v.lane}].push_back(i);
+    }
+
+    // Stage B: car-following. Process each (edge, lane) group leader-first
+    // (by current progress, ties broken by id), capping each follower so it
+    // keeps at least minFollowingGap behind whichever vehicle ahead of it is
+    // still on this edge this step - a leader that crosses to the next edge
+    // or arrives no longer blocks anyone behind it. Groups are visited in the
+    // order their first member appears in `carIndices` (fixed vehicle order),
+    // not raw hash-map iteration, so results stay deterministic.
+    std::vector<bool> processedInGroup(vehicles.size(), false);
+    for (size_t i : carIndices) {
+      if (processedInGroup[i]) continue;
+
+      const RoadNetwork::EdgeKey groupEdge = edgeOf(vehicles[i]);
+      std::vector<size_t>& indices = groups[{groupEdge, vehicles[i].lane}];
+      std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
+        if (vehicles[a].progress != vehicles[b].progress) {
+          return vehicles[a].progress > vehicles[b].progress;
+        }
+        return vehicles[a].id < vehicles[b].id;
+      });
+
+      bool hasLeader = false;
+      float leaderProgress = 0.0f;
+      for (size_t idx : indices) {
+        processedInGroup[idx] = true;
+        Vehicle& v = vehicles[idx];
+
+        float speed = pendingSpeed[idx];
+        if (hasLeader) {
+          const float maxAllowed = leaderProgress - options.minFollowingGap;
+          const float cappedTarget = std::max(v.progress, std::min(v.progress + speed, maxAllowed));
+          speed = cappedTarget - v.progress;
+        }
+
+        const size_t originalSegment = v.segment;
+        applyVehicleMovement(v, speed);
+
+        if (!v.arrived && v.segment == originalSegment) {
+          hasLeader = true;
+          leaderProgress = v.progress;
+        } else {
+          hasLeader = false;  // this vehicle left the edge; nothing blocks the next follower
         }
       }
     }

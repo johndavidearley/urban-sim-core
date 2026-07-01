@@ -114,6 +114,7 @@ water; add `--simulate-report FILE` for a per-tick CSV (including pollution), or
 ./build/UrbanSimCore-cli --size 64 --seed 7 --micro-traffic 40 --micro-traffic-steps 400
 ./build/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30 --micro-traffic-incidents 5
 ./build/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30 --micro-traffic-lanes 4
+./build/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30 --micro-traffic-following-gap 0.25
 ```
 
 `--micro-traffic N` grows a city for N ticks, then runs an individual
@@ -123,11 +124,16 @@ home→job over the road graph and stepped along its path. Each road has
 independent single-file channel — a vehicle picks the least-loaded lane when
 entering a road and switches lanes mid-edge to overtake a congested one, so
 congestion is *emergent* per lane rather than a static batch load or an
-aggregate edge-wide count. Road junctions with 3+ connections are signalized
-(alternating green by axis, offset by coordinates for a rough green wave), and
-vehicles queue on red rather than passing through. It reports agent-level
-stats (vehicles spawned/arrived, mean trip length in steps, peak/average edge
-occupancy, signalized junctions, mean signal wait). Tune the step budget with
+aggregate edge-wide count. Within a lane, vehicles car-follow: a follower's
+speed each step is capped so it keeps at least `--micro-traffic-following-gap`
+(default 0.15, a fraction of an edge) behind whichever vehicle is immediately
+ahead of it in the same lane, so a slow or stopped leader visibly backs up
+traffic behind it instead of every vehicle in the lane sharing one progress
+value. Road junctions with 3+ connections are signalized (alternating green by
+axis, offset by coordinates for a rough green wave), and vehicles queue on red
+rather than passing through. It reports agent-level stats (vehicles
+spawned/arrived, mean trip length in steps, peak/average edge occupancy,
+signalized junctions, mean signal wait). Tune the step budget with
 `--micro-traffic-steps`. This runs alongside the aggregate `TrafficSystem`
 (used elsewhere), which is unchanged.
 
@@ -138,11 +144,11 @@ signals and get a speed boost, so their response time is a direct, deterministic
 comparison against ordinary commute trip times (e.g. ~12 steps for an
 emergency dispatch versus ~34 for an average commute on the same city).
 
-Vehicles within the same lane don't hold distinct in-lane positions (no
-minimum following gap or literal 2D placement), so two vehicles sharing a lane
-can sit at the same progress value rather than queuing behind one another at a
-fixed distance — that finer-grained car-following behavior is out of scope at
-this milestone's fidelity.
+There is no literal 2D position within a lane (a vehicle's in-lane placement
+is a single float along the edge, not an x/y offset), and lane width/vehicle
+size are not simulated — the following gap is a fraction of edge length, not
+a physical distance. That level of physical detail is out of scope at this
+milestone's fidelity.
 
 ### Phase 5 Benchmarking
 
