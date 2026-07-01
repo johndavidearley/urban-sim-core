@@ -118,16 +118,18 @@ water; add `--simulate-report FILE` for a per-tick CSV (including pollution), or
 
 `--micro-traffic N` grows a city for N ticks, then runs an individual
 vehicle-agent traffic model on it: one vehicle per commute batch, each routed
-home→job over the road graph and stepped along its path. Congestion is
-*emergent* — a road carries `--micro-traffic-lanes` vehicles (default 2) in
-parallel at free-flow speed, and only the excess beyond that capacity slows
-down — rather than a static batch load. Road junctions with 3+ connections are
-signalized (alternating green by axis, offset by coordinates for a rough green
-wave), and vehicles queue on red rather than passing through. It reports
-agent-level stats (vehicles spawned/arrived, mean trip length in steps,
-peak/average edge occupancy, signalized junctions, mean signal wait). Tune the
-step budget with `--micro-traffic-steps`. This runs alongside the aggregate
-`TrafficSystem` (used elsewhere), which is unchanged.
+home→job over the road graph and stepped along its path. Each road has
+`--micro-traffic-lanes` lanes (default 2), and each lane is tracked as its own
+independent single-file channel — a vehicle picks the least-loaded lane when
+entering a road and switches lanes mid-edge to overtake a congested one, so
+congestion is *emergent* per lane rather than a static batch load or an
+aggregate edge-wide count. Road junctions with 3+ connections are signalized
+(alternating green by axis, offset by coordinates for a rough green wave), and
+vehicles queue on red rather than passing through. It reports agent-level
+stats (vehicles spawned/arrived, mean trip length in steps, peak/average edge
+occupancy, signalized junctions, mean signal wait). Tune the step budget with
+`--micro-traffic-steps`. This runs alongside the aggregate `TrafficSystem`
+(used elsewhere), which is unchanged.
 
 Add `--micro-traffic-incidents N` to also dispatch N emergency vehicles, each
 routed from the nearest of a few demo facility sites to a random building (the
@@ -136,11 +138,11 @@ signals and get a speed boost, so their response time is a direct, deterministic
 comparison against ordinary commute trip times (e.g. ~12 steps for an
 emergency dispatch versus ~34 for an average commute on the same city).
 
-Vehicle position is tracked as (edge, progress-along-edge), not a literal
-in-lane spatial slot, so `--micro-traffic-lanes` models lane *capacity*
-(how much parallel traffic a road absorbs before slowing) rather than
-per-lane occupancy with overtaking — that finer-grained behavior is out of
-scope at this milestone's fidelity.
+Vehicles within the same lane don't hold distinct in-lane positions (no
+minimum following gap or literal 2D placement), so two vehicles sharing a lane
+can sit at the same progress value rather than queuing behind one another at a
+fixed distance — that finer-grained car-following behavior is out of scope at
+this milestone's fidelity.
 
 ### Phase 5 Benchmarking
 

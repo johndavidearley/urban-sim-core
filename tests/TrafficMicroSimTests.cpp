@@ -196,6 +196,39 @@ TEST(TrafficMicroSimTests, LaneCapacityReducesCongestionDelay) {
   EXPECT_LT(wide.averageTripSteps, narrow.averageTripSteps);
 }
 
+TEST(TrafficMicroSimTests, VehiclesSpreadAcrossLanesRatherThanBunching) {
+  // 4 vehicles sharing one straight route in lockstep (single home/job pair,
+  // same setup style as LaneCapacityReducesCongestionDelay). With 2 real
+  // lanes and lane changing, they should settle into two lanes of two
+  // vehicles each (excess=1 -> speed 0.5/1.2 ~ 0.417/step, ~15 steps for 6
+  // edges) rather than all four bunching into a single lane (excess=3 ->
+  // speed 0.5/1.6 ~ 0.3125/step, ~20 steps) - the old aggregate model (no
+  // explicit lane state) could not distinguish these cases.
+  CityMap map({8, 3});
+  RoadNetwork roads(map);
+  for (int x = 0; x < 6; ++x) {
+    roads.buildRoad({x, 0}, {x + 1, 0});
+  }
+
+  EntityStore store;
+  store.createBuilding(BuildingType::Residential, {0, 1}, 100);
+  store.createBuilding(BuildingType::Commercial, {6, 1}, 100);
+
+  PopulationStore population;
+  population.createGroup(IncomeBand::Middle, 4, 4);  // 4 employed -> 4 vehicles, one route
+
+  TrafficMicroSim::Options options;
+  options.lanesPerRoad = 2;
+  options.enableSignals = false;  // straight road has no junctions; be explicit anyway
+
+  const MicroTrafficSummary summary = TrafficMicroSim::simulate(store, population, roads, 5, options);
+
+  ASSERT_EQ(summary.vehicles, 4u);
+  EXPECT_EQ(summary.arrived, 4u);
+  // Properly spread (2+2, ~15 steps) vs. bunched in one lane (~20 steps).
+  EXPECT_LE(summary.averageTripSteps, 16.0f);
+}
+
 TEST(TrafficMicroSimTests, DeterministicForSameSeed) {
   auto runOnce = [](uint32_t seed) {
     CityMap map({48, 48});

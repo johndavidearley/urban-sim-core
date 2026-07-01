@@ -126,9 +126,9 @@ Last updated: June 27, 2026
 - [x] Intersection signal logic (junctions detected by degree; vehicles queue on red)
 - [x] Traffic signals (basic; alternating axis green, coordinate-offset phases)
 - [x] Emergency vehicle routing (dispatched from ServiceFacility sites to random incidents; ignores congestion and red signals; `--micro-traffic-incidents`)
-- [x] Multi-lane road capacity (uniform per-edge vehicle count before congestion kicks in; `--micro-traffic-lanes`, default 2)
+- [x] Multi-lane road capacity with explicit per-lane occupancy and lane-changing (each vehicle tracks a lane index on its current edge; picks the least-loaded lane on entry and switches lanes mid-edge to overtake a congested one; `--micro-traffic-lanes`, default 2)
 
-Note on fidelity: TrafficMicroSim tracks each vehicle's position as (edge, progress-along-edge), not an in-lane spatial slot, so "lanes" are modeled as aggregate edge capacity rather than literal parallel lanes with overtaking/lane-changing maneuvers. That finer-grained model (and full lane-level micro-behavior) would need per-vehicle in-edge positioning and is out of scope at this milestone's level of detail.
+Note on fidelity: each lane is tracked as its own independent single-file channel (an explicit `(edge, lane)` occupancy count, not just an aggregate per-edge total), so vehicles genuinely spread across lanes and change lanes to escape a crowded one — verified by `VehiclesSpreadAcrossLanesRatherThanBunching`. What remains unmodeled: vehicles within the *same* lane don't hold distinct in-lane positions (no minimum following gap or literal 2D placement), so two vehicles sharing a lane can sit at the same progress value rather than queuing behind one another at a fixed distance. That finer-grained car-following behavior is out of scope at this milestone's level of detail.
 
 ### Milestone 12: Advanced Economy
 - [ ] Commercial and industrial supply chains

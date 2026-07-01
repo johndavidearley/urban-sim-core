@@ -12,19 +12,24 @@
 
 // Milestone 11 (Traffic Micro-Simulation): individual vehicle agents that route
 // over the road graph and step along their paths. Congestion is emergent -
-// once an edge's vehicle count exceeds its lane capacity, speed falls with the
-// excess - rather than computed from a static batch load as in the aggregate
+// each edge has `lanesPerRoad` independent lanes, each behaving like its own
+// single-file channel (more than one vehicle sharing a lane slows it down) -
+// rather than computed from a static batch load as in the aggregate
 // TrafficSystem. This runs alongside TrafficSystem (which is unchanged); it
 // does not replace it.
 //
-// Lane capacity is modeled as a uniform per-edge vehicle count (roads carry N
-// vehicles in parallel before slowing down); explicit per-lane occupancy and
-// overtaking are not modeled, since vehicles only track aggregate position
-// (edge + progress) rather than an in-lane spatial slot.
+// Each vehicle carries an explicit lane index on its current edge: it picks
+// the least-loaded lane when entering an edge, and switches lanes mid-edge
+// (overtaking) when another lane on the same edge is meaningfully less
+// crowded. Vehicles within the same lane are not given distinct in-lane
+// positions (no minimum following gap or literal 2D placement) - only the
+// aggregate (edge, lane, progress) is tracked, so two vehicles sharing a lane
+// can sit at the same progress value rather than queuing behind one another
+// at a fixed distance.
 
 enum class VehicleType : int {
   Car = 0,
-  Emergency = 1,  // ignores congestion slowing (weaves through traffic)
+  Emergency = 1,  // ignores congestion slowing and lane assignment (weaves through traffic)
 };
 
 struct Vehicle {
@@ -33,6 +38,7 @@ struct Vehicle {
   std::vector<glm::ivec2> route;  // node coordinates from pathfinding
   size_t segment = 0;             // index of the current edge's start node in route
   float progress = 0.0f;          // 0..1 along the current edge
+  int lane = 0;                   // lane index on the current edge (Car only; unused by Emergency)
   uint32_t people = 1;            // commuters represented by this vehicle
   bool arrived = false;
   uint32_t arriveStep = 0;

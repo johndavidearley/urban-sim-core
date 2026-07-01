@@ -15,6 +15,64 @@ RoadNetwork::EdgeKey edgeOf(const Vehicle& v) {
   return RoadNetwork::EdgeKey{v.route[v.segment], v.route[v.segment + 1]};
 }
 
+// A specific lane on a specific edge - the unit of occupancy for lane-aware
+// congestion (each lane behaves like its own single-file channel).
+struct EdgeLaneKey {
+  RoadNetwork::EdgeKey edge;
+  int lane;
+  bool operator==(const EdgeLaneKey& other) const {
+    return lane == other.lane && edge == other.edge;
+  }
+};
+struct EdgeLaneKeyHash {
+  size_t operator()(const EdgeLaneKey& key) const {
+    return hashCombine(RoadNetwork::EdgeKeyHash{}(key.edge), static_cast<size_t>(key.lane));
+  }
+};
+using LaneOccupancy = std::unordered_map<EdgeLaneKey, int, EdgeLaneKeyHash>;
+
+// If a lane meaningfully less loaded than v's current one exists on `edge`,
+// switch v into it (models overtaking a congested lane) and keep `occupancy`
+// in sync. Runs in fixed, deterministic vehicle order, so occupancy reflects
+// only vehicles already processed this step - not hash-map iteration order.
+void maybeChangeLane(Vehicle& v, const RoadNetwork::EdgeKey& edge, int lanes, LaneOccupancy& occupancy) {
+  if (lanes <= 1) {
+    return;
+  }
+  int bestLane = v.lane;
+  int bestCount = occupancy[{edge, v.lane}];
+  for (int lane = 0; lane < lanes; ++lane) {
+    if (lane == v.lane) continue;
+    const int count = occupancy[{edge, lane}];
+    if (count < bestCount) {
+      bestCount = count;
+      bestLane = lane;
+    }
+  }
+  const int currentLoad = occupancy[{edge, v.lane}];
+  if (bestLane != v.lane && currentLoad - bestCount >= 2) {
+    occupancy[{edge, v.lane}] -= 1;
+    occupancy[{edge, bestLane}] += 1;
+    v.lane = bestLane;
+  }
+}
+
+// Assigns v the least-loaded lane on `edge` (a driver's natural choice when
+// entering a road) and records its occupancy.
+void assignLane(Vehicle& v, const RoadNetwork::EdgeKey& edge, int lanes, LaneOccupancy& occupancy) {
+  int bestLane = 0;
+  int bestCount = std::numeric_limits<int>::max();
+  for (int lane = 0; lane < lanes; ++lane) {
+    const int count = occupancy[{edge, lane}];
+    if (count < bestCount) {
+      bestCount = count;
+      bestLane = lane;
+    }
+  }
+  v.lane = bestLane;
+  occupancy[{edge, bestLane}] += 1;
+}
+
 // A signalized junction alternates green between the horizontal (E-W) and
 // vertical (N-S) axes. Phases are offset by the node's coordinates so adjacent
 // intersections are not all red at once (a rough green-wave / checkerboard).
@@ -230,8 +288,19 @@ MicroTrafficSummary TrafficMicroSim::simulate(
   }
   summary.signalizedIntersections = static_cast<uint32_t>(intersections.size());
 
+  // Whole-edge occupancy (all lanes combined) - used only for the peak/average
+  // edge occupancy stats, which report total crowding regardless of how
+  // vehicles are split across lanes.
   std::unordered_map<RoadNetwork::EdgeKey, int, RoadNetwork::EdgeKeyHash> occupancy;
   occupancy.reserve(vehicles.size() * 2);
+
+  // Per-lane occupancy, the actual congestion unit: each lane is an
+  // independent single-file channel. Rebuilt fresh each step from vehicles'
+  // current lanes, then updated live as vehicles change lanes or enter new
+  // edges (in fixed vehicle order, so results stay deterministic and are not
+  // an artifact of hash-map iteration).
+  LaneOccupancy laneOccupancy;
+  laneOccupancy.reserve(vehicles.size() * 2);
 
   double occupancyAccum = 0.0;
   uint32_t occupancySamples = 0;
@@ -240,12 +309,14 @@ MicroTrafficSummary TrafficMicroSim::simulate(
   int step = 0;
 
   for (; step < options.maxSteps && arrivedCount < vehicles.size(); ++step) {
-    // Snapshot edge occupancy so every vehicle this step sees the same field
-    // (keeps movement independent of processing order -> deterministic).
     occupancy.clear();
+    laneOccupancy.clear();
     for (const Vehicle& v : vehicles) {
       if (v.arrived) continue;
       occupancy[edgeOf(v)] += 1;
+      if (v.type != VehicleType::Emergency) {
+        laneOccupancy[{edgeOf(v), v.lane}] += 1;
+      }
     }
 
     float peakThisStep = 0.0f;
@@ -258,20 +329,21 @@ MicroTrafficSummary TrafficMicroSim::simulate(
     summary.peakEdgeOccupancy = std::max(summary.peakEdgeOccupancy, peakThisStep);
 
     const uint32_t currentStep = static_cast<uint32_t>(step);
+    const int lanes = std::max(1, options.lanesPerRoad);
     for (Vehicle& v : vehicles) {
       if (v.arrived) continue;
 
-      const int sharing = occupancy[edgeOf(v)];
       float speed = options.baseSpeed;
       if (v.type == VehicleType::Emergency) {
         speed = options.baseSpeed * options.emergencySpeedMultiplier;
       } else {
-        // Multi-lane capacity: an edge carries `lanesPerRoad` vehicles in
-        // parallel at free-flow speed; only the excess beyond that causes
-        // slowing (a 1-lane road congests immediately, as before; a wider
-        // road absorbs more traffic before it does).
-        const int lanes = std::max(1, options.lanesPerRoad);
-        const int excess = sharing - lanes;
+        const RoadNetwork::EdgeKey currentEdge = edgeOf(v);
+        maybeChangeLane(v, currentEdge, lanes, laneOccupancy);
+
+        // Each lane behaves like its own single-file channel: more than one
+        // vehicle sharing it slows both down.
+        const int sharing = laneOccupancy[{currentEdge, v.lane}];
+        const int excess = sharing - 1;
         if (excess > 0) {
           speed = options.baseSpeed / (1.0f + options.congestionSlowing * static_cast<float>(excess));
         }
@@ -302,8 +374,16 @@ MicroTrafficSummary TrafficMicroSim::simulate(
           }
         }
 
+        if (v.type != VehicleType::Emergency) {
+          laneOccupancy[{edgeOf(v), v.lane}] -= 1;  // leaving this edge/lane
+        }
+
         v.progress -= 1.0f;
         v.segment += 1;
+
+        if (v.type != VehicleType::Emergency) {
+          assignLane(v, edgeOf(v), lanes, laneOccupancy);  // entering the next edge
+        }
       }
     }
   }
