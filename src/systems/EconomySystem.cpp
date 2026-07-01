@@ -8,7 +8,8 @@ EconomyState EconomySystem::calculateEconomy(
   const EntityStore& store,
   const PopulationStore& population,
   const TaxRates& rates,
-  const CityMap* map
+  const CityMap* map,
+  const TradeRates& tradeRates
 ) {
   EconomyState state;
 
@@ -20,6 +21,8 @@ EconomyState EconomySystem::calculateEconomy(
   int industrialCount = 0;
   int64_t totalCapacity = 0;
   int64_t totalOccupancy = 0;
+  int64_t commercialOccupancy = 0;
+  int64_t industrialOccupancy = 0;
 
   // Currency math runs in double: float's 24-bit mantissa loses integer
   // precision above ~16.7M, which city-scale values exceed.
@@ -36,15 +39,29 @@ EconomyState EconomySystem::calculateEconomy(
         break;
       case BuildingType::Commercial:
         commercialCount++;
+        commercialOccupancy += std::max(0, building.occupancy);
         state.commercialTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.commercialRate);
         state.commercialMaintenance += static_cast<int64_t>(rates.maintenanceCommercial);
         break;
       case BuildingType::Industrial:
         industrialCount++;
+        industrialOccupancy += std::max(0, building.occupancy);
         state.industrialTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.industrialRate);
         state.industrialMaintenance += static_cast<int64_t>(rates.maintenanceIndustrial);
         break;
     }
+  }
+
+  // Supply chain / trade: industrial workers produce goods, commercial
+  // workers consume them; the city trades the net difference with the
+  // outside world (see TradeRates for the export/import pricing asymmetry).
+  state.goodsProduced = static_cast<int64_t>(static_cast<double>(industrialOccupancy) * tradeRates.goodsPerIndustrialWorker);
+  state.goodsConsumed = static_cast<int64_t>(static_cast<double>(commercialOccupancy) * tradeRates.goodsPerCommercialWorker);
+  state.tradeBalance = state.goodsProduced - state.goodsConsumed;
+  if (state.tradeBalance > 0) {
+    state.exportRevenue = static_cast<int64_t>(static_cast<double>(state.tradeBalance) * tradeRates.exportPricePerUnit);
+  } else if (state.tradeBalance < 0) {
+    state.importCost = static_cast<int64_t>(static_cast<double>(-state.tradeBalance) * tradeRates.importCostPerUnit);
   }
 
   // Add population-based income tax (from employed population)
@@ -58,9 +75,10 @@ EconomyState EconomySystem::calculateEconomy(
   state.totalMaintenance = state.residentialMaintenance + state.commercialMaintenance +
                            state.industrialMaintenance;
 
-  // Calculate balance
-  state.totalRevenue = state.totalTaxRevenue;
-  state.totalExpenses = state.totalMaintenance;
+  // Calculate balance (trade revenue/cost flow through here too, so a strong
+  // exporter or an import-dependent city shows up directly in the budget).
+  state.totalRevenue = state.totalTaxRevenue + state.exportRevenue;
+  state.totalExpenses = state.totalMaintenance + state.importCost;
   state.balance = state.totalRevenue - state.totalExpenses;
 
   size_t totalBuildings = residentialCount + commercialCount + industrialCount;
@@ -122,6 +140,10 @@ int64_t EconomySystem::calculateMonthlyBalance(
 
 TaxRates EconomySystem::getDefaultRates() {
   return TaxRates{};
+}
+
+TradeRates EconomySystem::getDefaultTradeRates() {
+  return TradeRates{};
 }
 
 int64_t EconomySystem::estimatePopulationWealth(

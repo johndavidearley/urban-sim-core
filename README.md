@@ -113,6 +113,16 @@ costliest phase in the tick breakdown at city scale; throttle it with
 simulations — land value simply persists at its last computed value between
 recomputes.
 
+The economy also models a supply chain (Phase 5, M12): industrial occupancy
+produces goods, commercial occupancy consumes them, and the city trades the
+net difference with the outside world — a surplus earns export revenue, a
+shortfall costs import expense at a deliberately higher rate (importing is a
+real economic penalty, not a wash). A city with commerce but no local
+industry visibly pays for its imports in the budget summary; a heavily
+industrial city with modest commerce earns export revenue instead. This
+requires no extra setup — it's computed automatically from existing building
+occupancy data every time the economy is calculated.
+
 It prints an evolution table (RCI demand, population, building counts, roads,
 budget) plus a per-phase timing breakdown, so the same run doubles as an
 end-to-end performance profile. Combine with `--generate-terrain` to grow around

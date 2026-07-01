@@ -27,6 +27,16 @@ struct EconomyState {
   // Economic indicators
   float averageLandValue = 100.0f;
   float economicHealth = 0.5f; // 0.0 (crisis) to 1.0 (boom)
+
+  // Supply chain / trade: industrial occupancy produces goods, commercial
+  // occupancy consumes them (restocking); the city trades the difference
+  // with the outside world. Both exportRevenue and importCost already flow
+  // into totalRevenue/totalExpenses (and so into balance) above.
+  int64_t goodsProduced = 0;
+  int64_t goodsConsumed = 0;
+  int64_t tradeBalance = 0;   // goodsProduced - goodsConsumed; positive = exportable surplus
+  int64_t exportRevenue = 0;  // > 0 only when tradeBalance > 0
+  int64_t importCost = 0;     // > 0 only when tradeBalance < 0
 };
 
 // Tax rates (percentage of building/population value)
@@ -41,6 +51,18 @@ struct TaxRates {
   float maintenanceIndustrial = 120.0f;
 };
 
+// Supply-chain trade pricing: industrial workers produce goods, commercial
+// workers consume them to restock; the net surplus/shortfall is traded with
+// the outside world. Importing costs more per unit than exporting earns (a
+// standard asymmetry: a city that can't supply itself pays a premium for it),
+// so being import-dependent is a genuine economic penalty, not a wash.
+struct TradeRates {
+  float goodsPerIndustrialWorker = 2.0f;  // goods produced per employed industrial worker
+  float goodsPerCommercialWorker = 1.5f;  // goods consumed (restocked) per employed commercial worker
+  float exportPricePerUnit = 40.0f;       // revenue per unit of surplus goods exported
+  float importCostPerUnit = 60.0f;        // expense per unit of shortfall goods imported
+};
+
 class EconomySystem {
 public:
   // Calculate economic state from city current entities and population.
@@ -52,7 +74,8 @@ public:
     const EntityStore& store,
     const PopulationStore& population,
     const TaxRates& rates = TaxRates{},
-    const CityMap* map = nullptr
+    const CityMap* map = nullptr,
+    const TradeRates& tradeRates = TradeRates{}
   );
 
   // Apply economy state to city metrics
@@ -66,6 +89,9 @@ public:
 
   // Get default tax rates
   static TaxRates getDefaultRates();
+
+  // Get default trade rates
+  static TradeRates getDefaultTradeRates();
 
   // Utility: estimate population wealth/property value
   static int64_t estimatePopulationWealth(

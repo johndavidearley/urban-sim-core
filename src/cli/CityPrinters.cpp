@@ -376,6 +376,16 @@ void printBudgetSummary(const EconomyState& economy) {
   std::cout << "  Industrial Maintenance: " << economy.industrialMaintenance << "\n";
   std::cout << "  Total Expenses: " << economy.totalExpenses << "\n";
   std::cout << "  Balance: " << economy.balance << "\n";
+  std::cout << "  Goods Produced (industrial): " << economy.goodsProduced << "\n";
+  std::cout << "  Goods Consumed (commercial): " << economy.goodsConsumed << "\n";
+  std::cout << "  Trade Balance: " << economy.tradeBalance
+            << (economy.tradeBalance > 0 ? " (exporting)" : economy.tradeBalance < 0 ? " (importing)" : "") << "\n";
+  if (economy.exportRevenue > 0) {
+    std::cout << "  Export Revenue: " << economy.exportRevenue << "\n";
+  }
+  if (economy.importCost > 0) {
+    std::cout << "  Import Cost: " << economy.importCost << "\n";
+  }
   std::cout << "  Average Land Value: " << std::fixed << std::setprecision(2)
             << economy.averageLandValue << "\n";
   std::cout << "  Economic Health: " << std::fixed << std::setprecision(1)

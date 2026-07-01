@@ -25,7 +25,7 @@ static const char* kCSVHeader =
   "tick,demand_residential,demand_commercial,demand_industrial,"
   "population,employed,residential_buildings,commercial_buildings,industrial_buildings,"
   "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
-  "service_coverage,service_facilities,avg_land_value\n";
+  "service_coverage,service_facilities,avg_land_value,trade_balance\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -49,7 +49,8 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.residentialBuildings << "," << row.commercialBuildings << "," << row.industrialBuildings << ","
       << row.roadTiles << "," << row.budgetBalance << ","
       << row.trafficCongestion << "," << row.avgPollution << ","
-      << row.serviceCoverage << "," << row.serviceFacilities << "," << row.avgLandValue << "\n";
+      << row.serviceCoverage << "," << row.serviceFacilities << "," << row.avgLandValue << ","
+      << row.tradeBalance << "\n";
 }
 
 bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
@@ -167,7 +168,8 @@ int runCitySimulation(
                 << " residentialPollution=" << std::fixed << std::setprecision(2) << last.avgPollution
                 << " serviceCoverage=" << last.serviceCoverage
                 << " (" << last.serviceFacilities << " facilities)"
-                << " avgLandValue=" << std::setprecision(1) << last.avgLandValue << "\n";
+                << " avgLandValue=" << std::setprecision(1) << last.avgLandValue
+                << " tradeBalance=" << last.tradeBalance << "\n";
     }
 
     printTimings(result.timings, ticks);
@@ -249,7 +251,8 @@ int runCitySimulation(
               << " roadTiles=" << lastRow.roadTiles
               << " serviceCoverage=" << std::fixed << std::setprecision(2) << lastRow.serviceCoverage
               << " (" << lastRow.serviceFacilities << " facilities)"
-              << " avgLandValue=" << std::setprecision(1) << lastRow.avgLandValue << "\n";
+              << " avgLandValue=" << std::setprecision(1) << lastRow.avgLandValue
+              << " tradeBalance=" << lastRow.tradeBalance << "\n";
   }
 
   if (!reportPath.empty()) {

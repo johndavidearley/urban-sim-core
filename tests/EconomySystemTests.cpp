@@ -255,3 +255,68 @@ TEST_F(EconomySystemTests, MapProvidesRealAverageLandValue) {
   EXPECT_FLOAT_EQ(state.averageLandValue, LandValueSystem::averageLandValue(map));
   EXPECT_FLOAT_EQ(state.averageLandValue, 150.0f);
 }
+
+// Test: goodsProduced/goodsConsumed scale with industrial/commercial
+// occupancy respectively (not capacity, not building count).
+TEST_F(EconomySystemTests, GoodsScaleWithOccupancyNotCapacity) {
+  EntityId industrialId = store->createBuilding(BuildingType::Industrial, {10, 10}, 100);
+  store->getBuilding(industrialId)->occupancy = 20;
+  EntityId commercialId = store->createBuilding(BuildingType::Commercial, {11, 10}, 100);
+  store->getBuilding(commercialId)->occupancy = 10;
+
+  TradeRates tradeRates = EconomySystem::getDefaultTradeRates();
+  EconomyState state = EconomySystem::calculateEconomy(*store, *population, TaxRates{}, nullptr, tradeRates);
+
+  EXPECT_FLOAT_EQ(static_cast<float>(state.goodsProduced), 20.0f * tradeRates.goodsPerIndustrialWorker);
+  EXPECT_FLOAT_EQ(static_cast<float>(state.goodsConsumed), 10.0f * tradeRates.goodsPerCommercialWorker);
+}
+
+// Test: industrial surplus (more goods produced than consumed) generates
+// export revenue and no import cost, and that revenue reaches totalRevenue.
+TEST_F(EconomySystemTests, IndustrialSurplusGeneratesExportRevenue) {
+  EntityId industrialId = store->createBuilding(BuildingType::Industrial, {10, 10}, 200);
+  store->getBuilding(industrialId)->occupancy = 100;  // large producer
+  EntityId commercialId = store->createBuilding(BuildingType::Commercial, {11, 10}, 20);
+  store->getBuilding(commercialId)->occupancy = 5;    // small consumer
+
+  EconomyState state = EconomySystem::calculateEconomy(*store, *population);
+
+  EXPECT_GT(state.tradeBalance, 0);
+  EXPECT_GT(state.exportRevenue, 0);
+  EXPECT_EQ(state.importCost, 0);
+  EXPECT_GE(state.totalRevenue, state.totalTaxRevenue + state.exportRevenue);
+}
+
+// Test: commercial-heavy, industry-light cities pay import costs instead.
+TEST_F(EconomySystemTests, CommercialShortfallGeneratesImportCost) {
+  EntityId commercialId = store->createBuilding(BuildingType::Commercial, {10, 10}, 200);
+  store->getBuilding(commercialId)->occupancy = 100;  // large consumer
+  EntityId industrialId = store->createBuilding(BuildingType::Industrial, {11, 10}, 20);
+  store->getBuilding(industrialId)->occupancy = 5;    // small producer
+
+  EconomyState state = EconomySystem::calculateEconomy(*store, *population);
+
+  EXPECT_LT(state.tradeBalance, 0);
+  EXPECT_GT(state.importCost, 0);
+  EXPECT_EQ(state.exportRevenue, 0);
+  EXPECT_EQ(state.totalExpenses, state.totalMaintenance + state.importCost);
+}
+
+// Test: importing a shortfall costs strictly more than exporting the same
+// magnitude of surplus would earn (TradeRates' deliberate asymmetry).
+TEST_F(EconomySystemTests, ImportCostExceedsExportRevenueForSameMagnitude) {
+  const TradeRates rates = EconomySystem::getDefaultTradeRates();
+  EXPECT_GT(rates.importCostPerUnit, rates.exportPricePerUnit);
+}
+
+// Test: with no buildings at all, trade is a clean zero (no phantom cost or
+// revenue from an empty city).
+TEST_F(EconomySystemTests, NoBuildingsMeansNoTrade) {
+  EconomyState state = EconomySystem::calculateEconomy(*store, *population);
+
+  EXPECT_EQ(state.goodsProduced, 0);
+  EXPECT_EQ(state.goodsConsumed, 0);
+  EXPECT_EQ(state.tradeBalance, 0);
+  EXPECT_EQ(state.exportRevenue, 0);
+  EXPECT_EQ(state.importCost, 0);
+}

@@ -9,8 +9,8 @@ Last updated: June 27, 2026
 - Population, traffic, economy, metrics, save/load, districts, and visualization: complete
 - Multithreaded simulation loop with thread pool: complete (~2.8× speedup at 200k pop)
 - Phase 5, Milestone 11 (Traffic Micro-Simulation): complete
-- Phase 5, Milestone 12 (Advanced Economy): started - dynamic land value
-- Automated validation: 172 tests passing
+- Phase 5, Milestone 12 (Advanced Economy): started - dynamic land value, commercial/industrial supply chains and imports/exports
+- Automated validation: 177 tests passing
 
 ---
 
@@ -133,10 +133,9 @@ Last updated: June 27, 2026
 Note on fidelity: each lane is tracked as its own independent single-file channel (an explicit `(edge, lane)` occupancy count, not just an aggregate per-edge total), so vehicles genuinely spread across lanes and change lanes to escape a crowded one — verified by `VehiclesSpreadAcrossLanesRatherThanBunching`. Within a lane, a follower's progress is capped against its immediate leader's actual (post-signal, post-arrival) position each step, so vehicles hold distinct positions with real spacing instead of overlapping — verified by `FollowersHoldDistinctPositionsRatherThanOverlapping` (with zero gap, all vehicles in a forced single-lane queue arrive on the identical step, a degenerate "everyone at the same progress" signature; with a real gap, arrivals spread out over a range of steps instead). What remains unmodeled: there is no literal 2D position within a lane (a following vehicle's exact placement is a single float along the edge, not an x/y offset), and lane width/vehicle size are not simulated - "gap" is a fraction of edge length, not a physical distance. That level of physical detail is out of scope at this milestone's level of detail.
 
 ### Milestone 12: Advanced Economy
-- [ ] Commercial and industrial supply chains
+- [x] Commercial and industrial supply chains / imports-exports - `EconomyState` gains `goodsProduced` (industrial occupancy × `TradeRates::goodsPerIndustrialWorker`), `goodsConsumed` (commercial occupancy × `goodsPerCommercialWorker`), and `tradeBalance` (the difference). A surplus earns `exportRevenue`; a shortfall costs `importCost` at a strictly higher per-unit rate than exporting earns (importing is a genuine economic penalty, not a wash) - both flow into `totalRevenue`/`totalExpenses`/`balance`, so a city with plentiful jobs but no local industry visibly pays for it. No new call-site wiring needed (computed entirely from data `calculateEconomy` already receives); `TradeRates` defaults apply automatically everywhere.
 - [x] Land value dynamics (distance to jobs, services, pollution) - `LandValueSystem` recomputes `Tile::landValue` per tick from a zone base plus three factors: a multi-source BFS from all commercial/industrial buildings (distance-capped at `jobAccessRadius`) for job proximity, the existing service-coverage BFS cache for facility proximity, and the existing per-tile pollution field. `EconomySystem::calculateEconomy` takes an optional `CityMap*` and reports the real mean over zoned tiles when provided (falls back to the old building-count placeholder otherwise, so district-scoped sub-economies and other map-less callers are unaffected). Interval-gated like services/traffic (`--simulate-land-value-interval`, default 1) since the job-access BFS is the costliest pass in the tick at city scale.
 - [ ] Office demand
-- [ ] Imports/exports
 - [ ] Inflation
 
 Note on performance: the job-access BFS is proportional to job-building count and its capped search radius, not to city size directly, but at moderate scale (tens of job buildings, hundreds of zoned tiles) it is still the single costliest phase per tick (see `--simulate` timing breakdown). Two mitigations exist today: the per-tile scan skips unzoned land (most of the active region) and the BFS is capped at `jobAccessRadius` (no benefit accrues past it). For very large simulations, `--simulate-land-value-interval N` throttles the recompute frequency, matching the existing service/traffic/population interval knobs; land value simply persists at its last computed value between recomputes, the same tradeoff already made for coverage and congestion.

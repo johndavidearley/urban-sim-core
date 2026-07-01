@@ -28,6 +28,7 @@ struct SimTickMetrics {
   float serviceCoverage = 0.0f;
   uint32_t serviceFacilities = 0;
   float avgLandValue = 100.0f;  // mean Tile::landValue across zoned tiles
+  int64_t tradeBalance = 0;     // goodsProduced - goodsConsumed; positive = exporting
 };
 
 struct SimPhaseTimings {

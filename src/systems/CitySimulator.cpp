@@ -653,6 +653,7 @@ SimResult CitySimulator::run(
     row.serviceCoverage = service.overallCoverage;
     row.serviceFacilities = static_cast<uint32_t>(facilities.size());
     row.avgLandValue = economy.averageLandValue;
+    row.tradeBalance = economy.tradeBalance;
     if (!infinite) {
       result.rows.push_back(row);
     }
