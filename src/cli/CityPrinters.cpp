@@ -77,6 +77,7 @@ void printHelp() {
             << "  --micro-traffic N         Grow a city N ticks, then run vehicle-agent traffic micro-sim\n"
             << "  --micro-traffic-steps N   Step budget for the micro-sim (default 240)\n"
             << "  --micro-traffic-incidents N  Dispatch N emergency vehicles (ignore congestion/reds)\n"
+            << "  --micro-traffic-lanes N   Vehicles per road before congestion kicks in (default 2)\n"
             << "  --help                   Show this help message\n";
 }
 

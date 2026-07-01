@@ -12,5 +12,6 @@ int runMicroTrafficDemo(
   bool generateTerrain,
   float waterFraction,
   int maxSteps,
-  int emergencyIncidents = 0
+  int emergencyIncidents = 0,
+  int lanesPerRoad = -1  // -1 keeps TrafficMicroSim::Options' default
 );

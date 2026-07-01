@@ -12,9 +12,15 @@
 
 // Milestone 11 (Traffic Micro-Simulation): individual vehicle agents that route
 // over the road graph and step along their paths. Congestion is emergent -
-// speed on an edge falls as more vehicles share it - rather than computed from
-// a static batch load as in the aggregate TrafficSystem. This runs alongside
-// TrafficSystem (which is unchanged); it does not replace it.
+// once an edge's vehicle count exceeds its lane capacity, speed falls with the
+// excess - rather than computed from a static batch load as in the aggregate
+// TrafficSystem. This runs alongside TrafficSystem (which is unchanged); it
+// does not replace it.
+//
+// Lane capacity is modeled as a uniform per-edge vehicle count (roads carry N
+// vehicles in parallel before slowing down); explicit per-lane occupancy and
+// overtaking are not modeled, since vehicles only track aggregate position
+// (edge + progress) rather than an in-lane spatial slot.
 
 enum class VehicleType : int {
   Car = 0,
@@ -53,8 +59,9 @@ public:
   struct Options {
     int maxSteps = 240;               // step budget before giving up on stragglers
     float baseSpeed = 0.5f;           // edges/step at free flow (~2 steps per tile)
-    float congestionSlowing = 0.20f;  // speed penalty per extra vehicle sharing an edge
+    float congestionSlowing = 0.20f;  // speed penalty per vehicle beyond lane capacity
     float minSpeed = 0.05f;           // floor so gridlock still crawls
+    int lanesPerRoad = 2;              // vehicles an edge carries before congestion kicks in
     bool enableSignals = true;         // gate intersections with alternating signals
     int signalPeriod = 6;              // steps of green per axis at each signal
     int emergencyIncidents = 0;        // number of emergency dispatches to spawn (needs facilities)

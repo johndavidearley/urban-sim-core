@@ -8,8 +8,8 @@ Last updated: June 27, 2026
 - Headless core simulation loop: complete
 - Population, traffic, economy, metrics, save/load, districts, and visualization: complete
 - Multithreaded simulation loop with thread pool: complete (~2.8× speedup at 200k pop)
-- Phase 5 started: traffic micro-simulation (vehicle agents, emergent congestion, signalized intersections, emergency routing)
-- Automated validation: 159 tests passing
+- Phase 5, Milestone 11 (Traffic Micro-Simulation): complete
+- Automated validation: 160 tests passing
 
 ---
 
@@ -119,14 +119,16 @@ Last updated: June 27, 2026
 
 ## Phase 5: Advanced Systems (M11+)
 
-### Milestone 11: Traffic Micro-Simulation
+### Milestone 11: Traffic Micro-Simulation — complete
 - [x] Individual vehicle agents (not one-per-person; one vehicle per commute batch)
 - [x] Vehicle routing and pathfinding (shortest path per vehicle, road-node anchored)
-- [x] Emergent congestion (edge speed falls with vehicle density; `--micro-traffic`)
+- [x] Emergent congestion (edge speed falls once vehicle count exceeds lane capacity; `--micro-traffic`)
 - [x] Intersection signal logic (junctions detected by degree; vehicles queue on red)
 - [x] Traffic signals (basic; alternating axis green, coordinate-offset phases)
 - [x] Emergency vehicle routing (dispatched from ServiceFacility sites to random incidents; ignores congestion and red signals; `--micro-traffic-incidents`)
-- [ ] Multi-lane per-road capacity/lane changing
+- [x] Multi-lane road capacity (uniform per-edge vehicle count before congestion kicks in; `--micro-traffic-lanes`, default 2)
+
+Note on fidelity: TrafficMicroSim tracks each vehicle's position as (edge, progress-along-edge), not an in-lane spatial slot, so "lanes" are modeled as aggregate edge capacity rather than literal parallel lanes with overtaking/lane-changing maneuvers. That finer-grained model (and full lane-level micro-behavior) would need per-vehicle in-edge positioning and is out of scope at this milestone's level of detail.
 
 ### Milestone 12: Advanced Economy
 - [ ] Commercial and industrial supply chains

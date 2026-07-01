@@ -158,6 +158,44 @@ TEST(TrafficMicroSimTests, EmergencyVehiclesIgnoreRedSignals) {
   EXPECT_LT(summary.averageEmergencyResponseSteps, static_cast<float>(options.maxSteps));
 }
 
+TEST(TrafficMicroSimTests, LaneCapacityReducesCongestionDelay) {
+  // A single home and single job connected by one straight 6-edge road: every
+  // commute batch takes the exact same route and starts in lockstep, so all
+  // vehicles share every edge simultaneously - a clean, deterministic worst
+  // case for testing how lane capacity affects the congestion penalty.
+  CityMap map({8, 3});
+  RoadNetwork roads(map);
+  for (int x = 0; x < 6; ++x) {
+    roads.buildRoad({x, 0}, {x + 1, 0});
+  }
+
+  EntityStore store;
+  store.createBuilding(BuildingType::Residential, {0, 1}, 100);
+  store.createBuilding(BuildingType::Commercial, {6, 1}, 100);
+
+  PopulationStore population;
+  population.createGroup(IncomeBand::Middle, 40, 40);  // 40 employed -> 10 vehicles, one route
+
+  TrafficMicroSim::Options oneLane;
+  oneLane.lanesPerRoad = 1;  // any 2nd vehicle on the edge causes slowing
+  const MicroTrafficSummary narrow = TrafficMicroSim::simulate(store, population, roads, 5, oneLane);
+
+  TrafficMicroSim::Options manyLanes;
+  manyLanes.lanesPerRoad = 20;  // capacity exceeds all 10 vehicles -> no slowing
+  const MicroTrafficSummary wide = TrafficMicroSim::simulate(store, population, roads, 5, manyLanes);
+
+  ASSERT_EQ(narrow.vehicles, 10u);
+  ASSERT_EQ(wide.vehicles, 10u);
+  EXPECT_EQ(narrow.arrived, narrow.vehicles);
+  EXPECT_EQ(wide.arrived, wide.vehicles);
+  // All 10 vehicles start together and move in lockstep (speed depends only on
+  // shared count, which is identical for all of them each step).
+  EXPECT_GE(narrow.peakEdgeOccupancy, 10.0f);
+  EXPECT_GE(wide.peakEdgeOccupancy, 10.0f);
+  // A wider road absorbs the same traffic with far less delay.
+  EXPECT_LT(wide.averageTripSteps, narrow.averageTripSteps);
+}
+
 TEST(TrafficMicroSimTests, DeterministicForSameSeed) {
   auto runOnce = [](uint32_t seed) {
     CityMap map({48, 48});

@@ -37,7 +37,8 @@ int runMicroTrafficDemo(
   bool generateTerrain,
   float waterFraction,
   int maxSteps,
-  int emergencyIncidents
+  int emergencyIncidents,
+  int lanesPerRoad
 ) {
   std::cout << "Traffic micro-simulation on a " << mapSize << "x" << mapSize
             << " city (seed " << seed << ", grown " << growthTicks << " ticks)...\n";
@@ -63,12 +64,15 @@ int runMicroTrafficDemo(
     options.maxSteps = maxSteps;
   }
   options.emergencyIncidents = std::max(0, emergencyIncidents);
+  if (lanesPerRoad > 0) {
+    options.lanesPerRoad = lanesPerRoad;
+  }
 
   const std::vector<ServiceFacility> facilities = sampleDemoFacilities(roads, 4);
   const MicroTrafficSummary summary =
     TrafficMicroSim::simulate(store, population, roads, seed + 1u, options, &facilities);
 
-  std::cout << "\nVehicle agents:\n";
+  std::cout << "\nVehicle agents (lanes/road=" << options.lanesPerRoad << "):\n";
   std::cout << "  Commuting population: " << summary.commutingPopulation << "\n";
   std::cout << "  Vehicles spawned:     " << summary.vehicles << "\n";
   std::cout << "  Vehicles arrived:     " << summary.arrived

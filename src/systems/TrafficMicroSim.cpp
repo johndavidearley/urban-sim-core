@@ -265,8 +265,16 @@ MicroTrafficSummary TrafficMicroSim::simulate(
       float speed = options.baseSpeed;
       if (v.type == VehicleType::Emergency) {
         speed = options.baseSpeed * options.emergencySpeedMultiplier;
-      } else if (sharing > 1) {
-        speed = options.baseSpeed / (1.0f + options.congestionSlowing * static_cast<float>(sharing - 1));
+      } else {
+        // Multi-lane capacity: an edge carries `lanesPerRoad` vehicles in
+        // parallel at free-flow speed; only the excess beyond that causes
+        // slowing (a 1-lane road congests immediately, as before; a wider
+        // road absorbs more traffic before it does).
+        const int lanes = std::max(1, options.lanesPerRoad);
+        const int excess = sharing - lanes;
+        if (excess > 0) {
+          speed = options.baseSpeed / (1.0f + options.congestionSlowing * static_cast<float>(excess));
+        }
       }
       speed = std::max(options.minSpeed, speed);
 

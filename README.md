@@ -107,25 +107,27 @@ end-to-end performance profile. Combine with `--generate-terrain` to grow around
 water; add `--simulate-report FILE` for a per-tick CSV (including pollution), or
 `--simulate-no-traffic` to skip the (dominant) commute phase.
 
-### Traffic Micro-Simulation (Phase 5, M11)
+### Traffic Micro-Simulation (Phase 5, M11 — complete)
 
 ```bash
 ./build/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30
 ./build/UrbanSimCore-cli --size 64 --seed 7 --micro-traffic 40 --micro-traffic-steps 400
 ./build/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30 --micro-traffic-incidents 5
+./build/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30 --micro-traffic-lanes 4
 ```
 
 `--micro-traffic N` grows a city for N ticks, then runs an individual
 vehicle-agent traffic model on it: one vehicle per commute batch, each routed
 home→job over the road graph and stepped along its path. Congestion is
-*emergent* — an edge's speed falls as more vehicles share it — rather than a
-static batch load. Road junctions with 3+ connections are signalized
-(alternating green by axis, offset by coordinates for a rough green wave), and
-vehicles queue on red rather than passing through. It reports agent-level
-stats (vehicles spawned/arrived, mean trip length in steps, peak/average edge
-occupancy, signalized junctions, mean signal wait). Tune the step budget with
-`--micro-traffic-steps`. This runs alongside the aggregate `TrafficSystem`
-(used elsewhere), which is unchanged.
+*emergent* — a road carries `--micro-traffic-lanes` vehicles (default 2) in
+parallel at free-flow speed, and only the excess beyond that capacity slows
+down — rather than a static batch load. Road junctions with 3+ connections are
+signalized (alternating green by axis, offset by coordinates for a rough green
+wave), and vehicles queue on red rather than passing through. It reports
+agent-level stats (vehicles spawned/arrived, mean trip length in steps,
+peak/average edge occupancy, signalized junctions, mean signal wait). Tune the
+step budget with `--micro-traffic-steps`. This runs alongside the aggregate
+`TrafficSystem` (used elsewhere), which is unchanged.
 
 Add `--micro-traffic-incidents N` to also dispatch N emergency vehicles, each
 routed from the nearest of a few demo facility sites to a random building (the
@@ -133,6 +135,12 @@ routed from the nearest of a few demo facility sites to a random building (the
 signals and get a speed boost, so their response time is a direct, deterministic
 comparison against ordinary commute trip times (e.g. ~12 steps for an
 emergency dispatch versus ~34 for an average commute on the same city).
+
+Vehicle position is tracked as (edge, progress-along-edge), not a literal
+in-lane spatial slot, so `--micro-traffic-lanes` models lane *capacity*
+(how much parallel traffic a road absorbs before slowing) rather than
+per-lane occupancy with overtaking — that finer-grained behavior is out of
+scope at this milestone's fidelity.
 
 ### Phase 5 Benchmarking
 
