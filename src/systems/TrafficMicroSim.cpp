@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <random>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "src/networks/Pathfinding.hpp"
 
@@ -11,6 +12,15 @@ namespace {
 // Vehicles occupy the edge between route[segment] and route[segment+1].
 RoadNetwork::EdgeKey edgeOf(const Vehicle& v) {
   return RoadNetwork::EdgeKey{v.route[v.segment], v.route[v.segment + 1]};
+}
+
+// A signalized junction alternates green between the horizontal (E-W) and
+// vertical (N-S) axes. Phases are offset by the node's coordinates so adjacent
+// intersections are not all red at once (a rough green-wave / checkerboard).
+bool signalGreen(glm::ivec2 node, bool horizontalMove, int step, int period) {
+  const int phase = ((step / std::max(1, period)) + node.x + node.y) % 2;
+  const bool horizontalGreen = (phase == 0);
+  return horizontalMove ? horizontalGreen : !horizontalGreen;
 }
 
 // RoadNetwork pre-creates a node for every tile, so hasNode() is always true;
@@ -140,12 +150,25 @@ MicroTrafficSummary TrafficMicroSim::simulate(
     return summary;
   }
 
+  // Intersections are road nodes with 3+ connections; each gets a signal.
+  std::unordered_set<glm::ivec2, Vec2Hash> intersections;
+  if (options.enableSignals) {
+    for (const glm::ivec2& tile : roads.getAllRoadTiles()) {
+      const RoadNetwork::Node* node = roads.getNode(tile);
+      if (node != nullptr && node->adjacent.size() >= 3) {
+        intersections.insert(tile);
+      }
+    }
+  }
+  summary.signalizedIntersections = static_cast<uint32_t>(intersections.size());
+
   std::unordered_map<RoadNetwork::EdgeKey, int, RoadNetwork::EdgeKeyHash> occupancy;
   occupancy.reserve(vehicles.size() * 2);
 
   double occupancyAccum = 0.0;
   uint32_t occupancySamples = 0;
   uint32_t arrivedCount = 0;
+  uint64_t totalWaitSteps = 0;
   int step = 0;
 
   for (; step < options.maxSteps && arrivedCount < vehicles.size(); ++step) {
@@ -179,13 +202,30 @@ MicroTrafficSummary TrafficMicroSim::simulate(
 
       v.progress += speed;
       while (v.progress >= 1.0f && !v.arrived) {
-        v.progress -= 1.0f;
-        v.segment += 1;
-        if (v.segment >= v.route.size() - 1) {
+        // Vehicle reaches node route[segment+1].
+        if (v.segment + 1 >= v.route.size() - 1) {
           v.arrived = true;
           v.arriveStep = currentStep + 1;
           ++arrivedCount;
+          v.progress = 0.0f;
+          break;
         }
+
+        // To continue it must enter edge (route[segment+1] -> route[segment+2]).
+        // Stop on red at a signalized intersection, queueing on the approach edge.
+        const glm::ivec2 node = v.route[v.segment + 1];
+        if (!intersections.empty() && intersections.count(node) != 0) {
+          const glm::ivec2 next = v.route[v.segment + 2];
+          const bool horizontalMove = (next.x != node.x);
+          if (!signalGreen(node, horizontalMove, static_cast<int>(currentStep), options.signalPeriod)) {
+            v.progress = 1.0f;  // wait at the node, still occupying the approach edge
+            ++totalWaitSteps;
+            break;
+          }
+        }
+
+        v.progress -= 1.0f;
+        v.segment += 1;
       }
     }
   }
@@ -194,6 +234,8 @@ MicroTrafficSummary TrafficMicroSim::simulate(
   summary.arrived = arrivedCount;
   summary.averageEdgeOccupancy = occupancySamples > 0
     ? static_cast<float>(occupancyAccum / occupancySamples) : 0.0f;
+  summary.averageSignalWaitSteps = !vehicles.empty()
+    ? static_cast<float>(static_cast<double>(totalWaitSteps) / vehicles.size()) : 0.0f;
 
   uint64_t tripStepsTotal = 0;
   for (const Vehicle& v : vehicles) {

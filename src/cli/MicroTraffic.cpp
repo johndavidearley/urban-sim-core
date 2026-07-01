@@ -55,6 +55,8 @@ int runMicroTrafficDemo(
   std::cout << "  Avg trip length:      " << std::setprecision(1) << summary.averageTripSteps << " steps\n";
   std::cout << "  Peak edge occupancy:  " << std::setprecision(0) << summary.peakEdgeOccupancy << " vehicles\n";
   std::cout << "  Avg edge occupancy:   " << std::setprecision(2) << summary.averageEdgeOccupancy << " vehicles\n";
+  std::cout << "  Signalized junctions: " << summary.signalizedIntersections << "\n";
+  std::cout << "  Avg signal wait:      " << std::setprecision(1) << summary.averageSignalWaitSteps << " steps/vehicle\n";
 
   return 0;
 }

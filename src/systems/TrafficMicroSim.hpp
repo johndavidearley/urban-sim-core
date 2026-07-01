@@ -39,6 +39,8 @@ struct MicroTrafficSummary {
   float averageTripSteps = 0.0f;    // mean steps taken by arrived vehicles
   float peakEdgeOccupancy = 0.0f;   // most vehicles on a single edge at once
   float averageEdgeOccupancy = 0.0f;
+  uint32_t signalizedIntersections = 0;
+  float averageSignalWaitSteps = 0.0f;  // mean steps per vehicle spent stopped at reds
 };
 
 class TrafficMicroSim {
@@ -48,6 +50,8 @@ public:
     float baseSpeed = 0.5f;           // edges/step at free flow (~2 steps per tile)
     float congestionSlowing = 0.20f;  // speed penalty per extra vehicle sharing an edge
     float minSpeed = 0.05f;           // floor so gridlock still crawls
+    bool enableSignals = true;        // gate intersections with alternating signals
+    int signalPeriod = 6;             // steps of green per axis at each signal
   };
 
   // Spawns one vehicle per commute batch (home -> job), routes each with the

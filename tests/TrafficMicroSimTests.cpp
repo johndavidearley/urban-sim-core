@@ -59,6 +59,29 @@ TEST(TrafficMicroSimTests, CongestionIsEmergent) {
   EXPECT_GT(summary.peakEdgeOccupancy, 1.0f);
 }
 
+TEST(TrafficMicroSimTests, SignalsCauseWaitsAndCanBeDisabled) {
+  CityMap map({48, 48});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  growCity(map, roads, store, population);
+
+  TrafficMicroSim::Options withSignals;
+  withSignals.enableSignals = true;
+  const MicroTrafficSummary a = TrafficMicroSim::simulate(store, population, roads, 99, withSignals);
+
+  TrafficMicroSim::Options noSignals;
+  noSignals.enableSignals = false;
+  const MicroTrafficSummary b = TrafficMicroSim::simulate(store, population, roads, 99, noSignals);
+
+  // A grid city has signalized junctions, and vehicles stop at some reds.
+  EXPECT_GT(a.signalizedIntersections, 0u);
+  EXPECT_GT(a.averageSignalWaitSteps, 0.0f);
+  // Disabling signals removes all waiting.
+  EXPECT_EQ(b.signalizedIntersections, 0u);
+  EXPECT_FLOAT_EQ(b.averageSignalWaitSteps, 0.0f);
+}
+
 TEST(TrafficMicroSimTests, DeterministicForSameSeed) {
   auto runOnce = [](uint32_t seed) {
     CityMap map({48, 48});
