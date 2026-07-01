@@ -4,6 +4,7 @@
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/metrics/CityMetrics.hpp"
+#include "src/world/CityMap.hpp"
 
 struct EconomyState {
   // Revenue sources
@@ -42,11 +43,16 @@ struct TaxRates {
 
 class EconomySystem {
 public:
-  // Calculate economic state from city current entities and population
+  // Calculate economic state from city current entities and population.
+  // If `map` is provided, averageLandValue is the real mean of Tile::landValue
+  // across zoned tiles (see LandValueSystem); otherwise it falls back to a
+  // building-count-based placeholder, preserving prior behavior for callers
+  // that have no map available (e.g. district-scoped sub-economies).
   static EconomyState calculateEconomy(
     const EntityStore& store,
     const PopulationStore& population,
-    const TaxRates& rates = TaxRates{}
+    const TaxRates& rates = TaxRates{},
+    const CityMap* map = nullptr
   );
 
   // Apply economy state to city metrics

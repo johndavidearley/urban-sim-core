@@ -2,6 +2,9 @@
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/systems/EconomySystem.hpp"
+#include "src/systems/LandValueSystem.hpp"
+#include "src/world/CityMap.hpp"
+#include "src/world/Zoning.hpp"
 
 class EconomySystemTests : public ::testing::Test {
 protected:
@@ -224,4 +227,31 @@ TEST_F(EconomySystemTests, DefaultTaxRatesAreReasonable) {
   EXPECT_LT(rates.residentialRate, 0.5f);
   EXPECT_LT(rates.commercialRate, 0.5f);
   EXPECT_LT(rates.industrialRate, 0.5f);
+}
+
+// Test: Without a map, averageLandValue keeps the old building-count placeholder
+// (a regression guard for callers - e.g. district-scoped sub-economies - that
+// have no CityMap to read real per-tile values from).
+TEST_F(EconomySystemTests, NoMapFallsBackToPlaceholderLandValue) {
+  store->createBuilding(BuildingType::Residential, {10, 10}, 50);
+  store->createBuilding(BuildingType::Commercial, {11, 10}, 50);
+
+  EconomyState state = EconomySystem::calculateEconomy(*store, *population);
+
+  EXPECT_FLOAT_EQ(state.averageLandValue, 100.0f + (2 * 2.0f));
+}
+
+// Test: With a map, averageLandValue is the real mean of Tile::landValue
+// across zoned tiles (LandValueSystem::averageLandValue), not the placeholder.
+TEST_F(EconomySystemTests, MapProvidesRealAverageLandValue) {
+  CityMap map({4, 1});
+  map.getTile({0, 0}).zone = static_cast<int>(ZoneType::Residential);
+  map.getTile({0, 0}).landValue = 120.0f;
+  map.getTile({1, 0}).zone = static_cast<int>(ZoneType::Commercial);
+  map.getTile({1, 0}).landValue = 180.0f;
+
+  EconomyState state = EconomySystem::calculateEconomy(*store, *population, TaxRates{}, &map);
+
+  EXPECT_FLOAT_EQ(state.averageLandValue, LandValueSystem::averageLandValue(map));
+  EXPECT_FLOAT_EQ(state.averageLandValue, 150.0f);
 }

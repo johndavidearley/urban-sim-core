@@ -15,6 +15,7 @@ add_executable(test_core
   DistrictSystemTests.cpp
   CitySimulatorTests.cpp
   TrafficMicroSimTests.cpp
+  LandValueSystemTests.cpp
   SaveLoadSystemTests.cpp
   ReplayVerifierTests.cpp
   MapRendererTests.cpp

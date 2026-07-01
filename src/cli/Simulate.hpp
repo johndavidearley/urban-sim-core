@@ -19,5 +19,6 @@ int runCitySimulation(
   double ticksPerSecond = 0.0,  // 0 = unlimited
   int trafficInterval = 1,      // run traffic every N ticks
   int serviceInterval = 1,      // run service evaluation every N ticks
-  int populationInterval = 1    // run full population allocation every N ticks
+  int populationInterval = 1,   // run full population allocation every N ticks
+  int landValueInterval = 1     // run land-value recompute every N ticks
 );

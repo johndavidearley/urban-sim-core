@@ -1,8 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <limits>
+
 #include "src/systems/CitySimulator.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/TerrainGenerator.hpp"
+#include "src/world/Zoning.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
@@ -167,4 +171,32 @@ TEST(CitySimulatorTests, NeverBuildsOnWater) {
     EXPECT_NE(map.getTile(building.position).type, 2)
         << "building on water at (" << building.position.x << "," << building.position.y << ")";
   }
+}
+
+// A grown city should have a real, engaged (not flat-default) land value
+// field: variation across zoned tiles, and the reported per-tick average
+// tracking whatever LandValueSystem computes on the final map state.
+TEST(CitySimulatorTests, LandValueVariesAcrossZonedTiles) {
+  CityMap map({48, 48});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 40, fastOptions());
+
+  ASSERT_FALSE(result.rows.empty());
+  EXPECT_GT(result.rows.back().avgLandValue, 0.0f);
+
+  float minValue = std::numeric_limits<float>::max();
+  float maxValue = std::numeric_limits<float>::lowest();
+  const glm::ivec2 dims = map.getDimensions();
+  for (int y = 0; y < dims.y; ++y) {
+    for (int x = 0; x < dims.x; ++x) {
+      const Tile& tile = map.getTile({x, y});
+      if (tile.type == 2 || tile.zone == static_cast<int>(ZoneType::None)) continue;
+      minValue = std::min(minValue, tile.landValue);
+      maxValue = std::max(maxValue, tile.landValue);
+    }
+  }
+  EXPECT_GT(maxValue, minValue) << "land value should vary spatially, not be a flat constant";
 }

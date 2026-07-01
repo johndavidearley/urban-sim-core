@@ -2,10 +2,13 @@
 #include <algorithm>
 #include <cmath>
 
+#include "src/systems/LandValueSystem.hpp"
+
 EconomyState EconomySystem::calculateEconomy(
   const EntityStore& store,
   const PopulationStore& population,
-  const TaxRates& rates
+  const TaxRates& rates,
+  const CityMap* map
 ) {
   EconomyState state;
 
@@ -60,9 +63,14 @@ EconomyState EconomySystem::calculateEconomy(
   state.totalExpenses = state.totalMaintenance;
   state.balance = state.totalRevenue - state.totalExpenses;
 
-  // Calculate average land value (higher with more buildings)
   size_t totalBuildings = residentialCount + commercialCount + industrialCount;
-  if (totalBuildings > 0) {
+  if (map != nullptr) {
+    // Real, spatially-varying land value (see LandValueSystem) if the caller
+    // has a map to read it from.
+    state.averageLandValue = LandValueSystem::averageLandValue(*map);
+  } else if (totalBuildings > 0) {
+    // No map available (e.g. a district-scoped sub-economy): fall back to a
+    // building-count-based placeholder.
     state.averageLandValue = 100.0f + (totalBuildings * 2.0f);
   }
 

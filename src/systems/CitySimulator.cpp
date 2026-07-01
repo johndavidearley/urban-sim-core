@@ -12,6 +12,7 @@
 #include "src/core/ThreadPool.hpp"
 #include "src/systems/EconomySystem.hpp"
 #include "src/systems/GrowthSystem.hpp"
+#include "src/systems/LandValueSystem.hpp"
 #include "src/systems/PopulationSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/systems/TrafficSystem.hpp"
@@ -614,10 +615,23 @@ SimResult CitySimulator::run(
       lastServiceSatisfaction = service.satisfaction;
     }
 
+    // Refresh land value from the freshest available job positions, service
+    // cache, and pollution field (all already up to date at this point in the
+    // tick), so the economy calculation below sees current values. The
+    // job-access BFS traverses the whole road network each call (the costliest
+    // part of this pass), so - like services/traffic/population - it is
+    // interval-gated; values persist on the map between recomputes, so a
+    // skipped tick just means slightly stale figures, not stale-forever ones.
+    if (tick % std::max(1, options.landValueInterval) == 0) {
+      const auto t0 = Clock::now();
+      LandValueSystem::updateLandValues(map, roads, store, &coverageCache, ax0, ay0, ax1, ay1);
+      result.timings.landValueMs += elapsedMs(t0, Clock::now());
+    }
+
     EconomyState economy;
     {
       const auto t0 = Clock::now();
-      economy = EconomySystem::calculateEconomy(store, population);
+      economy = EconomySystem::calculateEconomy(store, population, TaxRates{}, &map);
       result.timings.economyMs += elapsedMs(t0, Clock::now());
     }
 
@@ -638,6 +652,7 @@ SimResult CitySimulator::run(
     row.avgPollution = averageResidentialPollution(map, store);
     row.serviceCoverage = service.overallCoverage;
     row.serviceFacilities = static_cast<uint32_t>(facilities.size());
+    row.avgLandValue = economy.averageLandValue;
     if (!infinite) {
       result.rows.push_back(row);
     }

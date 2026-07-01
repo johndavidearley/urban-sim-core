@@ -101,11 +101,23 @@ fire/police/health/education facilities as it grows (spread across the
 developed area); their coverage feeds desirability, and pollution and
 under-coverage both feed back to slow migration.
 
+Land value (Phase 5, M12) is recomputed every tick from a zone base value plus
+three location factors: distance to the nearest job (commercial/industrial
+building, via a road-network BFS), distance to the nearest covered service
+facility, and local pollution — replacing what used to be a value fixed once
+at zoning time and never updated. It drives the reported average land value
+and, through it, the economy's health score. The job-access BFS is the
+costliest phase in the tick breakdown at city scale; throttle it with
+`--simulate-land-value-interval N` (like the existing
+`--simulate-service-interval`/`--simulate-traffic-interval` knobs) on large
+simulations — land value simply persists at its last computed value between
+recomputes.
+
 It prints an evolution table (RCI demand, population, building counts, roads,
 budget) plus a per-phase timing breakdown, so the same run doubles as an
 end-to-end performance profile. Combine with `--generate-terrain` to grow around
-water; add `--simulate-report FILE` for a per-tick CSV (including pollution), or
-`--simulate-no-traffic` to skip the (dominant) commute phase.
+water; add `--simulate-report FILE` for a per-tick CSV (including pollution and
+land value), or `--simulate-no-traffic` to skip the (dominant) commute phase.
 
 ### Traffic Micro-Simulation (Phase 5, M11 — complete)
 

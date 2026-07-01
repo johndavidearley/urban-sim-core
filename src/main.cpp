@@ -72,6 +72,7 @@ int main(int argc, char* argv[]) {
   int simulateTrafficInterval = 1;
   int simulateServiceInterval = 1;
   int simulatePopulationInterval = 1;
+  int simulateLandValueInterval = 1;
   int microTrafficGrowthTicks = -1;
   int microTrafficSteps = -1;
   int microTrafficIncidents = 0;
@@ -324,6 +325,8 @@ int main(int argc, char* argv[]) {
       simulateServiceInterval = std::atoi(argv[++i]);
     } else if (arg == "--simulate-population-interval" && i + 1 < argc) {
       simulatePopulationInterval = std::atoi(argv[++i]);
+    } else if (arg == "--simulate-land-value-interval" && i + 1 < argc) {
+      simulateLandValueInterval = std::atoi(argv[++i]);
     } else if (arg == "--simulate-report" && i + 1 < argc) {
       simulateReportPath = argv[++i];
     } else if (arg == "--simulate-no-traffic") {
@@ -488,7 +491,8 @@ int main(int argc, char* argv[]) {
         simulateSpeed,
         simulateTrafficInterval,
         simulateServiceInterval,
-        simulatePopulationInterval
+        simulatePopulationInterval,
+        simulateLandValueInterval
       );
     }
 

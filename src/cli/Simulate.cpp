@@ -25,7 +25,7 @@ static const char* kCSVHeader =
   "tick,demand_residential,demand_commercial,demand_industrial,"
   "population,employed,residential_buildings,commercial_buildings,industrial_buildings,"
   "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
-  "service_coverage,service_facilities\n";
+  "service_coverage,service_facilities,avg_land_value\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -49,7 +49,7 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.residentialBuildings << "," << row.commercialBuildings << "," << row.industrialBuildings << ","
       << row.roadTiles << "," << row.budgetBalance << ","
       << row.trafficCongestion << "," << row.avgPollution << ","
-      << row.serviceCoverage << "," << row.serviceFacilities << "\n";
+      << row.serviceCoverage << "," << row.serviceFacilities << "," << row.avgLandValue << "\n";
 }
 
 bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
@@ -65,7 +65,8 @@ bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& 
 }
 
 void printTimings(const SimPhaseTimings& t, int ranTicks) {
-  const double totalMs = t.roadMs + t.zoningMs + t.growthMs + t.populationMs + t.trafficMs + t.economyMs + t.serviceMs;
+  const double totalMs = t.roadMs + t.zoningMs + t.growthMs + t.populationMs + t.trafficMs +
+                         t.economyMs + t.serviceMs + t.landValueMs;
   std::cout << "\nPhase timing over " << ranTicks << " ticks (total "
             << std::fixed << std::setprecision(2) << totalMs << " ms, "
             << (ranTicks > 0 ? totalMs / ranTicks : 0.0) << " ms/tick):\n";
@@ -76,6 +77,7 @@ void printTimings(const SimPhaseTimings& t, int ranTicks) {
   std::cout << "    Traffic:    " << t.trafficMs << " ms\n";
   std::cout << "    Economy:    " << t.economyMs << " ms\n";
   std::cout << "    Services:   " << t.serviceMs << " ms\n";
+  std::cout << "    LandValue:  " << t.landValueMs << " ms\n";
 }
 
 } // namespace
@@ -92,7 +94,8 @@ int runCitySimulation(
   double ticksPerSecond,
   int trafficInterval,
   int serviceInterval,
-  int populationInterval
+  int populationInterval,
+  int landValueInterval
 ) {
   const bool infinite = (ticks < 0);
   const float sideKm = tileToKm(mapSize);
@@ -133,6 +136,7 @@ int runCitySimulation(
   options.trafficInterval = std::max(1, trafficInterval);
   options.serviceInterval = std::max(1, serviceInterval);
   options.populationInterval = std::max(1, populationInterval);
+  options.landValueInterval = std::max(1, landValueInterval);
 
   if (!infinite) {
     const SimResult result = CitySimulator::run(map, roads, store, population, seed, ticks, options);
@@ -162,7 +166,8 @@ int runCitySimulation(
                 << " roadTiles=" << last.roadTiles
                 << " residentialPollution=" << std::fixed << std::setprecision(2) << last.avgPollution
                 << " serviceCoverage=" << last.serviceCoverage
-                << " (" << last.serviceFacilities << " facilities)\n";
+                << " (" << last.serviceFacilities << " facilities)"
+                << " avgLandValue=" << std::setprecision(1) << last.avgLandValue << "\n";
     }
 
     printTimings(result.timings, ticks);
@@ -243,7 +248,8 @@ int runCitySimulation(
               << " I=" << lastRow.industrialBuildings << ")"
               << " roadTiles=" << lastRow.roadTiles
               << " serviceCoverage=" << std::fixed << std::setprecision(2) << lastRow.serviceCoverage
-              << " (" << lastRow.serviceFacilities << " facilities)\n";
+              << " (" << lastRow.serviceFacilities << " facilities)"
+              << " avgLandValue=" << std::setprecision(1) << lastRow.avgLandValue << "\n";
   }
 
   if (!reportPath.empty()) {
