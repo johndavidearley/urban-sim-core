@@ -15,6 +15,7 @@
 #include "src/cli/GrowthPressureReport.hpp"
 #include "src/cli/PolicySweep.hpp"
 #include "src/cli/Simulate.hpp"
+#include "src/cli/MicroTraffic.hpp"
 #include "src/core/SimulationTime.hpp"
 #include "src/core/TileScale.hpp"
 #include "src/entities/EntityStore.hpp"
@@ -71,6 +72,8 @@ int main(int argc, char* argv[]) {
   int simulateTrafficInterval = 1;
   int simulateServiceInterval = 1;
   int simulatePopulationInterval = 1;
+  int microTrafficGrowthTicks = -1;
+  int microTrafficSteps = -1;
   int benchmarkPhase5Ticks = -1;
   BenchmarkFocus benchmarkPhase5Focus = BenchmarkFocus::All;
   std::string saveCityPath;
@@ -322,6 +325,10 @@ int main(int argc, char* argv[]) {
       simulateReportPath = argv[++i];
     } else if (arg == "--simulate-no-traffic") {
       simulateNoTraffic = true;
+    } else if (arg == "--micro-traffic" && i + 1 < argc) {
+      microTrafficGrowthTicks = std::atoi(argv[++i]);
+    } else if (arg == "--micro-traffic-steps" && i + 1 < argc) {
+      microTrafficSteps = std::atoi(argv[++i]);
     } else {
       std::cerr << "Error: Unknown argument '" << arg << "'\n";
       return 1;
@@ -473,6 +480,17 @@ int main(int argc, char* argv[]) {
         simulateTrafficInterval,
         simulateServiceInterval,
         simulatePopulationInterval
+      );
+    }
+
+    if (microTrafficGrowthTicks >= 0) {
+      return runMicroTrafficDemo(
+        mapSize,
+        seed,
+        microTrafficGrowthTicks,
+        generateTerrainFlag,
+        terrainWaterFraction,
+        microTrafficSteps
       );
     }
 

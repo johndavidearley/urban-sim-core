@@ -13,6 +13,7 @@ add_library(urban_sim_core
   systems/ServiceSystem.cpp
   systems/DistrictSystem.cpp
   systems/CitySimulator.cpp
+  systems/TrafficMicroSim.cpp
   world/CityMap.cpp
   world/Tile.cpp
   world/Zoning.cpp
@@ -43,6 +44,7 @@ add_executable(UrbanSimCore-cli
   cli/GrowthPressureReport.cpp
   cli/PolicySweep.cpp
   cli/Simulate.cpp
+  cli/MicroTraffic.cpp
 )
 
 target_link_libraries(UrbanSimCore-cli PRIVATE urban_sim_core)

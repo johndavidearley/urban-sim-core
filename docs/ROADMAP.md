@@ -8,7 +8,8 @@ Last updated: June 27, 2026
 - Headless core simulation loop: complete
 - Population, traffic, economy, metrics, save/load, districts, and visualization: complete
 - Multithreaded simulation loop with thread pool: complete (~2.8× speedup at 200k pop)
-- Automated validation: 151 tests passing
+- Phase 5 started: traffic micro-simulation foundation (vehicle agents + emergent congestion)
+- Automated validation: 155 tests passing
 
 ---
 
@@ -119,11 +120,12 @@ Last updated: June 27, 2026
 ## Phase 5: Advanced Systems (M11+)
 
 ### Milestone 11: Traffic Micro-Simulation
-- [ ] Individual vehicle agents (not one-per-person)
-- [ ] Vehicle routing and pathfinding
+- [x] Individual vehicle agents (not one-per-person; one vehicle per commute batch)
+- [x] Vehicle routing and pathfinding (shortest path per vehicle, road-node anchored)
+- [x] Emergent congestion (edge speed falls with vehicle density; `--micro-traffic`)
 - [ ] Intersection and lane logic
 - [ ] Traffic signals (basic)
-- [ ] Emergency vehicle routing
+- [ ] Emergency vehicle routing (VehicleType foundation in place; not yet spawned)
 
 ### Milestone 12: Advanced Economy
 - [ ] Commercial and industrial supply chains

@@ -107,6 +107,22 @@ end-to-end performance profile. Combine with `--generate-terrain` to grow around
 water; add `--simulate-report FILE` for a per-tick CSV (including pollution), or
 `--simulate-no-traffic` to skip the (dominant) commute phase.
 
+### Traffic Micro-Simulation (Phase 5, M11)
+
+```bash
+./build/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30
+./build/UrbanSimCore-cli --size 64 --seed 7 --micro-traffic 40 --micro-traffic-steps 400
+```
+
+`--micro-traffic N` grows a city for N ticks, then runs an individual
+vehicle-agent traffic model on it: one vehicle per commute batch, each routed
+home→job over the road graph and stepped along its path. Congestion is
+*emergent* — an edge's speed falls as more vehicles share it — rather than a
+static batch load. It reports agent-level stats (vehicles spawned/arrived, mean
+trip length in steps, peak/average edge occupancy). Tune the step budget with
+`--micro-traffic-steps`. This runs alongside the aggregate `TrafficSystem`
+(used elsewhere), which is unchanged.
+
 ### Phase 5 Benchmarking
 
 ```bash
