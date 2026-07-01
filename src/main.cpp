@@ -74,6 +74,7 @@ int main(int argc, char* argv[]) {
   int simulatePopulationInterval = 1;
   int microTrafficGrowthTicks = -1;
   int microTrafficSteps = -1;
+  int microTrafficIncidents = 0;
   int benchmarkPhase5Ticks = -1;
   BenchmarkFocus benchmarkPhase5Focus = BenchmarkFocus::All;
   std::string saveCityPath;
@@ -329,6 +330,8 @@ int main(int argc, char* argv[]) {
       microTrafficGrowthTicks = std::atoi(argv[++i]);
     } else if (arg == "--micro-traffic-steps" && i + 1 < argc) {
       microTrafficSteps = std::atoi(argv[++i]);
+    } else if (arg == "--micro-traffic-incidents" && i + 1 < argc) {
+      microTrafficIncidents = std::atoi(argv[++i]);
     } else {
       std::cerr << "Error: Unknown argument '" << arg << "'\n";
       return 1;
@@ -490,7 +493,8 @@ int main(int argc, char* argv[]) {
         microTrafficGrowthTicks,
         generateTerrainFlag,
         terrainWaterFraction,
-        microTrafficSteps
+        microTrafficSteps,
+        microTrafficIncidents
       );
     }
 

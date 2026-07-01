@@ -8,6 +8,7 @@
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
+#include "src/systems/ServiceSystem.hpp"
 
 // Milestone 11 (Traffic Micro-Simulation): individual vehicle agents that route
 // over the road graph and step along their paths. Congestion is emergent -
@@ -41,6 +42,10 @@ struct MicroTrafficSummary {
   float averageEdgeOccupancy = 0.0f;
   uint32_t signalizedIntersections = 0;
   float averageSignalWaitSteps = 0.0f;  // mean steps per vehicle spent stopped at reds
+
+  uint32_t emergencyVehicles = 0;
+  uint32_t emergencyArrived = 0;
+  float averageEmergencyResponseSteps = 0.0f;  // mean steps for emergency vehicles to reach their incident
 };
 
 class TrafficMicroSim {
@@ -50,18 +55,25 @@ public:
     float baseSpeed = 0.5f;           // edges/step at free flow (~2 steps per tile)
     float congestionSlowing = 0.20f;  // speed penalty per extra vehicle sharing an edge
     float minSpeed = 0.05f;           // floor so gridlock still crawls
-    bool enableSignals = true;        // gate intersections with alternating signals
-    int signalPeriod = 6;             // steps of green per axis at each signal
+    bool enableSignals = true;         // gate intersections with alternating signals
+    int signalPeriod = 6;              // steps of green per axis at each signal
+    int emergencyIncidents = 0;        // number of emergency dispatches to spawn (needs facilities)
+    float emergencySpeedMultiplier = 1.6f;  // speed boost on top of ignoring congestion/reds
   };
 
   // Spawns one vehicle per commute batch (home -> job), routes each with the
   // shortest path, and steps them until all arrive or maxSteps is reached.
+  // If facilities is non-null and options.emergencyIncidents > 0, also spawns
+  // that many emergency vehicles, each dispatched from the nearest facility to
+  // a randomly chosen building (the "incident"). Emergency vehicles ignore
+  // congestion slowing and red signals, and get a speed multiplier.
   // Deterministic for a given seed.
   static MicroTrafficSummary simulate(
     const EntityStore& store,
     const PopulationStore& population,
     const RoadNetwork& roads,
     uint32_t seed,
-    const Options& options = {}
+    const Options& options = {},
+    const std::vector<ServiceFacility>* facilities = nullptr
   );
 };

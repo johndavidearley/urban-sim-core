@@ -1,6 +1,7 @@
 #include "src/systems/TrafficMicroSim.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
@@ -112,6 +113,66 @@ std::vector<CommuteSpec> collectCommutes(
   return specs;
 }
 
+// Dispatches `count` emergency vehicles, each from the nearest facility (by
+// road-anchor distance) to a randomly chosen building (the "incident"). Uses a
+// seed stream independent of the commute RNG so emergency spawning does not
+// perturb (or depend on) commuter routing.
+void spawnEmergencyVehicles(
+  const EntityStore& store,
+  const RoadNetwork& roads,
+  const std::vector<ServiceFacility>& facilities,
+  uint32_t seed,
+  int count,
+  std::vector<Vehicle>& vehicles
+) {
+  std::vector<const Building*> candidates;
+  for (const auto& [id, b] : store.getBuildings()) {
+    (void)id;
+    candidates.push_back(&b);
+  }
+  if (candidates.empty() || facilities.empty()) {
+    return;
+  }
+  std::sort(candidates.begin(), candidates.end(),
+    [](const Building* a, const Building* b) { return a->id < b->id; });
+
+  std::mt19937 rng(seed);
+  std::uniform_int_distribution<size_t> incidentDist(0, candidates.size() - 1);
+
+  for (int i = 0; i < count; ++i) {
+    const Building* incident = candidates[incidentDist(rng)];
+    glm::ivec2 incidentAnchor;
+    if (!roadAnchor(roads, incident->position, incidentAnchor)) continue;
+
+    const ServiceFacility* nearest = nullptr;
+    glm::ivec2 nearestAnchor{};
+    long bestDistSq = std::numeric_limits<long>::max();
+    for (const ServiceFacility& f : facilities) {
+      glm::ivec2 anchor;
+      if (!roadAnchor(roads, f.position, anchor)) continue;
+      const long dx = anchor.x - incidentAnchor.x;
+      const long dy = anchor.y - incidentAnchor.y;
+      const long distSq = dx * dx + dy * dy;
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        nearest = &f;
+        nearestAnchor = anchor;
+      }
+    }
+    if (nearest == nullptr) continue;
+
+    Pathfinding::Path path = Pathfinding::findShortestPath(roads, nearestAnchor, incidentAnchor);
+    if (!path.found || path.waypoints.size() < 2) continue;
+
+    Vehicle v;
+    v.id = static_cast<uint32_t>(vehicles.size());
+    v.type = VehicleType::Emergency;
+    v.route = std::move(path.waypoints);
+    v.people = 0;
+    vehicles.push_back(std::move(v));
+  }
+}
+
 } // namespace
 
 MicroTrafficSummary TrafficMicroSim::simulate(
@@ -119,16 +180,14 @@ MicroTrafficSummary TrafficMicroSim::simulate(
   const PopulationStore& population,
   const RoadNetwork& roads,
   uint32_t seed,
-  const Options& options
+  const Options& options,
+  const std::vector<ServiceFacility>* facilities
 ) {
   MicroTrafficSummary summary;
 
   uint32_t commuters = 0;
   const std::vector<CommuteSpec> specs = collectCommutes(store, population, roads, seed, commuters);
   summary.commutingPopulation = commuters;
-  if (specs.empty()) {
-    return summary;
-  }
 
   // Route each commute once (free-flow shortest path); spawn a vehicle per batch.
   std::vector<Vehicle> vehicles;
@@ -145,7 +204,16 @@ MicroTrafficSummary TrafficMicroSim::simulate(
     vehicles.push_back(std::move(v));
   }
 
+  if (facilities != nullptr && options.emergencyIncidents > 0) {
+    // Independent seed stream (xor-folded) so emergency dispatch does not
+    // perturb, or depend on, the commuter RNG sequence above.
+    spawnEmergencyVehicles(store, roads, *facilities, seed ^ 0x9E3779B9u, options.emergencyIncidents, vehicles);
+  }
+
   summary.vehicles = static_cast<uint32_t>(vehicles.size());
+  summary.emergencyVehicles = static_cast<uint32_t>(std::count_if(
+    vehicles.begin(), vehicles.end(),
+    [](const Vehicle& v) { return v.type == VehicleType::Emergency; }));
   if (vehicles.empty()) {
     return summary;
   }
@@ -195,7 +263,9 @@ MicroTrafficSummary TrafficMicroSim::simulate(
 
       const int sharing = occupancy[edgeOf(v)];
       float speed = options.baseSpeed;
-      if (v.type != VehicleType::Emergency && sharing > 1) {
+      if (v.type == VehicleType::Emergency) {
+        speed = options.baseSpeed * options.emergencySpeedMultiplier;
+      } else if (sharing > 1) {
         speed = options.baseSpeed / (1.0f + options.congestionSlowing * static_cast<float>(sharing - 1));
       }
       speed = std::max(options.minSpeed, speed);
@@ -214,7 +284,7 @@ MicroTrafficSummary TrafficMicroSim::simulate(
         // To continue it must enter edge (route[segment+1] -> route[segment+2]).
         // Stop on red at a signalized intersection, queueing on the approach edge.
         const glm::ivec2 node = v.route[v.segment + 1];
-        if (!intersections.empty() && intersections.count(node) != 0) {
+        if (v.type != VehicleType::Emergency && !intersections.empty() && intersections.count(node) != 0) {
           const glm::ivec2 next = v.route[v.segment + 2];
           const bool horizontalMove = (next.x != node.x);
           if (!signalGreen(node, horizontalMove, static_cast<int>(currentStep), options.signalPeriod)) {
@@ -238,13 +308,24 @@ MicroTrafficSummary TrafficMicroSim::simulate(
     ? static_cast<float>(static_cast<double>(totalWaitSteps) / vehicles.size()) : 0.0f;
 
   uint64_t tripStepsTotal = 0;
+  uint32_t carArrivedCount = 0;
+  uint64_t emergencyStepsTotal = 0;
+  uint32_t emergencyArrivedCount = 0;
   for (const Vehicle& v : vehicles) {
-    if (v.arrived) {
+    if (!v.arrived) continue;
+    if (v.type == VehicleType::Emergency) {
+      emergencyStepsTotal += v.arriveStep;
+      ++emergencyArrivedCount;
+    } else {
       tripStepsTotal += v.arriveStep;
+      ++carArrivedCount;
     }
   }
-  summary.averageTripSteps = arrivedCount > 0
-    ? static_cast<float>(static_cast<double>(tripStepsTotal) / arrivedCount) : 0.0f;
+  summary.averageTripSteps = carArrivedCount > 0
+    ? static_cast<float>(static_cast<double>(tripStepsTotal) / carArrivedCount) : 0.0f;
+  summary.emergencyArrived = emergencyArrivedCount;
+  summary.averageEmergencyResponseSteps = emergencyArrivedCount > 0
+    ? static_cast<float>(static_cast<double>(emergencyStepsTotal) / emergencyArrivedCount) : 0.0f;
 
   return summary;
 }

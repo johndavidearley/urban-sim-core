@@ -11,5 +11,6 @@ int runMicroTrafficDemo(
   int growthTicks,
   bool generateTerrain,
   float waterFraction,
-  int maxSteps
+  int maxSteps,
+  int emergencyIncidents = 0
 );

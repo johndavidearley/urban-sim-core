@@ -8,8 +8,8 @@ Last updated: June 27, 2026
 - Headless core simulation loop: complete
 - Population, traffic, economy, metrics, save/load, districts, and visualization: complete
 - Multithreaded simulation loop with thread pool: complete (~2.8× speedup at 200k pop)
-- Phase 5 started: traffic micro-simulation (vehicle agents, emergent congestion, signalized intersections)
-- Automated validation: 156 tests passing
+- Phase 5 started: traffic micro-simulation (vehicle agents, emergent congestion, signalized intersections, emergency routing)
+- Automated validation: 159 tests passing
 
 ---
 
@@ -125,8 +125,8 @@ Last updated: June 27, 2026
 - [x] Emergent congestion (edge speed falls with vehicle density; `--micro-traffic`)
 - [x] Intersection signal logic (junctions detected by degree; vehicles queue on red)
 - [x] Traffic signals (basic; alternating axis green, coordinate-offset phases)
+- [x] Emergency vehicle routing (dispatched from ServiceFacility sites to random incidents; ignores congestion and red signals; `--micro-traffic-incidents`)
 - [ ] Multi-lane per-road capacity/lane changing
-- [ ] Emergency vehicle routing (VehicleType foundation in place; not yet spawned)
 
 ### Milestone 12: Advanced Economy
 - [ ] Commercial and industrial supply chains
