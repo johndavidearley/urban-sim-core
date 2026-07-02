@@ -380,22 +380,38 @@ std::vector<Coord> sampleRouteStops(const Pathfinding::Path& path, int stopSpaci
   return stops;
 }
 
-// Keep roughly one bus route per `popPerRoute` residents (capped, since each
-// route adds a per-tick BFS to the transit coverage cache): connect the
-// residential building farthest from existing route coverage to its nearest
-// job building (commercial/industrial/office) via the road network. Simple
+// Keep roughly one route of `mode` per `popPerRoute` residents (capped at
+// `maxOfMode`, since each route adds a per-tick BFS to the transit coverage
+// cache): connect the residential building farthest from existing route
+// coverage (of either mode - both compete for the same underserved areas) to
+// a job building (commercial/industrial/office) via the road network. Simple
 // and deterministic, in the same spirit as placeFacilitiesIfNeeded, though
 // routes need an endpoint pair rather than a single site.
-void placeTransitRoutesIfNeeded(
+//
+// Bus and rail share this one placement routine, differing only in
+// parameters: bus connects to the *nearest* job (short local hops, denser
+// placement, modest capacity), while rail connects to the *farthest* job
+// (a long trunk line spanning the city, sparse placement, high capacity) -
+// passed in via `connectToFarthestJob`. The BFS coverage/offload mechanism
+// downstream doesn't care how a route's stops were chosen.
+void placeTransitRoutesOfModeIfNeeded(
   const RoadNetwork& roads,
   const EntityStore& store,
   std::vector<TransitRoute>& routes,
   uint32_t population,
-  int stopCoverageRadius
+  TransitMode mode,
+  uint32_t popPerRoute,
+  size_t maxOfMode,
+  int stopCoverageRadius,
+  int vehicleCount,
+  int capacityPerVehicle,
+  int stopSpacing,
+  bool connectToFarthestJob
 ) {
-  const uint32_t popPerRoute = 1200;
-  const size_t target = std::min<size_t>(population / popPerRoute, 16);
-  if (routes.size() >= target) return;
+  const size_t existingOfMode = static_cast<size_t>(std::count_if(
+    routes.begin(), routes.end(), [mode](const TransitRoute& r) { return r.mode == mode; }));
+  const size_t target = std::min<size_t>(population / popPerRoute, maxOfMode);
+  if (existingOfMode >= target) return;
 
   std::vector<const Building*> residential;
   std::vector<const Building*> jobs;
@@ -422,10 +438,13 @@ void placeTransitRoutesIfNeeded(
   // stranded building (e.g. beyond a water gap the road grid hasn't crossed
   // yet) can't permanently block placement for the whole city.
   std::vector<const Building*> unreachableHomes;
+  size_t placed = existingOfMode;
 
-  while (routes.size() < target) {
+  while (placed < target) {
     // Farthest-from-existing-stop residential building anchors the new
     // route, spreading routes across the city instead of clustering them.
+    // Existing stops of either mode count, since both compete to cover the
+    // same underserved areas.
     const Building* bestHome = nullptr;
     long bestScore = -1;
     for (const Building* home : residential) {
@@ -449,22 +468,23 @@ void placeTransitRoutesIfNeeded(
     }
     if (bestHome == nullptr) break;
 
-    // Try job buildings nearest-first (straight-line distance; cheap ordering
-    // heuristic - the route itself follows actual roads via Pathfinding).
-    // Falls through to farther jobs if the nearest one turns out unreachable,
-    // so one disconnected nearby job doesn't strand this route attempt.
-    std::vector<const Building*> jobsByDistance = jobs;
-    std::sort(jobsByDistance.begin(), jobsByDistance.end(), [&](const Building* a, const Building* b) {
+    // Try job buildings nearest-first or farthest-first depending on mode
+    // (straight-line distance; cheap ordering heuristic - the route itself
+    // follows actual roads via Pathfinding). Falls through to the next
+    // candidate if the preferred one turns out unreachable, so one
+    // disconnected job doesn't strand this route attempt.
+    std::vector<const Building*> jobsOrdered = jobs;
+    std::sort(jobsOrdered.begin(), jobsOrdered.end(), [&](const Building* a, const Building* b) {
       const long dax = a->position.x - bestHome->position.x, day = a->position.y - bestHome->position.y;
       const long dbx = b->position.x - bestHome->position.x, dby = b->position.y - bestHome->position.y;
       const long da = dax * dax + day * day, db = dbx * dbx + dby * dby;
-      if (da != db) return da < db;
+      if (da != db) return connectToFarthestJob ? (da > db) : (da < db);
       return a->id < b->id;
     });
 
     Pathfinding::Path path;
     bool connected = false;
-    for (const Building* job : jobsByDistance) {
+    for (const Building* job : jobsOrdered) {
       if (!roads.hasNode(job->position)) continue;
       path = Pathfinding::findShortestPath(roads, bestHome->position, job->position);
       if (path.found && path.waypoints.size() >= 2) {
@@ -481,10 +501,41 @@ void placeTransitRoutesIfNeeded(
 
     TransitRoute route;
     route.id = static_cast<TransitRouteId>(routes.size() + 1);
-    route.stops = sampleRouteStops(path, /*stopSpacing=*/2);
+    route.mode = mode;
+    route.stops = sampleRouteStops(path, stopSpacing);
     route.stopCoverageRadius = stopCoverageRadius;
+    route.vehicleCount = vehicleCount;
+    route.capacityPerVehicle = capacityPerVehicle;
     routes.push_back(std::move(route));
+    ++placed;
   }
+}
+
+void placeTransitRoutesIfNeeded(
+  const RoadNetwork& roads,
+  const EntityStore& store,
+  std::vector<TransitRoute>& routes,
+  uint32_t population,
+  int stopCoverageRadius
+) {
+  // Bus: short local hops to the nearest job, denser placement, modest
+  // per-vehicle capacity - matches TransitRoute's own defaults.
+  placeTransitRoutesOfModeIfNeeded(
+    roads, store, routes, population, TransitMode::Bus,
+    /*popPerRoute=*/1200, /*maxOfMode=*/16, stopCoverageRadius,
+    /*vehicleCount=*/2, /*capacityPerVehicle=*/30, /*stopSpacing=*/2,
+    /*connectToFarthestJob=*/false
+  );
+
+  // Rail: a long trunk line to the farthest job, sparse (a city only
+  // justifies a handful of lines), much higher capacity and a wider
+  // catchment - riders travel farther to reach a station than a bus stop.
+  placeTransitRoutesOfModeIfNeeded(
+    roads, store, routes, population, TransitMode::Rail,
+    /*popPerRoute=*/4000, /*maxOfMode=*/3, stopCoverageRadius * 2,
+    /*vehicleCount=*/6, /*capacityPerVehicle=*/150, /*stopSpacing=*/1,
+    /*connectToFarthestJob=*/true
+  );
 }
 
 // Zone up to `batch` of the nearest candidate tiles, splitting counts by demand
@@ -832,6 +883,8 @@ SimResult CitySimulator::run(
     row.tradeBalance = economy.tradeBalance;
     row.inflationMultiplier = economy.inflationMultiplier;
     row.transitRoutes = static_cast<uint32_t>(transitRoutes.size());
+    row.transitBusRoutes = transitSummary.busRoutes;
+    row.transitRailRoutes = transitSummary.railRoutes;
     row.transitRidership = transitSummary.ridership;
     row.transitDemand = transitSummary.demand;
     row.transitModalShare = transitSummary.modalShare;

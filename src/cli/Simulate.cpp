@@ -26,7 +26,7 @@ static const char* kCSVHeader =
   "population,employed,residential_buildings,commercial_buildings,industrial_buildings,office_buildings,"
   "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
   "service_coverage,service_facilities,avg_land_value,trade_balance,inflation_multiplier,"
-  "transit_routes,transit_ridership,transit_demand,transit_modal_share\n";
+  "transit_routes,transit_bus_routes,transit_rail_routes,transit_ridership,transit_demand,transit_modal_share\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -58,7 +58,8 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.trafficCongestion << "," << row.avgPollution << ","
       << row.serviceCoverage << "," << row.serviceFacilities << "," << row.avgLandValue << ","
       << row.tradeBalance << "," << row.inflationMultiplier << ","
-      << row.transitRoutes << "," << row.transitRidership << "," << row.transitDemand << ","
+      << row.transitRoutes << "," << row.transitBusRoutes << "," << row.transitRailRoutes << ","
+      << row.transitRidership << "," << row.transitDemand << ","
       << row.transitModalShare << "\n";
 }
 
@@ -188,6 +189,7 @@ int runCitySimulation(
                 << " tradeBalance=" << last.tradeBalance
                 << " inflationMultiplier=" << std::setprecision(3) << last.inflationMultiplier
                 << " transitRoutes=" << last.transitRoutes
+                << " (bus=" << last.transitBusRoutes << " rail=" << last.transitRailRoutes << ")"
                 << " transitRidership=" << last.transitRidership
                 << " transitModalShare=" << std::setprecision(1) << (last.transitModalShare * 100.0f) << "%\n";
     }
@@ -277,6 +279,7 @@ int runCitySimulation(
               << " tradeBalance=" << lastRow.tradeBalance
               << " inflationMultiplier=" << std::setprecision(3) << lastRow.inflationMultiplier
               << " transitRoutes=" << lastRow.transitRoutes
+              << " (bus=" << lastRow.transitBusRoutes << " rail=" << lastRow.transitRailRoutes << ")"
               << " transitRidership=" << lastRow.transitRidership
               << " transitModalShare=" << std::setprecision(1) << (lastRow.transitModalShare * 100.0f) << "%\n";
   }

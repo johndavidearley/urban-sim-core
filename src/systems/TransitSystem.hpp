@@ -8,17 +8,27 @@
 
 using TransitRouteId = uint32_t;
 
-// A fixed bus route: an ordered path of road-network stops. Modeled as
-// static infrastructure (like ServiceFacility) rather than literal moving
-// vehicle agents - TrafficMicroSim already covers agent-level simulation for
-// cars, and modeling buses at that fidelity is out of scope here. Instead
-// this feeds into the same aggregate commute model TrafficSystem uses, the
-// same way ServiceSystem feeds coverage into desirability.
+enum class TransitMode : int {
+  Bus = 0,
+  Rail = 1
+};
+
+// A fixed transit route (bus or rail): an ordered path of road-network stops.
+// Modeled as static infrastructure (like ServiceFacility) rather than
+// literal moving vehicle agents - TrafficMicroSim already covers agent-level
+// simulation for cars, and matching that fidelity for transit is out of
+// scope here. Instead this feeds into the same aggregate commute model
+// TrafficSystem uses, the same way ServiceSystem feeds coverage into
+// desirability. Rail shares this exact same data shape and offload
+// mechanism as bus - only its placement (fewer, longer, higher-capacity
+// lines) and parameters differ; the mode field is purely descriptive/
+// reportable, not a branch in any matching logic.
 struct TransitRoute {
   TransitRouteId id = 0;
+  TransitMode mode = TransitMode::Bus;
   std::vector<Coord> stops;     // ordered path along the road network
-  int vehicleCount = 2;         // buses assigned to this route
-  int capacityPerVehicle = 30;  // riders per bus per tick
+  int vehicleCount = 2;         // vehicles assigned to this route
+  int capacityPerVehicle = 30;  // riders per vehicle per tick
   int stopCoverageRadius = 4;   // road-hops a stop covers (walk-to-stop distance)
 
   int totalCapacity() const {
@@ -28,6 +38,8 @@ struct TransitRoute {
 
 struct TransitSummary {
   uint32_t totalRoutes = 0;
+  uint32_t busRoutes = 0;
+  uint32_t railRoutes = 0;
   uint32_t totalStops = 0;
   uint32_t totalCapacity = 0;  // sum of route capacities
   uint32_t ridership = 0;      // commuters actually carried by transit this tick

@@ -357,3 +357,25 @@ TEST(CitySimulatorTests, TransitDisabledMeansNoRoutesEverPlaced) {
     EXPECT_FLOAT_EQ(row.transitModalShare, 0.0f);
   }
 }
+
+// A city grown large enough (population past the rail threshold) should get
+// at least one rail line alongside its bus routes - a genuine second transit
+// mode, not just relabeled buses. bus + rail route counts must always sum to
+// the total, on every row that has any routes at all.
+TEST(CitySimulatorTests, RailLinesAppearAlongsideBusesInALargeCity) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 180, SimOptions{});
+
+  ASSERT_FALSE(result.rows.empty());
+  const SimTickMetrics& last = result.rows.back();
+  EXPECT_GT(last.transitBusRoutes, 0u);
+  EXPECT_GT(last.transitRailRoutes, 0u);
+
+  for (const SimTickMetrics& row : result.rows) {
+    EXPECT_EQ(row.transitBusRoutes + row.transitRailRoutes, row.transitRoutes);
+  }
+}

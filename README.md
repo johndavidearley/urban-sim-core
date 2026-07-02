@@ -154,19 +154,30 @@ competing for land, it changes the city's growth mix (not just reported
 metrics) for every `--simulate` run, the same way adding an RCI category
 naturally would.
 
-Public transit (Phase 5, M13 — started) auto-places bus routes as the city
-grows: each route is a fixed path of stops along the road network (static
-infrastructure, like a service facility, not a literal moving vehicle —
-`TrafficMicroSim` already covers agent-level simulation for cars) with a
-per-tick rider capacity. If a route's stop coverage reaches both the home and
-work ends of a commute, some of those commuters ride the bus instead of
-driving, taking that load off the road network — modal split in action.
-Capacity constrains ridership (a small route visibly caps out below demand,
-reported separately), and routes are on by default (`--simulate-no-transit`
-to compare against the pre-transit baseline). Because commute pairs are
-sampled uniformly at random each tick (the same simplification `TrafficSystem`
-has always used, not something transit changes), ridership shows up reliably
-over the course of a run rather than on any single tick.
+Public transit (Phase 5, M13 — complete) auto-places bus routes and, once a
+city is large enough, rail lines, as it grows: each route is a fixed path of
+stops along the road network (static infrastructure, like a service facility,
+not a literal moving vehicle — `TrafficMicroSim` already covers agent-level
+simulation for cars) with a per-tick rider capacity. If a route's stop
+coverage reaches both the home and work ends of a commute, some of those
+commuters ride transit instead of driving, taking that load off the road
+network — modal split in action. Capacity constrains ridership (a small
+route visibly caps out below demand, reported separately), and routes are on
+by default (`--simulate-no-transit` to compare against the pre-transit
+baseline). Because commute pairs are sampled uniformly at random each tick
+(the same simplification `TrafficSystem` has always used, not something
+transit changes), ridership shows up reliably over the course of a run
+rather than on any single tick.
+
+Rail (`TransitMode::Rail`) is a second transit mode sharing bus's exact
+coverage/offload machinery — only its placement and parameters differ. Bus
+routes connect to the *nearest* job (short local hops, denser, modest
+capacity); rail connects to the *farthest* reachable job (long trunk lines
+spanning the city, sparser, far higher capacity, and a wider walk-to-station
+radius). Rail only starts appearing once a city is substantially larger
+(roughly one line per 4,000 residents, capped at 3), and its reach noticeably
+lifts modal share once it does — commonly 10-20% in a ~7,000-population test
+city, versus under 1% from buses alone in the same city.
 
 It prints an evolution table (RCI demand, population, building counts, roads,
 budget) plus a per-phase timing breakdown, so the same run doubles as an

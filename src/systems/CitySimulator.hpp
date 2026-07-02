@@ -33,7 +33,9 @@ struct SimTickMetrics {
   float avgLandValue = 100.0f;  // mean Tile::landValue across zoned tiles
   int64_t tradeBalance = 0;     // goodsProduced - goodsConsumed; positive = exporting
   float inflationMultiplier = 1.0f;  // current price-level index applied to costs (1.0 = base year)
-  uint32_t transitRoutes = 0;        // bus routes currently operating
+  uint32_t transitRoutes = 0;        // bus + rail routes currently operating
+  uint32_t transitBusRoutes = 0;
+  uint32_t transitRailRoutes = 0;
   uint32_t transitRidership = 0;     // commuters carried by transit this tick
   uint32_t transitDemand = 0;        // commuters whose commute is covered by a route, whether or not it had capacity
   float transitModalShare = 0.0f;    // transitRidership / (transitRidership + car commuters)

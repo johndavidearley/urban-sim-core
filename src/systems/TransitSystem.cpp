@@ -106,6 +106,11 @@ TransitSummary TransitSystem::summarize(
   for (const TransitRoute& route : routes) {
     summary.totalStops += static_cast<uint32_t>(route.stops.size());
     summary.totalCapacity += static_cast<uint32_t>(std::max(0, route.totalCapacity()));
+    if (route.mode == TransitMode::Rail) {
+      ++summary.railRoutes;
+    } else {
+      ++summary.busRoutes;
+    }
   }
   summary.ridership = offload.totalRidership();
   summary.demand = offload.totalDemand();

@@ -126,6 +126,56 @@ TEST(TransitSystemTests, SummarizeAggregatesRoutesAndComputesModalShare) {
   EXPECT_FLOAT_EQ(summary.modalShare, 0.4f);
 }
 
+TEST(TransitSystemTests, RouteModeDefaultsToBus) {
+  TransitRoute route;
+  EXPECT_EQ(route.mode, TransitMode::Bus);
+}
+
+TEST(TransitSystemTests, SummarizeCountsRoutesByMode) {
+  CityMap map({20, 3});
+  RoadNetwork roads(map);
+  buildStraightRoad(roads, 20);
+
+  std::vector<TransitRoute> routes = {
+    makeRoute(1, {{0, 0}, {5, 0}}, 2, 30, 4),
+    makeRoute(2, {{10, 0}, {15, 0}}, 1, 20, 4)
+  };
+  routes[1].mode = TransitMode::Rail;
+  routes[1].vehicleCount = 6;
+  routes[1].capacityPerVehicle = 150;
+
+  TransitCoverageCache cache;
+  TransitSystem::buildCache(roads, routes, cache);
+  TransitOffload offload(routes, cache);
+
+  const TransitSummary summary = TransitSystem::summarize(routes, offload, 100);
+
+  EXPECT_EQ(summary.totalRoutes, 2u);
+  EXPECT_EQ(summary.busRoutes, 1u);
+  EXPECT_EQ(summary.railRoutes, 1u);
+  EXPECT_EQ(summary.totalCapacity, 60u + 900u);
+}
+
+// Rail and bus routes share the exact same offload mechanism - a commute
+// covered by a rail route's (wider) coverage rides it same as it would a bus.
+TEST(TransitSystemTests, RailRouteParticipatesInOffloadLikeAnyOtherRoute) {
+  CityMap map({20, 3});
+  RoadNetwork roads(map);
+  buildStraightRoad(roads, 20);
+
+  TransitRoute rail = makeRoute(1, {{0, 0}, {10, 0}}, 6, 150, 8);
+  rail.mode = TransitMode::Rail;
+  std::vector<TransitRoute> routes = {rail};
+
+  TransitCoverageCache cache;
+  TransitSystem::buildCache(roads, routes, cache);
+  TransitOffload offload(routes, cache);
+
+  const uint32_t carried = offload.offload({0, 0}, {10, 0}, 500);
+  EXPECT_EQ(carried, 500u);  // well within rail's 900 capacity
+  EXPECT_EQ(offload.totalRidership(), 500u);
+}
+
 TEST(TransitSystemTests, NoRoutesMeansNoCoverageAndZeroSummary) {
   CityMap map({20, 3});
   RoadNetwork roads(map);
