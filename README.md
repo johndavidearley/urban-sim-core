@@ -86,6 +86,7 @@ only on a fresh map; loading a snapshot restores its saved terrain instead.
 ./build/UrbanSimCore-cli --size 32 --seed 5 --zone-rect 10 10 15 15 OFFICE --place-road 10 16 15 16 --run-growth 20 --print-budget-summary
 ./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 100
 ./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 100 --simulate-no-transit
+./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 60 --simulate-district Downtown 20 20 44 44 --simulate-district Suburbs 46 20 63 44
 ```
 
 `--simulate N` grows a city autonomously from a near-empty map for N ticks. Each
@@ -178,6 +179,18 @@ radius). Rail only starts appearing once a city is substantially larger
 (roughly one line per 4,000 residents, capped at 3), and its reach noticeably
 lifts modal share once it does — commonly 10-20% in a ~7,000-population test
 city, versus under 1% from buses alone in the same city.
+
+Districts and policy (Phase 5, M14 — started) let `--simulate-district NAME
+X1 Y1 X2 Y2` (repeatable) define administrative boundaries whose service
+budget genuinely shapes growth, not just an after-the-fact report. Each
+district's revenue funds a service budget (capped or uncapped, via the same
+`DistrictSystem` the standalone `--create-district`/`--set-district-*`
+commands already exposed); how well that budget is met, plus how sparse the
+district still is, feeds a per-tile build-chance multiplier for its bounds
+on the next tick — a district starved of service budget visibly grows slower
+than an equally-sized, equally-central one that isn't. A "District Summary"
+table prints after the run. This is opt-in only: no `--simulate-district`
+flags means no districts, and the simulation behaves exactly as before.
 
 It prints an evolution table (RCI demand, population, building counts, roads,
 budget) plus a per-phase timing breakdown, so the same run doubles as an

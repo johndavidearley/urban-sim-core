@@ -7,6 +7,7 @@
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
+#include "src/systems/DistrictSystem.hpp"
 #include "src/systems/TransitSystem.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
@@ -51,11 +52,13 @@ struct SimPhaseTimings {
   double serviceMs = 0.0;
   double landValueMs = 0.0;
   double transitMs = 0.0;
+  double districtMs = 0.0;
 };
 
 struct SimResult {
   std::vector<SimTickMetrics> rows;
   SimPhaseTimings timings;
+  std::vector<DistrictMetrics> finalDistrictMetrics;  // one entry per district passed to run(), evaluated on the final tick
 };
 
 struct SimOptions {
@@ -69,6 +72,7 @@ struct SimOptions {
   int landValueInterval = 1;   // run land-value recompute every N ticks (its job-access BFS is the costliest per-tick pass; >1 cuts CPU on large road networks)
   float inflationRatePerTick = 0.0f;  // compounding per-tick rate applied to maintenance/trade costs (not tax revenue); 0 = no inflation, matching prior behavior
   bool enableTransit = true;   // auto-place bus routes and let them offload commuters from the road network
+  int districtInterval = 1;    // re-evaluate district metrics/growth pressure every N ticks (only relevant when districts is non-null)
   // Called after each tick with the row. Return false to stop the simulation.
   // Used by infinite mode; rows are not accumulated in SimResult when this is set and ticks < 0.
   std::function<bool(const SimTickMetrics&)> tickCallback;
@@ -88,6 +92,17 @@ public:
   // If ticks < 0, runs indefinitely until options.tickCallback returns false.
   // In infinite mode (ticks < 0), rows are not accumulated in SimResult.rows;
   // use options.tickCallback to observe per-tick state.
+  //
+  // If `districts` is non-null and has at least one district, each district's
+  // service-budget fulfillment and density (via DistrictSystem::
+  // computeGrowthPressureMultiplier) throttles or boosts GrowthSystem's build
+  // chance within its bounds - a district starved of service budget grows
+  // slower than one that's well-funded. Evaluated on a one-tick lag (like
+  // congestion/service satisfaction elsewhere in this loop): this tick's
+  // growth step uses modifiers computed from the *previous* tick's state.
+  // Districts themselves are caller-owned and never created/modified here -
+  // this is read-only with respect to district definitions. Default nullptr
+  // matches prior behavior exactly for every existing caller.
   static SimResult run(
     CityMap& map,
     RoadNetwork& roads,
@@ -95,6 +110,7 @@ public:
     PopulationStore& population,
     uint32_t seed,
     int ticks,
-    const SimOptions& options = {}
+    const SimOptions& options = {},
+    const DistrictSystem* districts = nullptr
   );
 };

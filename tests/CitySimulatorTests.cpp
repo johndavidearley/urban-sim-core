@@ -379,3 +379,60 @@ TEST(CitySimulatorTests, RailLinesAppearAlongsideBusesInALargeCity) {
     EXPECT_EQ(row.transitBusRoutes + row.transitRailRoutes, row.transitRoutes);
   }
 }
+
+// Passing an empty (but non-null) DistrictSystem must behave identically to
+// the default nullptr - the growth-chance-modifier code path only activates
+// once at least one district exists.
+TEST(CitySimulatorTests, EmptyDistrictSystemMatchesNoDistrictsBehavior) {
+  auto runOnce = [](const DistrictSystem* districts) {
+    CityMap map({48, 48});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    return CitySimulator::run(map, roads, store, population, 7, 40, fastOptions(), districts).rows.back();
+  };
+
+  const DistrictSystem empty;
+  const SimTickMetrics withNullptr = runOnce(nullptr);
+  const SimTickMetrics withEmptyDistricts = runOnce(&empty);
+
+  EXPECT_EQ(withNullptr.residentialBuildings, withEmptyDistricts.residentialBuildings);
+  EXPECT_EQ(withNullptr.commercialBuildings, withEmptyDistricts.commercialBuildings);
+  EXPECT_EQ(withNullptr.industrialBuildings, withEmptyDistricts.industrialBuildings);
+  EXPECT_EQ(withNullptr.population, withEmptyDistricts.population);
+}
+
+// A district with a severely capped service budget should grow visibly
+// slower (fewer buildings for the same area) than a same-sized, similarly
+// central district with no cap - proving computeGrowthPressureMultiplier's
+// output genuinely throttles GrowthSystem, not just sits in DistrictMetrics
+// as an inert number. The two districts are mirrored across the city center
+// (equal size, equal distance from the point growth radiates from) so the
+// only meaningful difference between them is budget policy.
+TEST(CitySimulatorTests, CappedServiceBudgetDistrictGrowsSlowerThanFundedOne) {
+  CityMap map({80, 80});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  DistrictSystem districts;
+  const DistrictId funded = districts.createDistrict("Funded", {10, 30}, {38, 50});
+  const DistrictId capped = districts.createDistrict("Capped", {42, 30}, {70, 50});
+  ASSERT_NE(funded, 0u);
+  ASSERT_NE(capped, 0u);
+  ASSERT_TRUE(districts.setDistrictServiceBudgetCap(funded, -1));   // uncapped
+  ASSERT_TRUE(districts.setDistrictServiceBudgetCap(capped, 1));    // effectively starved
+
+  SimOptions options = fastOptions();
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 60, options, &districts);
+
+  ASSERT_EQ(result.finalDistrictMetrics.size(), 2u);
+  const DistrictMetrics& fundedMetrics = result.finalDistrictMetrics[0].districtId == funded
+    ? result.finalDistrictMetrics[0] : result.finalDistrictMetrics[1];
+  const DistrictMetrics& cappedMetrics = result.finalDistrictMetrics[0].districtId == capped
+    ? result.finalDistrictMetrics[0] : result.finalDistrictMetrics[1];
+
+  EXPECT_TRUE(cappedMetrics.serviceBudgetCapApplied);
+  EXPECT_FALSE(fundedMetrics.serviceBudgetCapApplied);
+  EXPECT_GT(fundedMetrics.buildings, cappedMetrics.buildings);
+}

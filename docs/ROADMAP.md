@@ -11,7 +11,8 @@ Last updated: June 27, 2026
 - Phase 5, Milestone 11 (Traffic Micro-Simulation): complete
 - Phase 5, Milestone 12 (Advanced Economy): complete - dynamic land value, commercial/industrial supply chains and imports/exports, inflation, office demand
 - Phase 5, Milestone 13 (Public Transit): complete - bus routes, train/subway networks, transit demand/capacity, modal split
-- Automated validation: 210 tests passing
+- Phase 5, Milestone 14 (Districts and Policies): started - district-level management and growth incentives wired into the autonomous simulation loop, service budgets by district surfaced
+- Automated validation: 212 tests passing
 
 ---
 
@@ -151,12 +152,14 @@ Note on performance: the job-access BFS is proportional to job-building count an
 
 Note on default behavior: like Office demand in M12, this is not behavior-neutral by default (`SimOptions::enableTransit = true`) - reduced congestion feeds back into desirability/migration the same way traffic congestion always has, so it can shift a city's growth trajectory. `--simulate-no-transit` opts back out for comparison/testing. Unlike car routing (which only succeeds between buildings that land on literal road-node tiles - a pre-existing `TrafficSystem` simplification, not something this milestone changes), transit ridership is consequently sparse and driven by the same random uniform commute sampling `TrafficSystem` already uses, not a realistic nearest-job model - it shows up reliably over many ticks, not necessarily on any single tick. In practice, rail's much wider coverage and capacity substantially raise modal share once a city is large enough to grow one (commonly 10-20% in a ~7,000-population test city, versus under 1% with bus alone).
 
-### Milestone 14: Districts and Policies
-- [ ] District-level management
+### Milestone 14: Districts and Policies - started
+- [x] District-level management - `DistrictSystem` (districts, per-district tax rates/service allocation/budget caps, `evaluateAllDistricts`) already existed as a fully-featured but standalone, manually-driven CLI system (`--create-district` etc.) with no path into the autonomous `--simulate` loop. `CitySimulator::run` now takes an optional `const DistrictSystem*`; when provided, it's genuinely read each tick rather than just being inspectable after the fact. `--simulate-district NAME X1 Y1 X2 Y2` (repeatable) defines districts for a `--simulate` run; a "District Summary" table prints after the run using the same metrics the standalone commands already computed.
 - [ ] Zoning ordinances
-- [ ] Growth incentives
-- [ ] Service budgets by district
+- [x] Growth incentives - `GrowthSystem::runStep` already accepted a `chanceModifiers` list (`GrowthChanceModifier{minCorner, maxCorner, multiplier}`) that `CitySimulator` always passed as `nullptr`. Each tick (one-tick lag, the same pattern used for congestion/service-satisfaction feedback elsewhere in this loop), district metrics are re-evaluated and `DistrictSystem::computeGrowthPressureMultiplier` (already existed, already tested in isolation, never called from the simulation) turns each district's service-budget fulfillment and density into a per-tile build-chance multiplier for the *next* tick's growth step - a district starved of service budget visibly grows slower than a well-funded one of the same size and distance from the city center.
+- [x] Service budgets by district (surfaced) - the existing budget-allocation/shared-pool-balancing logic in `DistrictSystem::evaluateAllDistricts` now runs against the live, evolving city each tick instead of only a manually-saved snapshot, and its output (`serviceBudgetTarget`/`Allocated`/`CapApplied`) both drives growth pressure above and prints in the post-run summary.
 - [ ] Special districts (industrial zones, tech hubs)
+
+Note on default behavior: `districts` defaults to `nullptr`, matching prior behavior exactly for every existing caller - passing a `DistrictSystem` (even an empty one) is required to activate any of this. Unlike Office demand/transit in M12/M13, this can't silently change existing `--simulate` runs since it requires an explicit new flag with no default districts.
 
 ### Milestone 15: Disasters and Challenges
 - [ ] Crime simulation

@@ -90,6 +90,26 @@ void printTimings(const SimPhaseTimings& t, int ranTicks) {
   std::cout << "    Services:   " << t.serviceMs << " ms\n";
   std::cout << "    LandValue:  " << t.landValueMs << " ms\n";
   std::cout << "    Transit:    " << t.transitMs << " ms\n";
+  std::cout << "    Districts:  " << t.districtMs << " ms\n";
+}
+
+void printDistrictSummary(const std::vector<DistrictMetrics>& metrics) {
+  if (metrics.empty()) {
+    return;
+  }
+  std::cout << "\nDistrict Summary:\n";
+  for (const DistrictMetrics& m : metrics) {
+    std::cout << "  " << m.districtName
+              << ": population=" << m.population
+              << " buildings=" << m.buildings
+              << " (R=" << m.residentialBuildings << " C=" << m.commercialBuildings
+              << " I=" << m.industrialBuildings << " O=" << m.officeBuildings << ")"
+              << " balance=" << m.balance
+              << " serviceBudget=" << m.serviceBudgetAllocated << "/" << m.serviceBudgetTarget
+              << (m.serviceBudgetCapApplied ? " (capped)" : "")
+              << " serviceCoverage=" << std::fixed << std::setprecision(1) << (m.serviceCoverage * 100.0f) << "%"
+              << " happiness=" << (m.happiness * 100.0f) << "%\n";
+  }
 }
 
 } // namespace
@@ -109,7 +129,8 @@ int runCitySimulation(
   int populationInterval,
   int landValueInterval,
   float inflationRate,
-  bool enableTransit
+  bool enableTransit,
+  const std::vector<SimulateDistrictRequest>& districtRequests
 ) {
   const bool infinite = (ticks < 0);
   const float sideKm = tileToKm(mapSize);
@@ -154,8 +175,15 @@ int runCitySimulation(
   options.inflationRatePerTick = inflationRate;
   options.enableTransit = enableTransit;
 
+  DistrictSystem districtSystem;
+  for (const SimulateDistrictRequest& req : districtRequests) {
+    const auto& [name, x1, y1, x2, y2] = req;
+    districtSystem.createDistrict(name, {x1, y1}, {x2, y2});
+  }
+  const DistrictSystem* districtsPtr = districtRequests.empty() ? nullptr : &districtSystem;
+
   if (!infinite) {
-    const SimResult result = CitySimulator::run(map, roads, store, population, seed, ticks, options);
+    const SimResult result = CitySimulator::run(map, roads, store, population, seed, ticks, options, districtsPtr);
 
     // Evolution table: print a bounded number of sampled rows plus the final tick.
     std::cout << "\n  tick |  R    C    I    O  |     pop    empl |  res  com  ind  off | roads |     balance | cong | trn modal\n";
@@ -194,6 +222,7 @@ int runCitySimulation(
                 << " transitModalShare=" << std::setprecision(1) << (last.transitModalShare * 100.0f) << "%\n";
     }
 
+    printDistrictSummary(result.finalDistrictMetrics);
     printTimings(result.timings, ticks);
 
     if (!reportPath.empty()) {
@@ -257,7 +286,7 @@ int runCitySimulation(
     return g_simulationStop == 0;
   };
 
-  const SimResult result = CitySimulator::run(map, roads, store, population, seed, -1, options);
+  const SimResult result = CitySimulator::run(map, roads, store, population, seed, -1, options, districtsPtr);
   std::signal(SIGINT, prevHandler);
 
   if (hasLastRow) {
@@ -288,6 +317,7 @@ int runCitySimulation(
     std::cout << "Wrote per-tick report to " << reportPath << "\n";
   }
 
+  printDistrictSummary(result.finalDistrictMetrics);
   const int ranTicks = hasLastRow ? lastRow.tick + 1 : 0;
   printTimings(result.timings, ranTicks);
 

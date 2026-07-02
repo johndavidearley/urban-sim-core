@@ -2,6 +2,11 @@
 
 #include <cstdint>
 #include <string>
+#include <tuple>
+#include <vector>
+
+// name, x1, y1, x2, y2 - mirrors main.cpp's zoneRequests tuple shape.
+using SimulateDistrictRequest = std::tuple<std::string, int, int, int, int>;
 
 // Runs the autonomous RCI-demand-driven city simulation on a fresh map and
 // prints an evolution table plus per-phase timing. Optionally writes a per-tick
@@ -22,5 +27,6 @@ int runCitySimulation(
   int populationInterval = 1,   // run full population allocation every N ticks
   int landValueInterval = 1,    // run land-value recompute every N ticks
   float inflationRate = 0.0f,   // compounding per-tick inflation rate applied to costs/trade prices, not tax revenue
-  bool enableTransit = true     // auto-place bus routes that offload commuters from the road network
+  bool enableTransit = true,    // auto-place bus routes that offload commuters from the road network
+  const std::vector<SimulateDistrictRequest>& districtRequests = {}  // user-defined districts (default tax rates/service allocation) that shape growth pressure
 );

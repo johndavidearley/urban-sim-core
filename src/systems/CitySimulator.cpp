@@ -647,7 +647,8 @@ SimResult CitySimulator::run(
   PopulationStore& population,
   uint32_t seed,
   int ticks,
-  const SimOptions& options
+  const SimOptions& options,
+  const DistrictSystem* districts
 ) {
   SimResult result;
   const bool infinite = (ticks < 0);
@@ -674,6 +675,10 @@ SimResult CitySimulator::run(
   const int serviceRadius = spacing * 3;
   std::vector<TransitRoute> transitRoutes;
   TransitCoverageCache transitCache;
+  // Growth chance modifiers derived from the *previous* tick's district
+  // metrics (one-tick lag, like lastCongestion/lastServiceSatisfaction below)
+  // - empty when districts is null, which GrowthSystem treats as a no-op.
+  std::vector<GrowthChanceModifier> districtGrowthModifiers;
 
   // Thread pool for parallel pathfinding (traffic) and building coverage
   // (services), and for running both concurrently within each tick.
@@ -717,11 +722,13 @@ SimResult CitySimulator::run(
       result.timings.zoningMs += elapsedMs(t0, Clock::now());
     }
 
-    // Build on zoned, road-accessible land in proportion to demand.
+    // Build on zoned, road-accessible land in proportion to demand. District
+    // growth-pressure modifiers (if any) come from the previous tick's
+    // service-budget/density evaluation below.
     {
       const auto t0 = Clock::now();
       GrowthSystem::runStep(map, store, demand, tickSeed, options.buildChance,
-                            nullptr, {ax0, ay0}, {ax1, ay1}, &pool);
+                            &districtGrowthModifiers, {ax0, ay0}, {ax1, ay1}, &pool);
       result.timings.growthMs += elapsedMs(t0, Clock::now());
     }
 
@@ -858,6 +865,28 @@ SimResult CitySimulator::run(
       const float inflationMultiplier = std::pow(1.0f + options.inflationRatePerTick, static_cast<float>(tick));
       economy = EconomySystem::calculateEconomy(store, population, TaxRates{}, &map, TradeRates{}, inflationMultiplier);
       result.timings.economyMs += elapsedMs(t0, Clock::now());
+    }
+
+    // District policy: re-evaluate service-budget fulfillment and density per
+    // district, feeding next tick's growth-chance modifiers (see
+    // districtGrowthModifiers above). Reads roads/facilities/store/population
+    // as they stand right now (this tick), so growth for *this* tick already
+    // ran against last tick's evaluation - the same one-tick lag pattern used
+    // for congestion/service satisfaction elsewhere in this loop.
+    if (districts != nullptr && !districts->getDistricts().empty() &&
+        (tick % std::max(1, options.districtInterval) == 0)) {
+      const auto t0 = Clock::now();
+      const std::vector<DistrictMetrics> districtMetrics =
+        districts->evaluateAllDistricts(map, store, population, &roads, &facilities);
+      const std::vector<District>& allDistricts = districts->getDistricts();
+      districtGrowthModifiers.clear();
+      districtGrowthModifiers.reserve(districtMetrics.size());
+      for (size_t i = 0; i < districtMetrics.size() && i < allDistricts.size(); ++i) {
+        const float multiplier = DistrictSystem::computeGrowthPressureMultiplier(allDistricts[i], districtMetrics[i]);
+        districtGrowthModifiers.push_back({allDistricts[i].minCorner, allDistricts[i].maxCorner, multiplier});
+      }
+      result.finalDistrictMetrics = districtMetrics;
+      result.timings.districtMs += elapsedMs(t0, Clock::now());
     }
 
     const CapacitySummary cap = summarize(store);
