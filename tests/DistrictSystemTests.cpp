@@ -518,3 +518,89 @@ TEST_F(DistrictSystemTests, GrowthPressureMultiplierRewardsFulfillmentForSparseD
 
   EXPECT_GT(highMultiplier, lowMultiplier);
 }
+
+// Test: a fresh district has no zoning ordinance and allows every zone type.
+TEST_F(DistrictSystemTests, NewDistrictAllowsAllZoneTypesByDefault) {
+  DistrictId id = districtSystem.createDistrict("Open", {0, 0}, {10, 10});
+  const District* district = districtSystem.getDistrictConst(id);
+  ASSERT_NE(district, nullptr);
+
+  EXPECT_TRUE(district->allowsZone(ZoneType::Residential));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Commercial));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Industrial));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Office));
+  EXPECT_EQ(district->archetype, DistrictArchetype::General);
+}
+
+// Test: setDistrictZoningOrdinance bans exactly the given types.
+TEST_F(DistrictSystemTests, ZoningOrdinanceBansOnlySpecifiedTypes) {
+  DistrictId id = districtSystem.createDistrict("Residential-Only", {0, 0}, {10, 10});
+  ASSERT_TRUE(districtSystem.setDistrictZoningOrdinance(id, {ZoneType::Industrial, ZoneType::Commercial}));
+
+  const District* district = districtSystem.getDistrictConst(id);
+  ASSERT_NE(district, nullptr);
+  EXPECT_TRUE(district->allowsZone(ZoneType::Residential));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Office));
+  EXPECT_FALSE(district->allowsZone(ZoneType::Commercial));
+  EXPECT_FALSE(district->allowsZone(ZoneType::Industrial));
+}
+
+TEST_F(DistrictSystemTests, ZoningOrdinanceOnUnknownDistrictFails) {
+  EXPECT_FALSE(districtSystem.setDistrictZoningOrdinance(999, {ZoneType::Industrial}));
+}
+
+// Test: the Industrial archetype bans housing/offices and prioritizes fire.
+TEST_F(DistrictSystemTests, IndustrialArchetypeBansResidentialAndOffice) {
+  DistrictId id = districtSystem.createDistrict("Factory Row", {0, 0}, {10, 10});
+  ASSERT_TRUE(districtSystem.setDistrictArchetype(id, DistrictArchetype::Industrial));
+
+  const District* district = districtSystem.getDistrictConst(id);
+  ASSERT_NE(district, nullptr);
+  EXPECT_EQ(district->archetype, DistrictArchetype::Industrial);
+  EXPECT_FALSE(district->allowsZone(ZoneType::Residential));
+  EXPECT_FALSE(district->allowsZone(ZoneType::Office));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Commercial));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Industrial));
+  EXPECT_GT(district->servicePriorities.fireWeight, district->servicePriorities.educationWeight);
+}
+
+// Test: the TechHub archetype bans heavy industry and prioritizes education.
+TEST_F(DistrictSystemTests, TechHubArchetypeBansIndustrial) {
+  DistrictId id = districtSystem.createDistrict("Innovation District", {0, 0}, {10, 10});
+  ASSERT_TRUE(districtSystem.setDistrictArchetype(id, DistrictArchetype::TechHub));
+
+  const District* district = districtSystem.getDistrictConst(id);
+  ASSERT_NE(district, nullptr);
+  EXPECT_EQ(district->archetype, DistrictArchetype::TechHub);
+  EXPECT_FALSE(district->allowsZone(ZoneType::Industrial));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Residential));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Commercial));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Office));
+  EXPECT_GT(district->servicePriorities.educationWeight, district->servicePriorities.fireWeight);
+}
+
+// Test: General archetype is a no-op preset (matches a plain new district).
+TEST_F(DistrictSystemTests, GeneralArchetypeAppliesNoRestrictions) {
+  DistrictId id = districtSystem.createDistrict("Mixed Use", {0, 0}, {10, 10});
+  ASSERT_TRUE(districtSystem.setDistrictArchetype(id, DistrictArchetype::General));
+
+  const District* district = districtSystem.getDistrictConst(id);
+  ASSERT_NE(district, nullptr);
+  EXPECT_TRUE(district->allowsZone(ZoneType::Residential));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Commercial));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Industrial));
+  EXPECT_TRUE(district->allowsZone(ZoneType::Office));
+}
+
+TEST_F(DistrictSystemTests, ParseArchetypeAcceptsKnownNamesCaseInsensitively) {
+  DistrictArchetype archetype;
+  EXPECT_TRUE(DistrictSystem::parseArchetype("general", archetype));
+  EXPECT_EQ(archetype, DistrictArchetype::General);
+  EXPECT_TRUE(DistrictSystem::parseArchetype("Industrial", archetype));
+  EXPECT_EQ(archetype, DistrictArchetype::Industrial);
+  EXPECT_TRUE(DistrictSystem::parseArchetype("TECHHUB", archetype));
+  EXPECT_EQ(archetype, DistrictArchetype::TechHub);
+  EXPECT_TRUE(DistrictSystem::parseArchetype("tech_hub", archetype));
+  EXPECT_EQ(archetype, DistrictArchetype::TechHub);
+  EXPECT_FALSE(DistrictSystem::parseArchetype("spaceport", archetype));
+}

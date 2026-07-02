@@ -436,3 +436,56 @@ TEST(CitySimulatorTests, CappedServiceBudgetDistrictGrowsSlowerThanFundedOne) {
   EXPECT_FALSE(fundedMetrics.serviceBudgetCapApplied);
   EXPECT_GT(fundedMetrics.buildings, cappedMetrics.buildings);
 }
+
+// A district with an Industrial archetype (bans Residential/Office) must end
+// up with genuinely zero residential/office buildings within its bounds,
+// even though it's positioned to contain the city's growth origin (the
+// hardest case: autoZone's fallback-to-allowed-type logic has to keep the
+// whole city's bootstrap alive despite its own preferred type being banned
+// right where growth starts).
+TEST(CitySimulatorTests, IndustrialArchetypeDistrictHasNoResidentialOrOfficeBuildings) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  DistrictSystem districts;
+  const DistrictId industrialZone = districts.createDistrict("IndustrialZone", {20, 20}, {44, 44});
+  ASSERT_NE(industrialZone, 0u);
+  ASSERT_TRUE(districts.setDistrictArchetype(industrialZone, DistrictArchetype::Industrial));
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 60, fastOptions(), &districts);
+
+  ASSERT_EQ(result.finalDistrictMetrics.size(), 1u);
+  const DistrictMetrics& metrics = result.finalDistrictMetrics[0];
+  EXPECT_EQ(metrics.residentialBuildings, 0u);
+  EXPECT_EQ(metrics.officeBuildings, 0u);
+
+  // The city as a whole must not deadlock just because its center district
+  // bans the type growth wants most early on - land there should still
+  // develop as something (Commercial/Industrial), and the city overall
+  // should keep growing via other means once roads reach unrestricted land.
+  EXPECT_GT(metrics.buildings, 0u);
+  ASSERT_FALSE(result.rows.empty());
+  EXPECT_GT(result.rows.back().population, 0u);
+}
+
+// A district with a TechHub archetype (bans Industrial) must end up with
+// genuinely zero industrial buildings within its bounds.
+TEST(CitySimulatorTests, TechHubArchetypeDistrictHasNoIndustrialBuildings) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  DistrictSystem districts;
+  const DistrictId techHub = districts.createDistrict("TechHub", {20, 20}, {44, 44});
+  ASSERT_NE(techHub, 0u);
+  ASSERT_TRUE(districts.setDistrictArchetype(techHub, DistrictArchetype::TechHub));
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 60, fastOptions(), &districts);
+
+  ASSERT_EQ(result.finalDistrictMetrics.size(), 1u);
+  EXPECT_EQ(result.finalDistrictMetrics[0].industrialBuildings, 0u);
+  EXPECT_GT(result.finalDistrictMetrics[0].buildings, 0u);
+}

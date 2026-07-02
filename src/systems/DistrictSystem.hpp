@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -9,6 +10,7 @@
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/EconomySystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
+#include "src/world/Zoning.hpp"
 
 using DistrictId = uint32_t;
 
@@ -17,6 +19,18 @@ struct ServicePriority {
   float policeWeight = 1.0f;
   float healthWeight = 1.0f;
   float educationWeight = 1.0f;
+};
+
+// A named preset bundling a coherent set of zoning ordinances and service
+// priorities - a shortcut for common district characters rather than a new
+// mechanism of its own. Setting an archetype just populates bannedZoneTypes/
+// servicePriorities with that preset's defaults (still overridable
+// afterward via the general setters); General applies no restrictions,
+// matching a plain createDistrict call.
+enum class DistrictArchetype : int {
+  General = 0,
+  Industrial = 1,  // heavy industry: no housing or offices, prioritizes fire safety
+  TechHub = 2       // knowledge-sector: no heavy industry, prioritizes education
 };
 
 struct District {
@@ -32,9 +46,21 @@ struct District {
 
   std::vector<uint32_t> assignedFacilityIds;  // Service facility IDs assigned to this district
 
+  // Zoning ordinance: zone types autonomous growth (CitySimulator's autoZone)
+  // may not assign within this district. Empty means no restriction. This
+  // constrains what the city government lets grow on its own - manual
+  // zoning commands (--zone-rect) are a sandbox tool and intentionally
+  // bypass it.
+  std::vector<ZoneType> bannedZoneTypes;
+  DistrictArchetype archetype = DistrictArchetype::General;
+
   bool contains(glm::ivec2 coord) const {
     return coord.x >= minCorner.x && coord.x <= maxCorner.x &&
            coord.y >= minCorner.y && coord.y <= maxCorner.y;
+  }
+
+  bool allowsZone(ZoneType zone) const {
+    return std::find(bannedZoneTypes.begin(), bannedZoneTypes.end(), zone) == bannedZoneTypes.end();
   }
 
   int32_t width() const {
@@ -107,6 +133,21 @@ public:
 
   // Set absolute service budget cap for a district (negative disables cap)
   bool setDistrictServiceBudgetCap(DistrictId id, int64_t cap);
+
+  // Set the zoning ordinance: zone types autonomous growth may not assign
+  // within this district (see District::bannedZoneTypes). Does not change
+  // the district's archetype.
+  bool setDistrictZoningOrdinance(DistrictId id, const std::vector<ZoneType>& bannedZoneTypes);
+
+  // Apply a named archetype's default ordinance + service priorities (see
+  // DistrictArchetype). Overwrites both; call the general setters afterward
+  // to customize further.
+  bool setDistrictArchetype(DistrictId id, DistrictArchetype archetype);
+
+  // Parse a case-insensitive archetype name ("GENERAL"/"INDUSTRIAL"/"TECHHUB",
+  // "TECH_HUB", "TECH-HUB"). Mirrors Zoning::parseZoneType/ServiceSystem::
+  // parseServiceType's convention.
+  static bool parseArchetype(const std::string& raw, DistrictArchetype& outArchetype);
 
   // Assign a service facility to a district
   bool assignFacilityToDistrict(DistrictId districtId, uint32_t facilityId);

@@ -78,6 +78,7 @@ void printHelp() {
             << "  --simulate-inflation-rate F  Compounding per-tick inflation on costs/trade prices, not tax revenue (default 0)\n"
             << "  --simulate-no-transit     Disable auto-placed bus routes during --simulate (on by default)\n"
             << "  --simulate-district NAME X1 Y1 X2 Y2  Define a district (repeatable) whose service-budget fulfillment shapes growth pressure during --simulate\n"
+            << "  --simulate-district-archetype NAME ARCHETYPE  Apply GENERAL|INDUSTRIAL|TECHHUB ordinance/priority preset to a --simulate-district by name\n"
             << "  --micro-traffic N         Grow a city N ticks, then run vehicle-agent traffic micro-sim\n"
             << "  --micro-traffic-steps N   Step budget for the micro-sim (default 240)\n"
             << "  --micro-traffic-incidents N  Dispatch N emergency vehicles (ignore congestion/reds)\n"

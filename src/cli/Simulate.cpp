@@ -130,7 +130,8 @@ int runCitySimulation(
   int landValueInterval,
   float inflationRate,
   bool enableTransit,
-  const std::vector<SimulateDistrictRequest>& districtRequests
+  const std::vector<SimulateDistrictRequest>& districtRequests,
+  const std::vector<SimulateDistrictArchetypeRequest>& districtArchetypeRequests
 ) {
   const bool infinite = (ticks < 0);
   const float sideKm = tileToKm(mapSize);
@@ -179,6 +180,25 @@ int runCitySimulation(
   for (const SimulateDistrictRequest& req : districtRequests) {
     const auto& [name, x1, y1, x2, y2] = req;
     districtSystem.createDistrict(name, {x1, y1}, {x2, y2});
+  }
+  for (const SimulateDistrictArchetypeRequest& req : districtArchetypeRequests) {
+    const auto& [name, archetypeName] = req;
+    DistrictArchetype archetype;
+    if (!DistrictSystem::parseArchetype(archetypeName, archetype)) {
+      std::cerr << "Error: Unknown district archetype '" << archetypeName << "'\n";
+      continue;
+    }
+    bool matched = false;
+    for (const District& d : districtSystem.getDistricts()) {
+      if (d.name == name) {
+        districtSystem.setDistrictArchetype(d.id, archetype);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      std::cerr << "Error: No --simulate-district named '" << name << "' to apply archetype to\n";
+    }
   }
   const DistrictSystem* districtsPtr = districtRequests.empty() ? nullptr : &districtSystem;
 

@@ -1,8 +1,45 @@
 #include "DistrictSystem.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 namespace {
+
+std::string upper(const std::string& raw) {
+  std::string normalized = raw;
+  std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+  return normalized;
+}
+
+std::vector<ZoneType> defaultBannedZonesForArchetype(DistrictArchetype archetype) {
+  switch (archetype) {
+    case DistrictArchetype::Industrial:
+      // Heavy industry: no housing (pollution-adjacent) and no white-collar
+      // offices, but retail (Commercial) is still allowed to serve workers.
+      return {ZoneType::Residential, ZoneType::Office};
+    case DistrictArchetype::TechHub:
+      // Knowledge-sector: no heavy industry keeps pollution down for the
+      // office/residential mix a tech hub actually wants.
+      return {ZoneType::Industrial};
+    case DistrictArchetype::General:
+    default:
+      return {};
+  }
+}
+
+ServicePriority defaultServicePrioritiesForArchetype(DistrictArchetype archetype) {
+  switch (archetype) {
+    case DistrictArchetype::Industrial:
+      return ServicePriority{/*fire=*/2.0f, /*police=*/1.0f, /*health=*/0.5f, /*education=*/0.3f};
+    case DistrictArchetype::TechHub:
+      return ServicePriority{/*fire=*/1.0f, /*police=*/1.0f, /*health=*/1.2f, /*education=*/2.0f};
+    case DistrictArchetype::General:
+    default:
+      return ServicePriority{};
+  }
+}
+
 void applySharedBudgetBalancing(std::vector<DistrictMetrics>& metrics, const std::vector<District>& districts, int64_t sharedServiceBudgetPool) {
   if (sharedServiceBudgetPool < 0 || metrics.empty() || metrics.size() != districts.size()) {
     return;
@@ -197,6 +234,43 @@ bool DistrictSystem::setDistrictServiceBudgetCap(DistrictId id, int64_t cap) {
 
   district->serviceBudgetCap = cap;
   return true;
+}
+
+bool DistrictSystem::setDistrictZoningOrdinance(DistrictId id, const std::vector<ZoneType>& bannedZoneTypes) {
+  District* district = getDistrict(id);
+  if (district == nullptr) {
+    return false;
+  }
+  district->bannedZoneTypes = bannedZoneTypes;
+  return true;
+}
+
+bool DistrictSystem::setDistrictArchetype(DistrictId id, DistrictArchetype archetype) {
+  District* district = getDistrict(id);
+  if (district == nullptr) {
+    return false;
+  }
+  district->archetype = archetype;
+  district->bannedZoneTypes = defaultBannedZonesForArchetype(archetype);
+  district->servicePriorities = defaultServicePrioritiesForArchetype(archetype);
+  return true;
+}
+
+bool DistrictSystem::parseArchetype(const std::string& raw, DistrictArchetype& outArchetype) {
+  const std::string normalized = upper(raw);
+  if (normalized == "GENERAL") {
+    outArchetype = DistrictArchetype::General;
+    return true;
+  }
+  if (normalized == "INDUSTRIAL") {
+    outArchetype = DistrictArchetype::Industrial;
+    return true;
+  }
+  if (normalized == "TECHHUB" || normalized == "TECH_HUB" || normalized == "TECH-HUB") {
+    outArchetype = DistrictArchetype::TechHub;
+    return true;
+  }
+  return false;
 }
 
 bool DistrictSystem::assignFacilityToDistrict(DistrictId districtId, uint32_t facilityId) {

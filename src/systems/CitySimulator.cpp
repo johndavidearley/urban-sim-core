@@ -538,10 +538,30 @@ void placeTransitRoutesIfNeeded(
   );
 }
 
+// True unless some district containing `coord` has a zoning ordinance
+// banning `zone` (see District::bannedZoneTypes). districts == nullptr means
+// no restriction, matching prior behavior for every caller that doesn't
+// pass one.
+bool zoneAllowedAt(const DistrictSystem* districts, Coord coord, ZoneType zone) {
+  if (districts == nullptr) return true;
+  for (const District& d : districts->getDistricts()) {
+    if (d.contains(coord) && !d.allowsZone(zone)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Zone up to `batch` of the nearest candidate tiles, splitting counts by demand
 // but placing the cleanest tiles residential and the most polluted industrial,
 // so housing and industry self-segregate as the pollution field develops.
-void autoZone(CityMap& map, const std::vector<Coord>& candidates, const ZoneDemand& demand, int batch) {
+// Tiles a district's zoning ordinance blocks for their assigned type are
+// left unzoned this tick (they remain candidates and get retried later) -
+// counts are not reallocated to another type, so a heavily-restricted
+// district genuinely produces less of the banned type city-wide, the same
+// as a real ordinance would.
+void autoZone(CityMap& map, const std::vector<Coord>& candidates, const ZoneDemand& demand, int batch,
+              const DistrictSystem* districts) {
   const float total = std::max(0.0f, demand.residential) +
                       std::max(0.0f, demand.commercial) +
                       std::max(0.0f, demand.industrial) +
@@ -576,12 +596,37 @@ void autoZone(CityMap& map, const std::vector<Coord>& candidates, const ZoneDema
     return a.x < b.x;
   });
 
+  static constexpr ZoneType kZoneFallbackOrder[4] = {
+    ZoneType::Residential, ZoneType::Office, ZoneType::Commercial, ZoneType::Industrial
+  };
+
   for (int i = 0; i < limit; ++i) {
     ZoneType zone;
     if (i < nR) zone = ZoneType::Residential;
     else if (i < nR + nO) zone = ZoneType::Office;
     else if (i < nR + nO + nC) zone = ZoneType::Commercial;
     else zone = ZoneType::Industrial;
+
+    if (!zoneAllowedAt(districts, batchTiles[i], zone)) {
+      // Ordinance blocks the demand-driven choice here; fall back to the
+      // first still-allowed type in a fixed order rather than leaving the
+      // tile stranded. A real ordinance restricts what a parcel becomes, it
+      // doesn't make land undevelopable forever - and if it did (e.g. a
+      // district banning everything, or one that happens to cover the
+      // city's growth origin and bans the only type demand wants yet), that
+      // would otherwise deadlock the whole city's bootstrap, not just this
+      // district.
+      bool found = false;
+      for (ZoneType candidate : kZoneFallbackOrder) {
+        if (candidate != zone && zoneAllowedAt(districts, batchTiles[i], candidate)) {
+          zone = candidate;
+          found = true;
+          break;
+        }
+      }
+      if (!found) continue;  // every type banned here; leave unzoned
+    }
+
     Tile& tile = map.getTile(batchTiles[i]);
     tile.zone = static_cast<int>(zone);
     tile.landValue = Zoning::defaultLandValueForZone(zone);
@@ -718,7 +763,7 @@ SimResult CitySimulator::run(
       const auto t0 = Clock::now();
       updatePollution(map, store, ax0, ay0, ax1, ay1, pool);
       const std::vector<Coord> candidates = zonableCandidates(map, center, extent, pool);
-      autoZone(map, candidates, demand, options.zoneBatchPerTick);
+      autoZone(map, candidates, demand, options.zoneBatchPerTick, districts);
       result.timings.zoningMs += elapsedMs(t0, Clock::now());
     }
 
