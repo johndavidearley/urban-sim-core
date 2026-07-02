@@ -88,6 +88,7 @@ only on a fresh map; loading a snapshot restores its saved terrain instead.
 ./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 100 --simulate-no-transit
 ./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 60 --simulate-district Downtown 20 20 44 44 --simulate-district Suburbs 46 20 63 44
 ./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 60 --simulate-district Factory 20 20 44 44 --simulate-district-archetype Factory INDUSTRIAL --simulate-district Innovation 46 20 63 44 --simulate-district-archetype Innovation TECHHUB
+./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 100 --simulate-disasters --simulate-fire-risk 3
 ```
 
 `--simulate N` grows a city autonomously from a near-empty map for N ticks. Each
@@ -204,6 +205,19 @@ falls back to the first still-allowed type rather than leaving the land
 stranded — a district that happens to cover the city's growth origin and
 bans the type startup demand wants most still develops (just as something
 else), instead of deadlocking the whole city.
+
+Disasters (Phase 5, M15 — started) add fire as a per-tick stochastic hazard,
+opt-in via `--simulate-disasters` (destructive, so - unlike every other M12-
+M14 mechanic - it's off by default; every existing `--simulate` call is
+completely unaffected unless you ask for it). Buildings can ignite each tick,
+weighted by type (industrial is far more fire-prone) and local pollution; an
+ignited building is destroyed immediately and its tile keeps burning for a
+few ticks, posing a spread risk to adjacent occupied tiles. Fire station
+coverage (the same `ServiceSystem` number that already feeds desirability)
+cuts ignition chance, spread chance, and burn duration alike — a proxy for
+faster emergency response. `--simulate-fire-risk F` scales the base ignition
+chance for tuning; cumulative losses are reported per tick and in the final
+summary.
 
 It prints an evolution table (RCI demand, population, building counts, roads,
 budget) plus a per-phase timing breakdown, so the same run doubles as an

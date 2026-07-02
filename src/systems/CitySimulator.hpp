@@ -8,6 +8,7 @@
 #include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/DistrictSystem.hpp"
+#include "src/systems/FireSystem.hpp"
 #include "src/systems/TransitSystem.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
@@ -40,6 +41,8 @@ struct SimTickMetrics {
   uint32_t transitRidership = 0;     // commuters carried by transit this tick
   uint32_t transitDemand = 0;        // commuters whose commute is covered by a route, whether or not it had capacity
   float transitModalShare = 0.0f;    // transitRidership / (transitRidership + car commuters)
+  uint32_t activeFires = 0;          // burning tiles right now (only nonzero when options.enableDisasters is set)
+  uint32_t buildingsLostToFire = 0;  // cumulative buildings destroyed by fire since the run started
 };
 
 struct SimPhaseTimings {
@@ -53,6 +56,7 @@ struct SimPhaseTimings {
   double landValueMs = 0.0;
   double transitMs = 0.0;
   double districtMs = 0.0;
+  double fireMs = 0.0;
 };
 
 struct SimResult {
@@ -73,6 +77,8 @@ struct SimOptions {
   float inflationRatePerTick = 0.0f;  // compounding per-tick rate applied to maintenance/trade costs (not tax revenue); 0 = no inflation, matching prior behavior
   bool enableTransit = true;   // auto-place bus routes and let them offload commuters from the road network
   int districtInterval = 1;    // re-evaluate district metrics/growth pressure every N ticks (only relevant when districts is non-null)
+  bool enableDisasters = false;  // opt-in: run FireSystem each tick (destructive, so off by default unlike the additive M12/M13 systems)
+  FireParams fireParams;         // only used when enableDisasters is true
   // Called after each tick with the row. Return false to stop the simulation.
   // Used by infinite mode; rows are not accumulated in SimResult when this is set and ticks < 0.
   std::function<bool(const SimTickMetrics&)> tickCallback;
@@ -103,6 +109,13 @@ public:
   // Districts themselves are caller-owned and never created/modified here -
   // this is read-only with respect to district definitions. Default nullptr
   // matches prior behavior exactly for every existing caller.
+  //
+  // If options.enableDisasters is set (default false, unlike the additive
+  // M12/M13 systems - this one destroys buildings), FireSystem runs each
+  // tick: buildings can ignite (weighted by type/pollution), fire spreads to
+  // adjacent occupied tiles, and fire station coverage (already computed for
+  // ServiceSystem) reduces ignition/spread chance and burn duration - a
+  // proxy for faster emergency response.
   static SimResult run(
     CityMap& map,
     RoadNetwork& roads,

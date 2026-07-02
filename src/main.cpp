@@ -77,6 +77,8 @@ int main(int argc, char* argv[]) {
   bool simulateNoTransit = false;
   std::vector<SimulateDistrictRequest> simulateDistrictRequests;  // name, x1, y1, x2, y2
   std::vector<SimulateDistrictArchetypeRequest> simulateDistrictArchetypeRequests;  // name, archetype
+  bool simulateDisasters = false;
+  float simulateFireRisk = 1.0f;
   int microTrafficGrowthTicks = -1;
   int microTrafficSteps = -1;
   int microTrafficIncidents = 0;
@@ -346,6 +348,10 @@ int main(int argc, char* argv[]) {
       std::string name = argv[++i];
       std::string archetype = argv[++i];
       simulateDistrictArchetypeRequests.emplace_back(name, archetype);
+    } else if (arg == "--simulate-disasters") {
+      simulateDisasters = true;
+    } else if (arg == "--simulate-fire-risk" && i + 1 < argc) {
+      simulateFireRisk = std::stof(argv[++i]);
     } else if (arg == "--simulate-report" && i + 1 < argc) {
       simulateReportPath = argv[++i];
     } else if (arg == "--simulate-no-traffic") {
@@ -515,7 +521,9 @@ int main(int argc, char* argv[]) {
         simulateInflationRate,
         !simulateNoTransit,
         simulateDistrictRequests,
-        simulateDistrictArchetypeRequests
+        simulateDistrictArchetypeRequests,
+        simulateDisasters,
+        simulateFireRisk
       );
     }
 

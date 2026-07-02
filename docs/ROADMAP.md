@@ -12,7 +12,8 @@ Last updated: June 27, 2026
 - Phase 5, Milestone 12 (Advanced Economy): complete - dynamic land value, commercial/industrial supply chains and imports/exports, inflation, office demand
 - Phase 5, Milestone 13 (Public Transit): complete - bus routes, train/subway networks, transit demand/capacity, modal split
 - Phase 5, Milestone 14 (Districts and Policies): complete - district-level management, zoning ordinances, growth incentives, service budgets by district, and special districts (industrial/tech hub archetypes) all wired into the autonomous simulation loop
-- Automated validation: 221 tests passing
+- Phase 5, Milestone 15 (Disasters and Challenges): started - fire spread and coverage-modulated emergency response, opt-in via --simulate-disasters
+- Automated validation: 230 tests passing
 
 ---
 
@@ -161,12 +162,14 @@ Note on default behavior: like Office demand in M12, this is not behavior-neutra
 
 Note on default behavior: `districts` defaults to `nullptr`, matching prior behavior exactly for every existing caller - passing a `DistrictSystem` (even an empty one) is required to activate any of this. Unlike Office demand/transit in M12/M13, this can't silently change existing `--simulate` runs since it requires an explicit new flag with no default districts.
 
-### Milestone 15: Disasters and Challenges
+### Milestone 15: Disasters and Challenges - started
 - [ ] Crime simulation
-- [ ] Fire spread
+- [x] Fire spread - a new `FireSystem` models fire as a per-tick stochastic process over the tile grid (not literal responding vehicles - `TrafficMicroSim`'s emergency-vehicle dispatch already covers that fidelity separately, as a standalone demo). Buildings can ignite each tick, weighted by type (industrial is far more fire-prone) and local pollution; an ignited building is destroyed immediately and its tile keeps burning for a few ticks, posing a spread risk to adjacent occupied tiles. Deterministic for a given seed (buildings/burning tiles processed in a fixed sorted order), matching every other subsystem in this codebase.
 - [ ] Disease/health
 - [ ] Natural disasters (earthquakes, floods)
-- [ ] Emergency response
+- [x] Emergency response (coverage-modulated) - fire station coverage (`ServiceCoverageSummary::fireCoverage`, already computed by `ServiceSystem` every tick `CitySimulator` runs) is read as a single city-wide fraction and reduces ignition chance, spread chance, and burn duration alike - a proxy for faster emergency response, not a per-building distance lookup (a deliberate fidelity tradeoff: `ServiceSystem` already pays the per-tile BFS cost for this aggregate number, so `FireSystem` reuses it rather than paying a second BFS pass). Literal per-vehicle emergency dispatch remains `TrafficMicroSim`'s separate, higher-fidelity demo (`--micro-traffic-incidents`) - the two model emergency response at different levels of detail and aren't merged.
+
+Note on default behavior: unlike the additive M12/M13/M14 systems, this is destructive, so `SimOptions::enableDisasters` defaults to `false` (the inflation-style opt-in pattern, not the office-demand/transit-style default-on one) - every existing `--simulate` call is completely unaffected unless `--simulate-disasters` is passed. `--simulate-fire-risk F` scales the base ignition chance for tuning.
 
 ### Milestone 16: City Optimization
 - [x] Profiling and performance tuning (thread pool pass: ~2.8× at 200k pop)

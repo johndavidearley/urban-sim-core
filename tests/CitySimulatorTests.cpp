@@ -489,3 +489,47 @@ TEST(CitySimulatorTests, TechHubArchetypeDistrictHasNoIndustrialBuildings) {
   EXPECT_EQ(result.finalDistrictMetrics[0].industrialBuildings, 0u);
   EXPECT_GT(result.finalDistrictMetrics[0].buildings, 0u);
 }
+
+// options.enableDisasters defaults to false: fires must never occur, exactly
+// matching pre-M15 behavior for every existing caller.
+TEST(CitySimulatorTests, DisastersDisabledByDefaultMeansNoFiresEver) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 80, SimOptions{});
+
+  ASSERT_FALSE(result.rows.empty());
+  for (const SimTickMetrics& row : result.rows) {
+    EXPECT_EQ(row.activeFires, 0u);
+    EXPECT_EQ(row.buildingsLostToFire, 0u);
+  }
+}
+
+// With disasters enabled and an elevated fire risk, a city growing over many
+// ticks should end up with real cumulative fire losses - proving the
+// integration actually destroys buildings within the live simulation, not
+// just in FireSystem's own unit tests.
+TEST(CitySimulatorTests, ElevatedFireRiskDestroysBuildingsOverTime) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  SimOptions options = fastOptions();
+  options.enableDisasters = true;
+  options.fireParams.baseIgnitionChance = 0.02f;  // far above the default, for a fast, reliable test
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 60, options);
+
+  ASSERT_FALSE(result.rows.empty());
+  EXPECT_GT(result.rows.back().buildingsLostToFire, 0u);
+
+  // Cumulative losses must be monotonically non-decreasing tick to tick.
+  uint32_t previous = 0;
+  for (const SimTickMetrics& row : result.rows) {
+    EXPECT_GE(row.buildingsLostToFire, previous);
+    previous = row.buildingsLostToFire;
+  }
+}

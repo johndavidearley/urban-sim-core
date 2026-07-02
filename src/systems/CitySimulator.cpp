@@ -724,6 +724,8 @@ SimResult CitySimulator::run(
   // metrics (one-tick lag, like lastCongestion/lastServiceSatisfaction below)
   // - empty when districts is null, which GrowthSystem treats as a no-op.
   std::vector<GrowthChanceModifier> districtGrowthModifiers;
+  std::vector<BurningTile> burningTiles;         // persists only when options.enableDisasters
+  uint32_t cumulativeBuildingsLostToFire = 0;
 
   // Thread pool for parallel pathfinding (traffic) and building coverage
   // (services), and for running both concurrently within each tick.
@@ -888,6 +890,18 @@ SimResult CitySimulator::run(
       lastServiceSatisfaction = service.satisfaction;
     }
 
+    // Disasters: fire ignition/spread, gated off by default (destructive,
+    // unlike the additive M12/M13 systems). Reuses service.fireCoverage -
+    // already computed above - as a city-wide response-speed proxy instead
+    // of a second per-tile BFS pass.
+    FireSummary fire;
+    if (options.enableDisasters) {
+      const auto t0 = Clock::now();
+      fire = FireSystem::step(map, store, burningTiles, service.fireCoverage, tickSeed + 5u, options.fireParams);
+      cumulativeBuildingsLostToFire += fire.buildingsDestroyed;
+      result.timings.fireMs += elapsedMs(t0, Clock::now());
+    }
+
     // Refresh land value from the freshest available job positions, service
     // cache, and pollution field (all already up to date at this point in the
     // tick), so the economy calculation below sees current values. The
@@ -962,6 +976,8 @@ SimResult CitySimulator::run(
     row.transitRidership = transitSummary.ridership;
     row.transitDemand = transitSummary.demand;
     row.transitModalShare = transitSummary.modalShare;
+    row.activeFires = fire.activeFires;
+    row.buildingsLostToFire = cumulativeBuildingsLostToFire;
     if (!infinite) {
       result.rows.push_back(row);
     }

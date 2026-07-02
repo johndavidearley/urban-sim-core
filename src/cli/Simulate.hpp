@@ -33,5 +33,7 @@ int runCitySimulation(
   float inflationRate = 0.0f,   // compounding per-tick inflation rate applied to costs/trade prices, not tax revenue
   bool enableTransit = true,    // auto-place bus routes that offload commuters from the road network
   const std::vector<SimulateDistrictRequest>& districtRequests = {},  // user-defined districts (default tax rates/service allocation) that shape growth pressure
-  const std::vector<SimulateDistrictArchetypeRequest>& districtArchetypeRequests = {}  // apply a named archetype (zoning ordinance + service priorities) to a district by name
+  const std::vector<SimulateDistrictArchetypeRequest>& districtArchetypeRequests = {},  // apply a named archetype (zoning ordinance + service priorities) to a district by name
+  bool enableDisasters = false,  // opt-in: buildings can be destroyed by fire (weighted by type/pollution, mitigated by fire coverage)
+  float fireRiskMultiplier = 1.0f  // scales FireParams::baseIgnitionChance; only relevant when enableDisasters is set
 );
