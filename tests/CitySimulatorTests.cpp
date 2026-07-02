@@ -200,3 +200,55 @@ TEST(CitySimulatorTests, LandValueVariesAcrossZonedTiles) {
   }
   EXPECT_GT(maxValue, minValue) << "land value should vary spatially, not be a flat constant";
 }
+
+// Default options (inflationRatePerTick == 0) must leave the reported
+// inflation multiplier pinned at 1.0 for every tick - the zero-behavior-change
+// guarantee for existing callers that don't opt in.
+TEST(CitySimulatorTests, NoInflationByDefault) {
+  CityMap map({40, 40});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 30, fastOptions());
+
+  ASSERT_FALSE(result.rows.empty());
+  for (const SimTickMetrics& row : result.rows) {
+    EXPECT_FLOAT_EQ(row.inflationMultiplier, 1.0f);
+  }
+}
+
+// A nonzero inflation rate compounds the reported multiplier upward over
+// ticks, and - because tax revenue doesn't inflate while maintenance/trade
+// costs do - a growing but inflation-pressured city ends up worse off than
+// the same city with no inflation at all.
+TEST(CitySimulatorTests, InflationCompoundsAndErodesBalanceRelativeToNoInflation) {
+  auto runWithInflation = [](float rate) {
+    CityMap map({40, 40});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    SimOptions options = fastOptions();
+    options.inflationRatePerTick = rate;
+    return CitySimulator::run(map, roads, store, population, 7, 30, options);
+  };
+
+  const SimResult withInflation = runWithInflation(0.05f);
+  const SimResult withoutInflation = runWithInflation(0.0f);
+
+  ASSERT_FALSE(withInflation.rows.empty());
+  ASSERT_FALSE(withoutInflation.rows.empty());
+
+  const SimTickMetrics& lastInflated = withInflation.rows.back();
+  const SimTickMetrics& lastFlat = withoutInflation.rows.back();
+
+  EXPECT_GT(lastInflated.inflationMultiplier, 1.0f);
+  EXPECT_GT(lastInflated.inflationMultiplier, withInflation.rows.front().inflationMultiplier);
+
+  // Same seed/growth trajectory (inflation doesn't touch demand or growth),
+  // so building counts should match; only the budget should diverge.
+  EXPECT_EQ(lastInflated.residentialBuildings, lastFlat.residentialBuildings);
+  EXPECT_EQ(lastInflated.commercialBuildings, lastFlat.commercialBuildings);
+  EXPECT_EQ(lastInflated.industrialBuildings, lastFlat.industrialBuildings);
+  EXPECT_LT(lastInflated.budgetBalance, lastFlat.budgetBalance);
+}

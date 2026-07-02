@@ -82,6 +82,7 @@ only on a fresh map; loading a snapshot restores its saved terrain instead.
 ./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 80
 ./build/UrbanSimCore-cli --size 64 --seed 7 --generate-terrain --simulate 80 --simulate-report run.csv
 ./build/UrbanSimCore-cli --size 96 --seed 7 --simulate 50 --simulate-no-traffic
+./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 80 --simulate-inflation-rate 0.02
 ```
 
 `--simulate N` grows a city autonomously from a near-empty map for N ticks. Each
@@ -122,6 +123,16 @@ industry visibly pays for its imports in the budget summary; a heavily
 industrial city with modest commerce earns export revenue instead. This
 requires no extra setup — it's computed automatically from existing building
 occupancy data every time the economy is calculated.
+
+Inflation (Phase 5, M12) is opt-in via `--simulate-inflation-rate RATE` (default
+0 = disabled, leaving every existing run bit-for-bit unaffected). It's a
+compounding per-tick price-level index applied to maintenance costs and trade
+prices — both are external, world-market costs — but deliberately not to tax
+revenue, which is a percentage of the city's own building stock and only grows
+when the city actually builds more. That asymmetry is the point: a city that
+stops growing sees its costs climb while its revenue holds flat, the same
+budget pressure a real municipality that stagnates faces. The current
+multiplier is reported per tick and in the final budget summary.
 
 It prints an evolution table (RCI demand, population, building counts, roads,
 budget) plus a per-phase timing breakdown, so the same run doubles as an

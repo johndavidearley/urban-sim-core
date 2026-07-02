@@ -631,7 +631,11 @@ SimResult CitySimulator::run(
     EconomyState economy;
     {
       const auto t0 = Clock::now();
-      economy = EconomySystem::calculateEconomy(store, population, TaxRates{}, &map);
+      // Compounding price-level index from elapsed ticks; a 0 rate keeps this
+      // at exactly 1.0 (default), matching prior behavior for every existing
+      // caller that doesn't opt in via options.inflationRatePerTick.
+      const float inflationMultiplier = std::pow(1.0f + options.inflationRatePerTick, static_cast<float>(tick));
+      economy = EconomySystem::calculateEconomy(store, population, TaxRates{}, &map, TradeRates{}, inflationMultiplier);
       result.timings.economyMs += elapsedMs(t0, Clock::now());
     }
 
@@ -654,6 +658,7 @@ SimResult CitySimulator::run(
     row.serviceFacilities = static_cast<uint32_t>(facilities.size());
     row.avgLandValue = economy.averageLandValue;
     row.tradeBalance = economy.tradeBalance;
+    row.inflationMultiplier = economy.inflationMultiplier;
     if (!infinite) {
       result.rows.push_back(row);
     }

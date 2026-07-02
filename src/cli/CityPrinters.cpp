@@ -75,6 +75,7 @@ void printHelp() {
             << "  --simulate-report FILE    Write per-tick simulation metrics to CSV\n"
             << "  --simulate-no-traffic     Skip the commute phase during --simulate\n"
             << "  --simulate-land-value-interval N  Recompute land value every N ticks (default 1)\n"
+            << "  --simulate-inflation-rate F  Compounding per-tick inflation on costs/trade prices, not tax revenue (default 0)\n"
             << "  --micro-traffic N         Grow a city N ticks, then run vehicle-agent traffic micro-sim\n"
             << "  --micro-traffic-steps N   Step budget for the micro-sim (default 240)\n"
             << "  --micro-traffic-incidents N  Dispatch N emergency vehicles (ignore congestion/reds)\n"
@@ -385,6 +386,10 @@ void printBudgetSummary(const EconomyState& economy) {
   }
   if (economy.importCost > 0) {
     std::cout << "  Import Cost: " << economy.importCost << "\n";
+  }
+  if (economy.inflationMultiplier != 1.0f) {
+    std::cout << "  Inflation Multiplier: " << std::fixed << std::setprecision(3)
+              << economy.inflationMultiplier << "\n";
   }
   std::cout << "  Average Land Value: " << std::fixed << std::setprecision(2)
             << economy.averageLandValue << "\n";

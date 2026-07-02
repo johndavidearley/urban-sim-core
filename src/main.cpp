@@ -73,6 +73,7 @@ int main(int argc, char* argv[]) {
   int simulateServiceInterval = 1;
   int simulatePopulationInterval = 1;
   int simulateLandValueInterval = 1;
+  float simulateInflationRate = 0.0f;
   int microTrafficGrowthTicks = -1;
   int microTrafficSteps = -1;
   int microTrafficIncidents = 0;
@@ -327,6 +328,8 @@ int main(int argc, char* argv[]) {
       simulatePopulationInterval = std::atoi(argv[++i]);
     } else if (arg == "--simulate-land-value-interval" && i + 1 < argc) {
       simulateLandValueInterval = std::atoi(argv[++i]);
+    } else if (arg == "--simulate-inflation-rate" && i + 1 < argc) {
+      simulateInflationRate = std::stof(argv[++i]);
     } else if (arg == "--simulate-report" && i + 1 < argc) {
       simulateReportPath = argv[++i];
     } else if (arg == "--simulate-no-traffic") {
@@ -492,7 +495,8 @@ int main(int argc, char* argv[]) {
         simulateTrafficInterval,
         simulateServiceInterval,
         simulatePopulationInterval,
-        simulateLandValueInterval
+        simulateLandValueInterval,
+        simulateInflationRate
       );
     }
 

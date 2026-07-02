@@ -37,6 +37,10 @@ struct EconomyState {
   int64_t tradeBalance = 0;   // goodsProduced - goodsConsumed; positive = exportable surplus
   int64_t exportRevenue = 0;  // > 0 only when tradeBalance > 0
   int64_t importCost = 0;     // > 0 only when tradeBalance < 0
+
+  // Inflation: the multiplier actually applied this call (echoed back for
+  // reporting). See calculateEconomy's inflationMultiplier parameter.
+  float inflationMultiplier = 1.0f;
 };
 
 // Tax rates (percentage of building/population value)
@@ -70,12 +74,25 @@ public:
   // across zoned tiles (see LandValueSystem); otherwise it falls back to a
   // building-count-based placeholder, preserving prior behavior for callers
   // that have no map available (e.g. district-scoped sub-economies).
+  //
+  // `inflationMultiplier` (default 1.0 = no inflation, preserving prior
+  // behavior for every existing caller) scales maintenance costs and trade
+  // prices - both represent real-world costs (labor, materials, world-market
+  // goods prices) external to the city. It deliberately does NOT scale tax
+  // revenue: that's a percentage of the city's own building stock, which only
+  // grows when the city actually builds more, not automatically with time.
+  // The asymmetry is the point - a city that stops growing sees costs rise
+  // while revenue stays flat, the same budget pressure a real municipality
+  // that stagnates faces. Callers that want inflation (e.g. CitySimulator,
+  // via --simulate-inflation-rate) compute the multiplier from elapsed time;
+  // EconomySystem itself stays stateless.
   static EconomyState calculateEconomy(
     const EntityStore& store,
     const PopulationStore& population,
     const TaxRates& rates = TaxRates{},
     const CityMap* map = nullptr,
-    const TradeRates& tradeRates = TradeRates{}
+    const TradeRates& tradeRates = TradeRates{},
+    float inflationMultiplier = 1.0f
   );
 
   // Apply economy state to city metrics

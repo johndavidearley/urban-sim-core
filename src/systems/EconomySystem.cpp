@@ -9,9 +9,11 @@ EconomyState EconomySystem::calculateEconomy(
   const PopulationStore& population,
   const TaxRates& rates,
   const CityMap* map,
-  const TradeRates& tradeRates
+  const TradeRates& tradeRates,
+  float inflationMultiplier
 ) {
   EconomyState state;
+  state.inflationMultiplier = inflationMultiplier;
 
   // Calculate property value-based revenue from buildings
   const auto& buildings = store.getBuildings();
@@ -35,19 +37,22 @@ EconomyState EconomySystem::calculateEconomy(
       case BuildingType::Residential:
         residentialCount++;
         state.residentialTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.residentialRate);
-        state.residentialMaintenance += static_cast<int64_t>(rates.maintenanceResidential);
+        state.residentialMaintenance += static_cast<int64_t>(
+          static_cast<double>(rates.maintenanceResidential) * inflationMultiplier);
         break;
       case BuildingType::Commercial:
         commercialCount++;
         commercialOccupancy += std::max(0, building.occupancy);
         state.commercialTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.commercialRate);
-        state.commercialMaintenance += static_cast<int64_t>(rates.maintenanceCommercial);
+        state.commercialMaintenance += static_cast<int64_t>(
+          static_cast<double>(rates.maintenanceCommercial) * inflationMultiplier);
         break;
       case BuildingType::Industrial:
         industrialCount++;
         industrialOccupancy += std::max(0, building.occupancy);
         state.industrialTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.industrialRate);
-        state.industrialMaintenance += static_cast<int64_t>(rates.maintenanceIndustrial);
+        state.industrialMaintenance += static_cast<int64_t>(
+          static_cast<double>(rates.maintenanceIndustrial) * inflationMultiplier);
         break;
     }
   }
@@ -55,13 +60,16 @@ EconomyState EconomySystem::calculateEconomy(
   // Supply chain / trade: industrial workers produce goods, commercial
   // workers consume them; the city trades the net difference with the
   // outside world (see TradeRates for the export/import pricing asymmetry).
+  // Export/import prices are world-market prices, so they inflate too.
   state.goodsProduced = static_cast<int64_t>(static_cast<double>(industrialOccupancy) * tradeRates.goodsPerIndustrialWorker);
   state.goodsConsumed = static_cast<int64_t>(static_cast<double>(commercialOccupancy) * tradeRates.goodsPerCommercialWorker);
   state.tradeBalance = state.goodsProduced - state.goodsConsumed;
   if (state.tradeBalance > 0) {
-    state.exportRevenue = static_cast<int64_t>(static_cast<double>(state.tradeBalance) * tradeRates.exportPricePerUnit);
+    state.exportRevenue = static_cast<int64_t>(
+      static_cast<double>(state.tradeBalance) * tradeRates.exportPricePerUnit * inflationMultiplier);
   } else if (state.tradeBalance < 0) {
-    state.importCost = static_cast<int64_t>(static_cast<double>(-state.tradeBalance) * tradeRates.importCostPerUnit);
+    state.importCost = static_cast<int64_t>(
+      static_cast<double>(-state.tradeBalance) * tradeRates.importCostPerUnit * inflationMultiplier);
   }
 
   // Add population-based income tax (from employed population)

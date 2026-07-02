@@ -320,3 +320,67 @@ TEST_F(EconomySystemTests, NoBuildingsMeansNoTrade) {
   EXPECT_EQ(state.exportRevenue, 0);
   EXPECT_EQ(state.importCost, 0);
 }
+
+// Test: the default inflationMultiplier of 1.0 leaves every existing caller's
+// behavior unchanged (no explicit inflation argument passed).
+TEST_F(EconomySystemTests, DefaultInflationMultiplierIsOne) {
+  store->createBuilding(BuildingType::Residential, {10, 10}, 50);
+
+  EconomyState state = EconomySystem::calculateEconomy(*store, *population);
+
+  EXPECT_FLOAT_EQ(state.inflationMultiplier, 1.0f);
+}
+
+// Test: a higher inflation multiplier raises maintenance costs proportionally.
+TEST_F(EconomySystemTests, InflationRaisesMaintenanceCosts) {
+  store->createBuilding(BuildingType::Residential, {10, 10}, 50);
+  store->createBuilding(BuildingType::Commercial, {11, 10}, 50);
+  store->createBuilding(BuildingType::Industrial, {12, 10}, 50);
+
+  EconomyState base = EconomySystem::calculateEconomy(
+    *store, *population, TaxRates{}, nullptr, TradeRates{}, 1.0f);
+  EconomyState inflated = EconomySystem::calculateEconomy(
+    *store, *population, TaxRates{}, nullptr, TradeRates{}, 2.0f);
+
+  EXPECT_FLOAT_EQ(inflated.inflationMultiplier, 2.0f);
+  EXPECT_EQ(inflated.totalMaintenance, base.totalMaintenance * 2);
+}
+
+// Test: inflation also raises trade prices (export revenue / import cost),
+// since both represent external, world-market costs.
+TEST_F(EconomySystemTests, InflationRaisesTradePrices) {
+  EntityId industrialId = store->createBuilding(BuildingType::Industrial, {10, 10}, 200);
+  store->getBuilding(industrialId)->occupancy = 100;
+  EntityId commercialId = store->createBuilding(BuildingType::Commercial, {11, 10}, 20);
+  store->getBuilding(commercialId)->occupancy = 5;
+
+  EconomyState base = EconomySystem::calculateEconomy(
+    *store, *population, TaxRates{}, nullptr, TradeRates{}, 1.0f);
+  EconomyState inflated = EconomySystem::calculateEconomy(
+    *store, *population, TaxRates{}, nullptr, TradeRates{}, 2.0f);
+
+  ASSERT_GT(base.exportRevenue, 0);
+  EXPECT_EQ(inflated.exportRevenue, base.exportRevenue * 2);
+}
+
+// Test: the core asymmetry - inflation does NOT scale tax revenue, only
+// costs/trade prices, so a stagnant city's revenue stays flat while its
+// expenses rise under inflation.
+TEST_F(EconomySystemTests, InflationDoesNotAffectTaxRevenue) {
+  store->createBuilding(BuildingType::Residential, {10, 10}, 50);
+  store->createBuilding(BuildingType::Commercial, {11, 10}, 50);
+  store->createBuilding(BuildingType::Industrial, {12, 10}, 50);
+  population->createGroup(IncomeBand::Middle, 30, 20); // 20 employed
+
+  EconomyState base = EconomySystem::calculateEconomy(
+    *store, *population, TaxRates{}, nullptr, TradeRates{}, 1.0f);
+  EconomyState inflated = EconomySystem::calculateEconomy(
+    *store, *population, TaxRates{}, nullptr, TradeRates{}, 3.0f);
+
+  EXPECT_EQ(inflated.totalTaxRevenue, base.totalTaxRevenue);
+  EXPECT_EQ(inflated.residentialTaxRevenue, base.residentialTaxRevenue);
+  EXPECT_EQ(inflated.commercialTaxRevenue, base.commercialTaxRevenue);
+  EXPECT_EQ(inflated.industrialTaxRevenue, base.industrialTaxRevenue);
+  // Balance still shifts because expenses rose while revenue held steady.
+  EXPECT_LT(inflated.balance, base.balance);
+}

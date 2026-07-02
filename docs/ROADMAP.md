@@ -9,8 +9,8 @@ Last updated: June 27, 2026
 - Population, traffic, economy, metrics, save/load, districts, and visualization: complete
 - Multithreaded simulation loop with thread pool: complete (~2.8× speedup at 200k pop)
 - Phase 5, Milestone 11 (Traffic Micro-Simulation): complete
-- Phase 5, Milestone 12 (Advanced Economy): started - dynamic land value, commercial/industrial supply chains and imports/exports
-- Automated validation: 177 tests passing
+- Phase 5, Milestone 12 (Advanced Economy): started - dynamic land value, commercial/industrial supply chains and imports/exports, inflation
+- Automated validation: 183 tests passing
 
 ---
 
@@ -136,7 +136,7 @@ Note on fidelity: each lane is tracked as its own independent single-file channe
 - [x] Commercial and industrial supply chains / imports-exports - `EconomyState` gains `goodsProduced` (industrial occupancy × `TradeRates::goodsPerIndustrialWorker`), `goodsConsumed` (commercial occupancy × `goodsPerCommercialWorker`), and `tradeBalance` (the difference). A surplus earns `exportRevenue`; a shortfall costs `importCost` at a strictly higher per-unit rate than exporting earns (importing is a genuine economic penalty, not a wash) - both flow into `totalRevenue`/`totalExpenses`/`balance`, so a city with plentiful jobs but no local industry visibly pays for it. No new call-site wiring needed (computed entirely from data `calculateEconomy` already receives); `TradeRates` defaults apply automatically everywhere.
 - [x] Land value dynamics (distance to jobs, services, pollution) - `LandValueSystem` recomputes `Tile::landValue` per tick from a zone base plus three factors: a multi-source BFS from all commercial/industrial buildings (distance-capped at `jobAccessRadius`) for job proximity, the existing service-coverage BFS cache for facility proximity, and the existing per-tile pollution field. `EconomySystem::calculateEconomy` takes an optional `CityMap*` and reports the real mean over zoned tiles when provided (falls back to the old building-count placeholder otherwise, so district-scoped sub-economies and other map-less callers are unaffected). Interval-gated like services/traffic (`--simulate-land-value-interval`, default 1) since the job-access BFS is the costliest pass in the tick at city scale.
 - [ ] Office demand
-- [ ] Inflation
+- [x] Inflation - `EconomyState`/`calculateEconomy` gain an `inflationMultiplier` (default 1.0, matching prior behavior for every existing caller) applied to maintenance costs and trade prices (export revenue/import cost) but deliberately NOT to tax revenue: a percentage of the city's own building stock, which only grows when the city actually builds more. The asymmetry creates real budget erosion for a stagnant city - the same pressure a real municipality that stops growing faces - without netting to zero in `economicHealth`'s ratio-based scoring the way a uniform scale-up-both-sides model would. `CitySimulator` computes a compounding per-tick multiplier from `SimOptions::inflationRatePerTick` (default 0 = no inflation, so existing runs/tests/replays are bit-for-bit unaffected unless a caller opts in via `--simulate-inflation-rate`).
 
 Note on performance: the job-access BFS is proportional to job-building count and its capped search radius, not to city size directly, but at moderate scale (tens of job buildings, hundreds of zoned tiles) it is still the single costliest phase per tick (see `--simulate` timing breakdown). Two mitigations exist today: the per-tile scan skips unzoned land (most of the active region) and the BFS is capped at `jobAccessRadius` (no benefit accrues past it). For very large simulations, `--simulate-land-value-interval N` throttles the recompute frequency, matching the existing service/traffic/population interval knobs; land value simply persists at its last computed value between recomputes, the same tradeoff already made for coverage and congestion.
 

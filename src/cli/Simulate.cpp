@@ -25,7 +25,7 @@ static const char* kCSVHeader =
   "tick,demand_residential,demand_commercial,demand_industrial,"
   "population,employed,residential_buildings,commercial_buildings,industrial_buildings,"
   "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
-  "service_coverage,service_facilities,avg_land_value,trade_balance\n";
+  "service_coverage,service_facilities,avg_land_value,trade_balance,inflation_multiplier\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -50,7 +50,7 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.roadTiles << "," << row.budgetBalance << ","
       << row.trafficCongestion << "," << row.avgPollution << ","
       << row.serviceCoverage << "," << row.serviceFacilities << "," << row.avgLandValue << ","
-      << row.tradeBalance << "\n";
+      << row.tradeBalance << "," << row.inflationMultiplier << "\n";
 }
 
 bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
@@ -96,7 +96,8 @@ int runCitySimulation(
   int trafficInterval,
   int serviceInterval,
   int populationInterval,
-  int landValueInterval
+  int landValueInterval,
+  float inflationRate
 ) {
   const bool infinite = (ticks < 0);
   const float sideKm = tileToKm(mapSize);
@@ -138,6 +139,7 @@ int runCitySimulation(
   options.serviceInterval = std::max(1, serviceInterval);
   options.populationInterval = std::max(1, populationInterval);
   options.landValueInterval = std::max(1, landValueInterval);
+  options.inflationRatePerTick = inflationRate;
 
   if (!infinite) {
     const SimResult result = CitySimulator::run(map, roads, store, population, seed, ticks, options);
@@ -169,7 +171,8 @@ int runCitySimulation(
                 << " serviceCoverage=" << last.serviceCoverage
                 << " (" << last.serviceFacilities << " facilities)"
                 << " avgLandValue=" << std::setprecision(1) << last.avgLandValue
-                << " tradeBalance=" << last.tradeBalance << "\n";
+                << " tradeBalance=" << last.tradeBalance
+                << " inflationMultiplier=" << std::setprecision(3) << last.inflationMultiplier << "\n";
     }
 
     printTimings(result.timings, ticks);
@@ -252,7 +255,8 @@ int runCitySimulation(
               << " serviceCoverage=" << std::fixed << std::setprecision(2) << lastRow.serviceCoverage
               << " (" << lastRow.serviceFacilities << " facilities)"
               << " avgLandValue=" << std::setprecision(1) << lastRow.avgLandValue
-              << " tradeBalance=" << lastRow.tradeBalance << "\n";
+              << " tradeBalance=" << lastRow.tradeBalance
+              << " inflationMultiplier=" << std::setprecision(3) << lastRow.inflationMultiplier << "\n";
   }
 
   if (!reportPath.empty()) {

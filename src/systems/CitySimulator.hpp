@@ -29,6 +29,7 @@ struct SimTickMetrics {
   uint32_t serviceFacilities = 0;
   float avgLandValue = 100.0f;  // mean Tile::landValue across zoned tiles
   int64_t tradeBalance = 0;     // goodsProduced - goodsConsumed; positive = exporting
+  float inflationMultiplier = 1.0f;  // current price-level index applied to costs (1.0 = base year)
 };
 
 struct SimPhaseTimings {
@@ -56,6 +57,7 @@ struct SimOptions {
   int serviceInterval = 1;     // run service evaluation every N ticks
   int populationInterval = 1;  // run full population allocation every N ticks
   int landValueInterval = 1;   // run land-value recompute every N ticks (its job-access BFS is the costliest per-tick pass; >1 cuts CPU on large road networks)
+  float inflationRatePerTick = 0.0f;  // compounding per-tick rate applied to maintenance/trade costs (not tax revenue); 0 = no inflation, matching prior behavior
   // Called after each tick with the row. Return false to stop the simulation.
   // Used by infinite mode; rows are not accumulated in SimResult when this is set and ticks < 0.
   std::function<bool(const SimTickMetrics&)> tickCallback;
