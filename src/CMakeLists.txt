@@ -15,6 +15,7 @@ add_library(urban_sim_core
   systems/CitySimulator.cpp
   systems/TrafficMicroSim.cpp
   systems/LandValueSystem.cpp
+  systems/TransitSystem.cpp
   world/CityMap.cpp
   world/Tile.cpp
   world/Zoning.cpp

@@ -84,6 +84,8 @@ only on a fresh map; loading a snapshot restores its saved terrain instead.
 ./build/UrbanSimCore-cli --size 96 --seed 7 --simulate 50 --simulate-no-traffic
 ./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 80 --simulate-inflation-rate 0.02
 ./build/UrbanSimCore-cli --size 32 --seed 5 --zone-rect 10 10 15 15 OFFICE --place-road 10 16 15 16 --run-growth 20 --print-budget-summary
+./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 100
+./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 100 --simulate-no-transit
 ```
 
 `--simulate N` grows a city autonomously from a near-empty map for N ticks. Each
@@ -151,6 +153,20 @@ behavior-neutral by default: because it's a genuine new zoning category
 competing for land, it changes the city's growth mix (not just reported
 metrics) for every `--simulate` run, the same way adding an RCI category
 naturally would.
+
+Public transit (Phase 5, M13 — started) auto-places bus routes as the city
+grows: each route is a fixed path of stops along the road network (static
+infrastructure, like a service facility, not a literal moving vehicle —
+`TrafficMicroSim` already covers agent-level simulation for cars) with a
+per-tick rider capacity. If a route's stop coverage reaches both the home and
+work ends of a commute, some of those commuters ride the bus instead of
+driving, taking that load off the road network — modal split in action.
+Capacity constrains ridership (a small route visibly caps out below demand,
+reported separately), and routes are on by default (`--simulate-no-transit`
+to compare against the pre-transit baseline). Because commute pairs are
+sampled uniformly at random each tick (the same simplification `TrafficSystem`
+has always used, not something transit changes), ridership shows up reliably
+over the course of a run rather than on any single tick.
 
 It prints an evolution table (RCI demand, population, building counts, roads,
 budget) plus a per-phase timing breakdown, so the same run doubles as an

@@ -7,6 +7,7 @@
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
+#include "src/systems/TransitSystem.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
 
@@ -32,6 +33,10 @@ struct SimTickMetrics {
   float avgLandValue = 100.0f;  // mean Tile::landValue across zoned tiles
   int64_t tradeBalance = 0;     // goodsProduced - goodsConsumed; positive = exporting
   float inflationMultiplier = 1.0f;  // current price-level index applied to costs (1.0 = base year)
+  uint32_t transitRoutes = 0;        // bus routes currently operating
+  uint32_t transitRidership = 0;     // commuters carried by transit this tick
+  uint32_t transitDemand = 0;        // commuters whose commute is covered by a route, whether or not it had capacity
+  float transitModalShare = 0.0f;    // transitRidership / (transitRidership + car commuters)
 };
 
 struct SimPhaseTimings {
@@ -43,6 +48,7 @@ struct SimPhaseTimings {
   double economyMs = 0.0;
   double serviceMs = 0.0;
   double landValueMs = 0.0;
+  double transitMs = 0.0;
 };
 
 struct SimResult {
@@ -60,6 +66,7 @@ struct SimOptions {
   int populationInterval = 1;  // run full population allocation every N ticks
   int landValueInterval = 1;   // run land-value recompute every N ticks (its job-access BFS is the costliest per-tick pass; >1 cuts CPU on large road networks)
   float inflationRatePerTick = 0.0f;  // compounding per-tick rate applied to maintenance/trade costs (not tax revenue); 0 = no inflation, matching prior behavior
+  bool enableTransit = true;   // auto-place bus routes and let them offload commuters from the road network
   // Called after each tick with the row. Return false to stop the simulation.
   // Used by infinite mode; rows are not accumulated in SimResult when this is set and ticks < 0.
   std::function<bool(const SimTickMetrics&)> tickCallback;

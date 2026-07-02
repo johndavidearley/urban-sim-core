@@ -10,7 +10,8 @@ Last updated: June 27, 2026
 - Multithreaded simulation loop with thread pool: complete (~2.8× speedup at 200k pop)
 - Phase 5, Milestone 11 (Traffic Micro-Simulation): complete
 - Phase 5, Milestone 12 (Advanced Economy): complete - dynamic land value, commercial/industrial supply chains and imports/exports, inflation, office demand
-- Automated validation: 196 tests passing
+- Phase 5, Milestone 13 (Public Transit): started - bus routes, transit demand/capacity, modal split
+- Automated validation: 206 tests passing
 
 ---
 
@@ -142,11 +143,13 @@ Note on Office demand: unlike the other three M12 slices, this one is not behavi
 
 Note on performance: the job-access BFS is proportional to job-building count and its capped search radius, not to city size directly, but at moderate scale (tens of job buildings, hundreds of zoned tiles) it is still the single costliest phase per tick (see `--simulate` timing breakdown). Two mitigations exist today: the per-tile scan skips unzoned land (most of the active region) and the BFS is capped at `jobAccessRadius` (no benefit accrues past it). For very large simulations, `--simulate-land-value-interval N` throttles the recompute frequency, matching the existing service/traffic/population interval knobs; land value simply persists at its last computed value between recomputes, the same tradeoff already made for coverage and congestion.
 
-### Milestone 13: Public Transit
-- [ ] Bus routes
+### Milestone 13: Public Transit - started
+- [x] Bus routes - a new `TransitSystem` models fixed bus routes (`TransitRoute`: an ordered path of road-network stops, a vehicle count, and per-vehicle capacity) as static infrastructure, the same way `ServiceFacility` models fire/police/etc - not literal moving agents (that fidelity belongs to `TrafficMicroSim`, which is a separate, heavier system). `CitySimulator` auto-places routes as the city grows (roughly one per 1,200 residents, capped at 16), connecting the residential building farthest from existing route coverage to its nearest job building via the road network, with a fallback search over alternate residential/job candidates so one disconnected building can't strand placement for the whole city.
 - [ ] Train/subway networks
-- [ ] Transit demand and capacity
-- [ ] Modal split (cars vs transit)
+- [x] Transit demand and capacity - each route has a per-tick capacity (`vehicleCount x capacityPerVehicle`); `TransitCoverageCache` pre-builds a multi-source BFS distance field per route (mirroring `ServiceCoverageCache`) so "is this building within walking distance of a stop" is a cheap lookup, reused across ticks like every other coverage cache in this codebase.
+- [x] Modal split (cars vs transit) - `TransitOffload` is consulted once per commute batch inside `TrafficSystem::simulateCommutes` (a new optional trailing parameter, default `nullptr` = exact prior behavior for every existing caller): if a route's coverage reaches both the home and work ends of a commute, some of that batch's workers ride transit instead of driving, reducing the load that accumulates onto road congestion while the full worker count still counts toward `commutingPopulation`/commute-burden stats. `TransitSummary` reports `ridership` (actually carried) separately from `demand` (would have ridden, capacity permitting) - a capacity-constrained route visibly caps ridership below demand.
+
+Note on default behavior: like Office demand in M12, this is not behavior-neutral by default (`SimOptions::enableTransit = true`) - reduced congestion feeds back into desirability/migration the same way traffic congestion always has, so it can shift a city's growth trajectory. `--simulate-no-transit` opts back out for comparison/testing. Unlike car routing (which only succeeds between buildings that land on literal road-node tiles - a pre-existing `TrafficSystem` simplification, not something this milestone changes), transit ridership is consequently sparse and driven by the same random uniform commute sampling `TrafficSystem` already uses, not a realistic nearest-job model - it shows up reliably over many ticks, not necessarily on any single tick.
 
 ### Milestone 14: Districts and Policies
 - [ ] District-level management

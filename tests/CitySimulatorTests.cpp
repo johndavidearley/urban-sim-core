@@ -308,3 +308,52 @@ TEST(CitySimulatorTests, GrowsOfficeBuildingsAlongsideRCI) {
   }
   EXPECT_EQ(officeCountInStore, last.officeBuildings);
 }
+
+// A city grown with traffic (and therefore transit, on by default) running
+// long enough to cross the population threshold should end up with at least
+// one auto-placed bus route, and carry real ridership on at least some ticks.
+// Commute pairs are drawn uniformly at random each tick (TrafficSystem's
+// existing model, not something transit changes), so ridership is inherently
+// noisy tick-to-tick - checking "any row" rather than specifically the last
+// row is the correct, non-flaky way to assert the mechanism actually fires.
+TEST(CitySimulatorTests, TransitRoutesAppearAndCarryRidershipAsCityGrows) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 120, SimOptions{});
+
+  ASSERT_FALSE(result.rows.empty());
+  const SimTickMetrics& last = result.rows.back();
+  EXPECT_GT(last.transitRoutes, 0u);
+
+  uint32_t totalRidership = 0;
+  for (const SimTickMetrics& row : result.rows) {
+    totalRidership += row.transitRidership;
+    EXPECT_GE(row.transitModalShare, 0.0f);
+    EXPECT_LE(row.transitModalShare, 1.0f);
+  }
+  EXPECT_GT(totalRidership, 0u);
+}
+
+// options.enableTransit = false must behave exactly like before this feature
+// existed: no routes ever placed, zero ridership reported every tick.
+TEST(CitySimulatorTests, TransitDisabledMeansNoRoutesEverPlaced) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  SimOptions options;
+  options.enableTransit = false;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 70, options);
+
+  ASSERT_FALSE(result.rows.empty());
+  for (const SimTickMetrics& row : result.rows) {
+    EXPECT_EQ(row.transitRoutes, 0u);
+    EXPECT_EQ(row.transitRidership, 0u);
+    EXPECT_FLOAT_EQ(row.transitModalShare, 0.0f);
+  }
+}

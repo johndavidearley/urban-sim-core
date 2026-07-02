@@ -76,6 +76,7 @@ void printHelp() {
             << "  --simulate-no-traffic     Skip the commute phase during --simulate\n"
             << "  --simulate-land-value-interval N  Recompute land value every N ticks (default 1)\n"
             << "  --simulate-inflation-rate F  Compounding per-tick inflation on costs/trade prices, not tax revenue (default 0)\n"
+            << "  --simulate-no-transit     Disable auto-placed bus routes during --simulate (on by default)\n"
             << "  --micro-traffic N         Grow a city N ticks, then run vehicle-agent traffic micro-sim\n"
             << "  --micro-traffic-steps N   Step budget for the micro-sim (default 240)\n"
             << "  --micro-traffic-incidents N  Dispatch N emergency vehicles (ignore congestion/reds)\n"

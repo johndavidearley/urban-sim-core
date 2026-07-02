@@ -25,7 +25,8 @@ static const char* kCSVHeader =
   "tick,demand_residential,demand_commercial,demand_industrial,demand_office,"
   "population,employed,residential_buildings,commercial_buildings,industrial_buildings,office_buildings,"
   "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
-  "service_coverage,service_facilities,avg_land_value,trade_balance,inflation_multiplier\n";
+  "service_coverage,service_facilities,avg_land_value,trade_balance,inflation_multiplier,"
+  "transit_routes,transit_ridership,transit_demand,transit_modal_share\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -40,7 +41,9 @@ void printRow(const SimTickMetrics& row) {
             << " " << std::setw(4) << row.officeBuildings
             << " | " << std::setw(5) << row.roadTiles
             << " | " << std::setw(11) << row.budgetBalance
-            << " | " << std::setprecision(2) << row.trafficCongestion << "\n";
+            << " | " << std::setprecision(2) << row.trafficCongestion
+            << " | " << std::setw(3) << row.transitRoutes
+            << " " << std::setprecision(2) << (row.transitModalShare * 100.0f) << "%\n";
 }
 
 void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
@@ -54,7 +57,9 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.roadTiles << "," << row.budgetBalance << ","
       << row.trafficCongestion << "," << row.avgPollution << ","
       << row.serviceCoverage << "," << row.serviceFacilities << "," << row.avgLandValue << ","
-      << row.tradeBalance << "," << row.inflationMultiplier << "\n";
+      << row.tradeBalance << "," << row.inflationMultiplier << ","
+      << row.transitRoutes << "," << row.transitRidership << "," << row.transitDemand << ","
+      << row.transitModalShare << "\n";
 }
 
 bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
@@ -71,7 +76,7 @@ bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& 
 
 void printTimings(const SimPhaseTimings& t, int ranTicks) {
   const double totalMs = t.roadMs + t.zoningMs + t.growthMs + t.populationMs + t.trafficMs +
-                         t.economyMs + t.serviceMs + t.landValueMs;
+                         t.economyMs + t.serviceMs + t.landValueMs + t.transitMs;
   std::cout << "\nPhase timing over " << ranTicks << " ticks (total "
             << std::fixed << std::setprecision(2) << totalMs << " ms, "
             << (ranTicks > 0 ? totalMs / ranTicks : 0.0) << " ms/tick):\n";
@@ -83,6 +88,7 @@ void printTimings(const SimPhaseTimings& t, int ranTicks) {
   std::cout << "    Economy:    " << t.economyMs << " ms\n";
   std::cout << "    Services:   " << t.serviceMs << " ms\n";
   std::cout << "    LandValue:  " << t.landValueMs << " ms\n";
+  std::cout << "    Transit:    " << t.transitMs << " ms\n";
 }
 
 } // namespace
@@ -101,7 +107,8 @@ int runCitySimulation(
   int serviceInterval,
   int populationInterval,
   int landValueInterval,
-  float inflationRate
+  float inflationRate,
+  bool enableTransit
 ) {
   const bool infinite = (ticks < 0);
   const float sideKm = tileToKm(mapSize);
@@ -144,13 +151,14 @@ int runCitySimulation(
   options.populationInterval = std::max(1, populationInterval);
   options.landValueInterval = std::max(1, landValueInterval);
   options.inflationRatePerTick = inflationRate;
+  options.enableTransit = enableTransit;
 
   if (!infinite) {
     const SimResult result = CitySimulator::run(map, roads, store, population, seed, ticks, options);
 
     // Evolution table: print a bounded number of sampled rows plus the final tick.
-    std::cout << "\n  tick |  R    C    I    O  |     pop    empl |  res  com  ind  off | roads |     balance | cong\n";
-    std::cout << "  -----+--------------------+-----------------+---------------------+-------+-------------+-----\n";
+    std::cout << "\n  tick |  R    C    I    O  |     pop    empl |  res  com  ind  off | roads |     balance | cong | trn modal\n";
+    std::cout << "  -----+--------------------+-----------------+---------------------+-------+-------------+------+----------\n";
     if (!result.rows.empty()) {
       const size_t maxRows = 20;
       const size_t step = std::max<size_t>(1, result.rows.size() / maxRows);
@@ -178,7 +186,10 @@ int runCitySimulation(
                 << " (" << last.serviceFacilities << " facilities)"
                 << " avgLandValue=" << std::setprecision(1) << last.avgLandValue
                 << " tradeBalance=" << last.tradeBalance
-                << " inflationMultiplier=" << std::setprecision(3) << last.inflationMultiplier << "\n";
+                << " inflationMultiplier=" << std::setprecision(3) << last.inflationMultiplier
+                << " transitRoutes=" << last.transitRoutes
+                << " transitRidership=" << last.transitRidership
+                << " transitModalShare=" << std::setprecision(1) << (last.transitModalShare * 100.0f) << "%\n";
     }
 
     printTimings(result.timings, ticks);
@@ -209,8 +220,8 @@ int runCitySimulation(
     csvOut << kCSVHeader;
   }
 
-  std::cout << "\n  tick |  R    C    I    O  |     pop    empl |  res  com  ind  off | roads |     balance | cong\n";
-  std::cout << "  -----+--------------------+-----------------+---------------------+-------+-------------+-----\n";
+  std::cout << "\n  tick |  R    C    I    O  |     pop    empl |  res  com  ind  off | roads |     balance | cong | trn modal\n";
+  std::cout << "  -----+--------------------+-----------------+---------------------+-------+-------------+------+----------\n";
 
   const int printEvery = 10;
   SimTickMetrics lastRow;
@@ -264,7 +275,10 @@ int runCitySimulation(
               << " (" << lastRow.serviceFacilities << " facilities)"
               << " avgLandValue=" << std::setprecision(1) << lastRow.avgLandValue
               << " tradeBalance=" << lastRow.tradeBalance
-              << " inflationMultiplier=" << std::setprecision(3) << lastRow.inflationMultiplier << "\n";
+              << " inflationMultiplier=" << std::setprecision(3) << lastRow.inflationMultiplier
+              << " transitRoutes=" << lastRow.transitRoutes
+              << " transitRidership=" << lastRow.transitRidership
+              << " transitModalShare=" << std::setprecision(1) << (lastRow.transitModalShare * 100.0f) << "%\n";
   }
 
   if (!reportPath.empty()) {

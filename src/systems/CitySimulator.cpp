@@ -16,6 +16,8 @@
 #include "src/systems/PopulationSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/systems/TrafficSystem.hpp"
+#include "src/systems/TransitSystem.hpp"
+#include "src/networks/Pathfinding.hpp"
 
 namespace {
 
@@ -363,6 +365,128 @@ void placeFacilitiesIfNeeded(
   }
 }
 
+// Sample every `stopSpacing`-th waypoint of a road path (plus the endpoint)
+// as a bus stop, so a route has a handful of stops rather than one per tile.
+std::vector<Coord> sampleRouteStops(const Pathfinding::Path& path, int stopSpacing) {
+  std::vector<Coord> stops;
+  if (path.waypoints.empty()) return stops;
+  const size_t step = static_cast<size_t>(std::max(1, stopSpacing));
+  for (size_t i = 0; i < path.waypoints.size(); i += step) {
+    stops.push_back(path.waypoints[i]);
+  }
+  if (stops.back() != path.waypoints.back()) {
+    stops.push_back(path.waypoints.back());
+  }
+  return stops;
+}
+
+// Keep roughly one bus route per `popPerRoute` residents (capped, since each
+// route adds a per-tick BFS to the transit coverage cache): connect the
+// residential building farthest from existing route coverage to its nearest
+// job building (commercial/industrial/office) via the road network. Simple
+// and deterministic, in the same spirit as placeFacilitiesIfNeeded, though
+// routes need an endpoint pair rather than a single site.
+void placeTransitRoutesIfNeeded(
+  const RoadNetwork& roads,
+  const EntityStore& store,
+  std::vector<TransitRoute>& routes,
+  uint32_t population,
+  int stopCoverageRadius
+) {
+  const uint32_t popPerRoute = 1200;
+  const size_t target = std::min<size_t>(population / popPerRoute, 16);
+  if (routes.size() >= target) return;
+
+  std::vector<const Building*> residential;
+  std::vector<const Building*> jobs;
+  for (const auto& [id, b] : store.getBuildings()) {
+    (void)id;
+    if (b.type == BuildingType::Residential) {
+      residential.push_back(&b);
+    } else if (b.type == BuildingType::Commercial || b.type == BuildingType::Industrial ||
+               b.type == BuildingType::Office) {
+      jobs.push_back(&b);
+    }
+  }
+  if (residential.empty() || jobs.empty()) return;
+
+  // Buildings live in a hash map; every other per-tick decision loop in this
+  // file sorts by ID first to keep iteration (and thus RNG-free tie-breaking
+  // here) deterministic across platforms.
+  auto byId = [](const Building* a, const Building* b) { return a->id < b->id; };
+  std::sort(residential.begin(), residential.end(), byId);
+  std::sort(jobs.begin(), jobs.end(), byId);
+
+  // Residential buildings proven disconnected from every job building this
+  // call are excluded from further "farthest-uncovered" candidacy, so one
+  // stranded building (e.g. beyond a water gap the road grid hasn't crossed
+  // yet) can't permanently block placement for the whole city.
+  std::vector<const Building*> unreachableHomes;
+
+  while (routes.size() < target) {
+    // Farthest-from-existing-stop residential building anchors the new
+    // route, spreading routes across the city instead of clustering them.
+    const Building* bestHome = nullptr;
+    long bestScore = -1;
+    for (const Building* home : residential) {
+      if (!roads.hasNode(home->position)) continue;
+      if (std::find(unreachableHomes.begin(), unreachableHomes.end(), home) != unreachableHomes.end()) continue;
+      long nearestStopDist = std::numeric_limits<long>::max();
+      for (const TransitRoute& r : routes) {
+        for (const Coord& stop : r.stops) {
+          const long dx = home->position.x - stop.x;
+          const long dy = home->position.y - stop.y;
+          nearestStopDist = std::min(nearestStopDist, dx * dx + dy * dy);
+        }
+      }
+      // Maximize distance to the closest existing stop (least-covered wins);
+      // with no routes yet, every candidate ties at "uncovered" and the
+      // first in ID order is picked.
+      if (nearestStopDist > bestScore) {
+        bestScore = nearestStopDist;
+        bestHome = home;
+      }
+    }
+    if (bestHome == nullptr) break;
+
+    // Try job buildings nearest-first (straight-line distance; cheap ordering
+    // heuristic - the route itself follows actual roads via Pathfinding).
+    // Falls through to farther jobs if the nearest one turns out unreachable,
+    // so one disconnected nearby job doesn't strand this route attempt.
+    std::vector<const Building*> jobsByDistance = jobs;
+    std::sort(jobsByDistance.begin(), jobsByDistance.end(), [&](const Building* a, const Building* b) {
+      const long dax = a->position.x - bestHome->position.x, day = a->position.y - bestHome->position.y;
+      const long dbx = b->position.x - bestHome->position.x, dby = b->position.y - bestHome->position.y;
+      const long da = dax * dax + day * day, db = dbx * dbx + dby * dby;
+      if (da != db) return da < db;
+      return a->id < b->id;
+    });
+
+    Pathfinding::Path path;
+    bool connected = false;
+    for (const Building* job : jobsByDistance) {
+      if (!roads.hasNode(job->position)) continue;
+      path = Pathfinding::findShortestPath(roads, bestHome->position, job->position);
+      if (path.found && path.waypoints.size() >= 2) {
+        connected = true;
+        break;
+      }
+    }
+
+    if (!connected) {
+      unreachableHomes.push_back(bestHome);
+      if (unreachableHomes.size() >= residential.size()) break;  // exhausted every candidate
+      continue;
+    }
+
+    TransitRoute route;
+    route.id = static_cast<TransitRouteId>(routes.size() + 1);
+    route.stops = sampleRouteStops(path, /*stopSpacing=*/2);
+    route.stopCoverageRadius = stopCoverageRadius;
+    routes.push_back(std::move(route));
+  }
+}
+
 // Zone up to `batch` of the nearest candidate tiles, splitting counts by demand
 // but placing the cleanest tiles residential and the most polluted industrial,
 // so housing and industry self-segregate as the pollution field develops.
@@ -497,6 +621,8 @@ SimResult CitySimulator::run(
   std::vector<ServiceFacility> facilities;
   ServiceCoverageCache coverageCache;
   const int serviceRadius = spacing * 3;
+  std::vector<TransitRoute> transitRoutes;
+  TransitCoverageCache transitCache;
 
   // Thread pool for parallel pathfinding (traffic) and building coverage
   // (services), and for running both concurrently within each tick.
@@ -619,14 +745,31 @@ SimResult CitySimulator::run(
       });
     }
 
+    // Transit prep: route placement and BFS cache rebuild are state-mutating,
+    // like facility placement above, and must complete before traffic uses
+    // them. Routes only grow (never removed), so this is cheap once the
+    // route count has caught up to its population-based target.
+    TransitSummary transitSummary;
+    if (options.enableTransit && trafficActive) {
+      const auto t0 = Clock::now();
+      placeTransitRoutesIfNeeded(roads, store, transitRoutes, population.getTotalPopulation(), serviceRadius);
+      if (transitRoutes.size() != transitCache.builtForRouteCount) {
+        TransitSystem::buildCache(roads, transitRoutes, transitCache);
+      }
+      result.timings.transitMs += elapsedMs(t0, Clock::now());
+    }
+
     // Traffic runs on the main thread so it can safely wait for inner pool
     // tasks (parallel Dijkstra) without risking pool deadlock.
     TrafficSummary traffic;
     if (trafficActive) {
       const auto t0 = Clock::now();
-      traffic = TrafficSystem::simulateCommutes(store, population, roads, tickSeed + 2u, &pool);
+      TransitOffload offload(transitRoutes, transitCache);
+      TransitOffload* offloadPtr = options.enableTransit ? &offload : nullptr;
+      traffic = TrafficSystem::simulateCommutes(store, population, roads, tickSeed + 2u, &pool, offloadPtr);
       result.timings.trafficMs += elapsedMs(t0, Clock::now());
       lastCongestion = traffic.maxEdgeCongestion;
+      transitSummary = TransitSystem::summarize(transitRoutes, offload, traffic.commutingPopulation);
     }
 
     // Collect the service result (likely already done while traffic ran).
@@ -688,6 +831,10 @@ SimResult CitySimulator::run(
     row.avgLandValue = economy.averageLandValue;
     row.tradeBalance = economy.tradeBalance;
     row.inflationMultiplier = economy.inflationMultiplier;
+    row.transitRoutes = static_cast<uint32_t>(transitRoutes.size());
+    row.transitRidership = transitSummary.ridership;
+    row.transitDemand = transitSummary.demand;
+    row.transitModalShare = transitSummary.modalShare;
     if (!infinite) {
       result.rows.push_back(row);
     }

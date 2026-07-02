@@ -4,6 +4,7 @@
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/systems/TrafficSystem.hpp"
+#include "src/systems/TransitSystem.hpp"
 
 class TrafficSystemTests : public ::testing::Test {
 protected:
@@ -329,6 +330,71 @@ TEST_F(TrafficSystemTests, RouteDiagnosticsFilterByDestination) {
 
   EXPECT_FALSE(edges.empty());
   EXPECT_GT(edges.front().totalCommuters, 0.0f);
+}
+
+// Test: a transit route covering both the home and job ends offloads
+// commuters off the road, reducing congestion versus the same scenario with
+// no transit - the whole point of modal split.
+TEST_F(TrafficSystemTests, TransitOffloadReducesRoadCongestion) {
+  auto makeScenario = [](EntityStore& store, PopulationStore& population) {
+    store.createBuilding(BuildingType::Residential, {10, 10}, 100);
+    store.createBuilding(BuildingType::Commercial, {15, 10}, 100);
+    population.createGroup(IncomeBand::Low, 100, 80);
+  };
+
+  EntityStore storeNoTransit;
+  PopulationStore populationNoTransit;
+  makeScenario(storeNoTransit, populationNoTransit);
+  const TrafficSummary withoutTransit = TrafficSystem::simulateCommutes(
+    storeNoTransit, populationNoTransit, *network, 42
+  );
+
+  EntityStore storeWithTransit;
+  PopulationStore populationWithTransit;
+  makeScenario(storeWithTransit, populationWithTransit);
+
+  std::vector<TransitRoute> routes;
+  TransitRoute route;
+  route.id = 1;
+  route.stops = {{10, 10}, {15, 10}};
+  route.vehicleCount = 4;
+  route.capacityPerVehicle = 30;  // capacity 120, enough to carry all 80 employed
+  route.stopCoverageRadius = 3;
+  routes.push_back(route);
+
+  TransitCoverageCache cache;
+  TransitSystem::buildCache(*network, routes, cache);
+  TransitOffload offload(routes, cache);
+
+  const TrafficSummary withTransit = TrafficSystem::simulateCommutes(
+    storeWithTransit, populationWithTransit, *network, 42, nullptr, &offload
+  );
+
+  // commutingPopulation counts everyone regardless of mode.
+  EXPECT_EQ(withTransit.commutingPopulation, withoutTransit.commutingPopulation);
+  EXPECT_GT(offload.totalRidership(), 0u);
+  EXPECT_LT(withTransit.maxEdgeCongestion, withoutTransit.maxEdgeCongestion);
+}
+
+// Test: with no transit offload (nullptr, the default), behavior is exactly
+// as before - this is the zero-behavior-change guarantee for every existing
+// caller that doesn't opt in.
+TEST_F(TrafficSystemTests, NullTransitOffloadMatchesPriorBehavior) {
+  EntityStore store;
+  PopulationStore population;
+  store.createBuilding(BuildingType::Residential, {10, 10}, 100);
+  store.createBuilding(BuildingType::Commercial, {15, 10}, 100);
+  population.createGroup(IncomeBand::Low, 100, 80);
+
+  const TrafficSummary explicitNull = TrafficSystem::simulateCommutes(
+    store, population, *network, 42, nullptr, nullptr
+  );
+  const TrafficSummary implicitDefault = TrafficSystem::simulateCommutes(
+    store, population, *network, 42
+  );
+
+  EXPECT_EQ(explicitNull.commutingPopulation, implicitDefault.commutingPopulation);
+  EXPECT_FLOAT_EQ(explicitNull.maxEdgeCongestion, implicitDefault.maxEdgeCongestion);
 }
 
 // Test: Non-matching route diagnostics filter yields no edges

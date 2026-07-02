@@ -1,5 +1,6 @@
 #include "TrafficSystem.hpp"
 #include "src/networks/Pathfinding.hpp"
+#include "src/systems/TransitSystem.hpp"
 #include <algorithm>
 #include <future>
 #include <random>
@@ -170,6 +171,12 @@ std::vector<CommuteSpec> collectCommuteSpecs(
 // All paths use the initial congestion weight (0.5) — intra-tick adaptive
 // feedback is skipped in parallel mode. Inter-tick feedback via lastCongestion
 // is unaffected. The diagnostic path always passes pool=nullptr.
+//
+// If transit is non-null, it's asked once per commute batch (in the fixed
+// order specs were generated) how many of that batch's workers ride transit
+// instead; only the remainder contributes to road congestion. The full
+// worker count still flows into totalCommuteTime/the visitor - transit
+// riders' trips aren't modeled separately, just diverted off the road.
 template <typename CommuteVisitor>
 TrafficSummary runCommuteLoop(
   const EntityStore& store,
@@ -177,7 +184,8 @@ TrafficSummary runCommuteLoop(
   RoadNetwork& network,
   uint32_t seed,
   CommuteVisitor&& visit,
-  ThreadPool* pool = nullptr
+  ThreadPool* pool = nullptr,
+  TransitOffload* transit = nullptr
 ) {
   TrafficSummary summary;
   network.resetCongestion();
@@ -187,6 +195,20 @@ TrafficSummary runCommuteLoop(
   summary.commutingPopulation = totalCommuters;
 
   if (specs.empty()) return summary;
+
+  // Transit offload: resolved once per commute batch, in spec order, before
+  // any congestion accumulation below - so both the sequential and parallel
+  // pathfinding phases see the already-reduced (car-only) worker counts.
+  // specs[i].workers (the full count) is untouched and still drives
+  // totalCommuteTime/the visitor - only road congestion is reduced.
+  std::vector<uint32_t> effectiveWorkers(specs.size());
+  for (size_t i = 0; i < specs.size(); ++i) {
+    uint32_t workers = specs[i].workers;
+    if (transit != nullptr) {
+      workers -= transit->offload(specs[i].home->position, specs[i].work->position, specs[i].workers);
+    }
+    effectiveWorkers[i] = workers;
+  }
 
   // Phase 2: pathfinding — parallel when pool is provided (all edges are 0
   // after resetCongestion, so concurrent reads on edges are safe).
@@ -229,7 +251,7 @@ TrafficSummary runCommuteLoop(
         float peakCongestion = 0.0f;
         for (size_t j = 0; j + 1 < paths[i].waypoints.size(); ++j) {
           network.updateCongestion(paths[i].waypoints[j], paths[i].waypoints[j + 1],
-                                   static_cast<float>(specs[i].workers));
+                                   static_cast<float>(effectiveWorkers[i]));
           peakCongestion = std::max(peakCongestion,
             network.getCongestion(paths[i].waypoints[j], paths[i].waypoints[j + 1]));
         }
@@ -251,7 +273,7 @@ TrafficSummary runCommuteLoop(
       // Parallel mode: congestion not yet accumulated.
       for (size_t j = 0; j + 1 < path.waypoints.size(); ++j) {
         network.updateCongestion(path.waypoints[j], path.waypoints[j + 1],
-                                 static_cast<float>(specs[i].workers));
+                                 static_cast<float>(effectiveWorkers[i]));
       }
     }
 
@@ -288,12 +310,14 @@ TrafficSummary TrafficSystem::simulateCommutes(
   PopulationStore& population,
   RoadNetwork& network,
   uint32_t seed,
-  ThreadPool* pool
+  ThreadPool* pool,
+  TransitOffload* transit
 ) {
   return runCommuteLoop(
     store, population, network, seed,
     [](const Building*, const Building*, const Pathfinding::Path&, uint32_t) {},
-    pool
+    pool,
+    transit
   );
 }
 

@@ -9,6 +9,8 @@
 #include "src/networks/RoadNetwork.hpp"
 #include "src/metrics/CityMetrics.hpp"
 
+class TransitOffload;
+
 struct TrafficSummary {
   uint32_t commutingPopulation = 0;
   float averageCommuteTime = 0.0f;
@@ -40,12 +42,17 @@ public:
   // If pool is non-null, Dijkstra calls are fanned out across pool workers
   // (specs are collected sequentially to preserve RNG determinism; congestion
   // accumulation is sequential after all paths are found).
+  // If transit is non-null, it's consulted once per commute batch (in the
+  // same deterministic order the batches were generated) to divert some
+  // workers off the road and onto transit before congestion is accumulated -
+  // see TransitOffload. Default nullptr matches prior behavior exactly.
   static TrafficSummary simulateCommutes(
     EntityStore& store,
     PopulationStore& population,
     RoadNetwork& network,
     uint32_t seed = 0,
-    ThreadPool* pool = nullptr
+    ThreadPool* pool = nullptr,
+    TransitOffload* transit = nullptr
   );
 
   // Apply traffic metrics to city metrics
