@@ -77,6 +77,8 @@ RGB zoneColor(int zone) {
       return {255, 179, 71};
     case 4:
       return {80, 200, 120};
+    case 5:
+      return {147, 112, 219};
     default:
       return {230, 230, 230};
   }
@@ -526,6 +528,9 @@ RGB tileColor(
         case BuildingType::Industrial:
           color = {179, 93, 29};
           break;
+        case BuildingType::Office:
+          color = {147, 112, 219};
+          break;
       }
     }
   }
@@ -654,20 +659,24 @@ void drawZoneLegend(SDL_Renderer* renderer, int x, int y) {
   drawSwatch(renderer, x + 0, y, zoneColor(1));       // Residential
   drawSwatch(renderer, x + 42, y, zoneColor(2));      // Commercial
   drawSwatch(renderer, x + 84, y, zoneColor(3));      // Industrial
-  drawSwatch(renderer, x + 126, y, {64, 64, 64});     // Road
+  drawSwatch(renderer, x + 126, y, zoneColor(5));     // Office
+  drawSwatch(renderer, x + 168, y, {64, 64, 64});     // Road
   drawText(renderer, x + 0, y + 16, "RES", {205, 220, 205}, 1);
   drawText(renderer, x + 42, y + 16, "COM", {205, 220, 205}, 1);
   drawText(renderer, x + 84, y + 16, "IND", {205, 220, 205}, 1);
-  drawText(renderer, x + 126, y + 16, "ROAD", {205, 220, 205}, 1);
+  drawText(renderer, x + 126, y + 16, "OFF", {205, 220, 205}, 1);
+  drawText(renderer, x + 168, y + 16, "ROAD", {205, 220, 205}, 1);
 
   // Building colors are distinct from zoning base colors.
-  drawText(renderer, x + 190, y - 12, "BLDG", {230, 230, 230}, 2);
-  drawSwatch(renderer, x + 190, y, {44, 132, 70});    // Residential building
-  drawSwatch(renderer, x + 232, y, {31, 84, 163});    // Commercial building
-  drawSwatch(renderer, x + 274, y, {179, 93, 29});    // Industrial building
-  drawText(renderer, x + 190, y + 16, "R", {205, 220, 205}, 1);
-  drawText(renderer, x + 232, y + 16, "C", {205, 220, 205}, 1);
-  drawText(renderer, x + 274, y + 16, "I", {205, 220, 205}, 1);
+  drawText(renderer, x + 232, y - 12, "BLDG", {230, 230, 230}, 2);
+  drawSwatch(renderer, x + 232, y, {44, 132, 70});    // Residential building
+  drawSwatch(renderer, x + 274, y, {31, 84, 163});    // Commercial building
+  drawSwatch(renderer, x + 316, y, {179, 93, 29});    // Industrial building
+  drawSwatch(renderer, x + 358, y, {147, 112, 219});  // Office building
+  drawText(renderer, x + 232, y + 16, "R", {205, 220, 205}, 1);
+  drawText(renderer, x + 274, y + 16, "C", {205, 220, 205}, 1);
+  drawText(renderer, x + 316, y + 16, "I", {205, 220, 205}, 1);
+  drawText(renderer, x + 358, y + 16, "O", {205, 220, 205}, 1);
 }
 
 void drawSteppedLegend(SDL_Renderer* renderer, int x, int y, OverlayMode mode) {
@@ -813,6 +822,7 @@ std::string makeHudTitle(
   size_t residential = 0;
   size_t commercial = 0;
   size_t industrial = 0;
+  size_t office = 0;
   for (const auto& entry : buildings) {
     switch (entry.second.type) {
       case BuildingType::Residential:
@@ -824,6 +834,9 @@ std::string makeHudTitle(
       case BuildingType::Industrial:
         ++industrial;
         break;
+      case BuildingType::Office:
+        ++office;
+        break;
     }
   }
 
@@ -832,7 +845,7 @@ std::string makeHudTitle(
       << "Tick:" << liveState.tick << (liveState.paused ? "(paused)" : "(live)")
       << " | "
       << "Buildings:" << store.getBuildingCount() << " (R:" << residential
-      << " C:" << commercial << " I:" << industrial << ")"
+      << " C:" << commercial << " I:" << industrial << " O:" << office << ")"
       << " | Roads:" << roads.getRoadCount()
       << " | Pop:" << population.getTotalPopulation()
       << " | Commute:" << liveState.trafficSummary.averageCommuteTime

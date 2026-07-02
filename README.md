@@ -83,6 +83,7 @@ only on a fresh map; loading a snapshot restores its saved terrain instead.
 ./build/UrbanSimCore-cli --size 64 --seed 7 --generate-terrain --simulate 80 --simulate-report run.csv
 ./build/UrbanSimCore-cli --size 96 --seed 7 --simulate 50 --simulate-no-traffic
 ./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 80 --simulate-inflation-rate 0.02
+./build/UrbanSimCore-cli --size 32 --seed 5 --zone-rect 10 10 15 15 OFFICE --place-road 10 16 15 16 --run-growth 20 --print-budget-summary
 ```
 
 `--simulate N` grows a city autonomously from a near-empty map for N ticks. Each
@@ -133,6 +134,23 @@ when the city actually builds more. That asymmetry is the point: a city that
 stops growing sees its costs climb while its revenue holds flat, the same
 budget pressure a real municipality that stagnates faces. The current
 multiplier is reported per tick and in the final budget summary.
+
+Office demand (Phase 5, M12) adds a fourth RCI-like category alongside
+residential/commercial/industrial: `BuildingType::Office` and `ZoneType::Office`
+(zoned with `--zone-rect ... OFFICE`, symbol `O`). Office space follows an
+established commercial base rather than leading it - an empty or purely
+residential city generates no office demand - and once it ramps in,
+autonomous zoning assigns it to the cleanest available land (it commands the
+highest base land value of any zone). Office jobs are a genuine third
+employment track: high-income residents skew toward office-and-commercial
+work while low-income residents skew industrial, and offices pay their own
+(highest) tax rate but sit outside the industrial/commercial goods-trade
+model entirely - white-collar work neither produces nor consumes physical
+goods in this simulation. This is the one M12 mechanic that isn't
+behavior-neutral by default: because it's a genuine new zoning category
+competing for land, it changes the city's growth mix (not just reported
+metrics) for every `--simulate` run, the same way adding an RCI category
+naturally would.
 
 It prints an evolution table (RCI demand, population, building counts, roads,
 budget) plus a per-phase timing breakdown, so the same run doubles as an

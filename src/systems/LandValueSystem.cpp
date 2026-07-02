@@ -111,7 +111,8 @@ void LandValueSystem::updateLandValues(
   std::vector<Coord> jobSources;
   for (const auto& [id, building] : store.getBuildings()) {
     (void)id;
-    if (building.type != BuildingType::Commercial && building.type != BuildingType::Industrial) {
+    if (building.type != BuildingType::Commercial && building.type != BuildingType::Industrial &&
+        building.type != BuildingType::Office) {
       continue;
     }
     Coord anchor;

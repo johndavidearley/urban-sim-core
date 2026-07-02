@@ -321,3 +321,47 @@ TEST(GrowthSystemTests, LowDemandOverbuiltZoneCanDemolishBuildings) {
   EXPECT_GT(totalDemolished, 0);
   EXPECT_LT(store.getBuildingCount(), beforeDemolition);
 }
+
+// Office demand should spawn genuine BuildingType::Office buildings on
+// Office-zoned, road-accessible land, tracked separately from the other
+// three zone types throughout GrowthStats.
+TEST(GrowthSystemTests, SpawnsOfficeWhenZonedAndRoadAccessible) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  roads.buildRoad({2, 2}, {3, 2});
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 3}, {2, 3}, ZoneType::Office));
+
+  ZoneDemand demand;
+  demand.office = 1.0f;
+
+  const GrowthStats stats = GrowthSystem::runStep(map, store, demand, 7, 1.0f);
+
+  EXPECT_EQ(stats.spawnedOffice, 1);
+  EXPECT_EQ(stats.totalSpawned(), 1);
+  ASSERT_EQ(store.getBuildingCount(), 1u);
+  const EntityId id = map.getTile({2, 3}).buildingId;
+  ASSERT_TRUE(EntityIdUtils::isValid(id));
+  EXPECT_EQ(store.getBuilding(id)->type, BuildingType::Office);
+}
+
+// Zero office demand (the default) must not spawn any office buildings even
+// when office-zoned land with road access exists - preserving prior behavior
+// for every caller that doesn't set demand.office.
+TEST(GrowthSystemTests, ZeroOfficeDemandSpawnsNoOffice) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  roads.buildRoad({2, 2}, {3, 2});
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 3}, {2, 3}, ZoneType::Office));
+
+  ZoneDemand demand;  // office defaults to 0.0f
+
+  const GrowthStats stats = GrowthSystem::runStep(map, store, demand, 7, 1.0f);
+
+  EXPECT_EQ(stats.spawnedOffice, 0);
+  EXPECT_EQ(stats.totalSpawned(), 0);
+  EXPECT_EQ(store.getBuildingCount(), 0u);
+}

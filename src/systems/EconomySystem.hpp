@@ -11,12 +11,14 @@ struct EconomyState {
   int64_t residentialTaxRevenue = 0;
   int64_t commercialTaxRevenue = 0;
   int64_t industrialTaxRevenue = 0;
+  int64_t officeTaxRevenue = 0;
   int64_t totalTaxRevenue = 0;
 
   // Expenses
   int64_t residentialMaintenance = 0;
   int64_t commercialMaintenance = 0;
   int64_t industrialMaintenance = 0;
+  int64_t officeMaintenance = 0;
   int64_t totalMaintenance = 0;
 
   // Budget state
@@ -48,11 +50,13 @@ struct TaxRates {
   float residentialRate = 0.05f; // 5% property tax
   float commercialRate = 0.08f;  // 8% commercial tax
   float industrialRate = 0.06f;  // 6% industrial tax
+  float officeRate = 0.09f;      // 9% office tax (premium commercial-grade property)
   float incomeRate = 0.10f;      // 10% income tax on estimated population wealth
 
   float maintenanceResidential = 50.0f;  // Fixed cost per building
   float maintenanceCommercial = 100.0f;
   float maintenanceIndustrial = 120.0f;
+  float maintenanceOffice = 90.0f;       // less than commercial (no customer-facing overhead), more than residential
 };
 
 // Supply-chain trade pricing: industrial workers produce goods, commercial
@@ -60,6 +64,9 @@ struct TaxRates {
 // the outside world. Importing costs more per unit than exporting earns (a
 // standard asymmetry: a city that can't supply itself pays a premium for it),
 // so being import-dependent is a genuine economic penalty, not a wash.
+// Office workers are white-collar/knowledge-sector employment and sit outside
+// this physical goods supply chain entirely - they neither produce nor
+// consume goods here.
 struct TradeRates {
   float goodsPerIndustrialWorker = 2.0f;  // goods produced per employed industrial worker
   float goodsPerCommercialWorker = 1.5f;  // goods consumed (restocked) per employed commercial worker

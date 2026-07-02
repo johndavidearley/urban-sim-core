@@ -92,6 +92,8 @@ const char* buildingTypeToString(BuildingType type) {
       return "Commercial";
     case BuildingType::Industrial:
       return "Industrial";
+    case BuildingType::Office:
+      return "Office";
     default:
       return "Unknown";
   }
@@ -218,7 +220,7 @@ void printZones(const CityMap& map) {
   glm::ivec2 dims = map.getDimensions();
 
   std::cout << "Zone Map (" << dims.x << "x" << dims.y << "):\n";
-  std::cout << "  Legend: . = none, R = residential, C = commercial, I = industrial, P = park\n\n";
+  std::cout << "  Legend: . = none, R = residential, C = commercial, I = industrial, P = park, O = office\n\n";
 
   std::cout << "    ";
   for (int x = 0; x < dims.x; x += 5) {
@@ -242,6 +244,7 @@ void printDemand(uint32_t seed) {
   std::cout << "  Residential: " << std::fixed << std::setprecision(3) << demand.residential << "\n";
   std::cout << "  Commercial:  " << std::fixed << std::setprecision(3) << demand.commercial << "\n";
   std::cout << "  Industrial:  " << std::fixed << std::setprecision(3) << demand.industrial << "\n";
+  std::cout << "  Office:      " << std::fixed << std::setprecision(3) << demand.office << "\n";
 }
 
 void printBuildings(const EntityStore& store) {
@@ -371,10 +374,12 @@ void printBudgetSummary(const EconomyState& economy) {
   std::cout << "  Residential Tax Revenue: " << economy.residentialTaxRevenue << "\n";
   std::cout << "  Commercial Tax Revenue: " << economy.commercialTaxRevenue << "\n";
   std::cout << "  Industrial Tax Revenue: " << economy.industrialTaxRevenue << "\n";
+  std::cout << "  Office Tax Revenue: " << economy.officeTaxRevenue << "\n";
   std::cout << "  Total Revenue: " << economy.totalRevenue << "\n";
   std::cout << "  Residential Maintenance: " << economy.residentialMaintenance << "\n";
   std::cout << "  Commercial Maintenance: " << economy.commercialMaintenance << "\n";
   std::cout << "  Industrial Maintenance: " << economy.industrialMaintenance << "\n";
+  std::cout << "  Office Maintenance: " << economy.officeMaintenance << "\n";
   std::cout << "  Total Expenses: " << economy.totalExpenses << "\n";
   std::cout << "  Balance: " << economy.balance << "\n";
   std::cout << "  Goods Produced (industrial): " << economy.goodsProduced << "\n";
@@ -418,7 +423,7 @@ void printServiceSummary(const ServiceCoverageSummary& summary) {
 void printSnapshotInspection(const CitySnapshot& snapshot, const SnapshotLoadDiagnostics& diagnostics) {
   size_t roadTileCount = 0;
   size_t zonedTileCount = 0;
-  std::array<size_t, 5> zoneHistogram = {0, 0, 0, 0, 0};
+  std::array<size_t, 6> zoneHistogram = {0, 0, 0, 0, 0, 0};
 
   for (const SerializedTile& tile : snapshot.tiles) {
     if (tile.hasRoad) {
@@ -433,6 +438,7 @@ void printSnapshotInspection(const CitySnapshot& snapshot, const SnapshotLoadDia
   size_t residentialBuildings = 0;
   size_t commercialBuildings = 0;
   size_t industrialBuildings = 0;
+  size_t officeBuildings = 0;
   for (const Building& building : snapshot.buildings) {
     switch (building.type) {
       case BuildingType::Residential:
@@ -443,6 +449,9 @@ void printSnapshotInspection(const CitySnapshot& snapshot, const SnapshotLoadDia
         break;
       case BuildingType::Industrial:
         ++industrialBuildings;
+        break;
+      case BuildingType::Office:
+        ++officeBuildings;
         break;
     }
   }
@@ -460,10 +469,12 @@ void printSnapshotInspection(const CitySnapshot& snapshot, const SnapshotLoadDia
             << " (R=" << zoneHistogram[1]
             << " C=" << zoneHistogram[2]
             << " I=" << zoneHistogram[3]
-            << " P=" << zoneHistogram[4] << ")\n";
+            << " P=" << zoneHistogram[4]
+            << " O=" << zoneHistogram[5] << ")\n";
   std::cout << "  Buildings: total=" << snapshot.buildings.size()
             << " (R=" << residentialBuildings
             << " C=" << commercialBuildings
-            << " I=" << industrialBuildings << ")\n";
+            << " I=" << industrialBuildings
+            << " O=" << officeBuildings << ")\n";
   std::cout << "  Population Groups: " << snapshot.populationGroups.size() << "\n";
 }

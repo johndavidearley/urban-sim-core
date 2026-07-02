@@ -9,13 +9,15 @@ enum class ZoneType : int {
   Residential = 1,
   Commercial = 2,
   Industrial = 3,
-  Park = 4
+  Park = 4,
+  Office = 5
 };
 
 struct ZoneDemand {
   float residential = 0.0f;
   float commercial = 0.0f;
   float industrial = 0.0f;
+  float office = 0.0f;
 };
 
 class Zoning {

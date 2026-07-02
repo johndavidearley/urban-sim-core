@@ -13,23 +13,26 @@ struct GrowthStats {
   int spawnedResidential = 0;
   int spawnedCommercial = 0;
   int spawnedIndustrial = 0;
+  int spawnedOffice = 0;
   int demolishedResidential = 0;
   int demolishedCommercial = 0;
   int demolishedIndustrial = 0;
+  int demolishedOffice = 0;
   int redevelopedResidential = 0;
   int redevelopedCommercial = 0;
   int redevelopedIndustrial = 0;
+  int redevelopedOffice = 0;
 
   int totalSpawned() const {
-    return spawnedResidential + spawnedCommercial + spawnedIndustrial;
+    return spawnedResidential + spawnedCommercial + spawnedIndustrial + spawnedOffice;
   }
 
   int totalDemolished() const {
-    return demolishedResidential + demolishedCommercial + demolishedIndustrial;
+    return demolishedResidential + demolishedCommercial + demolishedIndustrial + demolishedOffice;
   }
 
   int totalRedeveloped() const {
-    return redevelopedResidential + redevelopedCommercial + redevelopedIndustrial;
+    return redevelopedResidential + redevelopedCommercial + redevelopedIndustrial + redevelopedOffice;
   }
 };
 

@@ -22,6 +22,8 @@ RGB zoneColor(int zone) {
       return {255, 179, 71};
     case 4: // Park
       return {80, 200, 120};
+    case 5: // Office
+      return {147, 112, 219};
     default:
       return {230, 230, 230};
   }
@@ -93,6 +95,9 @@ bool MapRenderer::renderToPPM(
               break;
             case BuildingType::Industrial:
               color = {179, 93, 29};
+              break;
+            case BuildingType::Office:
+              color = {147, 112, 219};
               break;
           }
         }

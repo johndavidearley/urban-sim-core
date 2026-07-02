@@ -22,8 +22,8 @@ volatile sig_atomic_t g_simulationStop = 0;
 void onSigInt(int) { g_simulationStop = 1; }
 
 static const char* kCSVHeader =
-  "tick,demand_residential,demand_commercial,demand_industrial,"
-  "population,employed,residential_buildings,commercial_buildings,industrial_buildings,"
+  "tick,demand_residential,demand_commercial,demand_industrial,demand_office,"
+  "population,employed,residential_buildings,commercial_buildings,industrial_buildings,office_buildings,"
   "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
   "service_coverage,service_facilities,avg_land_value,trade_balance,inflation_multiplier\n";
 
@@ -31,11 +31,13 @@ void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
             << " | " << std::fixed << std::setprecision(2)
             << row.demandResidential << " " << row.demandCommercial << " " << row.demandIndustrial
+            << " " << row.demandOffice
             << " | " << std::setw(7) << row.population
             << " " << std::setw(7) << row.employed
             << " | " << std::setw(4) << row.residentialBuildings
             << " " << std::setw(4) << row.commercialBuildings
             << " " << std::setw(4) << row.industrialBuildings
+            << " " << std::setw(4) << row.officeBuildings
             << " | " << std::setw(5) << row.roadTiles
             << " | " << std::setw(11) << row.budgetBalance
             << " | " << std::setprecision(2) << row.trafficCongestion << "\n";
@@ -45,8 +47,10 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
   out << row.tick << ","
       << std::fixed << std::setprecision(4)
       << row.demandResidential << "," << row.demandCommercial << "," << row.demandIndustrial << ","
+      << row.demandOffice << ","
       << row.population << "," << row.employed << ","
       << row.residentialBuildings << "," << row.commercialBuildings << "," << row.industrialBuildings << ","
+      << row.officeBuildings << ","
       << row.roadTiles << "," << row.budgetBalance << ","
       << row.trafficCongestion << "," << row.avgPollution << ","
       << row.serviceCoverage << "," << row.serviceFacilities << "," << row.avgLandValue << ","
@@ -145,8 +149,8 @@ int runCitySimulation(
     const SimResult result = CitySimulator::run(map, roads, store, population, seed, ticks, options);
 
     // Evolution table: print a bounded number of sampled rows plus the final tick.
-    std::cout << "\n  tick |  R    C    I  |     pop    empl |  res  com  ind | roads |     balance | cong\n";
-    std::cout << "  -----+---------------+-----------------+----------------+-------+-------------+-----\n";
+    std::cout << "\n  tick |  R    C    I    O  |     pop    empl |  res  com  ind  off | roads |     balance | cong\n";
+    std::cout << "  -----+--------------------+-----------------+---------------------+-------+-------------+-----\n";
     if (!result.rows.empty()) {
       const size_t maxRows = 20;
       const size_t step = std::max<size_t>(1, result.rows.size() / maxRows);
@@ -162,10 +166,12 @@ int runCitySimulation(
       const SimTickMetrics& last = result.rows.back();
       std::cout << "\nFinal city: population=" << last.population
                 << " employed=" << last.employed
-                << " buildings=" << (last.residentialBuildings + last.commercialBuildings + last.industrialBuildings)
+                << " buildings=" << (last.residentialBuildings + last.commercialBuildings +
+                                     last.industrialBuildings + last.officeBuildings)
                 << " (R=" << last.residentialBuildings
                 << " C=" << last.commercialBuildings
-                << " I=" << last.industrialBuildings << ")"
+                << " I=" << last.industrialBuildings
+                << " O=" << last.officeBuildings << ")"
                 << " roadTiles=" << last.roadTiles
                 << " residentialPollution=" << std::fixed << std::setprecision(2) << last.avgPollution
                 << " serviceCoverage=" << last.serviceCoverage
@@ -203,8 +209,8 @@ int runCitySimulation(
     csvOut << kCSVHeader;
   }
 
-  std::cout << "\n  tick |  R    C    I  |     pop    empl |  res  com  ind | roads |     balance | cong\n";
-  std::cout << "  -----+---------------+-----------------+----------------+-------+-------------+-----\n";
+  std::cout << "\n  tick |  R    C    I    O  |     pop    empl |  res  com  ind  off | roads |     balance | cong\n";
+  std::cout << "  -----+--------------------+-----------------+---------------------+-------+-------------+-----\n";
 
   const int printEvery = 10;
   SimTickMetrics lastRow;
@@ -247,10 +253,12 @@ int runCitySimulation(
     }
     std::cout << "\nStopped at tick " << lastRow.tick << ": population=" << lastRow.population
               << " employed=" << lastRow.employed
-              << " buildings=" << (lastRow.residentialBuildings + lastRow.commercialBuildings + lastRow.industrialBuildings)
+              << " buildings=" << (lastRow.residentialBuildings + lastRow.commercialBuildings +
+                                   lastRow.industrialBuildings + lastRow.officeBuildings)
               << " (R=" << lastRow.residentialBuildings
               << " C=" << lastRow.commercialBuildings
-              << " I=" << lastRow.industrialBuildings << ")"
+              << " I=" << lastRow.industrialBuildings
+              << " O=" << lastRow.officeBuildings << ")"
               << " roadTiles=" << lastRow.roadTiles
               << " serviceCoverage=" << std::fixed << std::setprecision(2) << lastRow.serviceCoverage
               << " (" << lastRow.serviceFacilities << " facilities)"

@@ -384,3 +384,33 @@ TEST_F(EconomySystemTests, InflationDoesNotAffectTaxRevenue) {
   // Balance still shifts because expenses rose while revenue held steady.
   EXPECT_LT(inflated.balance, base.balance);
 }
+
+// Office buildings generate their own tax revenue and maintenance, distinct
+// from commercial/industrial/residential, and flow into the totals.
+TEST_F(EconomySystemTests, OfficeBuildingsGenerateRevenueAndMaintenance) {
+  store->createBuilding(BuildingType::Office, {10, 10}, 60);
+
+  EconomyState state = EconomySystem::calculateEconomy(*store, *population);
+
+  EXPECT_GT(state.officeTaxRevenue, 0);
+  EXPECT_GT(state.officeMaintenance, 0);
+  EXPECT_EQ(state.residentialTaxRevenue, 0);
+  EXPECT_EQ(state.commercialTaxRevenue, 0);
+  EXPECT_EQ(state.industrialTaxRevenue, 0);
+  EXPECT_EQ(state.totalTaxRevenue, state.officeTaxRevenue);
+  EXPECT_EQ(state.totalMaintenance, state.officeMaintenance);
+}
+
+// Office workers sit outside the physical goods supply chain: an
+// office-only city produces and consumes no goods, so trade is a clean zero
+// regardless of office occupancy.
+TEST_F(EconomySystemTests, OfficeOccupancyDoesNotAffectTrade) {
+  EntityId officeId = store->createBuilding(BuildingType::Office, {10, 10}, 100);
+  store->getBuilding(officeId)->occupancy = 80;
+
+  EconomyState state = EconomySystem::calculateEconomy(*store, *population);
+
+  EXPECT_EQ(state.goodsProduced, 0);
+  EXPECT_EQ(state.goodsConsumed, 0);
+  EXPECT_EQ(state.tradeBalance, 0);
+}

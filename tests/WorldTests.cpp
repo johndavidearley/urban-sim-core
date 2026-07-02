@@ -305,4 +305,27 @@ TEST(ZoningTests, DemandIsDeterministicPerSeed) {
   EXPECT_LE(first.commercial, 1.0f);
   EXPECT_GE(first.industrial, 0.0f);
   EXPECT_LE(first.industrial, 1.0f);
+  EXPECT_FLOAT_EQ(first.office, second.office);
+  EXPECT_GE(first.office, 0.0f);
+  EXPECT_LE(first.office, 1.0f);
+}
+
+TEST(ZoningTests, ParsesOfficeZoneType) {
+  ZoneType zone = ZoneType::None;
+  EXPECT_TRUE(Zoning::parseZoneType("OFFICE", zone));
+  EXPECT_EQ(zone, ZoneType::Office);
+  EXPECT_TRUE(Zoning::parseZoneType("off", zone));
+  EXPECT_EQ(zone, ZoneType::Office);
+}
+
+TEST(ZoningTests, OfficeZoneAppliesWithDistinctSymbolAndLandValue) {
+  CityMap map({8, 8});
+  int zonedCount = 0;
+  ASSERT_TRUE(Zoning::applyZoneRect(map, {1, 1}, {2, 2}, ZoneType::Office, &zonedCount));
+
+  EXPECT_EQ(zonedCount, 4);
+  EXPECT_EQ(map.getTile({1, 1}).zone, static_cast<int>(ZoneType::Office));
+  EXPECT_FLOAT_EQ(map.getTile({1, 1}).landValue, Zoning::defaultLandValueForZone(ZoneType::Office));
+  EXPECT_EQ(Zoning::zoneToSymbol(static_cast<int>(ZoneType::Office)), 'O');
+  EXPECT_STREQ(Zoning::zoneToString(static_cast<int>(ZoneType::Office)), "Office");
 }

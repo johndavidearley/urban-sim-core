@@ -35,6 +35,10 @@ bool Zoning::parseZoneType(const std::string& raw, ZoneType& outZone) {
     outZone = ZoneType::Park;
     return true;
   }
+  if (zone == "OFF" || zone == "OFFICE") {
+    outZone = ZoneType::Office;
+    return true;
+  }
 
   return false;
 }
@@ -51,6 +55,8 @@ const char* Zoning::zoneToString(int zone) {
       return "Industrial";
     case ZoneType::Park:
       return "Park";
+    case ZoneType::Office:
+      return "Office";
     default:
       return "Unknown";
   }
@@ -68,6 +74,8 @@ char Zoning::zoneToSymbol(int zone) {
       return 'I';
     case ZoneType::Park:
       return 'P';
+    case ZoneType::Office:
+      return 'O';
     default:
       return '?';
   }
@@ -107,6 +115,7 @@ ZoneDemand Zoning::calculateDemand(uint32_t seed) {
   demand.residential = rng.uniform(0.0f, 1.0f);
   demand.commercial = rng.uniform(0.0f, 1.0f);
   demand.industrial = rng.uniform(0.0f, 1.0f);
+  demand.office = rng.uniform(0.0f, 1.0f);
   return demand;
 }
 
@@ -120,6 +129,8 @@ float Zoning::defaultLandValueForZone(ZoneType zone) {
       return 90.0f;
     case ZoneType::Park:
       return 130.0f;
+    case ZoneType::Office:
+      return 150.0f;  // premium: office space commands the highest base value
     case ZoneType::None:
     default:
       return 100.0f;

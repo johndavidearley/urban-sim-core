@@ -199,7 +199,8 @@ bool printDistrictSummaryReport(
   std::cout << "District Summary: " << metrics.districtName << "\n";
   std::cout << "  Population: " << metrics.population << "\n";
   std::cout << "  Buildings: " << metrics.buildings << " (Res: " << metrics.residentialBuildings
-            << ", Com: " << metrics.commercialBuildings << ", Ind: " << metrics.industrialBuildings << ")\n";
+            << ", Com: " << metrics.commercialBuildings << ", Ind: " << metrics.industrialBuildings
+            << ", Off: " << metrics.officeBuildings << ")\n";
   std::cout << "  Average Land Value: " << std::fixed << std::setprecision(1) << metrics.averageLandValue << "\n";
   std::cout << "  Budget: Revenue=" << metrics.revenue << ", Expenses=" << metrics.expenses
             << ", Balance=" << metrics.balance << "\n";

@@ -17,12 +17,12 @@ bool isTileTypeValid(int type) {
 }
 
 bool isZoneValid(int zone) {
-  return zone >= 0 && zone <= 4;
+  return zone >= 0 && zone <= 5;
 }
 
 bool isBuildingTypeValid(int type) {
   return type >= static_cast<int>(BuildingType::Residential)
-      && type <= static_cast<int>(BuildingType::Industrial);
+      && type <= static_cast<int>(BuildingType::Office);
 }
 
 bool isIncomeBandValid(int band) {

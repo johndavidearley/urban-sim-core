@@ -28,9 +28,11 @@ struct CapacitySummary {
   uint32_t resCapacity = 0;
   uint32_t comCapacity = 0;
   uint32_t indCapacity = 0;
+  uint32_t officeCapacity = 0;
   uint32_t resBuildings = 0;
   uint32_t comBuildings = 0;
   uint32_t indBuildings = 0;
+  uint32_t officeBuildings = 0;
 };
 
 CapacitySummary summarize(const EntityStore& store) {
@@ -50,6 +52,10 @@ CapacitySummary summarize(const EntityStore& store) {
       case BuildingType::Industrial:
         cap.indCapacity += c;
         ++cap.indBuildings;
+        break;
+      case BuildingType::Office:
+        cap.officeCapacity += c;
+        ++cap.officeBuildings;
         break;
     }
   }
@@ -363,7 +369,8 @@ void placeFacilitiesIfNeeded(
 void autoZone(CityMap& map, const std::vector<Coord>& candidates, const ZoneDemand& demand, int batch) {
   const float total = std::max(0.0f, demand.residential) +
                       std::max(0.0f, demand.commercial) +
-                      std::max(0.0f, demand.industrial);
+                      std::max(0.0f, demand.industrial) +
+                      std::max(0.0f, demand.office);
   const int limit = std::min(static_cast<int>(candidates.size()), batch);
   if (total <= 1e-3f || limit <= 0) {
     return;
@@ -371,14 +378,20 @@ void autoZone(CityMap& map, const std::vector<Coord>& candidates, const ZoneDema
 
   int nR = static_cast<int>(std::lround(limit * std::max(0.0f, demand.residential) / total));
   int nI = static_cast<int>(std::lround(limit * std::max(0.0f, demand.industrial) / total));
-  if (nR + nI > limit) {
+  int nO = static_cast<int>(std::lround(limit * std::max(0.0f, demand.office) / total));
+  if (nR + nI + nO > limit) {
     nI = std::min(nI, limit);
-    nR = std::min(nR, limit - nI);
+    nO = std::min(nO, limit - nI);
+    nR = std::min(nR, limit - nI - nO);
   }
-  const int nC = limit - nR - nI;
+  const int nC = limit - nR - nI - nO;
 
   // The nearest `limit` candidates keep growth compact; sort them by pollution
   // so the assignment below segregates dirty industry from clean housing.
+  // Order of assignment (cleanest to dirtiest tiles): Residential, Office,
+  // Commercial, Industrial - office space is as pollution-sensitive as
+  // housing (it commands the highest land value), retail tolerates more, and
+  // industry gets whatever's left.
   std::vector<Coord> batchTiles(candidates.begin(), candidates.begin() + limit);
   std::sort(batchTiles.begin(), batchTiles.end(), [&map](const Coord& a, const Coord& b) {
     const float pa = map.getTile(a).pollution;
@@ -391,7 +404,8 @@ void autoZone(CityMap& map, const std::vector<Coord>& candidates, const ZoneDema
   for (int i = 0; i < limit; ++i) {
     ZoneType zone;
     if (i < nR) zone = ZoneType::Residential;
-    else if (i < nR + nC) zone = ZoneType::Commercial;
+    else if (i < nR + nO) zone = ZoneType::Office;
+    else if (i < nR + nO + nC) zone = ZoneType::Commercial;
     else zone = ZoneType::Industrial;
     Tile& tile = map.getTile(batchTiles[i]);
     tile.zone = static_cast<int>(zone);
@@ -434,6 +448,19 @@ ZoneDemand CitySimulator::evaluateDemand(const EntityStore& store, const Populat
   const float indGap = indTarget > 0.0f ? clamp01((indTarget - static_cast<float>(cap.indCapacity)) / indTarget) : 0.0f;
   const float indStartup = (cap.indCapacity < 24 && cap.resCapacity > 0) ? 0.6f : 0.0f;
   demand.industrial = clamp01(std::max(indStartup, indGap));
+
+  // Office: higher-tier white-collar employment that follows commercial
+  // establishment rather than leading it (office towers/parks cluster around
+  // an already-formed retail/downtown base, in reality). Targets a smaller
+  // share of population than retail/industrial, and is gated by how
+  // established commercial capacity already is relative to its own target -
+  // a city with no commercial base yet generates no office demand.
+  const float officeTarget = 0.25f * pop;
+  const float commercialEstablishment = comTarget > 0.0f
+    ? clamp01(static_cast<float>(cap.comCapacity) / comTarget) : 0.0f;
+  const float officeGap = officeTarget > 0.0f
+    ? clamp01((officeTarget - static_cast<float>(cap.officeCapacity)) / officeTarget) : 0.0f;
+  demand.office = clamp01(officeGap * commercialEstablishment);
 
   return demand;
 }
@@ -481,7 +508,7 @@ SimResult CitySimulator::run(
     const uint32_t tickSeed = seed + static_cast<uint32_t>(tick);
 
     const ZoneDemand demand = evaluateDemand(store, population);
-    const float overallDemand = std::max({demand.residential, demand.commercial, demand.industrial});
+    const float overallDemand = std::max({demand.residential, demand.commercial, demand.industrial, demand.office});
 
     // Expand the road grid outward while demand persists, paced so zoned land
     // does not run too far ahead of what has actually been built.
@@ -645,11 +672,13 @@ SimResult CitySimulator::run(
     row.demandResidential = demand.residential;
     row.demandCommercial = demand.commercial;
     row.demandIndustrial = demand.industrial;
+    row.demandOffice = demand.office;
     row.population = population.getTotalPopulation();
     row.employed = population.getTotalEmployed();
     row.residentialBuildings = cap.resBuildings;
     row.commercialBuildings = cap.comBuildings;
     row.industrialBuildings = cap.indBuildings;
+    row.officeBuildings = cap.officeBuildings;
     row.roadTiles = static_cast<uint32_t>(roads.getRoadCount());
     row.budgetBalance = economy.balance;
     row.trafficCongestion = traffic.maxEdgeCongestion;

@@ -282,6 +282,9 @@ DistrictMetrics DistrictSystem::evaluateDistrictMetrics(
       case BuildingType::Industrial:
         metrics.industrialBuildings++;
         break;
+      case BuildingType::Office:
+        metrics.officeBuildings++;
+        break;
     }
   }
 

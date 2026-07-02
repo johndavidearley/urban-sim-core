@@ -186,6 +186,48 @@ TEST(PopulationSystemTests, IncomeBandJobPreferencesAffectJobTypeMix) {
   EXPECT_GT(industrialOccupancy, commercialOccupancy);
 }
 
+// Office buildings are a third job type, distinct from commercial/industrial,
+// and jobCapacity/employment allocation must account for them - a city with
+// only office jobs available should still fully employ up to office capacity.
+TEST(PopulationSystemTests, OfficeBuildingsProvideJobs) {
+  EntityStore buildings;
+  PopulationStore people;
+
+  buildings.createBuilding(BuildingType::Residential, {1, 1}, 20);
+  buildings.createBuilding(BuildingType::Office, {5, 1}, 10);
+
+  const PopulationSummary summary = PopulationSystem::allocate(buildings, people, 10, 11);
+
+  EXPECT_EQ(summary.housedPopulation, 10u);
+  EXPECT_EQ(summary.employedPopulation, 10u);
+  EXPECT_EQ(summary.availableJobs, 0u);
+
+  const uint32_t officeOccupancy = occupancyByType(buildings, BuildingType::Office);
+  EXPECT_EQ(officeOccupancy, 10u);
+}
+
+// With all three job types present, total employment must equal the sum of
+// commercial + industrial + office occupancy - no jobs lost or double-counted
+// across the three-way split.
+TEST(PopulationSystemTests, EmploymentConservedAcrossAllThreeJobTypes) {
+  EntityStore buildings;
+  PopulationStore people;
+
+  buildings.createBuilding(BuildingType::Residential, {1, 1}, 30);
+  buildings.createBuilding(BuildingType::Commercial, {2, 1}, 10);
+  buildings.createBuilding(BuildingType::Industrial, {3, 1}, 10);
+  buildings.createBuilding(BuildingType::Office, {4, 1}, 10);
+
+  const PopulationSummary summary = PopulationSystem::allocate(buildings, people, 30, 13);
+
+  EXPECT_EQ(summary.employedPopulation, 30u);
+  const uint32_t total =
+    occupancyByType(buildings, BuildingType::Commercial) +
+    occupancyByType(buildings, BuildingType::Industrial) +
+    occupancyByType(buildings, BuildingType::Office);
+  EXPECT_EQ(total, 30u);
+}
+
 TEST(PopulationSystemTests, SummaryAppliesToCityMetrics) {
   CityMetrics metrics;
   PopulationSummary summary;

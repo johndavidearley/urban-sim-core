@@ -6,7 +6,8 @@
 enum class BuildingType : int {
   Residential = 1,
   Commercial = 2,
-  Industrial = 3
+  Industrial = 3,
+  Office = 4
 };
 
 struct Building {

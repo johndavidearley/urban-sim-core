@@ -59,6 +59,7 @@ struct DistrictMetrics {
   uint32_t residentialBuildings = 0;
   uint32_t commercialBuildings = 0;
   uint32_t industrialBuildings = 0;
+  uint32_t officeBuildings = 0;
 
   int64_t revenue = 0;
   int64_t expenses = 0;

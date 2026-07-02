@@ -680,11 +680,13 @@ void runGrowthStepsWithPressure(
                 << " spawned=" << stats.totalSpawned()
                 << " (R=" << stats.spawnedResidential
                 << ", C=" << stats.spawnedCommercial
-                << ", I=" << stats.spawnedIndustrial << ")"
+                << ", I=" << stats.spawnedIndustrial
+                << ", O=" << stats.spawnedOffice << ")"
                 << " demolished=" << stats.totalDemolished()
                 << " (R=" << stats.demolishedResidential
                 << ", C=" << stats.demolishedCommercial
-                << ", I=" << stats.demolishedIndustrial << ")\n";
+                << ", I=" << stats.demolishedIndustrial
+                << ", O=" << stats.demolishedOffice << ")\n";
     }
   }
 }

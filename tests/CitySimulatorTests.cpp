@@ -252,3 +252,59 @@ TEST(CitySimulatorTests, InflationCompoundsAndErodesBalanceRelativeToNoInflation
   EXPECT_EQ(lastInflated.industrialBuildings, lastFlat.industrialBuildings);
   EXPECT_LT(lastInflated.budgetBalance, lastFlat.budgetBalance);
 }
+
+// An empty city (no commercial base yet) should generate no office demand -
+// office space follows an established retail/downtown base, it doesn't lead it.
+TEST(CitySimulatorTests, EmptyCityGeneratesNoOfficeDemand) {
+  EntityStore store;
+  PopulationStore population;
+
+  const ZoneDemand demand = CitySimulator::evaluateDemand(store, population);
+
+  EXPECT_FLOAT_EQ(demand.office, 0.0f);
+}
+
+// Once commercial capacity is established and population exists, office
+// demand should turn on.
+TEST(CitySimulatorTests, OfficeDemandRampsUpOnceCommercialIsEstablished) {
+  EntityStore store;
+  PopulationStore population;
+
+  for (int i = 0; i < 10; ++i) {
+    store.createBuilding(BuildingType::Residential, {i, 0}, 8);  // resCap = 80
+  }
+  for (int i = 0; i < 5; ++i) {
+    store.createBuilding(BuildingType::Commercial, {i, 1}, 20);  // comCap = 100
+  }
+  population.createGroup(IncomeBand::Middle, 60, 50);
+
+  const ZoneDemand demand = CitySimulator::evaluateDemand(store, population);
+
+  EXPECT_GT(demand.office, 0.0f);
+  EXPECT_LE(demand.office, 1.0f);
+}
+
+// A grown city should include genuine Office buildings among its RCI mix,
+// with demand.office reported per tick and used to zone/build real
+// BuildingType::Office structures - not just a cosmetic demand number.
+TEST(CitySimulatorTests, GrowsOfficeBuildingsAlongsideRCI) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 60, fastOptions());
+
+  ASSERT_FALSE(result.rows.empty());
+  const SimTickMetrics& last = result.rows.back();
+  EXPECT_GT(last.officeBuildings, 0u);
+
+  uint32_t officeCountInStore = 0;
+  for (const auto& [id, building] : store.getBuildings()) {
+    (void)id;
+    if (building.type == BuildingType::Office) {
+      ++officeCountInStore;
+    }
+  }
+  EXPECT_EQ(officeCountInStore, last.officeBuildings);
+}

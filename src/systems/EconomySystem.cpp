@@ -21,6 +21,7 @@ EconomyState EconomySystem::calculateEconomy(
   int residentialCount = 0;
   int commercialCount = 0;
   int industrialCount = 0;
+  int officeCount = 0;
   int64_t totalCapacity = 0;
   int64_t totalOccupancy = 0;
   int64_t commercialOccupancy = 0;
@@ -54,6 +55,12 @@ EconomyState EconomySystem::calculateEconomy(
         state.industrialMaintenance += static_cast<int64_t>(
           static_cast<double>(rates.maintenanceIndustrial) * inflationMultiplier);
         break;
+      case BuildingType::Office:
+        officeCount++;
+        state.officeTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.officeRate);
+        state.officeMaintenance += static_cast<int64_t>(
+          static_cast<double>(rates.maintenanceOffice) * inflationMultiplier);
+        break;
     }
   }
 
@@ -78,10 +85,10 @@ EconomyState EconomySystem::calculateEconomy(
   int64_t populationIncomeTax = static_cast<int64_t>(static_cast<double>(populationWealth) * rates.incomeRate);
 
   state.totalTaxRevenue = state.residentialTaxRevenue + state.commercialTaxRevenue +
-                          state.industrialTaxRevenue + populationIncomeTax;
+                          state.industrialTaxRevenue + state.officeTaxRevenue + populationIncomeTax;
 
   state.totalMaintenance = state.residentialMaintenance + state.commercialMaintenance +
-                           state.industrialMaintenance;
+                           state.industrialMaintenance + state.officeMaintenance;
 
   // Calculate balance (trade revenue/cost flow through here too, so a strong
   // exporter or an import-dependent city shows up directly in the budget).
@@ -89,7 +96,7 @@ EconomyState EconomySystem::calculateEconomy(
   state.totalExpenses = state.totalMaintenance + state.importCost;
   state.balance = state.totalRevenue - state.totalExpenses;
 
-  size_t totalBuildings = residentialCount + commercialCount + industrialCount;
+  size_t totalBuildings = residentialCount + commercialCount + industrialCount + officeCount;
   if (map != nullptr) {
     // Real, spatially-varying land value (see LandValueSystem) if the caller
     // has a map to read it from.
@@ -199,6 +206,9 @@ int64_t EconomySystem::estimateBuildingValue(
       break;
     case BuildingType::Industrial:
       typeMultiplier = 1.2f;
+      break;
+    case BuildingType::Office:
+      typeMultiplier = 1.6f;  // premium office real estate
       break;
   }
 

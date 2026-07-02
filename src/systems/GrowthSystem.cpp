@@ -10,9 +10,11 @@ struct ZoneBalance {
   int zonedResidential = 0;
   int zonedCommercial = 0;
   int zonedIndustrial = 0;
+  int zonedOffice = 0;
   int builtResidential = 0;
   int builtCommercial = 0;
   int builtIndustrial = 0;
+  int builtOffice = 0;
 };
 
 bool hasRoadAccess(const CityMap& map, Coord pos) {
@@ -51,6 +53,8 @@ float demandForZone(ZoneType zone, const ZoneDemand& demand) {
       return demand.commercial;
     case ZoneType::Industrial:
       return demand.industrial;
+    case ZoneType::Office:
+      return demand.office;
     case ZoneType::None:
     case ZoneType::Park:
     default:
@@ -66,6 +70,8 @@ BuildingType toBuildingType(ZoneType zone) {
       return BuildingType::Commercial;
     case ZoneType::Industrial:
       return BuildingType::Industrial;
+    case ZoneType::Office:
+      return BuildingType::Office;
     case ZoneType::None:
     case ZoneType::Park:
     default:
@@ -81,6 +87,8 @@ int defaultCapacity(ZoneType zone) {
       return 20;
     case ZoneType::Industrial:
       return 24;
+    case ZoneType::Office:
+      return 18;
     case ZoneType::None:
     case ZoneType::Park:
     default:
@@ -95,6 +103,8 @@ void incrementZonedCount(ZoneBalance& balance, ZoneType zone) {
     ++balance.zonedCommercial;
   } else if (zone == ZoneType::Industrial) {
     ++balance.zonedIndustrial;
+  } else if (zone == ZoneType::Office) {
+    ++balance.zonedOffice;
   }
 }
 
@@ -105,6 +115,8 @@ void incrementBuiltCount(ZoneBalance& balance, ZoneType zone) {
     ++balance.builtCommercial;
   } else if (zone == ZoneType::Industrial) {
     ++balance.builtIndustrial;
+  } else if (zone == ZoneType::Office) {
+    ++balance.builtOffice;
   }
 }
 
@@ -115,6 +127,8 @@ void decrementBuiltCount(ZoneBalance& balance, ZoneType zone) {
     --balance.builtCommercial;
   } else if (zone == ZoneType::Industrial && balance.builtIndustrial > 0) {
     --balance.builtIndustrial;
+  } else if (zone == ZoneType::Office && balance.builtOffice > 0) {
+    --balance.builtOffice;
   }
 }
 
@@ -127,6 +141,9 @@ int zonedCountForZone(const ZoneBalance& balance, ZoneType zone) {
   }
   if (zone == ZoneType::Industrial) {
     return balance.zonedIndustrial;
+  }
+  if (zone == ZoneType::Office) {
+    return balance.zonedOffice;
   }
   return 0;
 }
@@ -141,13 +158,17 @@ int builtCountForZone(const ZoneBalance& balance, ZoneType zone) {
   if (zone == ZoneType::Industrial) {
     return balance.builtIndustrial;
   }
+  if (zone == ZoneType::Office) {
+    return balance.builtOffice;
+  }
   return 0;
 }
 
 float demandShareForZone(const ZoneDemand& demand, ZoneType zone) {
   const float totalDemand = std::max(0.0f, demand.residential) +
                             std::max(0.0f, demand.commercial) +
-                            std::max(0.0f, demand.industrial);
+                            std::max(0.0f, demand.industrial) +
+                            std::max(0.0f, demand.office);
   if (totalDemand <= 0.0001f) {
     return 0.0f;
   }
@@ -161,6 +182,9 @@ float demandShareForZone(const ZoneDemand& demand, ZoneType zone) {
   if (zone == ZoneType::Industrial) {
     return std::max(0.0f, demand.industrial) / totalDemand;
   }
+  if (zone == ZoneType::Office) {
+    return std::max(0.0f, demand.office) / totalDemand;
+  }
   return 0.0f;
 }
 
@@ -170,13 +194,15 @@ float demandBalancingFactor(ZoneType zone, const ZoneBalance& balance, const Zon
     return 0.75f;
   }
 
-  const int totalBuilt = std::max(0, balance.builtResidential + balance.builtCommercial + balance.builtIndustrial);
+  const int totalBuilt = std::max(0, balance.builtResidential + balance.builtCommercial +
+                                      balance.builtIndustrial + balance.builtOffice);
   const int zoneBuilt = std::max(0, builtCountForZone(balance, zone));
   const float builtShare = totalBuilt > 0
     ? (static_cast<float>(zoneBuilt) / static_cast<float>(totalBuilt))
     : demandShare;
 
-  const int totalZoned = std::max(0, balance.zonedResidential + balance.zonedCommercial + balance.zonedIndustrial);
+  const int totalZoned = std::max(0, balance.zonedResidential + balance.zonedCommercial +
+                                      balance.zonedIndustrial + balance.zonedOffice);
   const int zoneZoned = std::max(0, zonedCountForZone(balance, zone));
   const float zonedShare = totalZoned > 0
     ? (static_cast<float>(zoneZoned) / static_cast<float>(totalZoned))
@@ -222,6 +248,8 @@ void incrementDemolishedCount(GrowthStats& stats, ZoneType zone) {
     ++stats.demolishedCommercial;
   } else if (zone == ZoneType::Industrial) {
     ++stats.demolishedIndustrial;
+  } else if (zone == ZoneType::Office) {
+    ++stats.demolishedOffice;
   }
 }
 
@@ -232,6 +260,8 @@ void incrementRedevelopedCount(GrowthStats& stats, ZoneType zone) {
     ++stats.redevelopedCommercial;
   } else if (zone == ZoneType::Industrial) {
     ++stats.redevelopedIndustrial;
+  } else if (zone == ZoneType::Office) {
+    ++stats.redevelopedOffice;
   }
 }
 
@@ -252,6 +282,10 @@ float coveragePressure(ZoneType zone, const ZoneBalance& balance, const ZoneDema
     zoned = balance.zonedIndustrial;
     built = balance.builtIndustrial;
     demandValue = demand.industrial;
+  } else if (zone == ZoneType::Office) {
+    zoned = balance.zonedOffice;
+    built = balance.builtOffice;
+    demandValue = demand.office;
   }
 
   if (zoned <= 0) {
@@ -356,9 +390,11 @@ GrowthStats GrowthSystem::runStep(
         balance.zonedResidential += p.zonedResidential;
         balance.zonedCommercial  += p.zonedCommercial;
         balance.zonedIndustrial  += p.zonedIndustrial;
+        balance.zonedOffice      += p.zonedOffice;
         balance.builtResidential += p.builtResidential;
         balance.builtCommercial  += p.builtCommercial;
         balance.builtIndustrial  += p.builtIndustrial;
+        balance.builtOffice      += p.builtOffice;
       }
     }
   }
@@ -444,6 +480,7 @@ GrowthStats GrowthSystem::runStep(
         if (zone == ZoneType::Residential)     ++stats.spawnedResidential;
         else if (zone == ZoneType::Commercial) ++stats.spawnedCommercial;
         else if (zone == ZoneType::Industrial) ++stats.spawnedIndustrial;
+        else if (zone == ZoneType::Office)     ++stats.spawnedOffice;
       }
     }
   }

@@ -113,40 +113,43 @@ std::array<uint32_t, 3> splitByWeights(uint32_t total, const std::array<uint32_t
   return split;
 }
 
-void allocateBandToJobTypes(
+// Splits one income band's employed count across job types {commercial,
+// industrial, office} by preference weight, then spills any shortfall (a
+// preferred type running out of capacity) into whichever types still have
+// room, in a fixed order for determinism.
+std::array<uint32_t, 3> allocateBandToJobTypes(
   uint32_t employed,
-  uint32_t preferredCommercialPercent,
-  uint32_t& remainingCommercial,
-  uint32_t& remainingIndustrial,
-  uint32_t& assignedCommercial,
-  uint32_t& assignedIndustrial
+  const std::array<uint32_t, 3>& preferenceWeights,
+  std::array<uint32_t, 3>& remainingByType
 ) {
+  std::array<uint32_t, 3> assigned{0u, 0u, 0u};
   if (employed == 0) {
-    return;
+    return assigned;
   }
 
-  uint32_t desiredCommercial = (employed * preferredCommercialPercent) / 100u;
-  uint32_t desiredIndustrial = employed - desiredCommercial;
-
-  uint32_t commercial = std::min(desiredCommercial, remainingCommercial);
-  uint32_t industrial = std::min(desiredIndustrial, remainingIndustrial);
-
-  uint32_t assigned = commercial + industrial;
-  if (assigned < employed) {
-    uint32_t remaining = employed - assigned;
-
-    const uint32_t moreIndustrial = std::min(remaining, remainingIndustrial - industrial);
-    industrial += moreIndustrial;
-    remaining -= moreIndustrial;
-
-    const uint32_t moreCommercial = std::min(remaining, remainingCommercial - commercial);
-    commercial += moreCommercial;
+  const std::array<uint32_t, 3> desired = splitByWeights(employed, preferenceWeights);
+  for (size_t i = 0; i < 3; ++i) {
+    assigned[i] = std::min(desired[i], remainingByType[i]);
   }
 
-  remainingCommercial -= commercial;
-  remainingIndustrial -= industrial;
-  assignedCommercial += commercial;
-  assignedIndustrial += industrial;
+  uint32_t totalAssigned = assigned[0] + assigned[1] + assigned[2];
+  if (totalAssigned < employed) {
+    uint32_t remainingNeed = employed - totalAssigned;
+    // Overflow order (industrial, commercial, office) matches the original
+    // two-type model's preference for spilling into industrial first.
+    static constexpr size_t kOverflowOrder[3] = {1, 0, 2};
+    for (size_t oi = 0; oi < 3 && remainingNeed > 0; ++oi) {
+      const size_t i = kOverflowOrder[oi];
+      const uint32_t extra = std::min(remainingNeed, remainingByType[i] - assigned[i]);
+      assigned[i] += extra;
+      remainingNeed -= extra;
+    }
+  }
+
+  for (size_t i = 0; i < 3; ++i) {
+    remainingByType[i] -= assigned[i];
+  }
+  return assigned;
 }
 } // namespace
 
@@ -161,11 +164,13 @@ PopulationSummary PopulationSystem::allocate(
   const std::vector<EntityId> residential = collectBuildingIds(store, BuildingType::Residential);
   const std::vector<EntityId> commercial = collectBuildingIds(store, BuildingType::Commercial);
   const std::vector<EntityId> industrial = collectBuildingIds(store, BuildingType::Industrial);
+  const std::vector<EntityId> office = collectBuildingIds(store, BuildingType::Office);
 
   const uint32_t housingCapacity = capacityFor(store, residential);
   const uint32_t commercialCapacity = capacityFor(store, commercial);
   const uint32_t industrialCapacity = capacityFor(store, industrial);
-  const uint32_t jobCapacity = commercialCapacity + industrialCapacity;
+  const uint32_t officeCapacity = capacityFor(store, office);
+  const uint32_t jobCapacity = commercialCapacity + industrialCapacity + officeCapacity;
 
   const uint32_t housed = std::min(requestedPopulation, housingCapacity);
   const uint32_t employed = std::min(housed, jobCapacity);
@@ -177,40 +182,27 @@ PopulationSummary PopulationSystem::allocate(
   const std::array<uint32_t, 3> housedByBand = splitByWeights(housed, {50u, 35u, 15u});
   const std::array<uint32_t, 3> employedByBand = splitByWeights(employed, {30u, 40u, 30u});
 
-  // Job matching constraints by income band.
-  // Low income prefers industrial jobs, high income prefers commercial jobs.
-  uint32_t remainingCommercial = commercialCapacity;
-  uint32_t remainingIndustrial = industrialCapacity;
-  uint32_t commercialShare = 0u;
-  uint32_t industrialShare = 0u;
+  // Job matching preferences by income band: {commercial, industrial, office}.
+  // Low income skews industrial with little office access; middle income is
+  // balanced with a modest office share; high income is office-and-commercial
+  // heavy with little industrial - a rough proxy for blue-collar vs.
+  // white-collar employment following income.
+  std::array<uint32_t, 3> remainingByType{commercialCapacity, industrialCapacity, officeCapacity};
+  std::array<uint32_t, 3> assignedByType{0u, 0u, 0u};
 
-  allocateBandToJobTypes(
-    employedByBand[0],
-    30u,
-    remainingCommercial,
-    remainingIndustrial,
-    commercialShare,
-    industrialShare
-  );
-  allocateBandToJobTypes(
-    employedByBand[1],
-    50u,
-    remainingCommercial,
-    remainingIndustrial,
-    commercialShare,
-    industrialShare
-  );
-  allocateBandToJobTypes(
-    employedByBand[2],
-    75u,
-    remainingCommercial,
-    remainingIndustrial,
-    commercialShare,
-    industrialShare
-  );
+  const auto addBand = [&](uint32_t bandEmployed, const std::array<uint32_t, 3>& weights) {
+    const std::array<uint32_t, 3> a = allocateBandToJobTypes(bandEmployed, weights, remainingByType);
+    for (size_t i = 0; i < 3; ++i) {
+      assignedByType[i] += a[i];
+    }
+  };
+  addBand(employedByBand[0], {30u, 70u, 0u});
+  addBand(employedByBand[1], {45u, 40u, 15u});
+  addBand(employedByBand[2], {35u, 10u, 55u});
 
-  assignOccupancy(store, commercial, commercialShare, seed + 29u);
-  assignOccupancy(store, industrial, industrialShare, seed + 43u);
+  assignOccupancy(store, commercial, assignedByType[0], seed + 29u);
+  assignOccupancy(store, industrial, assignedByType[1], seed + 43u);
+  assignOccupancy(store, office, assignedByType[2], seed + 53u);
 
   population.clear();
   if (housedByBand[0] > 0) {

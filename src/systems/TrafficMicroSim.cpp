@@ -130,7 +130,8 @@ std::vector<CommuteSpec> collectCommutes(
   for (const auto& [id, b] : store.getBuildings()) {
     (void)id;
     if (b.type == BuildingType::Residential) homes.push_back(&b);
-    else if (b.type == BuildingType::Commercial || b.type == BuildingType::Industrial) jobs.push_back(&b);
+    else if (b.type == BuildingType::Commercial || b.type == BuildingType::Industrial ||
+             b.type == BuildingType::Office) jobs.push_back(&b);
   }
   if (homes.empty() || jobs.empty()) return specs;
 

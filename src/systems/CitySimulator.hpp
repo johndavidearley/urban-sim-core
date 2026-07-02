@@ -16,11 +16,13 @@ struct SimTickMetrics {
   float demandResidential = 0.0f;
   float demandCommercial = 0.0f;
   float demandIndustrial = 0.0f;
+  float demandOffice = 0.0f;
   uint32_t population = 0;
   uint32_t employed = 0;
   uint32_t residentialBuildings = 0;
   uint32_t commercialBuildings = 0;
   uint32_t industrialBuildings = 0;
+  uint32_t officeBuildings = 0;
   uint32_t roadTiles = 0;
   int64_t budgetBalance = 0;
   float trafficCongestion = 0.0f;

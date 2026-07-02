@@ -176,6 +176,89 @@ TEST(SaveLoadSystemTests, RejectsUnsupportedFutureSnapshotVersion) {
   std::filesystem::remove(filePath);
 }
 
+TEST(SaveLoadSystemTests, SaveAndLoadRoundTripPreservesOfficeBuilding) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  map.getTile({3, 3}).zone = 5;  // ZoneType::Office
+
+  EntityId officeId = store.createBuilding(BuildingType::Office, {3, 3}, 25);
+  Building* office = store.getBuilding(officeId);
+  ASSERT_NE(office, nullptr);
+  office->occupancy = 18;
+  map.getTile({3, 3}).buildingId = static_cast<uint32_t>(officeId);
+
+  const std::filesystem::path filePath =
+    std::filesystem::temp_directory_path() / "urban_sim_core_save_load_office.json";
+
+  ASSERT_TRUE(SaveLoadSystem::saveToFile(filePath.string(), map, roads, store, population));
+
+  CitySnapshot snapshot;
+  ASSERT_TRUE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot));
+
+  CityMap loadedMap({snapshot.width, snapshot.height});
+  RoadNetwork loadedRoads(loadedMap);
+  EntityStore loadedStore;
+  PopulationStore loadedPopulation;
+  ASSERT_TRUE(SaveLoadSystem::applySnapshot(snapshot, loadedMap, loadedRoads, loadedStore, loadedPopulation));
+
+  const Building* loadedOffice = loadedStore.getBuilding(officeId);
+  ASSERT_NE(loadedOffice, nullptr);
+  EXPECT_EQ(loadedOffice->type, BuildingType::Office);
+  EXPECT_EQ(loadedOffice->occupancy, 18);
+  EXPECT_EQ(loadedMap.getTile({3, 3}).zone, 5);
+
+  std::filesystem::remove(filePath);
+}
+
+TEST(SaveLoadSystemTests, RejectsSnapshotWithOutOfRangeBuildingType) {
+  const std::filesystem::path filePath =
+    std::filesystem::temp_directory_path() / "urban_sim_core_invalid_building_type_snapshot.json";
+
+  json root;
+  root["version"] = 1;
+  root["map"] = {{"width", 3}, {"height", 3}};
+  root["tiles"] = json::array();
+  for (int y = 0; y < 3; ++y) {
+    for (int x = 0; x < 3; ++x) {
+      root["tiles"].push_back(json{
+        {"x", x},
+        {"y", y},
+        {"type", 0},
+        {"zone", 0},
+        {"landValue", 100.0f},
+        {"pollution", 0.0f},
+        {"hasRoad", false},
+        {"connectedToRoad", false},
+        {"connectedToPower", true},
+        {"connectedToWater", true},
+        {"buildingId", 0u}
+      });
+    }
+  }
+  root["buildings"] = json::array({json{
+    {"id", 1},
+    {"type", 99},  // beyond BuildingType::Office - must be rejected
+    {"position", json{{"x", 0}, {"y", 0}}},
+    {"capacity", 10},
+    {"occupancy", 0}
+  }});
+  root["populationGroups"] = json::array();
+  root["roads"] = json::array();
+
+  std::ofstream out(filePath);
+  ASSERT_TRUE(out.is_open());
+  out << root.dump(2);
+  out.close();
+
+  CitySnapshot snapshot;
+  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot));
+
+  std::filesystem::remove(filePath);
+}
+
 TEST(SaveLoadSystemTests, RejectsSnapshotWithInvalidBuildingReference) {
   const std::filesystem::path filePath =
     std::filesystem::temp_directory_path() / "urban_sim_core_invalid_building_ref_snapshot.json";
