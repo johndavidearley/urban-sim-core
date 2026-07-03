@@ -25,5 +25,5 @@ struct TerrainStats {
 // Intended to run on a freshly constructed (all-empty) map.
 class TerrainGenerator {
 public:
-  static TerrainStats generate(CityMap& map, uint32_t seed, const TerrainParams& params = {});
+  static TerrainStats generate(CityMap& map, uint32_t seed, const TerrainParams& params = TerrainParams{});
 };

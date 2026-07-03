@@ -86,8 +86,15 @@ public:
     const EntityStore& store,
     const PopulationStore& population,
     const RoadNetwork& roads,
+    uint32_t seed
+  );
+
+  static MicroTrafficSummary simulate(
+    const EntityStore& store,
+    const PopulationStore& population,
+    const RoadNetwork& roads,
     uint32_t seed,
-    const Options& options = {},
+    const Options& options,
     const std::vector<ServiceFacility>* facilities = nullptr
   );
 };
