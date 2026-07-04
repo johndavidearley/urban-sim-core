@@ -35,7 +35,7 @@ public:
     const EntityStore& store,
     const ServiceCoverageCache* serviceCache,
     int x0, int y0, int x1, int y1,
-    const LandValueParams& params = {}
+    const LandValueParams& params = LandValueParams{}
   );
 
   // Mean Tile::landValue across zoned (non-empty, non-water) tiles on the

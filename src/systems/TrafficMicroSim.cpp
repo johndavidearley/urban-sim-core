@@ -238,6 +238,15 @@ MicroTrafficSummary TrafficMicroSim::simulate(
   const EntityStore& store,
   const PopulationStore& population,
   const RoadNetwork& roads,
+  uint32_t seed
+) {
+  return simulate(store, population, roads, seed, Options{});
+}
+
+MicroTrafficSummary TrafficMicroSim::simulate(
+  const EntityStore& store,
+  const PopulationStore& population,
+  const RoadNetwork& roads,
   uint32_t seed,
   const Options& options,
   const std::vector<ServiceFacility>* facilities

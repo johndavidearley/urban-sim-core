@@ -123,7 +123,7 @@ public:
     PopulationStore& population,
     uint32_t seed,
     int ticks,
-    const SimOptions& options = {},
+    const SimOptions& options = SimOptions{},
     const DistrictSystem* districts = nullptr
   );
 };
