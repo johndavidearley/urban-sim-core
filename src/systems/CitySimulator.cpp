@@ -147,7 +147,7 @@ void layRoadGrid(CityMap& map, RoadNetwork& roads, Coord center, int extent, int
 // incremental index (see extendZoningCandidates below).
 bool isZoningCandidate(const CityMap& map, Coord pos) {
   const Tile& tile = map.getTile(pos);
-  if (tile.type == 2 || tile.zone != 0 || tile.buildingId != 0) return false;
+  if (tile.type == 2 || map.zone(pos) != 0 || tile.buildingId != 0) return false;
   return hasRoadAccess(map, pos);
 }
 
@@ -242,7 +242,8 @@ uint32_t emptyZonedTiles(const CityMap& map, Coord center, int extent) {
   for (int y = y0; y <= y1; ++y) {
     for (int x = x0; x <= x1; ++x) {
       const Tile& tile = map.getTile({x, y});
-      if (tile.zone != 0 && tile.zone != static_cast<int>(ZoneType::Park) &&
+      const int zone = map.zone({x, y});
+      if (zone != 0 && zone != static_cast<int>(ZoneType::Park) &&
           tile.buildingId == 0 && tile.type != 2 && hasRoadAccess(map, {x, y})) {
         ++count;
       }
@@ -292,7 +293,7 @@ void updatePollution(CityMap& map, const EntityStore& store,
       futs.push_back(pool.submit([&map, x0, x1, ry0, ry1]() {
         for (int y = ry0; y <= ry1; ++y) {
           for (int x = x0; x <= x1; ++x) {
-            map.getTile({x, y}).pollution = 0.0f;
+            map.pollution({x, y}) = 0.0f;
           }
         }
       }));
@@ -316,8 +317,8 @@ void updatePollution(CityMap& map, const EntityStore& store,
         const int tx = c.x + dx;
         const int ty = c.y + dy;
         if (tx < x0 || tx > x1 || ty < y0 || ty > y1) continue;
-        Tile& tile = map.getTile({tx, ty});
-        tile.pollution = std::min(1.0f, tile.pollution + emit * w);
+        float& pollution = map.pollution({tx, ty});
+        pollution = std::min(1.0f, pollution + emit * w);
       }
     }
   }
@@ -329,7 +330,7 @@ float averageResidentialPollution(const CityMap& map, const EntityStore& store) 
   for (const auto& [id, building] : store.getBuildings()) {
     (void)id;
     if (building.type == BuildingType::Residential) {
-      sum += map.getTile(building.position).pollution;
+      sum += map.pollution(building.position);
       ++n;
     }
   }
@@ -633,8 +634,8 @@ void autoZone(CityMap& map, const std::vector<Coord>& candidates, const ZoneDema
   // industry gets whatever's left.
   std::vector<Coord> batchTiles(candidates.begin(), candidates.begin() + limit);
   std::sort(batchTiles.begin(), batchTiles.end(), [&map](const Coord& a, const Coord& b) {
-    const float pa = map.getTile(a).pollution;
-    const float pb = map.getTile(b).pollution;
+    const float pa = map.pollution(a);
+    const float pb = map.pollution(b);
     if (pa != pb) return pa < pb;
     if (a.y != b.y) return a.y < b.y;
     return a.x < b.x;
@@ -671,9 +672,8 @@ void autoZone(CityMap& map, const std::vector<Coord>& candidates, const ZoneDema
       if (!found) continue;  // every type banned here; leave unzoned
     }
 
-    Tile& tile = map.getTile(batchTiles[i]);
-    tile.zone = static_cast<int>(zone);
-    tile.landValue = Zoning::defaultLandValueForZone(zone);
+    map.setZone(batchTiles[i], static_cast<int>(zone));
+    map.landValue(batchTiles[i]) = Zoning::defaultLandValueForZone(zone);
   }
 }
 
@@ -839,7 +839,7 @@ SimResult CitySimulator::run(
       // ordinance) are no longer valid candidates - drop them from the
       // index so it never rescans them.
       for (int i = 0; i < batchLimit; ++i) {
-        if (map.getTile(candidates[i]).zone != 0) {
+        if (map.zone(candidates[i]) != 0) {
           zoningCandidates.erase(candidates[i]);
         }
       }

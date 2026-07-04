@@ -77,7 +77,7 @@ bool MapRenderer::renderToPPM(
       const Coord coord{viewX + tx, viewY + ty};
       const Tile& tile = map.getTile(coord);
 
-      RGB color = terrainTint(tile, zoneColor(tile.zone));
+      RGB color = terrainTint(tile, zoneColor(map.zone(coord)));
 
       if (tile.hasRoad) {
         color = {64, 64, 64};

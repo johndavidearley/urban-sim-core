@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <utility>
 #include "src/world/CityMap.hpp"
 #include "src/world/Tile.hpp"
 #include "src/world/Zoning.hpp"
@@ -109,6 +110,31 @@ TEST(CityMapTests, AccessTile) {
   const Tile& sameTile = map.getTile({7, 11});
   EXPECT_EQ(sameTile.zone, 1);
   EXPECT_EQ(sameTile.landValue, 150.0f);
+}
+
+// Phase 1 of the Tile-storage backlog plan (docs/ROADMAP.md item 10): these
+// accessors are pure wrappers over getTile() right now, so they must always
+// read/write the exact same underlying storage getTile() does.
+TEST(CityMapTests, FieldAccessorsReadAndWriteTheSameStorageAsGetTile) {
+  CityMap map({16, 16});
+
+  map.pollution({3, 4}) = 0.75f;
+  EXPECT_FLOAT_EQ(map.getTile({3, 4}).pollution, 0.75f);
+  EXPECT_FLOAT_EQ(map.pollution({3, 4}), 0.75f);
+  EXPECT_FLOAT_EQ(std::as_const(map).pollution({3, 4}), 0.75f);
+
+  map.landValue({3, 4}) = 222.0f;
+  EXPECT_FLOAT_EQ(map.getTile({3, 4}).landValue, 222.0f);
+  EXPECT_FLOAT_EQ(map.landValue({3, 4}), 222.0f);
+
+  map.setZone({3, 4}, 2);
+  EXPECT_EQ(map.getTile({3, 4}).zone, 2);
+  EXPECT_EQ(map.zone({3, 4}), 2);
+
+  // Mutating through getTile() must be visible through the accessors too -
+  // both are windows onto the same Tile, not independent copies.
+  map.getTile({3, 4}).pollution = 0.1f;
+  EXPECT_FLOAT_EQ(map.pollution({3, 4}), 0.1f);
 }
 
 TEST(CityMapTests, BoundsCheckingCorners) {

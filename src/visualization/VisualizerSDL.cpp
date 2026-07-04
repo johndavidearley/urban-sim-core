@@ -260,7 +260,8 @@ float localCongestionAtTile(const RoadNetwork& roads, Coord coord) {
 
 float demandAtTile(const CityMap& map, const RoadNetwork& roads, Coord coord) {
   const Tile& tile = map.getTile(coord);
-  if (tile.zone == 0 || tile.type == 2) {
+  const int zone = map.zone(coord);
+  if (zone == 0 || tile.type == 2) {
     return 0.0f;
   }
 
@@ -269,11 +270,11 @@ float demandAtTile(const CityMap& map, const RoadNetwork& roads, Coord coord) {
   const bool roadAdj = resolveRoadAnchor(roads, coord, anchor);
 
   float baseDemand = 0.25f;
-  if (tile.zone == 1) {
+  if (zone == 1) {
     baseDemand = 0.65f;
-  } else if (tile.zone == 2) {
+  } else if (zone == 2) {
     baseDemand = 0.55f;
-  } else if (tile.zone == 3) {
+  } else if (zone == 3) {
     baseDemand = 0.45f;
   }
 
@@ -293,12 +294,10 @@ float happinessAtTile(
   Coord coord,
   const std::vector<ServiceFacility>& facilities
 ) {
-  const Tile& tile = map.getTile(coord);
-
   const float service = serviceCoverageAtTile(roads, coord, facilities);
   const float congestion = localCongestionAtTile(roads, coord);
-  const float pollution = std::max(0.0f, std::min(1.0f, tile.pollution));
-  const float landNorm = std::max(0.0f, std::min(1.0f, (tile.landValue - 40.0f) / 160.0f));
+  const float pollution = std::max(0.0f, std::min(1.0f, map.pollution(coord)));
+  const float landNorm = std::max(0.0f, std::min(1.0f, (map.landValue(coord) - 40.0f) / 160.0f));
 
   float happiness = 0.45f;
   happiness += service * 0.25f;
@@ -306,7 +305,7 @@ float happinessAtTile(
   happiness -= pollution * 0.25f;
   happiness -= congestion * 0.2f;
 
-  if (tile.zone == 0) {
+  if (map.zone(coord) == 0) {
     happiness -= 0.1f;
   }
 
@@ -488,10 +487,10 @@ RGB tileColor(
   const Tile& tile = map.getTile(coord);
 
   if (overlayMode == OverlayMode::LandValue) {
-    return landValueColor(tile.landValue);
+    return landValueColor(map.landValue(coord));
   }
   if (overlayMode == OverlayMode::Pollution) {
-    return pollutionColor(tile.pollution);
+    return pollutionColor(map.pollution(coord));
   }
   if (overlayMode == OverlayMode::ServiceCoverage) {
     return serviceCoverageColor(serviceCoverageAtTile(roads, coord, facilities));
@@ -509,7 +508,7 @@ RGB tileColor(
     return routeHeatColor(routeHeatAtTile(routeHeatByTile, coord));
   }
 
-  RGB color = terrainTint(tile, zoneColor(tile.zone));
+  RGB color = terrainTint(tile, zoneColor(map.zone(coord)));
 
   if (tile.hasRoad) {
     color = {64, 64, 64};
@@ -904,15 +903,14 @@ bool seedScenario(CityMap& map, RoadNetwork& roads, EntityStore& store, Populati
   // Add deterministic land value and pollution gradients so overlays show meaningful variation.
   for (int y = 0; y < dims.y; ++y) {
     for (int x = 0; x < dims.x; ++x) {
-      Tile& tile = map.getTile({x, y});
       const float distX = static_cast<float>(std::abs(x - midX));
       const float distY = static_cast<float>(std::abs(y - midY));
-      tile.landValue = std::max(40.0f, 190.0f - (distX * 2.0f) - (distY * 1.25f));
+      map.landValue({x, y}) = std::max(40.0f, 190.0f - (distX * 2.0f) - (distY * 1.25f));
 
       if (x > midX && y > midY) {
-        tile.pollution = std::min(1.0f, 0.1f + ((distX + distY) / 64.0f));
+        map.pollution({x, y}) = std::min(1.0f, 0.1f + ((distX + distY) / 64.0f));
       } else {
-        tile.pollution = std::max(0.0f, 0.05f - ((distX + distY) / 128.0f));
+        map.pollution({x, y}) = std::max(0.0f, 0.05f - ((distX + distY) / 128.0f));
       }
     }
   }

@@ -40,3 +40,27 @@ bool CityMap::isValid(Coord coord) const {
   return coord.x >= 0 && coord.x < dimensions.x &&
          coord.y >= 0 && coord.y < dimensions.y;
 }
+
+float& CityMap::pollution(Coord coord) {
+  return getTile(coord).pollution;
+}
+
+float CityMap::pollution(Coord coord) const {
+  return getTile(coord).pollution;
+}
+
+float& CityMap::landValue(Coord coord) {
+  return getTile(coord).landValue;
+}
+
+float CityMap::landValue(Coord coord) const {
+  return getTile(coord).landValue;
+}
+
+int CityMap::zone(Coord coord) const {
+  return getTile(coord).zone;
+}
+
+void CityMap::setZone(Coord coord, int zoneValue) {
+  getTile(coord).zone = zoneValue;
+}

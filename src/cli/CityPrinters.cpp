@@ -239,8 +239,7 @@ void printZones(const CityMap& map) {
   for (int y = 0; y < dims.y; ++y) {
     std::cout << std::setw(3) << y << " ";
     for (int x = 0; x < dims.x; ++x) {
-      const Tile& tile = map.getTile({x, y});
-      std::cout << Zoning::zoneToSymbol(tile.zone);
+      std::cout << Zoning::zoneToSymbol(map.zone({x, y}));
     }
     std::cout << "\n";
   }

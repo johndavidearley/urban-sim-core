@@ -84,7 +84,7 @@ FireSummary FireSystem::step(
     if (b->type == BuildingType::Industrial) {
       risk *= params.industrialRiskMultiplier;
     }
-    const float pollution = std::clamp(map.getTile(b->position).pollution, 0.0f, 1.0f);
+    const float pollution = std::clamp(map.pollution(b->position), 0.0f, 1.0f);
     risk *= (1.0f + pollution * params.pollutionRiskMultiplier);
     risk *= (1.0f - coverage * params.coverageIgnitionReduction);
     if (rng.chance(std::max(0.0f, risk))) {

@@ -367,8 +367,7 @@ DistrictMetrics DistrictSystem::evaluateDistrictMetrics(
       if (!map.isValid({x, y})) {
         continue;
       }
-      const Tile& tile = map.getTile({x, y});
-      totalLandValue += static_cast<int64_t>(tile.landValue);
+      totalLandValue += static_cast<int64_t>(map.landValue({x, y}));
       landValueTileCount++;
     }
   }

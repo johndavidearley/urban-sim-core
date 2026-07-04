@@ -250,6 +250,73 @@ worth its cost at the time the note was written:
     arrays), so per-tile field loops can actually auto-vectorize; the
     current array-of-structs layout is the reason hand-written SIMD
     intrinsics were ruled out as a targeted win in M16.
+
+    Investigated: `CityMap` is referenced by 39 files - nearly every system
+    in the codebase (Growth, LandValue, Service, Traffic, Population,
+    Economy, Zoning, TerrainGenerator, the visualizer, save/load
+    persistence, District/Fire/NaturalDisaster, every CLI command). Of the
+    current ~4000ms/1000-tick cost at 500x500, the phases that would
+    actually benefit from SoA (Roads/Zoning/Growth - genuine tile-array
+    scans) are only ~10% of it; the phases that dominate (Traffic,
+    Economy, Services, LandValue) are graph/hashmap-bound and wouldn't
+    speed up at all. A full rewrite in one shot is a 39-file blast radius
+    for a best-case ~6-7% total-tick win, against a budget we're already
+    3x under (~5ms/tick vs. the 16.67ms/60 FPS target). Rather than skip
+    it outright or commit to the whole thing at once, it's broken into
+    phases below - each independently small, verified by the existing test
+    suite, and with a data-driven go/no-go checkpoint (Phase 4) before the
+    genuinely risky step:
+
+    - [x] **Phase 1 - accessor layer (no storage change) - done.** `CityMap`
+      gained `float& pollution(Coord)` / `float pollution(Coord) const`,
+      the same const/non-const pair for `landValue`, and `int zone(Coord)
+      const` / `void setZone(Coord, int)` - thin wrappers over the
+      existing `getTile(coord).field` access, verified (via a new test,
+      `FieldAccessorsReadAndWriteTheSameStorageAsGetTile`) to read/write
+      the exact same underlying storage `getTile()` does. No call site
+      migrated yet (that's Phase 2) - this step is purely additive, and
+      the full suite (271 -> 272 tests) confirms zero behavior change.
+    - [x] **Phase 2 - migrate call sites, one system at a time - done.**
+      Every genuine `CityMap::Tile.{pollution,landValue,zone}` access
+      outside `CityMap.cpp` itself now goes through the Phase 1 accessors:
+      `Zoning`, `GrowthMetrics`, `DistrictSystem`, `FireSystem`,
+      `GrowthSystem`, `LandValueSystem`, `CitySimulator`, `MapRenderer`,
+      `VisualizerSDL`, and `CityPrinters`' `printZones` - migrated file by
+      file, full suite green after each. Verified behavior-preserving both
+      by the test suite (272 tests, unchanged) and a direct before/after
+      `--simulate` comparison (500x500/1000 ticks: identical final
+      population/building counts).
+
+      Deliberately left as direct `Tile&` access, not oversights:
+      `CityMap.cpp` itself (the accessors' own implementation, plus the
+      constructor's initialization); `SaveLoadSystem`/`ReplayVerifier`'s
+      `SerializedTile` (a distinct persistence-layer type, not `CityMap`'s
+      `Tile`, despite the similar field names); `EconomySystem`'s
+      `metrics.pollution` (a `CityMetrics` field, unrelated); and
+      `CityPrinters::printTile` plus `SaveLoadSystem`'s snapshot
+      capture/apply loops, which read or write *every* field of a tile in
+      one place - genuine full-struct dump/reconstruct operations that
+      would need direct access regardless of storage layout, so migrating
+      3 of their 8-9 fields to accessors wouldn't reduce Phase 3's
+      eventual blast radius at all.
+    - **Phase 3 - the actual storage swap.** Once every external caller
+      goes through accessors (no more direct `Tile&` field access outside
+      `CityMap.cpp` itself), swap `std::vector<Tile>` for parallel arrays
+      for the hot numeric fields (pollution, land value) internally. By
+      construction this change is now contained to `CityMap.hpp/.cpp` -
+      the blast radius Phases 1-2 were built to eliminate.
+    - **Phase 4 - measure, then decide.** Re-run the same benchmark
+      scenario used to produce the ~6-7% estimate above. If the real
+      number is close to that estimate, stop here - the accessor layer
+      alone is worth keeping (cleaner separation of concerns) even without
+      further work. Only proceed to Phase 5 if the data shows a
+      genuinely worthwhile win.
+    - **Phase 5 (optional) - vectorize the hot loops explicitly.**
+      Restructure `updatePollution`'s clear/scatter phases and the zoning
+      candidate scan to operate directly on the new contiguous arrays
+      (not through a per-tile accessor call inside the loop, which would
+      reintroduce the indirection Phase 3 removed), enabling real
+      auto-vectorization rather than just cache-friendlier layout.
 11. Make `TrafficRouteCache` resilient to a continuously-growing city - e.g.
     invalidate only the paths that cross a changed edge instead of clearing
     the whole cache on any topology change - to raise its measured-modest
