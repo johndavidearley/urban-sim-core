@@ -533,3 +533,52 @@ TEST(CitySimulatorTests, ElevatedFireRiskDestroysBuildingsOverTime) {
     previous = row.buildingsLostToFire;
   }
 }
+
+// Crime is a pure read-out that runs every tick unconditionally (unlike the
+// opt-in disasters above), so a normally growing city should report a
+// nonzero, bounded crime rate throughout the run.
+TEST(CitySimulatorTests, CrimeRateIsReportedEveryTickWithinBounds) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 60, fastOptions());
+
+  ASSERT_FALSE(result.rows.empty());
+  bool sawNonzeroCrime = false;
+  for (const SimTickMetrics& row : result.rows) {
+    EXPECT_GE(row.crimeRate, 0.0f);
+    EXPECT_LE(row.crimeRate, 1.0f);
+    if (row.crimeRate > 0.0f) sawNonzeroCrime = true;
+  }
+  EXPECT_TRUE(sawNonzeroCrime);
+}
+
+// A harsher crime model (higher base rate, weaker police mitigation) should
+// visibly raise the reported crime rate relative to the default, proving
+// options.crimeParams actually reaches CrimeSystem within the live loop.
+TEST(CitySimulatorTests, HarsherCrimeParamsRaiseReportedCrimeRate) {
+  auto runWithParams = [](const CrimeParams& params) {
+    CityMap map({64, 64});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    SimOptions options = fastOptions();
+    options.crimeParams = params;
+    return CitySimulator::run(map, roads, store, population, 7, 60, options).rows.back();
+  };
+
+  CrimeParams mild;
+  mild.baseCrimeRate = 0.05f;
+  mild.policeCoverageReduction = 0.9f;
+
+  CrimeParams harsh;
+  harsh.baseCrimeRate = 0.5f;
+  harsh.policeCoverageReduction = 0.1f;
+
+  const SimTickMetrics mildLast = runWithParams(mild);
+  const SimTickMetrics harshLast = runWithParams(harsh);
+
+  EXPECT_GT(harshLast.crimeRate, mildLast.crimeRate);
+}

@@ -27,7 +27,7 @@ static const char* kCSVHeader =
   "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
   "service_coverage,service_facilities,avg_land_value,trade_balance,inflation_multiplier,"
   "transit_routes,transit_bus_routes,transit_rail_routes,transit_ridership,transit_demand,transit_modal_share,"
-  "active_fires,buildings_lost_to_fire\n";
+  "active_fires,buildings_lost_to_fire,crime_rate\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -62,7 +62,7 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.transitRoutes << "," << row.transitBusRoutes << "," << row.transitRailRoutes << ","
       << row.transitRidership << "," << row.transitDemand << ","
       << row.transitModalShare << ","
-      << row.activeFires << "," << row.buildingsLostToFire << "\n";
+      << row.activeFires << "," << row.buildingsLostToFire << "," << row.crimeRate << "\n";
 }
 
 bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
@@ -79,7 +79,8 @@ bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& 
 
 void printTimings(const SimPhaseTimings& t, int ranTicks) {
   const double totalMs = t.roadMs + t.zoningMs + t.growthMs + t.populationMs + t.trafficMs +
-                         t.economyMs + t.serviceMs + t.landValueMs + t.transitMs + t.districtMs + t.fireMs;
+                         t.economyMs + t.serviceMs + t.landValueMs + t.transitMs + t.districtMs + t.fireMs +
+                         t.crimeMs;
   std::cout << "\nPhase timing over " << ranTicks << " ticks (total "
             << std::fixed << std::setprecision(2) << totalMs << " ms, "
             << (ranTicks > 0 ? totalMs / ranTicks : 0.0) << " ms/tick):\n";
@@ -94,6 +95,7 @@ void printTimings(const SimPhaseTimings& t, int ranTicks) {
   std::cout << "    Transit:    " << t.transitMs << " ms\n";
   std::cout << "    Districts:  " << t.districtMs << " ms\n";
   std::cout << "    Fire:       " << t.fireMs << " ms\n";
+  std::cout << "    Crime:      " << t.crimeMs << " ms\n";
 }
 
 void printDistrictSummary(const std::vector<DistrictMetrics>& metrics) {
@@ -248,7 +250,8 @@ int runCitySimulation(
                 << " transitRidership=" << last.transitRidership
                 << " transitModalShare=" << std::setprecision(1) << (last.transitModalShare * 100.0f) << "%"
                 << " activeFires=" << last.activeFires
-                << " buildingsLostToFire=" << last.buildingsLostToFire << "\n";
+                << " buildingsLostToFire=" << last.buildingsLostToFire
+                << " crimeRate=" << std::setprecision(1) << (last.crimeRate * 100.0f) << "%\n";
     }
 
     printDistrictSummary(result.finalDistrictMetrics);
@@ -341,7 +344,8 @@ int runCitySimulation(
               << " transitRidership=" << lastRow.transitRidership
               << " transitModalShare=" << std::setprecision(1) << (lastRow.transitModalShare * 100.0f) << "%"
               << " activeFires=" << lastRow.activeFires
-              << " buildingsLostToFire=" << lastRow.buildingsLostToFire << "\n";
+              << " buildingsLostToFire=" << lastRow.buildingsLostToFire
+              << " crimeRate=" << std::setprecision(1) << (lastRow.crimeRate * 100.0f) << "%\n";
   }
 
   if (!reportPath.empty()) {

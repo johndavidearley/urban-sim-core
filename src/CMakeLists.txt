@@ -17,6 +17,7 @@ add_library(urban_sim_core
   systems/LandValueSystem.cpp
   systems/TransitSystem.cpp
   systems/FireSystem.cpp
+  systems/CrimeSystem.cpp
   world/CityMap.cpp
   world/Tile.cpp
   world/Zoning.cpp

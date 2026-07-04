@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "src/core/ThreadPool.hpp"
+#include "src/systems/CrimeSystem.hpp"
 #include "src/systems/EconomySystem.hpp"
 #include "src/systems/GrowthSystem.hpp"
 #include "src/systems/LandValueSystem.hpp"
@@ -715,6 +716,7 @@ SimResult CitySimulator::run(
 
   float lastCongestion = 0.0f;          // previous tick's peak congestion, feeds desirability
   float lastServiceSatisfaction = 0.5f; // previous tick's service satisfaction, feeds desirability
+  float lastCrimeRate = 0.0f;           // previous tick's crime rate, feeds desirability
   std::vector<ServiceFacility> facilities;
   ServiceCoverageCache coverageCache;
   const int serviceRadius = spacing * 3;
@@ -795,6 +797,7 @@ SimResult CitySimulator::run(
       desirability *= clamp01(1.0f - 0.4f * lastCongestion);
       desirability *= clamp01(1.0f - 0.5f * averageResidentialPollution(map, store));
       desirability *= clamp01(0.6f + 0.4f * lastServiceSatisfaction);
+      desirability *= clamp01(1.0f - 0.25f * lastCrimeRate);
 
       const float headroom = cap.resCapacity > prevPop ? static_cast<float>(cap.resCapacity - prevPop) : 0.0f;
       float requested;
@@ -926,6 +929,24 @@ SimResult CitySimulator::run(
       result.timings.economyMs += elapsedMs(t0, Clock::now());
     }
 
+    // Crime: a pure read-out (no side effects on the map or entity store,
+    // unlike FireSystem), so unlike congestion/service satisfaction it's
+    // computed unconditionally every tick from this tick's own unemployment,
+    // police coverage, and average land value (a poverty proxy). It still
+    // feeds desirability one tick lagged (via lastCrimeRate above), the same
+    // pattern used for congestion/service satisfaction elsewhere in this loop.
+    CrimeSummary crime;
+    {
+      const auto t0 = Clock::now();
+      const uint32_t popNow = population.getTotalPopulation();
+      const uint32_t employedNow = population.getTotalEmployed();
+      const float unemploymentNow = popNow > 0
+        ? clamp01(static_cast<float>(popNow - employedNow) / static_cast<float>(popNow)) : 0.0f;
+      crime = CrimeSystem::evaluate(unemploymentNow, service.policeCoverage, economy.averageLandValue, options.crimeParams);
+      lastCrimeRate = crime.overallRate;
+      result.timings.crimeMs += elapsedMs(t0, Clock::now());
+    }
+
     // District policy: re-evaluate service-budget fulfillment and density per
     // district, feeding next tick's growth-chance modifiers (see
     // districtGrowthModifiers above). Reads roads/facilities/store/population
@@ -978,6 +999,7 @@ SimResult CitySimulator::run(
     row.transitModalShare = transitSummary.modalShare;
     row.activeFires = fire.activeFires;
     row.buildingsLostToFire = cumulativeBuildingsLostToFire;
+    row.crimeRate = crime.overallRate;
     if (!infinite) {
       result.rows.push_back(row);
     }

@@ -7,6 +7,7 @@
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
+#include "src/systems/CrimeSystem.hpp"
 #include "src/systems/DistrictSystem.hpp"
 #include "src/systems/FireSystem.hpp"
 #include "src/systems/TransitSystem.hpp"
@@ -43,6 +44,7 @@ struct SimTickMetrics {
   float transitModalShare = 0.0f;    // transitRidership / (transitRidership + car commuters)
   uint32_t activeFires = 0;          // burning tiles right now (only nonzero when options.enableDisasters is set)
   uint32_t buildingsLostToFire = 0;  // cumulative buildings destroyed by fire since the run started
+  float crimeRate = 0.0f;            // 0-1 city-wide crime rate this tick (see CrimeSystem)
 };
 
 struct SimPhaseTimings {
@@ -57,6 +59,7 @@ struct SimPhaseTimings {
   double transitMs = 0.0;
   double districtMs = 0.0;
   double fireMs = 0.0;
+  double crimeMs = 0.0;
 };
 
 struct SimResult {
@@ -79,6 +82,7 @@ struct SimOptions {
   int districtInterval = 1;    // re-evaluate district metrics/growth pressure every N ticks (only relevant when districts is non-null)
   bool enableDisasters = false;  // opt-in: run FireSystem each tick (destructive, so off by default unlike the additive M12/M13 systems)
   FireParams fireParams;         // only used when enableDisasters is true
+  CrimeParams crimeParams;       // tunable crime-rate weights; crime is a pure read-out (no side effects), so it always runs like pollution/congestion
   // Called after each tick with the row. Return false to stop the simulation.
   // Used by infinite mode; rows are not accumulated in SimResult when this is set and ticks < 0.
   std::function<bool(const SimTickMetrics&)> tickCallback;
@@ -116,6 +120,14 @@ public:
   // adjacent occupied tiles, and fire station coverage (already computed for
   // ServiceSystem) reduces ignition/spread chance and burn duration - a
   // proxy for faster emergency response.
+  //
+  // CrimeSystem runs every tick unconditionally (default true, like Transit/
+  // Office in M12/M13 - it's a pure read-out with no side effects on the map
+  // or entity store, unlike disasters). It derives a city-wide crime rate
+  // from this tick's unemployment, police coverage, and average land value
+  // (a poverty proxy), which - one tick lagged, the same pattern used for
+  // congestion/service satisfaction - factors into next tick's migration
+  // desirability: a high-crime city is less attractive to move into.
   static SimResult run(
     CityMap& map,
     RoadNetwork& roads,
