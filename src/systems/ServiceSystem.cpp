@@ -20,33 +20,6 @@ std::string upper(const std::string& raw) {
   return normalized;
 }
 
-bool hasRoadAdjacency(const RoadNetwork& roads, Coord coord) {
-  const RoadNetwork::Node* node = roads.getNode(coord);
-  return node != nullptr && !node->adjacent.empty();
-}
-
-bool resolveRoadAnchor(const RoadNetwork& roads, Coord coord, Coord& outAnchor) {
-  if (hasRoadAdjacency(roads, coord)) {
-    outAnchor = coord;
-    return true;
-  }
-
-  const Coord neighbors[4] = {
-    {coord.x + 1, coord.y},
-    {coord.x - 1, coord.y},
-    {coord.x, coord.y + 1},
-    {coord.x, coord.y - 1}
-  };
-
-  for (const Coord& n : neighbors) {
-    if (hasRoadAdjacency(roads, n)) {
-      outAnchor = n;
-      return true;
-    }
-  }
-
-  return false;
-}
 
 std::unordered_map<Coord, int, Vec2Hash> buildDistanceField(
   const RoadNetwork& roads,
@@ -143,7 +116,7 @@ void ServiceSystem::buildCache(
   cache.entries.reserve(facilities.size());
   for (const ServiceFacility& facility : facilities) {
     Coord anchor;
-    if (!resolveRoadAnchor(roads, facility.position, anchor)) {
+    if (!roads.resolveRoadAnchor(facility.position, anchor)) {
       continue;
     }
     auto distField = buildDistanceField(roads, anchor, facility.maxTravelDistance);
@@ -152,6 +125,20 @@ void ServiceSystem::buildCache(
     }
   }
   cache.builtForFacilityCount = facilities.size();
+
+  // Merge all entries' fields into one nearest-any-facility lookup, done
+  // once per rebuild instead of once per query.
+  cache.nearestAnyDistance.clear();
+  for (const ServiceCoverageCache::Entry& entry : cache.entries) {
+    for (const auto& [coord, dist] : entry.distanceField) {
+      auto it = cache.nearestAnyDistance.find(coord);
+      if (it == cache.nearestAnyDistance.end()) {
+        cache.nearestAnyDistance.emplace(coord, dist);
+      } else if (dist < it->second) {
+        it->second = dist;
+      }
+    }
+  }
 }
 
 ServiceCoverageSummary ServiceSystem::evaluateCoverage(
@@ -195,7 +182,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     Partial p;
     for (size_t i = begin; i < end; ++i) {
       Coord anchor;
-      if (!resolveRoadAnchor(roads, buildings[i]->position, anchor)) continue;
+      if (!roads.resolveRoadAnchor(buildings[i]->position, anchor)) continue;
       std::array<bool, 4> hit = {false, false, false, false};
       bool any = false;
       for (const ServiceCoverageCache::Entry& entry : cache.entries) {

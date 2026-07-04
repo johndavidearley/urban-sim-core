@@ -71,6 +71,34 @@ TEST(CitySimulatorTests, GrowsAMixedCityFromEmpty) {
   EXPECT_GT(last.population, result.rows.front().population);
 }
 
+// A long run on a large map forces many road-grid expansions (the extent
+// grows in fixed steps as demand persists), repeatedly exercising the
+// zoning candidate index's incremental ring update rather than just its
+// initial full scan. Zoning must keep pace with demand throughout - a bug
+// in the ring decomposition (e.g. missing a band, or an off-by-one in the
+// inner-box buffer) would show up as growth stalling out partway through
+// once the initially-scanned region's candidates run dry.
+TEST(CitySimulatorTests, ZoningKeepsPaceThroughManyRoadGridExpansions) {
+  CityMap map({200, 200});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 11, 250, fastOptions());
+
+  ASSERT_FALSE(result.rows.empty());
+
+  // Population (and therefore zoned/built land) should keep climbing all the
+  // way to the end, not plateau early - a stalled candidate index would
+  // starve growth well before the run finishes.
+  const SimTickMetrics& firstHalf = result.rows[result.rows.size() / 2];
+  const SimTickMetrics& last = result.rows.back();
+  EXPECT_GT(last.population, firstHalf.population);
+  EXPECT_GT(last.residentialBuildings, 0u);
+  EXPECT_GT(last.commercialBuildings, 0u);
+  EXPECT_GT(last.industrialBuildings, 0u);
+}
+
 TEST(CitySimulatorTests, SameSeedProducesIdenticalCity) {
   auto runOnce = [](uint32_t seed) {
     CityMap map({40, 40});

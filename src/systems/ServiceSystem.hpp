@@ -48,6 +48,14 @@ struct ServiceCoverageCache {
   std::vector<Entry> entries;
   size_t builtForFacilityCount = 0;
 
+  // Nearest distance to *any* facility of *any* type, merged (min) across all
+  // entries' distance fields once here in buildCache() rather than re-derived
+  // by every caller that wants "distance to nearest facility of any type"
+  // (e.g. LandValueSystem's service-proximity land value bonus) via an
+  // O(entries) scan per query - a real cost at city scale, since that scan
+  // used to run once per zoned, road-anchored tile every recompute.
+  std::unordered_map<Coord, int, Vec2Hash> nearestAnyDistance;
+
   // Result cache: valid when cachedBuildingCount == store.getBuildings().size()
   // AND builtForFacilityCount matches. Reset to SIZE_MAX to force re-evaluation.
   size_t cachedBuildingCount = static_cast<size_t>(-1);

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "src/core/ThreadPool.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/entities/EntityStore.hpp"
@@ -395,6 +396,254 @@ TEST_F(TrafficSystemTests, NullTransitOffloadMatchesPriorBehavior) {
 
   EXPECT_EQ(explicitNull.commutingPopulation, implicitDefault.commutingPopulation);
   EXPECT_FLOAT_EQ(explicitNull.maxEdgeCongestion, implicitDefault.maxEdgeCongestion);
+}
+
+// Test: a TrafficRouteCache passed alongside a pool produces identical
+// results to the uncached parallel path - caching must never change which
+// route is chosen, only whether it's recomputed.
+TEST_F(TrafficSystemTests, RouteCacheProducesIdenticalResultsToUncachedParallelRun) {
+  ThreadPool pool(2);
+
+  auto makeScenario = [](EntityStore& store, PopulationStore& population) {
+    store.createBuilding(BuildingType::Residential, {10, 10}, 100);
+    store.createBuilding(BuildingType::Residential, {10, 15}, 100);
+    store.createBuilding(BuildingType::Commercial, {15, 10}, 50);
+    store.createBuilding(BuildingType::Industrial, {15, 15}, 50);
+    population.createGroup(IncomeBand::Middle, 100, 80);
+  };
+
+  EntityStore storeUncached;
+  PopulationStore populationUncached;
+  makeScenario(storeUncached, populationUncached);
+  const TrafficSummary uncached = TrafficSystem::simulateCommutes(
+    storeUncached, populationUncached, *network, 42, &pool
+  );
+
+  EntityStore storeCached;
+  PopulationStore populationCached;
+  makeScenario(storeCached, populationCached);
+  TrafficRouteCache routeCache;
+  const TrafficSummary cached = TrafficSystem::simulateCommutes(
+    storeCached, populationCached, *network, 42, &pool, nullptr, &routeCache
+  );
+
+  EXPECT_EQ(cached.commutingPopulation, uncached.commutingPopulation);
+  EXPECT_FLOAT_EQ(cached.averageCommuteTime, uncached.averageCommuteTime);
+  EXPECT_FLOAT_EQ(cached.maxEdgeCongestion, uncached.maxEdgeCongestion);
+  EXPECT_FALSE(routeCache.paths.empty());
+}
+
+// Test: a second run against the same unchanged network reuses the cache
+// (same topology version) and still reproduces identical results.
+TEST_F(TrafficSystemTests, RouteCacheReusedAcrossTicksMatchesFreshComputation) {
+  ThreadPool pool(2);
+
+  EntityStore store;
+  PopulationStore population;
+  store.createBuilding(BuildingType::Residential, {10, 10}, 100);
+  store.createBuilding(BuildingType::Commercial, {15, 15}, 50);
+  population.createGroup(IncomeBand::Middle, 100, 80);
+
+  TrafficRouteCache routeCache;
+  const TrafficSummary tick1 = TrafficSystem::simulateCommutes(
+    store, population, *network, 7, &pool, nullptr, &routeCache
+  );
+  const size_t pathsAfterTick1 = routeCache.paths.size();
+  ASSERT_GT(pathsAfterTick1, 0u);
+
+  // Same seed, same unchanged network: every commute this tick should be a
+  // cache hit, so the cache doesn't grow further.
+  const TrafficSummary tick2 = TrafficSystem::simulateCommutes(
+    store, population, *network, 7, &pool, nullptr, &routeCache
+  );
+
+  EXPECT_EQ(routeCache.paths.size(), pathsAfterTick1);
+  EXPECT_EQ(tick2.commutingPopulation, tick1.commutingPopulation);
+  EXPECT_FLOAT_EQ(tick2.averageCommuteTime, tick1.averageCommuteTime);
+  EXPECT_FLOAT_EQ(tick2.maxEdgeCongestion, tick1.maxEdgeCongestion);
+}
+
+// Test: changing road topology bumps RoadNetwork::getTopologyVersion() and
+// the cache picks that up (clears and re-syncs its recorded version) on the
+// very next call, rather than silently keeping stale entries around.
+TEST_F(TrafficSystemTests, RouteCacheInvalidatedWhenTopologyChanges) {
+  ThreadPool pool(2);
+
+  // A network with only the long way around: (10,10) -> ... -> (15,10) -> ... -> (15,15).
+  EntityStore store;
+  PopulationStore population;
+  store.createBuilding(BuildingType::Residential, {10, 10}, 100);
+  store.createBuilding(BuildingType::Commercial, {15, 15}, 50);
+  population.createGroup(IncomeBand::Middle, 100, 80);
+
+  TrafficRouteCache routeCache;
+  const TrafficSummary before = TrafficSystem::simulateCommutes(
+    store, population, *network, 7, &pool, nullptr, &routeCache
+  );
+  const uint64_t versionBefore = routeCache.topologyVersion;
+
+  // Add one genuinely new edge (buildRoad only connects immediately-adjacent
+  // tiles) - enough to bump the topology version and force cache invalidation.
+  network->buildRoad({10, 10}, {10, 11});
+  ASSERT_NE(routeCache.topologyVersion, network->getTopologyVersion())
+    << "test setup: buildRoad should have advanced the version, or this assertion is meaningless";
+
+  const TrafficSummary after = TrafficSystem::simulateCommutes(
+    store, population, *network, 7, &pool, nullptr, &routeCache
+  );
+
+  EXPECT_NE(routeCache.topologyVersion, versionBefore);
+  EXPECT_EQ(routeCache.topologyVersion, network->getTopologyVersion());
+  EXPECT_GT(after.commutingPopulation, 0u);
+  EXPECT_GT(before.commutingPopulation, 0u);
+}
+
+// Test: with routeCache explicitly nullptr (the default), behavior is
+// exactly as before - the zero-behavior-change guarantee every optional
+// trailing parameter in this codebase provides.
+TEST_F(TrafficSystemTests, NullRouteCacheMatchesPriorBehavior) {
+  ThreadPool pool(2);
+
+  EntityStore store;
+  PopulationStore population;
+  store.createBuilding(BuildingType::Residential, {10, 10}, 100);
+  store.createBuilding(BuildingType::Commercial, {15, 10}, 100);
+  population.createGroup(IncomeBand::Low, 100, 80);
+
+  const TrafficSummary explicitNull = TrafficSystem::simulateCommutes(
+    store, population, *network, 42, &pool, nullptr, nullptr
+  );
+  const TrafficSummary implicitDefault = TrafficSystem::simulateCommutes(
+    store, population, *network, 42, &pool
+  );
+
+  EXPECT_EQ(explicitNull.commutingPopulation, implicitDefault.commutingPopulation);
+  EXPECT_FLOAT_EQ(explicitNull.maxEdgeCongestion, implicitDefault.maxEdgeCongestion);
+}
+
+// Test: buildings only need road access at their own tile *or* a neighbor
+// (the same self-or-neighbor rule CitySimulator's hasRoadAccess uses to
+// decide what's zonable) - neither (10,11) nor (15,16) themselves touch a
+// road edge, only their (10,10)/(15,15) neighbors do, so this exercises
+// RoadNetwork::resolveRoadAnchor rather than routing from the raw building
+// position directly.
+TEST_F(TrafficSystemTests, CommutesRouteFromBuildingsAdjacentToButNotOnARoadTile) {
+  EntityStore store;
+  PopulationStore population;
+
+  store.createBuilding(BuildingType::Residential, {10, 11}, 100);
+  store.createBuilding(BuildingType::Commercial, {15, 16}, 100);
+  population.createGroup(IncomeBand::Middle, 80, 60);
+
+  const TrafficSummary summary = TrafficSystem::simulateCommutes(store, population, *network, 42);
+
+  EXPECT_GT(summary.commutingPopulation, 0u);
+  EXPECT_GT(summary.averageCommuteTime, 0.0f);
+  // The resolved route travels along the built road between the two
+  // buildings' anchors, so congestion must show up on the road network.
+  EXPECT_GT(summary.maxEdgeCongestion, 0.0f);
+}
+
+// Test: a building with no road access at all - neither its own tile nor
+// any of its 4 neighbors - can never commute, matching the pre-fix
+// behavior for genuinely disconnected land.
+TEST_F(TrafficSystemTests, BuildingsWithNoRoadAdjacencyNeverCommute) {
+  EntityStore store;
+  PopulationStore population;
+
+  // (2,2) is nowhere near the fixture's road network at (10,10)-(15,15).
+  store.createBuilding(BuildingType::Residential, {2, 2}, 100);
+  store.createBuilding(BuildingType::Commercial, {15, 10}, 100);
+  population.createGroup(IncomeBand::Middle, 80, 60);
+
+  const TrafficSummary summary = TrafficSystem::simulateCommutes(store, population, *network, 42);
+
+  EXPECT_EQ(summary.averageCommuteTime, 0.0f);
+  EXPECT_EQ(summary.maxEdgeCongestion, 0.0f);
+}
+
+// Test: commute job selection is distance-weighted (nearer jobs more
+// likely), not uniform-random regardless of distance. Gives home a second
+// branch (north) in addition to the fixture's east/L route so the near-
+// and far-job paths diverge immediately at home - each destination's first
+// edge is then exclusive to it, letting per-edge commuter totals be
+// compared directly without path-length distortion (the far path has ~10
+// edges, the near path 1; summing every edge of each path would bias the
+// comparison by path length instead of by how often each was chosen).
+TEST_F(TrafficSystemTests, CommutesFavorNearbyJobsOverManyTrials) {
+  network->buildRoad({10, 10}, {10, 9});
+
+  EntityStore store;
+  PopulationStore population;
+  store.createBuilding(BuildingType::Residential, {10, 10}, 300);
+  store.createBuilding(BuildingType::Commercial, {10, 9}, 50);    // near: 1 tile away
+  store.createBuilding(BuildingType::Industrial, {15, 15}, 50);   // far: across the whole L
+
+  population.createGroup(IncomeBand::Middle, 100, 100);
+
+  RouteDiagnosticsFilter nearFilter;
+  nearFilter.hasDestination = true;
+  nearFilter.destination = {10, 9};
+
+  RouteDiagnosticsFilter farFilter;
+  farFilter.hasDestination = true;
+  farFilter.destination = {15, 15};
+
+  float nearTotal = 0.0f;
+  float farTotal = 0.0f;
+  constexpr uint32_t kTrials = 200;
+  for (uint32_t trial = 0; trial < kTrials; ++trial) {
+    const auto nearEdges = TrafficSystem::getTopRouteDiagnosticEdges(store, population, *network, nearFilter, 20, trial);
+    const auto farEdges = TrafficSystem::getTopRouteDiagnosticEdges(store, population, *network, farFilter, 20, trial);
+    for (const auto& e : nearEdges) {
+      if ((e.from == Coord(10, 10) && e.to == Coord(10, 9)) || (e.from == Coord(10, 9) && e.to == Coord(10, 10))) {
+        nearTotal += e.totalCommuters;
+      }
+    }
+    for (const auto& e : farEdges) {
+      if ((e.from == Coord(10, 10) && e.to == Coord(11, 10)) || (e.from == Coord(11, 10) && e.to == Coord(10, 10))) {
+        farTotal += e.totalCommuters;
+      }
+    }
+  }
+
+  EXPECT_GT(nearTotal, farTotal);
+}
+
+// Test: at equal distance, commute job selection also favors higher-
+// capacity job buildings - a proxy for a larger workplace being able to
+// (and being more likely to) absorb more commuters than a small one.
+TEST_F(TrafficSystemTests, CommutesFavorHigherCapacityJobsAtEqualDistanceOverManyTrials) {
+  network->buildRoad({10, 10}, {10, 9});  // north branch
+  network->buildRoad({10, 10}, {9, 10});  // west branch
+
+  EntityStore store;
+  PopulationStore population;
+  store.createBuilding(BuildingType::Residential, {10, 10}, 300);
+  store.createBuilding(BuildingType::Commercial, {10, 9}, 10);   // small, 1 tile away
+  store.createBuilding(BuildingType::Industrial, {9, 10}, 200);  // large, 1 tile away
+
+  population.createGroup(IncomeBand::Middle, 100, 100);
+
+  RouteDiagnosticsFilter smallFilter;
+  smallFilter.hasDestination = true;
+  smallFilter.destination = {10, 9};
+
+  RouteDiagnosticsFilter largeFilter;
+  largeFilter.hasDestination = true;
+  largeFilter.destination = {9, 10};
+
+  float smallTotal = 0.0f;
+  float largeTotal = 0.0f;
+  constexpr uint32_t kTrials = 200;
+  for (uint32_t trial = 0; trial < kTrials; ++trial) {
+    const auto smallEdges = TrafficSystem::getTopRouteDiagnosticEdges(store, population, *network, smallFilter, 20, trial);
+    const auto largeEdges = TrafficSystem::getTopRouteDiagnosticEdges(store, population, *network, largeFilter, 20, trial);
+    for (const auto& e : smallEdges) smallTotal += e.totalCommuters;
+    for (const auto& e : largeEdges) largeTotal += e.totalCommuters;
+  }
+
+  EXPECT_GT(largeTotal, smallTotal);
 }
 
 // Test: Non-matching route diagnostics filter yields no edges

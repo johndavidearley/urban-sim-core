@@ -111,10 +111,58 @@ struct CommuteSpec {
   const Building* home;
   const Building* work;
   uint32_t workers;
+  Coord homeAnchor;  // road tile home->position resolves to (see RoadNetwork::resolveRoadAnchor)
+  Coord workAnchor;  // road tile work->position resolves to
 };
+
+// Distance- and capacity-weighted job pick for a commute batch anchored at
+// `home`: nearer, larger job buildings are more likely, rather than every
+// job building anywhere on the map being equally likely regardless of
+// distance (the previous model). Straight-line (Manhattan) distance is used
+// as a cheap proxy for commute cost rather than a per-draw road-network BFS
+// - the same "cheap heuristic, actual routing follows real roads via
+// Pathfinding" tradeoff CitySimulator's own transit-route placement already
+// makes. `jobBuildings` must be in a fixed order (sorted by ID) for
+// determinism; consumes exactly one RNG draw, same as the uniform pick it
+// replaces.
+const Building* pickWeightedJob(
+  const std::vector<const Building*>& jobBuildings,
+  Coord home,
+  std::mt19937& rng
+) {
+  constexpr float kDistanceDecay = 0.05f;  // higher = stronger preference for nearby jobs
+  std::vector<float> weights(jobBuildings.size());
+  float totalWeight = 0.0f;
+  for (size_t i = 0; i < jobBuildings.size(); ++i) {
+    const int dx = jobBuildings[i]->position.x - home.x;
+    const int dy = jobBuildings[i]->position.y - home.y;
+    const float dist = static_cast<float>(std::abs(dx) + std::abs(dy));
+    const float capacityWeight = static_cast<float>(std::max(1, jobBuildings[i]->capacity));
+    const float w = capacityWeight / (1.0f + kDistanceDecay * dist);
+    weights[i] = w;
+    totalWeight += w;
+  }
+
+  std::uniform_real_distribution<float> pick(0.0f, totalWeight);
+  float r = pick(rng);
+  for (size_t i = 0; i < weights.size(); ++i) {
+    r -= weights[i];
+    if (r <= 0.0f) return jobBuildings[i];
+  }
+  return jobBuildings.back();  // floating-point rounding fallback
+}
 
 // Phase 1: deterministic RNG walk to collect commute home/work/count triples.
 // Must stay sequential to preserve replay determinism.
+//
+// A building's own tile does not necessarily touch a road edge - zoning
+// only requires road access at the tile itself *or* one of its 4 neighbors
+// (see CitySimulator's hasRoadAccess) - so home/work positions are resolved
+// to their road anchor here via RoadNetwork::resolveRoadAnchor rather than
+// used directly; every downstream pathfinding/congestion/transit-offload
+// step in this file routes between anchors, not raw building positions.
+// A building with no road adjacency at all (neither itself nor any
+// neighbor) is skipped, same as before.
 std::vector<CommuteSpec> collectCommuteSpecs(
   const EntityStore& store,
   const PopulationStore& population,
@@ -143,7 +191,6 @@ std::vector<CommuteSpec> collectCommuteSpecs(
 
   std::mt19937 rng(seed);
   std::uniform_int_distribution<size_t> resDist(0, residentialBuildings.size() - 1);
-  std::uniform_int_distribution<size_t> jobDist(0, jobBuildings.size() - 1);
 
   for (const PopulationGroup* gp : groupsInIdOrder(population)) {
     if (gp->employed == 0) continue;
@@ -152,10 +199,12 @@ std::vector<CommuteSpec> collectCommuteSpecs(
     const uint32_t n = (gp->employed + wpc - 1) / wpc;
     for (uint32_t c = 0; c < n; ++c) {
       const Building* home = residentialBuildings[resDist(rng)];
-      const Building* work = jobBuildings[jobDist(rng)];
-      if (!network.hasNode(home->position) || !network.hasNode(work->position)) continue;
+      const Building* work = pickWeightedJob(jobBuildings, home->position, rng);
+      Coord homeAnchor, workAnchor;
+      if (!network.resolveRoadAnchor(home->position, homeAnchor)) continue;
+      if (!network.resolveRoadAnchor(work->position, workAnchor)) continue;
       const uint32_t workers = std::min(wpc, gp->employed - c * wpc);
-      specs.push_back({home, work, workers});
+      specs.push_back({home, work, workers, homeAnchor, workAnchor});
     }
   }
   return specs;
@@ -185,10 +234,16 @@ TrafficSummary runCommuteLoop(
   uint32_t seed,
   CommuteVisitor&& visit,
   ThreadPool* pool = nullptr,
-  TransitOffload* transit = nullptr
+  TransitOffload* transit = nullptr,
+  TrafficRouteCache* routeCache = nullptr
 ) {
   TrafficSummary summary;
   network.resetCongestion();
+
+  if (routeCache != nullptr && routeCache->topologyVersion != network.getTopologyVersion()) {
+    routeCache->paths.clear();
+    routeCache->topologyVersion = network.getTopologyVersion();
+  }
 
   uint32_t totalCommuters = 0;
   std::vector<CommuteSpec> specs = collectCommuteSpecs(store, population, network, seed, totalCommuters);
@@ -205,7 +260,7 @@ TrafficSummary runCommuteLoop(
   for (size_t i = 0; i < specs.size(); ++i) {
     uint32_t workers = specs[i].workers;
     if (transit != nullptr) {
-      workers -= transit->offload(specs[i].home->position, specs[i].work->position, specs[i].workers);
+      workers -= transit->offload(specs[i].homeAnchor, specs[i].workAnchor, specs[i].workers);
     }
     effectiveWorkers[i] = workers;
   }
@@ -215,17 +270,36 @@ TrafficSummary runCommuteLoop(
   std::vector<Pathfinding::Path> paths(specs.size());
 
   if (pool != nullptr && specs.size() > 1) {
+    // Every edge is at zero load right after resetCongestion() above, and
+    // this phase runs entirely before any congestion is accumulated (that
+    // happens in phase 3 below) - so the path found here depends only on
+    // topology, never on congestionWeight or which tick it is. That's what
+    // makes routeCache safe to reuse across ticks.
     constexpr float kCongestionWeight = 0.5f;
-    std::vector<std::future<Pathfinding::Path>> futures;
-    futures.reserve(specs.size());
-    for (const CommuteSpec& spec : specs) {
-      futures.push_back(pool->submit([&network, spec, kCongestionWeight]() {
+    std::vector<std::future<Pathfinding::Path>> futures(specs.size());
+    std::vector<bool> pending(specs.size(), false);
+    for (size_t i = 0; i < specs.size(); ++i) {
+      const RouteEndpointKey key{specs[i].homeAnchor, specs[i].workAnchor};
+      if (routeCache != nullptr) {
+        auto it = routeCache->paths.find(key);
+        if (it != routeCache->paths.end()) {
+          paths[i] = it->second;
+          continue;
+        }
+      }
+      pending[i] = true;
+      futures[i] = pool->submit([&network, spec = specs[i], kCongestionWeight]() {
         return Pathfinding::findShortestPathWithCongestionWeight(
-          network, spec.home->position, spec.work->position, kCongestionWeight);
-      }));
+          network, spec.homeAnchor, spec.workAnchor, kCongestionWeight);
+      });
     }
-    for (size_t i = 0; i < futures.size(); ++i) {
+    for (size_t i = 0; i < specs.size(); ++i) {
+      if (!pending[i]) continue;
       paths[i] = futures[i].get();
+      if (routeCache != nullptr) {
+        const RouteEndpointKey key{specs[i].homeAnchor, specs[i].workAnchor};
+        routeCache->paths.emplace(key, paths[i]);
+      }
     }
   } else {
     // Sequential with route cache + adaptive congestion weight feedback.
@@ -243,7 +317,7 @@ TrafficSummary runCommuteLoop(
         routeCache.clear();
       }
       paths[i] = getOrComputeRoute(
-        network, specs[i].home->position, specs[i].work->position,
+        network, specs[i].homeAnchor, specs[i].workAnchor,
         adaptiveCongestionWeight, routeCache);
 
       // Accumulate congestion immediately so later paths route around buildup.
@@ -311,13 +385,15 @@ TrafficSummary TrafficSystem::simulateCommutes(
   RoadNetwork& network,
   uint32_t seed,
   ThreadPool* pool,
-  TransitOffload* transit
+  TransitOffload* transit,
+  TrafficRouteCache* routeCache
 ) {
   return runCommuteLoop(
     store, population, network, seed,
     [](const Building*, const Building*, const Pathfinding::Path&, uint32_t) {},
     pool,
-    transit
+    transit,
+    routeCache
   );
 }
 

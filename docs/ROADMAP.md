@@ -13,7 +13,8 @@ Last updated: July 4, 2026
 - Phase 5, Milestone 13 (Public Transit): complete - bus routes, train/subway networks, transit demand/capacity, modal split
 - Phase 5, Milestone 14 (Districts and Policies): complete - district-level management, zoning ordinances, growth incentives, service budgets by district, and special districts (industrial/tech hub archetypes) all wired into the autonomous simulation loop
 - Phase 5, Milestone 15 (Disasters and Challenges): complete - fire spread, earthquakes, and floods (opt-in via --simulate-disasters, coverage-modulated emergency response for fire), and crime/disease simulation (always-on, feed migration desirability)
-- Automated validation: 254 tests passing
+- Phase 5, Milestone 16 (City Optimization): complete - incremental spatial index for zoning candidates, cross-tick traffic route cache, and (the big one) a default Release build type that was previously missing entirely; 500×500 map now sustains 127k population at 5.75 ms/tick, well under the 60 FPS budget
+- Automated validation: 259 tests passing
 
 ---
 
@@ -145,6 +146,8 @@ Note on Office demand: unlike the other three M12 slices, this one is not behavi
 
 Note on performance: the job-access BFS is proportional to job-building count and its capped search radius, not to city size directly, but at moderate scale (tens of job buildings, hundreds of zoned tiles) it is still the single costliest phase per tick (see `--simulate` timing breakdown). Two mitigations exist today: the per-tile scan skips unzoned land (most of the active region) and the BFS is capped at `jobAccessRadius` (no benefit accrues past it). For very large simulations, `--simulate-land-value-interval N` throttles the recompute frequency, matching the existing service/traffic/population interval knobs; land value simply persists at its last computed value between recomputes, the same tradeoff already made for coverage and congestion.
 
+Update: the *other* half of this phase's cost - `nearestServiceDistance`'s per-tile scan across every `ServiceCoverageCache::Entry` to find the nearest facility of any type - has since been fixed directly rather than just throttled. `ServiceCoverageCache` gained a `nearestAnyDistance` field: a single merged (min) distance-to-nearest-facility map built once in `ServiceSystem::buildCache` (whenever the facility list actually changes) by folding all entries' BFS fields together, turning what used to be an `O(tiles × facilities)` scan into `O(tiles)` lookups plus one `O(sum of facility BFS sizes)` merge per rebuild. Verified bit-identical final city state on the same seed; at 127 facilities (500×500 map, 1000 ticks, population 127k) the LandValue phase dropped from 2173 ms to 453 ms (~4.8×).
+
 ### Milestone 13: Public Transit — complete
 - [x] Bus routes - a new `TransitSystem` models fixed bus routes (`TransitRoute`: an ordered path of road-network stops, a vehicle count, and per-vehicle capacity) as static infrastructure, the same way `ServiceFacility` models fire/police/etc - not literal moving agents (that fidelity belongs to `TrafficMicroSim`, which is a separate, heavier system). `CitySimulator` auto-places routes as the city grows (roughly one per 1,200 residents, capped at 16), connecting the residential building farthest from existing route coverage to its *nearest* job building via the road network (short local hops), with a fallback search over alternate residential/job candidates so one disconnected building can't strand placement for the whole city.
 - [x] Train/subway networks - a second `TransitMode::Rail` sharing the exact same `TransitRoute`/coverage/offload machinery as bus (the mode field is descriptive only, not a branch in any matching logic). Rail lines connect to the *farthest* reachable job instead of the nearest - long trunk lines spanning the city rather than short local hops - and are sparser (~1 per 4,000 residents, capped at 3), higher-capacity (6 vehicles × 150 riders vs. bus's 2 × 30), and wider-reaching (2× the walk-to-stop radius, representing that riders travel farther to reach a station). `TransitSummary` reports `busRoutes`/`railRoutes` separately alongside the combined totals.
@@ -152,6 +155,10 @@ Note on performance: the job-access BFS is proportional to job-building count an
 - [x] Modal split (cars vs transit) - `TransitOffload` is consulted once per commute batch inside `TrafficSystem::simulateCommutes` (a new optional trailing parameter, default `nullptr` = exact prior behavior for every existing caller): if a route's coverage reaches both the home and work ends of a commute, some of that batch's workers ride transit instead of driving, reducing the load that accumulates onto road congestion while the full worker count still counts toward `commutingPopulation`/commute-burden stats. `TransitSummary` reports `ridership` (actually carried) separately from `demand` (would have ridden, capacity permitting) - a capacity-constrained route visibly caps ridership below demand.
 
 Note on default behavior: like Office demand in M12, this is not behavior-neutral by default (`SimOptions::enableTransit = true`) - reduced congestion feeds back into desirability/migration the same way traffic congestion always has, so it can shift a city's growth trajectory. `--simulate-no-transit` opts back out for comparison/testing. Unlike car routing (which only succeeds between buildings that land on literal road-node tiles - a pre-existing `TrafficSystem` simplification, not something this milestone changes), transit ridership is consequently sparse and driven by the same random uniform commute sampling `TrafficSystem` already uses, not a realistic nearest-job model - it shows up reliably over many ticks, not necessarily on any single tick. In practice, rail's much wider coverage and capacity substantially raise modal share once a city is large enough to grow one (commonly 10-20% in a ~7,000-population test city, versus under 1% with bus alone).
+
+Update: the "literal road-node tiles" simplification called out above has been fixed. `RoadNetwork` pre-registers every map tile as a graph node at construction (so `hasNode()` was never actually a useful filter - it was true for any in-bounds coordinate, road or not), and `TrafficSystem`/`CitySimulator`'s transit-route placement both used to path from a building's own tile directly. Since zoning only requires road access at a tile *or* one of its 4 neighbors (`hasRoadAccess`), any building placed where only a neighbor has the road (a normal, common case) silently failed to route at all - it counted toward `commutingPopulation` but contributed nothing to congestion, commute time, or transit ridership. `RoadNetwork` gained a shared `resolveRoadAnchor()` (replacing near-identical copies that already existed in `LandValueSystem`/`ServiceSystem`), and `TrafficSystem::collectCommuteSpecs`, its transit-offload lookup, and `CitySimulator`'s bus/rail route placement all now resolve to the nearest road-adjacent anchor before pathfinding instead of using the raw building position. This is a genuine default-behavior change (more buildings can now commute/ride transit than before), same category as Office demand in M12 - measured as a modest shift in a 500×500/1000-tick benchmark (population 127,009 -> 123,267, transit ridership 2,940 -> 2,340; still comfortably under the 60 FPS budget). Verified with dedicated tests placing buildings adjacent-to-but-not-on a road tile.
+
+Update: the "not a realistic nearest-job model" gap called out above has also been addressed. `TrafficSystem::collectCommuteSpecs` used to pick a job building uniformly at random from every job building on the map, completely independent of distance from home - a resident could be assigned to any workplace anywhere with equal probability. Job selection is now weighted by `capacity / (1 + kDistanceDecay * manhattanDistance)` per commute batch, so nearer and larger job buildings are more likely (home selection is left uniform - only the job side of the pair was unrealistic). This is a genuine default-behavior change, verified with two statistical tests (200 trials each) proving the weighting favors nearer/higher-capacity jobs as intended. It turned out *not* to reliably raise transit modal share in isolation (measured slightly lower - 2.1% vs 2.5% - in one 500×500 benchmark, though many interacting feedback loops mean this isn't a clean before/after comparison); the fix's value is model realism (commuters now behave like commuters), not a guaranteed transit-ridership bump.
 
 ### Milestone 14: Districts and Policies - complete
 - [x] District-level management - `DistrictSystem` (districts, per-district tax rates/service allocation/budget caps, `evaluateAllDistricts`) already existed as a fully-featured but standalone, manually-driven CLI system (`--create-district` etc.) with no path into the autonomous `--simulate` loop. `CitySimulator::run` now takes an optional `const DistrictSystem*`; when provided, it's genuinely read each tick rather than just being inspectable after the fact. `--simulate-district NAME X1 Y1 X2 Y2` (repeatable) defines districts for a `--simulate` run; a "District Summary" table prints after the run using the same metrics the standalone commands already computed.
@@ -171,14 +178,14 @@ Note on default behavior: `districts` defaults to `nullptr`, matching prior beha
 
 Note on default behavior: unlike the additive M12/M13/M14 systems, fire and natural disasters are destructive, so `SimOptions::enableDisasters` defaults to `false` (the inflation-style opt-in pattern, not the office-demand/transit-style default-on one) and gates both `FireSystem` and `NaturalDisasterSystem` together - every existing `--simulate` call is completely unaffected unless `--simulate-disasters` is passed. `--simulate-fire-risk F` / `--simulate-earthquake-risk F` / `--simulate-flood-risk F` scale each hazard's base chance independently for tuning. Crime and health, by contrast, are pure read-outs with no map/entity side effects, so - like Office demand/Transit in M12/M13 - they default on and need no opt-in flag.
 
-### Milestone 16: City Optimization
+### Milestone 16: City Optimization - complete
 - [x] Profiling and performance tuning (thread pool pass: ~2.8× at 200k pop)
 - [x] Parallel pathfinding (Dijkstra fan-out across pool workers)
 - [x] Lazy evaluation (service result cache; BFS cache across ticks)
-- [ ] Spatial hashing for zoning candidate queries
-- [ ] SIMD optimizations where beneficial
-- [ ] Traffic route reuse across ticks (invalidate on road topology change)
-- [ ] Target: 60 FPS headless with 500×500 map, 100k population
+- [x] Spatial hashing for zoning candidate queries - `CitySimulator::run`'s zoning step used to rescan the *entire* active region (`O(extent^2)` tiles, each paying a 4-neighbor road-adjacency check) every single tick to find unzoned, road-accessible land. It now maintains a persistent `std::unordered_set<Coord, Vec2Hash>` candidate index across ticks (`extendZoningCandidates`), extended incrementally: since roads in this loop only ever grow outward in fixed `spacing` steps (`layRoadGrid`), any tile that just became road-accessible is provably confined to the new ring between the old and new extent (a "picture frame" decomposition into 4 rectangular bands, with a 1-tile buffer on the inner edge for neighbor-adjacency safety) - so each extent growth only rescans the new ring, not the whole developed area. Tiles are dropped from the index the instant `autoZone` actually zones them (checked directly by re-reading `tile.zone` after the call, so a tile left unzoned by a district ordinance ban stays a valid candidate for retry). `autoZone` still only ever consumes the nearest `zoneBatchPerTick` candidates, so a `std::partial_sort` (not a full sort) of the index extracts them. Verified bit-identical final city state (population/building counts/zone mix) against the old full-rescan behavior on the same seed; zoning phase time dropped ~32% on a 400-tick/160×160 benchmark, with the gap widening at larger map sizes since the old cost was quadratic in extent and the new cost is proportional to the ring/candidate-set size.
+- [x] SIMD optimizations where beneficial - investigation found the actual per-tick hot spots (`TrafficSystem`'s Dijkstra/pathfinding, `LandValueSystem`'s multi-source BFS plus per-tile `unordered_map` lookups across every service facility) are graph- and hash-map-bound, not uniform numeric array loops, so hand-written SIMD intrinsics there would need an Array-of-Structs -> Struct-of-Arrays rewrite of `Tile`/the road graph to pay off - out of scope as a targeted change. The one change that actually mattered here: **`CMakeLists.txt` had no default `CMAKE_BUILD_TYPE`**, so every build (including every benchmark figure elsewhere in this document) was compiling at the implicit `-O0` - no inlining, no auto-vectorization, none of the SIMD codegen this item is about, at all. Now defaults to `Release` (`-O3 -DNDEBUG`) when the caller doesn't specify one (single-config generators only; Xcode/MSVC pick their configuration at build time and are left alone). Effect measured directly: the full test suite went from ~11-12s to ~3.3s, and a 400-tick/160×160 `--simulate` benchmark dropped from 6.1s to 1.5s (~4x) - Traffic ~3.7x, LandValue ~4.3x, Zoning ~3.6x - with zero code changes, just enabling the optimizer that was already being requested (`-Wall -Wextra -Wpedantic` were the only flags actually reaching the compiler before this).
+- [x] Traffic route reuse across ticks (invalidate on road topology change) - `TrafficSystem::simulateCommutes`'s parallel pathfinding phase always runs immediately after `RoadNetwork::resetCongestion()` and strictly before any congestion is accumulated, so every path it computes depends only on road topology, never on congestion or which tick it is. A new caller-owned `TrafficRouteCache` (keyed by `RouteEndpointKey{origin, destination}`, mirroring the `ServiceCoverageCache`/`TransitCoverageCache` cross-tick pattern) lets `CitySimulator` skip re-running Dijkstra for any commute whose (home, job) pair was already resolved, submitting a pool task only on a cache miss. `RoadNetwork` gained `getTopologyVersion()`, bumped only when `buildRoad`/`removeRoad` actually adds or removes an edge (re-laying an already-present road, as the grid-expansion path does every tick, is correctly a no-op) - the cache clears itself the first time it's used against a network whose version has moved on. Default `nullptr` matches prior behavior exactly for every other caller (visualizer, benchmark, replay verifier, tests). Benefit is workload-dependent: it's largest for a city that has stopped growing (topology stable) with a small, frequently-revisited building population; a continuously-growing city re-invalidates the cache each time the road grid expands, and this codebase's random-uniform commute sampling means a fixed number of (home, job) pairs recur less often than one might expect on a large, still-growing map - measured as a real but modest (~1-9%) traffic-phase win in the growth benchmarks exercised here, never a regression (verified bit-identical results with/without the cache on the same seed).
+- [x] Target: 60 FPS headless with 500×500 map, 100k population - met with headroom once Release optimizations were actually enabled (see above): a 500×500 map seeded to 1000 `--simulate` ticks reaches population 127,009 (523 buildings, 637 road tiles) averaging **5.75 ms/tick** total across every subsystem in the loop (roads/zoning/growth/population/traffic/economy/services/land value/transit/crime/health) - comfortably under the 16.67 ms/tick budget for 60 FPS, with `--simulate-land-value-interval`/`--simulate-service-interval` available to buy further headroom if a given scenario's facility/job-building count pushes those two BFS-heavy phases higher.
 
 ---
 
@@ -203,6 +210,60 @@ Note on default behavior: unlike the additive M12/M13/M14 systems, fire and natu
 3. Extend benchmark reports with percentile timings over repeated runs
 4. Add route diagnostics export mode for offline analysis
 5. Add commute demand-shaping policy experiments for scenario balancing
+
+The following are deferred/out-of-scope items called out by name in this
+document's "Note on ..." sections - each is a real gap, just one judged not
+worth its cost at the time the note was written:
+
+6. Model literal 2D in-lane vehicle position and physical lane width/vehicle
+   size in `TrafficMicroSim` - today a following vehicle's placement is a
+   single float of progress along the edge, not an x/y offset, and "gap" is
+   a fraction of edge length rather than a physical distance (M11 fidelity
+   note).
+7. ~~Replace `LandValueSystem::nearestServiceDistance`'s per-tile scan across
+   every `ServiceCoverageCache` entry with a single precomputed combined
+   distance field~~ - done: see the M12 performance note update. `nearestServiceDistance`
+   now does a single lookup into `ServiceCoverageCache::nearestAnyDistance`
+   (built once in `ServiceSystem::buildCache`); LandValue phase measured
+   ~4.8× faster at 127 facilities.
+8. ~~Let commute/transit routing reach buildings that aren't exactly on a
+   road-node tile~~ - done: see the M13 transit note update. `RoadNetwork`
+   gained a shared `resolveRoadAnchor()`; `TrafficSystem` and
+   `CitySimulator`'s transit-route placement both route from the resolved
+   anchor instead of the raw building position now.
+9. ~~Replace `TrafficSystem`'s random-uniform home/job commute sampling with a
+   distance- or capacity-aware matching model~~ - done: see the M13 transit
+   note update below. Job selection is now weighted by
+   `capacity / (1 + kDistanceDecay * manhattanDistance)` per draw (home
+   selection is unchanged/uniform - only *which job a given commuter
+   targets* was unrealistic) - straight-line distance as a cheap proxy, the
+   same tradeoff CitySimulator's transit-route placement already makes
+   rather than a per-draw road BFS. Verified with two statistical tests
+   (200 trials each) proving the weighting actually favors nearer and
+   higher-capacity jobs; traffic phase cost unaffected (weight computation
+   is O(job buildings) per draw, negligible next to Dijkstra).
+10. Rewrite `CityMap`'s `Tile` storage as struct-of-arrays (or at minimum
+    pull the hot numeric fields - pollution, land value - into parallel
+    arrays), so per-tile field loops can actually auto-vectorize; the
+    current array-of-structs layout is the reason hand-written SIMD
+    intrinsics were ruled out as a targeted win in M16.
+11. Make `TrafficRouteCache` resilient to a continuously-growing city - e.g.
+    invalidate only the paths that cross a changed edge instead of clearing
+    the whole cache on any topology change - to raise its measured-modest
+    (~1-9%) benefit during active growth (M16 traffic-cache note).
+
+    Investigated: this item's premise doesn't fully hold up. Re-tested with
+    a *topology-stable* scenario (no growth at all, 1500 ticks on a
+    saturated 40×40 city) and the cache still only helped ~1.4% - so
+    topology churn isn't actually the dominant limiter on hit rate. The
+    real cause is that commute sampling draws random (home, job) pairs from
+    a combinatorial space far larger than the number of commutes resolved
+    per tick, so repeats are rare regardless of whether the topology is
+    changing. A partial-invalidation scheme would add real complexity (a
+    fully correct version edges into incremental-shortest-path-algorithm
+    territory - a new edge can shorten a path that never touches it) for
+    a benefit this data doesn't support. Item 9 (realistic commute
+    matching) is the one that would actually move this number.
 
 ---
 

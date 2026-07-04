@@ -100,7 +100,25 @@ public:
   const Node* getNode(glm::ivec2 coord) const;
   Node* getNode(glm::ivec2 coord);
   bool hasNode(glm::ivec2 coord) const;
-  
+
+  // True if this tile directly touches at least one road edge. Every tile is
+  // pre-registered as a graph node at construction (see the constructor), so
+  // hasNode() alone can't distinguish "on the road network" from "just a
+  // valid map coordinate" - callers that actually care whether a tile can
+  // path anywhere want this, or resolveRoadAnchor() below.
+  bool hasRoadAdjacency(glm::ivec2 coord) const;
+
+  // Resolves the road tile a building/facility at `coord` should path
+  // to/from: `coord` itself if it directly touches a road edge, otherwise
+  // the first of its 4 orthogonal neighbors that does (buildings sit next
+  // to roads, not necessarily on them - see CitySimulator's hasRoadAccess,
+  // which zones a tile as road-accessible under this same self-or-neighbor
+  // rule, and LandValueSystem/ServiceSystem, which already resolved this
+  // per-caller before it became a shared method here). Returns false
+  // (leaving outAnchor unchanged) if neither `coord` nor any neighbor
+  // touches a road - genuinely disconnected land.
+  bool resolveRoadAnchor(glm::ivec2 coord, glm::ivec2& outAnchor) const;
+
   // Traffic
   void updateCongestion(glm::ivec2 from, glm::ivec2 to, float load);
   float getCongestion(glm::ivec2 from, glm::ivec2 to) const;
@@ -109,6 +127,13 @@ public:
   // Stats
   size_t getRoadCount() const;
   std::vector<glm::ivec2> getAllRoadTiles() const;
+
+  // Bumped exactly when buildRoad/removeRoad actually adds or removes an
+  // edge (re-laying an already-present road, as CitySimulator's grid
+  // expansion does every tick, is a no-op and does not bump this). Lets
+  // callers cache topology-dependent results (e.g. TrafficRouteCache) across
+  // ticks and cheaply detect when they've gone stale.
+  uint64_t getTopologyVersion() const { return topologyVersion; }
   
   // Traffic queries
   struct EdgeTrafficInfo {
@@ -124,6 +149,7 @@ private:
   const CityMap& cityMap;
   std::unordered_map<EdgeKey, Edge, EdgeKeyHash> edges;
   std::unordered_map<glm::ivec2, Node, Vec2Hash> nodes;
+  uint64_t topologyVersion = 0;
   
   RoadNodeId makeNodeId(glm::ivec2 coord) const;
   bool isValidCoord(glm::ivec2 coord) const;

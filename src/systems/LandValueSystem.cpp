@@ -9,29 +9,6 @@
 
 namespace {
 
-bool hasRoadAdjacency(const RoadNetwork& roads, Coord coord) {
-  const RoadNetwork::Node* node = roads.getNode(coord);
-  return node != nullptr && !node->adjacent.empty();
-}
-
-// Buildings sit next to roads, not on them; resolve the adjacent road node.
-bool resolveRoadAnchor(const RoadNetwork& roads, Coord coord, Coord& outAnchor) {
-  if (hasRoadAdjacency(roads, coord)) {
-    outAnchor = coord;
-    return true;
-  }
-  const Coord neighbors[4] = {
-    {coord.x + 1, coord.y}, {coord.x - 1, coord.y}, {coord.x, coord.y + 1}, {coord.x, coord.y - 1}
-  };
-  for (const Coord& n : neighbors) {
-    if (hasRoadAdjacency(roads, n)) {
-      outAnchor = n;
-      return true;
-    }
-  }
-  return false;
-}
-
 // Multi-source BFS: distance from every road-reachable tile within
 // `maxDistance` to the nearest of `sources`, in one O(V+E) pass (all sources
 // pushed at distance 0 up front). Capped at maxDistance because proximityBonus
@@ -75,18 +52,13 @@ std::unordered_map<Coord, int, Vec2Hash> multiSourceDistanceField(
 }
 
 // Nearest-facility distance for `coord` from an already-built service cache:
-// the minimum, over all cache entries whose BFS field reaches this tile, of
-// that entry's recorded distance. Returns -1 if uncovered by any facility.
+// a single lookup into the cache's precomputed nearestAnyDistance merge
+// (built once per cache rebuild in ServiceSystem::buildCache) rather than an
+// O(entries) scan repeated for every tile this is called on. Returns -1 if
+// uncovered by any facility.
 int nearestServiceDistance(const ServiceCoverageCache& cache, Coord coord) {
-  int best = -1;
-  for (const ServiceCoverageCache::Entry& entry : cache.entries) {
-    const auto it = entry.distanceField.find(coord);
-    if (it == entry.distanceField.end()) continue;
-    if (best < 0 || it->second < best) {
-      best = it->second;
-    }
-  }
-  return best;
+  const auto it = cache.nearestAnyDistance.find(coord);
+  return it != cache.nearestAnyDistance.end() ? it->second : -1;
 }
 
 // Proximity bonus: full `maxBonus` at distance 0, tapering linearly to 0 at
@@ -116,7 +88,7 @@ void LandValueSystem::updateLandValues(
       continue;
     }
     Coord anchor;
-    if (resolveRoadAnchor(roads, building.position, anchor)) {
+    if (roads.resolveRoadAnchor(building.position, anchor)) {
       jobSources.push_back(anchor);
     }
   }
@@ -143,7 +115,7 @@ void LandValueSystem::updateLandValues(
       const float base = Zoning::defaultLandValueForZone(static_cast<ZoneType>(tile.zone));
 
       Coord anchor;
-      const bool anchored = resolveRoadAnchor(roads, {x, y}, anchor);
+      const bool anchored = roads.resolveRoadAnchor({x, y}, anchor);
 
       float jobBonus = 0.0f;
       float serviceBonus = 0.0f;

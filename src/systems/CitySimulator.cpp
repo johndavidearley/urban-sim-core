@@ -7,6 +7,7 @@
 #include <future>
 #include <limits>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "src/core/ThreadPool.hpp"
@@ -141,15 +142,21 @@ void layRoadGrid(CityMap& map, RoadNetwork& roads, Coord center, int extent, int
   }
 }
 
-// Empty, buildable, road-adjacent, currently-unzoned tiles within the developed box.
-// The scan is read-only on map tiles, so row strips run safely in parallel.
-std::vector<Coord> zonableCandidates(const CityMap& map, Coord center, int extent,
-                                     ThreadPool& pool) {
-  const glm::ivec2 dims = map.getDimensions();
-  const int x0 = std::max(0, center.x - extent);
-  const int x1 = std::min(dims.x - 1, center.x + extent);
-  const int y0 = std::max(0, center.y - extent);
-  const int y1 = std::min(dims.y - 1, center.y + extent);
+// A buildable, road-adjacent, currently-unzoned tile: the same qualifying
+// condition zonableCandidates checked per-tile before this became an
+// incremental index (see extendZoningCandidates below).
+bool isZoningCandidate(const CityMap& map, Coord pos) {
+  const Tile& tile = map.getTile(pos);
+  if (tile.type == 2 || tile.zone != 0 || tile.buildingId != 0) return false;
+  return hasRoadAccess(map, pos);
+}
+
+// Scans an explicit box (not necessarily centered on anything) for candidate
+// tiles and inserts any found into `out`. Parallelized across row chunks,
+// same approach as the pollution field update above.
+void scanBoxForCandidates(const CityMap& map, int x0, int y0, int x1, int y1,
+                          ThreadPool& pool, std::unordered_set<Coord, Vec2Hash>& out) {
+  if (x0 > x1 || y0 > y1) return;
 
   const int nRows   = y1 - y0 + 1;
   const int minRowsPerChunk = 8;
@@ -168,31 +175,59 @@ std::vector<Coord> zonableCandidates(const CityMap& map, Coord center, int exten
       std::vector<Coord> partial;
       for (int y = ry0; y <= ry1; ++y) {
         for (int x = x0; x <= x1; ++x) {
-          const Tile& tile = map.getTile({x, y});
-          if (tile.type == 2 || tile.zone != 0 || tile.buildingId != 0) continue;
-          if (!hasRoadAccess(map, {x, y})) continue;
-          partial.push_back({x, y});
+          if (isZoningCandidate(map, {x, y})) partial.push_back({x, y});
         }
       }
       return partial;
     }));
   }
 
-  std::vector<Coord> candidates;
   for (auto& f : futs) {
     auto partial = f.get();
-    candidates.insert(candidates.end(), partial.begin(), partial.end());
+    out.insert(partial.begin(), partial.end());
+  }
+}
+
+// Extends a persistent, incrementally-maintained candidate index (a spatial
+// hash keyed by tile coordinate, replacing a full O(extent^2) rescan every
+// tick) to cover growth from `oldExtent` to `newExtent` around `center`.
+// Zoning candidacy can only be lost by autoZone actually zoning a tile (the
+// caller removes those directly - see the zoning step in run()) and can
+// only be gained by a tile becoming newly road-accessible. Roads in this
+// loop only ever grow outward in fixed steps via layRoadGrid, so any tile
+// that just became road-accessible lies within the new ring between
+// oldExtent and newExtent - shrunk by one tile of buffer on the inside,
+// since a tile just inside the old boundary can gain road access from a
+// brand new neighbor just outside it. That keeps each call's cost
+// proportional to the new ring's area, not the whole developed region.
+void extendZoningCandidates(const CityMap& map, Coord center, int oldExtent, int newExtent,
+                            ThreadPool& pool, std::unordered_set<Coord, Vec2Hash>& out) {
+  if (newExtent <= oldExtent) return;
+  const glm::ivec2 dims = map.getDimensions();
+  const int ox0 = std::max(0, center.x - newExtent);
+  const int ox1 = std::min(dims.x - 1, center.x + newExtent);
+  const int oy0 = std::max(0, center.y - newExtent);
+  const int oy1 = std::min(dims.y - 1, center.y + newExtent);
+
+  if (oldExtent <= 0) {
+    // Nothing scanned yet - no interior to exclude.
+    scanBoxForCandidates(map, ox0, oy0, ox1, oy1, pool, out);
+    return;
   }
 
-  // Compact growth: zone tiles nearest the center first.
-  std::sort(candidates.begin(), candidates.end(), [center](const Coord& a, const Coord& b) {
-    const int da = (a.x - center.x) * (a.x - center.x) + (a.y - center.y) * (a.y - center.y);
-    const int db = (b.x - center.x) * (b.x - center.x) + (b.y - center.y) * (b.y - center.y);
-    if (da != db) return da < db;
-    if (a.y != b.y) return a.y < b.y;
-    return a.x < b.x;
-  });
-  return candidates;
+  const int inner = oldExtent - 1;
+  const int ix0 = std::max(0, center.x - inner);
+  const int ix1 = std::min(dims.x - 1, center.x + inner);
+  const int iy0 = std::max(0, center.y - inner);
+  const int iy1 = std::min(dims.y - 1, center.y + inner);
+
+  // Picture-frame decomposition of (new box) minus (inner box): top band,
+  // bottom band, then left/right bands spanning only the inner y-range so
+  // the four pieces never overlap.
+  scanBoxForCandidates(map, ox0, oy0, ox1, iy0 - 1, pool, out);  // top
+  scanBoxForCandidates(map, ox0, iy1 + 1, ox1, oy1, pool, out);  // bottom
+  scanBoxForCandidates(map, ox0, iy0, ix0 - 1, iy1, pool, out);  // left
+  scanBoxForCandidates(map, ix1 + 1, iy0, ox1, iy1, pool, out);  // right
 }
 
 // Count zoned tiles still waiting for a building (road-accessible).
@@ -447,9 +482,11 @@ void placeTransitRoutesOfModeIfNeeded(
     // Existing stops of either mode count, since both compete to cover the
     // same underserved areas.
     const Building* bestHome = nullptr;
+    Coord bestHomeAnchor{};
     long bestScore = -1;
     for (const Building* home : residential) {
-      if (!roads.hasNode(home->position)) continue;
+      Coord homeAnchor;
+      if (!roads.resolveRoadAnchor(home->position, homeAnchor)) continue;
       if (std::find(unreachableHomes.begin(), unreachableHomes.end(), home) != unreachableHomes.end()) continue;
       long nearestStopDist = std::numeric_limits<long>::max();
       for (const TransitRoute& r : routes) {
@@ -465,6 +502,7 @@ void placeTransitRoutesOfModeIfNeeded(
       if (nearestStopDist > bestScore) {
         bestScore = nearestStopDist;
         bestHome = home;
+        bestHomeAnchor = homeAnchor;
       }
     }
     if (bestHome == nullptr) break;
@@ -483,11 +521,16 @@ void placeTransitRoutesOfModeIfNeeded(
       return a->id < b->id;
     });
 
+    // Buildings sit next to roads, not necessarily on them (see
+    // hasRoadAccess's self-or-neighbor rule) - route between resolved road
+    // anchors, not raw building positions, so a route can actually connect
+    // through a building whose own tile has no road edge.
     Pathfinding::Path path;
     bool connected = false;
     for (const Building* job : jobsOrdered) {
-      if (!roads.hasNode(job->position)) continue;
-      path = Pathfinding::findShortestPath(roads, bestHome->position, job->position);
+      Coord jobAnchor;
+      if (!roads.resolveRoadAnchor(job->position, jobAnchor)) continue;
+      path = Pathfinding::findShortestPath(roads, bestHomeAnchor, jobAnchor);
       if (path.found && path.waypoints.size() >= 2) {
         connected = true;
         break;
@@ -723,6 +766,7 @@ SimResult CitySimulator::run(
   const int serviceRadius = spacing * 3;
   std::vector<TransitRoute> transitRoutes;
   TransitCoverageCache transitCache;
+  TrafficRouteCache trafficRouteCache;  // topology-only paths, reused across ticks until roads change
   // Growth chance modifiers derived from the *previous* tick's district
   // metrics (one-tick lag, like lastCongestion/lastServiceSatisfaction below)
   // - empty when districts is null, which GrowthSystem treats as a no-op.
@@ -730,6 +774,8 @@ SimResult CitySimulator::run(
   std::vector<BurningTile> burningTiles;         // persists only when options.enableDisasters
   uint32_t cumulativeBuildingsLostToFire = 0;
   uint32_t cumulativeBuildingsLostToDisaster = 0;
+  std::unordered_set<Coord, Vec2Hash> zoningCandidates;  // spatial index, extended incrementally as roads grow
+  int zoningCandidatesExtent = 0;  // highest extent already scanned into zoningCandidates
 
   // Thread pool for parallel pathfinding (traffic) and building coverage
   // (services), and for running both concurrently within each tick.
@@ -768,8 +814,36 @@ SimResult CitySimulator::run(
     {
       const auto t0 = Clock::now();
       updatePollution(map, store, ax0, ay0, ax1, ay1, pool);
-      const std::vector<Coord> candidates = zonableCandidates(map, center, extent, pool);
+
+      extendZoningCandidates(map, center, zoningCandidatesExtent, extent, pool, zoningCandidates);
+      zoningCandidatesExtent = extent;
+
+      // autoZone only ever consumes the nearest zoneBatchPerTick candidates
+      // (compact growth), so a partial_sort of just that many - not a full
+      // sort of the whole index - is all that's needed here.
+      std::vector<Coord> candidates(zoningCandidates.begin(), zoningCandidates.end());
+      const int batchLimit = std::min(static_cast<int>(candidates.size()), options.zoneBatchPerTick);
+      std::partial_sort(candidates.begin(), candidates.begin() + batchLimit, candidates.end(),
+        [center](const Coord& a, const Coord& b) {
+          const int da = (a.x - center.x) * (a.x - center.x) + (a.y - center.y) * (a.y - center.y);
+          const int db = (b.x - center.x) * (b.x - center.x) + (b.y - center.y) * (b.y - center.y);
+          if (da != db) return da < db;
+          if (a.y != b.y) return a.y < b.y;
+          return a.x < b.x;
+        });
+
       autoZone(map, candidates, demand, options.zoneBatchPerTick, districts);
+
+      // Whichever of the batch actually got zoned (as opposed to left
+      // unzoned because every allowed type was banned by a district
+      // ordinance) are no longer valid candidates - drop them from the
+      // index so it never rescans them.
+      for (int i = 0; i < batchLimit; ++i) {
+        if (map.getTile(candidates[i]).zone != 0) {
+          zoningCandidates.erase(candidates[i]);
+        }
+      }
+
       result.timings.zoningMs += elapsedMs(t0, Clock::now());
     }
 
@@ -877,7 +951,7 @@ SimResult CitySimulator::run(
       const auto t0 = Clock::now();
       TransitOffload offload(transitRoutes, transitCache);
       TransitOffload* offloadPtr = options.enableTransit ? &offload : nullptr;
-      traffic = TrafficSystem::simulateCommutes(store, population, roads, tickSeed + 2u, &pool, offloadPtr);
+      traffic = TrafficSystem::simulateCommutes(store, population, roads, tickSeed + 2u, &pool, offloadPtr, &trafficRouteCache);
       result.timings.trafficMs += elapsedMs(t0, Clock::now());
       lastCongestion = traffic.maxEdgeCongestion;
       transitSummary = TransitSystem::summarize(transitRoutes, offload, traffic.commutingPopulation);

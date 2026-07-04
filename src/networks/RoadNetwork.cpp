@@ -60,6 +60,8 @@ void RoadNetwork::buildRoad(glm::ivec2 from, glm::ivec2 to) {
     // Update city map
     const_cast<CityMap&>(cityMap).getTile(from).hasRoad = true;
     const_cast<CityMap&>(cityMap).getTile(to).hasRoad = true;
+
+    ++topologyVersion;
   }
 }
 
@@ -86,6 +88,8 @@ void RoadNetwork::removeRoad(glm::ivec2 from, glm::ivec2 to) {
     if (toIt != toNode.adjacent.end()) {
       toNode.adjacent.erase(toIt);
     }
+
+    ++topologyVersion;
   }
 }
 
@@ -166,6 +170,28 @@ RoadNetwork::Node* RoadNetwork::getNode(glm::ivec2 coord) {
 
 bool RoadNetwork::hasNode(glm::ivec2 coord) const {
   return nodes.find(coord) != nodes.end();
+}
+
+bool RoadNetwork::hasRoadAdjacency(glm::ivec2 coord) const {
+  const Node* node = getNode(coord);
+  return node != nullptr && !node->adjacent.empty();
+}
+
+bool RoadNetwork::resolveRoadAnchor(glm::ivec2 coord, glm::ivec2& outAnchor) const {
+  if (hasRoadAdjacency(coord)) {
+    outAnchor = coord;
+    return true;
+  }
+  const glm::ivec2 neighbors[4] = {
+    {coord.x + 1, coord.y}, {coord.x - 1, coord.y}, {coord.x, coord.y + 1}, {coord.x, coord.y - 1}
+  };
+  for (const glm::ivec2& n : neighbors) {
+    if (hasRoadAdjacency(n)) {
+      outAnchor = n;
+      return true;
+    }
+  }
+  return false;
 }
 
 void RoadNetwork::updateCongestion(glm::ivec2 from, glm::ivec2 to, float load) {

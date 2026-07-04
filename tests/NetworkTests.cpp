@@ -51,6 +51,38 @@ TEST(RoadNetworkTests, RemoveRoad) {
   EXPECT_FALSE(network.hasRoad({10, 10}, {10, 11}));
 }
 
+TEST(RoadNetworkTests, HasRoadAdjacencyOnlyTrueForTilesTouchingAnEdge) {
+  CityMap map({32, 32});
+  RoadNetwork network(map);
+  network.buildRoad({10, 10}, {10, 11});
+
+  EXPECT_TRUE(network.hasRoadAdjacency({10, 10}));
+  EXPECT_TRUE(network.hasRoadAdjacency({10, 11}));
+  // hasNode() is true for every map tile (all pre-registered at
+  // construction), but hasRoadAdjacency() must not be - a tile one step
+  // away from the road has a node, just no edges.
+  EXPECT_TRUE(network.hasNode({10, 12}));
+  EXPECT_FALSE(network.hasRoadAdjacency({10, 12}));
+}
+
+TEST(RoadNetworkTests, ResolveRoadAnchorPrefersTheTileItselfThenAnAdjacentNeighbor) {
+  CityMap map({32, 32});
+  RoadNetwork network(map);
+  network.buildRoad({10, 10}, {10, 11});
+
+  glm::ivec2 anchor{};
+  // On the road already: resolves to itself.
+  ASSERT_TRUE(network.resolveRoadAnchor({10, 10}, anchor));
+  EXPECT_EQ(anchor, glm::ivec2(10, 10));
+
+  // Adjacent to the road but not on it: resolves to the neighboring road tile.
+  ASSERT_TRUE(network.resolveRoadAnchor({9, 10}, anchor));
+  EXPECT_EQ(anchor, glm::ivec2(10, 10));
+
+  // Two tiles away: neither it nor any neighbor touches a road.
+  EXPECT_FALSE(network.resolveRoadAnchor({8, 10}, anchor));
+}
+
 TEST(RoadNetworkTests, RoadNonAdjacent) {
   CityMap map({32, 32});
   RoadNetwork network(map);

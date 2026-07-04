@@ -9,6 +9,19 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Default to a Release build when none is specified. This is a headless
+# simulation engine with hot per-tick loops (traffic pathfinding, land value,
+# pollution field) - shipping unoptimized (-O0, the implicit default when
+# CMAKE_BUILD_TYPE is unset) silently disables auto-vectorization and inlining
+# entirely, which is a much bigger effect than any individual hot-loop
+# micro-optimization. Single-config generators only (Makefiles/Ninja);
+# multi-config generators (Xcode/MSVC) pick the configuration at build time
+# instead and are left alone.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Debug/Release/RelWithDebInfo/MinSizeRel)" FORCE)
+  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
+endif()
+
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")

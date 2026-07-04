@@ -10,7 +10,33 @@
       "Bash(./bin/test_core)",
       "Bash(./bin/UrbanSimCore-cli --simulate 60 --simulate-no-transit --simulate-disasters --simulate-fire-risk 20 --simulate-earthquake-risk 500 --simulate-flood-risk 500 --seed 3 --map-size 64 --generate-terrain)",
       "Bash(./bin/UrbanSimCore-cli --help)",
-      "Bash(./bin/UrbanSimCore-cli --simulate 60 --simulate-no-transit --simulate-disasters --simulate-fire-risk 20 --simulate-earthquake-risk 800 --simulate-flood-risk 800 --seed 3 --size 64 --generate-terrain)"
+      "Bash(./bin/UrbanSimCore-cli --simulate 60 --simulate-no-transit --simulate-disasters --simulate-fire-risk 20 --simulate-earthquake-risk 800 --simulate-flood-risk 800 --seed 3 --size 64 --generate-terrain)",
+      "Bash(./bin/UrbanSimCore-cli --simulate 200 --size 128 --seed 5 --generate-terrain)",
+      "Bash(cmake --build . -j 8 --target UrbanSimCore-cli)",
+      "Bash(./bin/UrbanSimCore-cli --simulate 400 --size 160 --seed 9 --generate-terrain)",
+      "Bash(./bin/UrbanSimCore-cli --simulate 1500 --size 40 --seed 9 --generate-terrain)",
+      "Bash(cmake --build . -j 8 --target test_core)",
+      "Bash(./bin/test_core --gtest_filter=\"TrafficSystemTests.*\")",
+      "Bash(./build/bin/UrbanSimCore-cli --simulate 400 --size 160 --seed 9 --generate-terrain)",
+      "Bash(cmake --build . -j 8 --target urban_sim_core)",
+      "Bash(./bin/UrbanSimCore-cli --simulate 300 --size 300 --seed 4 --generate-terrain)",
+      "Bash(./bin/test_core --gtest_filter=\"CitySimulatorTests.*District*:CitySimulatorTests.*Zon*:CitySimulatorTests.SameSeedProducesIdenticalCity:CitySimulatorTests.GrowsAMixedCityFromEmpty\")",
+      "Bash(./bin/test_core --gtest_filter=\"CitySimulatorTests.ZoningKeepsPaceThroughManyRoadGridExpansions\")",
+      "Bash(cmake .)",
+      "Bash(./bin/UrbanSimCore-cli --simulate 800 --size 500 --seed 3 --generate-terrain --simulate-land-value-interval 4 --simulate-service-interval 4)",
+      "Bash(./bin/UrbanSimCore-cli --simulate 800 --size 500 --seed 3 --generate-terrain)",
+      "Bash(./bin/UrbanSimCore-cli --simulate 1000 --size 500 --seed 3 --generate-terrain)",
+      "Bash(rm -rf /tmp/urban-sim-fresh-build)",
+      "Bash(mkdir -p /tmp/urban-sim-fresh-build)",
+      "Bash(cmake -S . -B /tmp/urban-sim-fresh-build)",
+      "Bash(cmake --build /tmp/urban-sim-fresh-build -j 8)",
+      "Bash(/tmp/urban-sim-fresh-build/bin/test_core)",
+      "Bash(rm -rf /tmp/urban-sim-fresh-build && git status --short)",
+      "Bash(./bin/test_core --gtest_filter=\"ServiceSystemTests.*:LandValueSystemTests.*\")",
+      "Bash(git add *)"
+    ],
+    "additionalDirectories": [
+      "/private/tmp/urban-sim-fresh-build"
     ]
   }
 }

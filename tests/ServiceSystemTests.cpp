@@ -56,3 +56,39 @@ TEST(ServiceSystemTests, ServiceSatisfactionBoostsHappinessWhenCoverageHigh) {
   EXPECT_GT(metrics.serviceSatisfaction, 0.9f);
   EXPECT_GT(metrics.happiness, 0.5f);
 }
+
+// buildCache's nearestAnyDistance merge must report, for each reachable
+// coordinate, the minimum distance across every entry that reaches it - not
+// just the last entry processed - so LandValueSystem's "nearest facility of
+// any type" lookup stays correct now that it reads this precomputed map
+// instead of scanning cache.entries itself.
+TEST(ServiceSystemTests, NearestAnyDistanceMergesTheClosestFacilityAcrossEntries) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  for (int x = 0; x < 11; ++x) {
+    roads.buildRoad({x, 5}, {x + 1, 5});
+  }
+
+  ServiceFacility near;
+  near.type = ServiceType::Fire;
+  near.position = {8, 5};
+  near.maxTravelDistance = 10;
+
+  ServiceFacility far;
+  far.type = ServiceType::Police;
+  far.position = {0, 5};
+  far.maxTravelDistance = 10;
+
+  ServiceCoverageCache cache;
+  ServiceSystem::buildCache(roads, {near, far}, cache);
+
+  // (5,5) is 3 hops from the fire station and 5 hops from the police
+  // station - nearestAnyDistance must pick the closer one regardless of
+  // which entry was built first.
+  const auto it = cache.nearestAnyDistance.find({5, 5});
+  ASSERT_NE(it, cache.nearestAnyDistance.end());
+  EXPECT_EQ(it->second, 3);
+
+  // A coordinate unreachable by any facility must be absent entirely.
+  EXPECT_EQ(cache.nearestAnyDistance.find({11, 11}), cache.nearestAnyDistance.end());
+}
