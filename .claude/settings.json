@@ -4,7 +4,13 @@
       "Bash(python3 -c ' *)",
       "Bash(./build/bin/UrbanSimCore-cli --simulate 500 --size 64 --generate-terrain)",
       "Bash(cmake --build build --target urban_sim_core)",
-      "Bash(./build/bin/test_core --gtest_filter=\"GrowthSystem*\")"
+      "Bash(./build/bin/test_core --gtest_filter=\"GrowthSystem*\")",
+      "Bash(cmake --build . -j 8)",
+      "Bash(./bin/test_core --gtest_filter=\"HealthSystemTests.*:NaturalDisasterSystemTests.*:CitySimulatorTests.*\")",
+      "Bash(./bin/test_core)",
+      "Bash(./bin/UrbanSimCore-cli --simulate 60 --simulate-no-transit --simulate-disasters --simulate-fire-risk 20 --simulate-earthquake-risk 500 --simulate-flood-risk 500 --seed 3 --map-size 64 --generate-terrain)",
+      "Bash(./bin/UrbanSimCore-cli --help)",
+      "Bash(./bin/UrbanSimCore-cli --simulate 60 --simulate-no-transit --simulate-disasters --simulate-fire-risk 20 --simulate-earthquake-risk 800 --simulate-flood-risk 800 --seed 3 --size 64 --generate-terrain)"
     ]
   }
 }

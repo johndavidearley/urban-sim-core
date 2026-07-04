@@ -717,6 +717,7 @@ SimResult CitySimulator::run(
   float lastCongestion = 0.0f;          // previous tick's peak congestion, feeds desirability
   float lastServiceSatisfaction = 0.5f; // previous tick's service satisfaction, feeds desirability
   float lastCrimeRate = 0.0f;           // previous tick's crime rate, feeds desirability
+  float lastIllnessRate = 0.0f;         // previous tick's illness rate, feeds desirability
   std::vector<ServiceFacility> facilities;
   ServiceCoverageCache coverageCache;
   const int serviceRadius = spacing * 3;
@@ -728,6 +729,7 @@ SimResult CitySimulator::run(
   std::vector<GrowthChanceModifier> districtGrowthModifiers;
   std::vector<BurningTile> burningTiles;         // persists only when options.enableDisasters
   uint32_t cumulativeBuildingsLostToFire = 0;
+  uint32_t cumulativeBuildingsLostToDisaster = 0;
 
   // Thread pool for parallel pathfinding (traffic) and building coverage
   // (services), and for running both concurrently within each tick.
@@ -798,6 +800,7 @@ SimResult CitySimulator::run(
       desirability *= clamp01(1.0f - 0.5f * averageResidentialPollution(map, store));
       desirability *= clamp01(0.6f + 0.4f * lastServiceSatisfaction);
       desirability *= clamp01(1.0f - 0.25f * lastCrimeRate);
+      desirability *= clamp01(1.0f - 0.3f * lastIllnessRate);
 
       const float headroom = cap.resCapacity > prevPop ? static_cast<float>(cap.resCapacity - prevPop) : 0.0f;
       float requested;
@@ -898,11 +901,17 @@ SimResult CitySimulator::run(
     // already computed above - as a city-wide response-speed proxy instead
     // of a second per-tile BFS pass.
     FireSummary fire;
+    DisasterSummary disaster;
     if (options.enableDisasters) {
       const auto t0 = Clock::now();
       fire = FireSystem::step(map, store, burningTiles, service.fireCoverage, tickSeed + 5u, options.fireParams);
       cumulativeBuildingsLostToFire += fire.buildingsDestroyed;
       result.timings.fireMs += elapsedMs(t0, Clock::now());
+
+      const auto t1 = Clock::now();
+      disaster = NaturalDisasterSystem::step(map, store, tickSeed + 6u, options.disasterParams);
+      cumulativeBuildingsLostToDisaster += disaster.buildingsDestroyed;
+      result.timings.disasterMs += elapsedMs(t1, Clock::now());
     }
 
     // Refresh land value from the freshest available job positions, service
@@ -945,6 +954,22 @@ SimResult CitySimulator::run(
       crime = CrimeSystem::evaluate(unemploymentNow, service.policeCoverage, economy.averageLandValue, options.crimeParams);
       lastCrimeRate = crime.overallRate;
       result.timings.crimeMs += elapsedMs(t0, Clock::now());
+    }
+
+    // Health: a pure read-out, exactly like Crime above (no side effects on
+    // the map or entity store). Housing crowding (population relative to
+    // residential capacity) is a density/contagion proxy, combined with this
+    // tick's residential pollution and hospital coverage. Feeds desirability
+    // one tick lagged (via lastIllnessRate above), same pattern as crime.
+    HealthSummary health;
+    {
+      const auto t0 = Clock::now();
+      const CapacitySummary healthCap = summarize(store);
+      const float housingDensity = healthCap.resCapacity > 0
+        ? clamp01(static_cast<float>(population.getTotalPopulation()) / static_cast<float>(healthCap.resCapacity)) : 0.0f;
+      health = HealthSystem::evaluate(housingDensity, averageResidentialPollution(map, store), service.healthCoverage, options.healthParams);
+      lastIllnessRate = health.illnessRate;
+      result.timings.healthMs += elapsedMs(t0, Clock::now());
     }
 
     // District policy: re-evaluate service-budget fulfillment and density per
@@ -1000,6 +1025,10 @@ SimResult CitySimulator::run(
     row.activeFires = fire.activeFires;
     row.buildingsLostToFire = cumulativeBuildingsLostToFire;
     row.crimeRate = crime.overallRate;
+    row.illnessRate = health.illnessRate;
+    row.earthquakeOccurred = disaster.earthquakeOccurred;
+    row.floodOccurred = disaster.floodOccurred;
+    row.buildingsLostToDisaster = cumulativeBuildingsLostToDisaster;
     if (!infinite) {
       result.rows.push_back(row);
     }

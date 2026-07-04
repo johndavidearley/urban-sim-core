@@ -27,7 +27,8 @@ static const char* kCSVHeader =
   "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
   "service_coverage,service_facilities,avg_land_value,trade_balance,inflation_multiplier,"
   "transit_routes,transit_bus_routes,transit_rail_routes,transit_ridership,transit_demand,transit_modal_share,"
-  "active_fires,buildings_lost_to_fire,crime_rate\n";
+  "active_fires,buildings_lost_to_fire,crime_rate,illness_rate,"
+  "earthquake_occurred,flood_occurred,buildings_lost_to_disaster\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -62,7 +63,8 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.transitRoutes << "," << row.transitBusRoutes << "," << row.transitRailRoutes << ","
       << row.transitRidership << "," << row.transitDemand << ","
       << row.transitModalShare << ","
-      << row.activeFires << "," << row.buildingsLostToFire << "," << row.crimeRate << "\n";
+      << row.activeFires << "," << row.buildingsLostToFire << "," << row.crimeRate << "," << row.illnessRate << ","
+      << (row.earthquakeOccurred ? 1 : 0) << "," << (row.floodOccurred ? 1 : 0) << "," << row.buildingsLostToDisaster << "\n";
 }
 
 bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
@@ -80,7 +82,7 @@ bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& 
 void printTimings(const SimPhaseTimings& t, int ranTicks) {
   const double totalMs = t.roadMs + t.zoningMs + t.growthMs + t.populationMs + t.trafficMs +
                          t.economyMs + t.serviceMs + t.landValueMs + t.transitMs + t.districtMs + t.fireMs +
-                         t.crimeMs;
+                         t.crimeMs + t.healthMs + t.disasterMs;
   std::cout << "\nPhase timing over " << ranTicks << " ticks (total "
             << std::fixed << std::setprecision(2) << totalMs << " ms, "
             << (ranTicks > 0 ? totalMs / ranTicks : 0.0) << " ms/tick):\n";
@@ -96,6 +98,8 @@ void printTimings(const SimPhaseTimings& t, int ranTicks) {
   std::cout << "    Districts:  " << t.districtMs << " ms\n";
   std::cout << "    Fire:       " << t.fireMs << " ms\n";
   std::cout << "    Crime:      " << t.crimeMs << " ms\n";
+  std::cout << "    Health:     " << t.healthMs << " ms\n";
+  std::cout << "    Disasters:  " << t.disasterMs << " ms\n";
 }
 
 void printDistrictSummary(const std::vector<DistrictMetrics>& metrics) {
@@ -138,7 +142,9 @@ int runCitySimulation(
   const std::vector<SimulateDistrictRequest>& districtRequests,
   const std::vector<SimulateDistrictArchetypeRequest>& districtArchetypeRequests,
   bool enableDisasters,
-  float fireRiskMultiplier
+  float fireRiskMultiplier,
+  float earthquakeRiskMultiplier,
+  float floodRiskMultiplier
 ) {
   const bool infinite = (ticks < 0);
   const float sideKm = tileToKm(mapSize);
@@ -184,6 +190,8 @@ int runCitySimulation(
   options.enableTransit = enableTransit;
   options.enableDisasters = enableDisasters;
   options.fireParams.baseIgnitionChance *= std::max(0.0f, fireRiskMultiplier);
+  options.disasterParams.earthquakeChancePerTick *= std::max(0.0f, earthquakeRiskMultiplier);
+  options.disasterParams.floodChancePerTick *= std::max(0.0f, floodRiskMultiplier);
 
   DistrictSystem districtSystem;
   for (const SimulateDistrictRequest& req : districtRequests) {
@@ -251,7 +259,9 @@ int runCitySimulation(
                 << " transitModalShare=" << std::setprecision(1) << (last.transitModalShare * 100.0f) << "%"
                 << " activeFires=" << last.activeFires
                 << " buildingsLostToFire=" << last.buildingsLostToFire
-                << " crimeRate=" << std::setprecision(1) << (last.crimeRate * 100.0f) << "%\n";
+                << " crimeRate=" << std::setprecision(1) << (last.crimeRate * 100.0f) << "%"
+                << " illnessRate=" << (last.illnessRate * 100.0f) << "%"
+                << " buildingsLostToDisaster=" << last.buildingsLostToDisaster << "\n";
     }
 
     printDistrictSummary(result.finalDistrictMetrics);
@@ -345,7 +355,9 @@ int runCitySimulation(
               << " transitModalShare=" << std::setprecision(1) << (lastRow.transitModalShare * 100.0f) << "%"
               << " activeFires=" << lastRow.activeFires
               << " buildingsLostToFire=" << lastRow.buildingsLostToFire
-              << " crimeRate=" << std::setprecision(1) << (lastRow.crimeRate * 100.0f) << "%\n";
+              << " crimeRate=" << std::setprecision(1) << (lastRow.crimeRate * 100.0f) << "%"
+              << " illnessRate=" << (lastRow.illnessRate * 100.0f) << "%"
+              << " buildingsLostToDisaster=" << lastRow.buildingsLostToDisaster << "\n";
   }
 
   if (!reportPath.empty()) {

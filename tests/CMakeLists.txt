@@ -19,6 +19,8 @@ add_executable(test_core
   TransitSystemTests.cpp
   FireSystemTests.cpp
   CrimeSystemTests.cpp
+  HealthSystemTests.cpp
+  NaturalDisasterSystemTests.cpp
   SaveLoadSystemTests.cpp
   ReplayVerifierTests.cpp
   MapRendererTests.cpp

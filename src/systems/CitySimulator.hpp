@@ -10,6 +10,8 @@
 #include "src/systems/CrimeSystem.hpp"
 #include "src/systems/DistrictSystem.hpp"
 #include "src/systems/FireSystem.hpp"
+#include "src/systems/HealthSystem.hpp"
+#include "src/systems/NaturalDisasterSystem.hpp"
 #include "src/systems/TransitSystem.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
@@ -45,6 +47,10 @@ struct SimTickMetrics {
   uint32_t activeFires = 0;          // burning tiles right now (only nonzero when options.enableDisasters is set)
   uint32_t buildingsLostToFire = 0;  // cumulative buildings destroyed by fire since the run started
   float crimeRate = 0.0f;            // 0-1 city-wide crime rate this tick (see CrimeSystem)
+  float illnessRate = 0.0f;          // 0-1 city-wide illness rate this tick (see HealthSystem)
+  bool earthquakeOccurred = false;         // an earthquake struck this tick (only possible when options.enableDisasters is set)
+  bool floodOccurred = false;              // a flood struck this tick (only possible when options.enableDisasters is set)
+  uint32_t buildingsLostToDisaster = 0;    // cumulative buildings destroyed by earthquake/flood since the run started
 };
 
 struct SimPhaseTimings {
@@ -60,6 +66,8 @@ struct SimPhaseTimings {
   double districtMs = 0.0;
   double fireMs = 0.0;
   double crimeMs = 0.0;
+  double healthMs = 0.0;
+  double disasterMs = 0.0;
 };
 
 struct SimResult {
@@ -80,9 +88,11 @@ struct SimOptions {
   float inflationRatePerTick = 0.0f;  // compounding per-tick rate applied to maintenance/trade costs (not tax revenue); 0 = no inflation, matching prior behavior
   bool enableTransit = true;   // auto-place bus routes and let them offload commuters from the road network
   int districtInterval = 1;    // re-evaluate district metrics/growth pressure every N ticks (only relevant when districts is non-null)
-  bool enableDisasters = false;  // opt-in: run FireSystem each tick (destructive, so off by default unlike the additive M12/M13 systems)
+  bool enableDisasters = false;  // opt-in: run FireSystem/NaturalDisasterSystem each tick (destructive, so off by default unlike the additive M12/M13 systems)
   FireParams fireParams;         // only used when enableDisasters is true
+  DisasterParams disasterParams;  // earthquake/flood tuning; only used when enableDisasters is true
   CrimeParams crimeParams;       // tunable crime-rate weights; crime is a pure read-out (no side effects), so it always runs like pollution/congestion
+  HealthParams healthParams;     // tunable illness-rate weights; health is a pure read-out (no side effects), so it always runs like crime
   // Called after each tick with the row. Return false to stop the simulation.
   // Used by infinite mode; rows are not accumulated in SimResult when this is set and ticks < 0.
   std::function<bool(const SimTickMetrics&)> tickCallback;
@@ -119,15 +129,23 @@ public:
   // tick: buildings can ignite (weighted by type/pollution), fire spreads to
   // adjacent occupied tiles, and fire station coverage (already computed for
   // ServiceSystem) reduces ignition/spread chance and burn duration - a
-  // proxy for faster emergency response.
+  // proxy for faster emergency response. NaturalDisasterSystem also runs:
+  // each tick independently rolls a rare, uniform-risk earthquake and a
+  // rarer flood restricted to buildings near water; either can destroy a
+  // radius of buildings around its epicenter in a single tick, with no
+  // coverage mitigation (unlike fire, a department doesn't reduce whether
+  // the ground shakes or a river overflows).
   //
-  // CrimeSystem runs every tick unconditionally (default true, like Transit/
-  // Office in M12/M13 - it's a pure read-out with no side effects on the map
-  // or entity store, unlike disasters). It derives a city-wide crime rate
-  // from this tick's unemployment, police coverage, and average land value
-  // (a poverty proxy), which - one tick lagged, the same pattern used for
-  // congestion/service satisfaction - factors into next tick's migration
-  // desirability: a high-crime city is less attractive to move into.
+  // CrimeSystem and HealthSystem both run every tick unconditionally
+  // (default true, like Transit/Office in M12/M13 - they're pure read-outs
+  // with no side effects on the map or entity store, unlike disasters).
+  // CrimeSystem derives a city-wide crime rate from this tick's unemployment,
+  // police coverage, and average land value (a poverty proxy); HealthSystem
+  // derives a city-wide illness rate from this tick's housing crowding,
+  // residential pollution, and hospital coverage. Both - one tick lagged, the
+  // same pattern used for congestion/service satisfaction - factor into next
+  // tick's migration desirability: a high-crime or sickly city is less
+  // attractive to move into.
   static SimResult run(
     CityMap& map,
     RoadNetwork& roads,

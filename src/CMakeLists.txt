@@ -18,6 +18,8 @@ add_library(urban_sim_core
   systems/TransitSystem.cpp
   systems/FireSystem.cpp
   systems/CrimeSystem.cpp
+  systems/HealthSystem.cpp
+  systems/NaturalDisasterSystem.cpp
   world/CityMap.cpp
   world/Tile.cpp
   world/Zoning.cpp

@@ -582,3 +582,100 @@ TEST(CitySimulatorTests, HarsherCrimeParamsRaiseReportedCrimeRate) {
 
   EXPECT_GT(harshLast.crimeRate, mildLast.crimeRate);
 }
+
+// Health is a pure read-out that runs every tick unconditionally, exactly
+// like crime above, so a normally growing city should report a nonzero,
+// bounded illness rate throughout the run.
+TEST(CitySimulatorTests, IllnessRateIsReportedEveryTickWithinBounds) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 60, fastOptions());
+
+  ASSERT_FALSE(result.rows.empty());
+  bool sawNonzeroIllness = false;
+  for (const SimTickMetrics& row : result.rows) {
+    EXPECT_GE(row.illnessRate, 0.0f);
+    EXPECT_LE(row.illnessRate, 1.0f);
+    if (row.illnessRate > 0.0f) sawNonzeroIllness = true;
+  }
+  EXPECT_TRUE(sawNonzeroIllness);
+}
+
+// A harsher health model (higher base rate, weaker hospital mitigation)
+// should visibly raise the reported illness rate relative to the default,
+// proving options.healthParams actually reaches HealthSystem within the
+// live loop.
+TEST(CitySimulatorTests, HarsherHealthParamsRaiseReportedIllnessRate) {
+  auto runWithParams = [](const HealthParams& params) {
+    CityMap map({64, 64});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    SimOptions options = fastOptions();
+    options.healthParams = params;
+    return CitySimulator::run(map, roads, store, population, 7, 60, options).rows.back();
+  };
+
+  HealthParams mild;
+  mild.baseIllnessRate = 0.02f;
+  mild.healthCoverageReduction = 0.95f;
+
+  HealthParams harsh;
+  harsh.baseIllnessRate = 0.5f;
+  harsh.healthCoverageReduction = 0.1f;
+
+  const SimTickMetrics mildLast = runWithParams(mild);
+  const SimTickMetrics harshLast = runWithParams(harsh);
+
+  EXPECT_GT(harshLast.illnessRate, mildLast.illnessRate);
+}
+
+// Natural disasters (earthquake/flood) are gated by the same enableDisasters
+// flag as fire, and off by default - a normally growing city should never
+// report one.
+TEST(CitySimulatorTests, DisastersDisabledByDefaultMeansNoEarthquakesOrFloodsEver) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 80, SimOptions{});
+
+  ASSERT_FALSE(result.rows.empty());
+  for (const SimTickMetrics& row : result.rows) {
+    EXPECT_FALSE(row.earthquakeOccurred);
+    EXPECT_FALSE(row.floodOccurred);
+    EXPECT_EQ(row.buildingsLostToDisaster, 0u);
+  }
+}
+
+// With disasters enabled and an elevated earthquake risk, a city growing
+// over many ticks should end up with real cumulative disaster losses -
+// proving the integration actually destroys buildings within the live
+// simulation, not just in NaturalDisasterSystem's own unit tests.
+TEST(CitySimulatorTests, ElevatedEarthquakeRiskDestroysBuildingsOverTime) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  SimOptions options = fastOptions();
+  options.enableDisasters = true;
+  options.disasterParams.earthquakeChancePerTick = 0.15f;  // far above the default, for a fast, reliable test
+  options.disasterParams.earthquakeDestructionChance = 1.0f;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 60, options);
+
+  ASSERT_FALSE(result.rows.empty());
+  EXPECT_GT(result.rows.back().buildingsLostToDisaster, 0u);
+
+  // Cumulative losses must be monotonically non-decreasing tick to tick.
+  uint32_t previous = 0;
+  for (const SimTickMetrics& row : result.rows) {
+    EXPECT_GE(row.buildingsLostToDisaster, previous);
+    previous = row.buildingsLostToDisaster;
+  }
+}
