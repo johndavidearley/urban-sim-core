@@ -18,6 +18,29 @@ struct ivec2 {
   }
 };
 
+// Float 2-component vector, added for TrafficMicroSim::vehicleWorldPosition
+// (a literal 2D vehicle position needs float precision - progress along an
+// edge and lane offsets are both fractional). Deliberately minimal, like
+// ivec2 above: just the arithmetic this project's own vector math needs,
+// not a general-purpose vec2.
+struct vec2 {
+  float x;
+  float y;
+
+  constexpr vec2() : x(0.0f), y(0.0f) {}
+  constexpr vec2(float xValue, float yValue) : x(xValue), y(yValue) {}
+  constexpr explicit vec2(float scalar) : x(scalar), y(scalar) {}
+  constexpr explicit vec2(const ivec2& v) : x(static_cast<float>(v.x)), y(static_cast<float>(v.y)) {}
+
+  constexpr vec2 operator+(const vec2& other) const { return vec2(x + other.x, y + other.y); }
+  constexpr vec2 operator-(const vec2& other) const { return vec2(x - other.x, y - other.y); }
+  constexpr vec2 operator*(float scalar) const { return vec2(x * scalar, y * scalar); }
+
+  constexpr bool operator==(const vec2& other) const {
+    return x == other.x && y == other.y;
+  }
+};
+
 struct ivec4 {
   int x;
   int y;

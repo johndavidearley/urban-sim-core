@@ -340,6 +340,10 @@ MicroTrafficSummary TrafficMicroSim::simulate(
 
     const uint32_t currentStep = static_cast<uint32_t>(step);
     const int lanes = std::max(1, options.lanesPerRoad);
+    // Physical vehicle length (0 by default) adds on top of the safety-
+    // margin fraction, rather than replacing it - see the header comment.
+    const float effectiveFollowingGap =
+      std::max(0.0f, options.minFollowingGap + options.vehicleLengthMeters / kMetersPerTile);
 
     // Applies `speed` to v's progress and, if it crosses one or more nodes
     // this step, handles signal stops, arrival, and lane re-assignment on the
@@ -423,8 +427,8 @@ MicroTrafficSummary TrafficMicroSim::simulate(
 
     // Stage B: car-following. Process each (edge, lane) group leader-first
     // (by current progress, ties broken by id), capping each follower so it
-    // keeps at least minFollowingGap behind whichever vehicle ahead of it is
-    // still on this edge this step - a leader that crosses to the next edge
+    // keeps at least effectiveFollowingGap behind whichever vehicle ahead of
+    // it is still on this edge this step - a leader that crosses to the next edge
     // or arrives no longer blocks anyone behind it. Groups are visited in the
     // order their first member appears in `carIndices` (fixed vehicle order),
     // not raw hash-map iteration, so results stay deterministic.
@@ -449,7 +453,7 @@ MicroTrafficSummary TrafficMicroSim::simulate(
 
         float speed = pendingSpeed[idx];
         if (hasLeader) {
-          const float maxAllowed = leaderProgress - options.minFollowingGap;
+          const float maxAllowed = leaderProgress - effectiveFollowingGap;
           const float cappedTarget = std::max(v.progress, std::min(v.progress + speed, maxAllowed));
           speed = cappedTarget - v.progress;
         }
@@ -495,4 +499,26 @@ MicroTrafficSummary TrafficMicroSim::simulate(
     ? static_cast<float>(static_cast<double>(emergencyStepsTotal) / emergencyArrivedCount) : 0.0f;
 
   return summary;
+}
+
+glm::vec2 TrafficMicroSim::vehicleWorldPosition(const Vehicle& v, int lanesPerRoad) {
+  if (v.route.size() < 2 || v.segment + 1 >= v.route.size()) {
+    // Arrived (or otherwise off-route): report the last known node.
+    return v.route.empty() ? glm::vec2(0.0f) : glm::vec2(v.route.back());
+  }
+
+  const glm::vec2 from(v.route[v.segment]);
+  const glm::vec2 to(v.route[v.segment + 1]);
+  const glm::vec2 direction = to - from;  // grid movement: a unit-length axis-aligned step
+  const glm::vec2 base = from + direction * v.progress;
+
+  const int lanes = std::max(1, lanesPerRoad);
+  if (v.type == VehicleType::Emergency || lanes <= 1) {
+    return base;
+  }
+
+  const glm::vec2 perpendicular(-direction.y, direction.x);
+  const float centeredLane = static_cast<float>(v.lane) - (static_cast<float>(lanes) - 1.0f) / 2.0f;
+  const float offsetTiles = (centeredLane * kLaneWidthMeters) / kMetersPerTile;
+  return base + perpendicular * offsetTiles;
 }

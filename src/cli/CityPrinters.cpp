@@ -88,6 +88,7 @@ void printHelp() {
             << "  --micro-traffic-incidents N  Dispatch N emergency vehicles (ignore congestion/reds)\n"
             << "  --micro-traffic-lanes N   Vehicles per road before congestion kicks in (default 2)\n"
             << "  --micro-traffic-following-gap F  Min in-lane spacing a follower keeps behind its leader (default 0.15)\n"
+            << "  --micro-traffic-vehicle-length F  Physical vehicle length in meters, added on top of the following gap (default 0)\n"
             << "  --help                   Show this help message\n";
 }
 

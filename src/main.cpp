@@ -86,6 +86,7 @@ int main(int argc, char* argv[]) {
   int microTrafficIncidents = 0;
   int microTrafficLanes = -1;
   float microTrafficFollowingGap = -1.0f;
+  float microTrafficVehicleLength = -1.0f;
   int benchmarkPhase5Ticks = -1;
   BenchmarkFocus benchmarkPhase5Focus = BenchmarkFocus::All;
   std::string saveCityPath;
@@ -372,6 +373,8 @@ int main(int argc, char* argv[]) {
       microTrafficLanes = std::atoi(argv[++i]);
     } else if (arg == "--micro-traffic-following-gap" && i + 1 < argc) {
       microTrafficFollowingGap = std::stof(argv[++i]);
+    } else if (arg == "--micro-traffic-vehicle-length" && i + 1 < argc) {
+      microTrafficVehicleLength = std::stof(argv[++i]);
     } else {
       std::cerr << "Error: Unknown argument '" << arg << "'\n";
       return 1;
@@ -545,7 +548,8 @@ int main(int argc, char* argv[]) {
         microTrafficSteps,
         microTrafficIncidents,
         microTrafficLanes,
-        microTrafficFollowingGap
+        microTrafficFollowingGap,
+        microTrafficVehicleLength
       );
     }
 

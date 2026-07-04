@@ -33,7 +33,13 @@
       "Bash(/tmp/urban-sim-fresh-build/bin/test_core)",
       "Bash(rm -rf /tmp/urban-sim-fresh-build && git status --short)",
       "Bash(./bin/test_core --gtest_filter=\"ServiceSystemTests.*:LandValueSystemTests.*\")",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(./bin/test_core --gtest_filter=\"TrafficMicroSimTests.*\")",
+      "Bash(./bin/UrbanSimCore-cli --micro-traffic 30 --size 48 --seed 7 --micro-traffic-vehicle-length 15)",
+      "Bash(./bin/UrbanSimCore-cli --micro-traffic 30 --size 48 --seed 7)",
+      "Bash(./bin/UrbanSimCore-cli --micro-traffic 30 --size 48 --seed 7 --micro-traffic-vehicle-length 0)"
     ],
     "additionalDirectories": [
       "/private/tmp/urban-sim-fresh-build"

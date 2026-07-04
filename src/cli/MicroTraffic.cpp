@@ -39,7 +39,8 @@ int runMicroTrafficDemo(
   int maxSteps,
   int emergencyIncidents,
   int lanesPerRoad,
-  float minFollowingGap
+  float minFollowingGap,
+  float vehicleLengthMeters
 ) {
   std::cout << "Traffic micro-simulation on a " << mapSize << "x" << mapSize
             << " city (seed " << seed << ", grown " << growthTicks << " ticks)...\n";
@@ -71,13 +72,17 @@ int runMicroTrafficDemo(
   if (minFollowingGap >= 0.0f) {
     options.minFollowingGap = minFollowingGap;
   }
+  if (vehicleLengthMeters >= 0.0f) {
+    options.vehicleLengthMeters = vehicleLengthMeters;
+  }
 
   const std::vector<ServiceFacility> facilities = sampleDemoFacilities(roads, 4);
   const MicroTrafficSummary summary =
     TrafficMicroSim::simulate(store, population, roads, seed + 1u, options, &facilities);
 
   std::cout << "\nVehicle agents (lanes/road=" << options.lanesPerRoad
-            << ", followingGap=" << std::setprecision(2) << options.minFollowingGap << "):\n";
+            << ", followingGap=" << std::setprecision(2) << options.minFollowingGap
+            << ", vehicleLength=" << options.vehicleLengthMeters << "m):\n";
   std::cout << "  Commuting population: " << summary.commutingPopulation << "\n";
   std::cout << "  Vehicles spawned:     " << summary.vehicles << "\n";
   std::cout << "  Vehicles arrived:     " << summary.arrived

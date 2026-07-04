@@ -282,6 +282,110 @@ TEST(TrafficMicroSimTests, FollowersHoldDistinctPositionsRatherThanOverlapping) 
   EXPECT_LT(queued.averageTripSteps, static_cast<float>(queued.stepsSimulated) - 2.0f);
 }
 
+// Same shape as FollowersHoldDistinctPositionsRatherThanOverlapping above,
+// but isolates vehicleLengthMeters specifically: minFollowingGap is 0 in
+// both runs, so any spacing/spread-out-arrival effect must come purely
+// from vehicle length - proving it's a genuine, independent contributor to
+// car-following distance (a physical quantity), not folded into the old
+// opaque gap fraction the way it would have had to be before this existed.
+TEST(TrafficMicroSimTests, VehicleLengthAloneCreatesFollowingDistanceEvenWithZeroGap) {
+  CityMap map({8, 3});
+  RoadNetwork roads(map);
+  for (int x = 0; x < 6; ++x) {
+    roads.buildRoad({x, 0}, {x + 1, 0});
+  }
+
+  EntityStore store;
+  store.createBuilding(BuildingType::Residential, {0, 1}, 100);
+  store.createBuilding(BuildingType::Commercial, {6, 1}, 100);
+
+  PopulationStore population;
+  population.createGroup(IncomeBand::Middle, 40, 40);  // 40 employed -> 10 vehicles, one route
+
+  TrafficMicroSim::Options zeroLength;
+  zeroLength.lanesPerRoad = 1;
+  zeroLength.minFollowingGap = 0.0f;
+  zeroLength.vehicleLengthMeters = 0.0f;
+  const MicroTrafficSummary overlapping = TrafficMicroSim::simulate(store, population, roads, 5, zeroLength);
+
+  TrafficMicroSim::Options withLength;
+  withLength.lanesPerRoad = 1;
+  withLength.minFollowingGap = 0.0f;
+  withLength.vehicleLengthMeters = 15.0f;  // 0.30 of a tile at 50 m/tile - a substantial physical car length
+  const MicroTrafficSummary queued = TrafficMicroSim::simulate(store, population, roads, 5, withLength);
+
+  ASSERT_EQ(overlapping.vehicles, 10u);
+  ASSERT_EQ(queued.vehicles, 10u);
+  EXPECT_EQ(overlapping.arrived, overlapping.vehicles);
+  EXPECT_EQ(queued.arrived, queued.vehicles);
+
+  EXPECT_NEAR(overlapping.averageTripSteps, static_cast<float>(overlapping.stepsSimulated), 1.0f);
+  EXPECT_LT(queued.averageTripSteps, static_cast<float>(queued.stepsSimulated) - 2.0f);
+}
+
+// vehicleWorldPosition is a pure function of a Vehicle's existing state, so
+// it can be tested directly against hand-constructed vehicles rather than
+// running a full simulation.
+TEST(TrafficMicroSimTests, VehicleWorldPositionInterpolatesAlongTheEdge) {
+  Vehicle v;
+  v.route = {{0, 0}, {1, 0}};
+  v.segment = 0;
+  v.progress = 0.5f;
+  v.lane = 0;
+
+  const glm::vec2 pos = TrafficMicroSim::vehicleWorldPosition(v, /*lanesPerRoad=*/1);
+
+  EXPECT_FLOAT_EQ(pos.x, 0.5f);
+  EXPECT_FLOAT_EQ(pos.y, 0.0f);
+}
+
+TEST(TrafficMicroSimTests, VehicleWorldPositionOffsetsDistinctLanesApart) {
+  Vehicle laneZero;
+  laneZero.route = {{0, 0}, {1, 0}};
+  laneZero.segment = 0;
+  laneZero.progress = 0.5f;
+  laneZero.lane = 0;
+
+  Vehicle laneOne = laneZero;
+  laneOne.lane = 1;
+
+  const glm::vec2 posZero = TrafficMicroSim::vehicleWorldPosition(laneZero, /*lanesPerRoad=*/2);
+  const glm::vec2 posOne = TrafficMicroSim::vehicleWorldPosition(laneOne, /*lanesPerRoad=*/2);
+
+  // Same progress along the edge (same x), but offset apart perpendicular
+  // to travel (here, along y, since travel is along x) - proof that lane
+  // index now maps to an actual distinct 2D position, not just an internal
+  // occupancy-accounting label.
+  EXPECT_FLOAT_EQ(posZero.x, posOne.x);
+  const float dy = posZero.y - posOne.y;
+  EXPECT_GT(dy * dy, 0.0001f);
+}
+
+TEST(TrafficMicroSimTests, VehicleWorldPositionHasNoLaneOffsetOnSingleLaneRoads) {
+  Vehicle v;
+  v.route = {{0, 0}, {1, 0}};
+  v.segment = 0;
+  v.progress = 0.5f;
+  v.lane = 0;
+
+  const glm::vec2 pos = TrafficMicroSim::vehicleWorldPosition(v, /*lanesPerRoad=*/1);
+  EXPECT_FLOAT_EQ(pos.x, 0.5f);
+  EXPECT_FLOAT_EQ(pos.y, 0.0f);
+}
+
+TEST(TrafficMicroSimTests, VehicleWorldPositionIgnoresLaneForEmergencyVehicles) {
+  Vehicle v;
+  v.type = VehicleType::Emergency;
+  v.route = {{0, 0}, {1, 0}};
+  v.segment = 0;
+  v.progress = 0.5f;
+  v.lane = 1;  // set but must be ignored - Emergency vehicles don't track a lane
+
+  const glm::vec2 pos = TrafficMicroSim::vehicleWorldPosition(v, /*lanesPerRoad=*/2);
+  EXPECT_FLOAT_EQ(pos.x, 0.5f);
+  EXPECT_FLOAT_EQ(pos.y, 0.0f);
+}
+
 TEST(TrafficMicroSimTests, DeterministicForSameSeed) {
   auto runOnce = [](uint32_t seed) {
     CityMap map({48, 48});

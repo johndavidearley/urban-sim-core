@@ -5,10 +5,18 @@
 
 #include <glm/glm.hpp>
 
+#include "src/core/TileScale.hpp"
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/ServiceSystem.hpp"
+
+// Physical width of one traffic lane. Used only by vehicleWorldPosition()'s
+// perpendicular lane offset (see below) - it does not feed back into
+// simulation dynamics (congestion/car-following stay purely progress- and
+// lane-index-based, as before), so changing it can never affect
+// determinism or existing behavior, only the derived 2D position query.
+constexpr float kLaneWidthMeters = 3.5f;
 
 // Milestone 11 (Traffic Micro-Simulation): individual vehicle agents that route
 // over the road graph and step along their paths. Congestion is emergent -
@@ -22,10 +30,15 @@
 // the least-loaded lane when entering an edge, and switches lanes mid-edge
 // (overtaking) when another lane on the same edge is meaningfully less
 // crowded. Within a lane, vehicles car-follow: a follower's speed each step
-// is capped so it cannot close to within `minFollowingGap` of whichever
-// vehicle is immediately ahead of it in the same lane, so a slow or stopped
-// leader (e.g. queued at a red) visibly backs up traffic behind it rather
-// than every vehicle in the lane sharing one aggregate progress value.
+// is capped so it cannot close to within `minFollowingGap + vehicleLengthMeters
+// / kMetersPerTile` of whichever vehicle is immediately ahead of it in the
+// same lane, so a slow or stopped leader (e.g. queued at a red) visibly
+// backs up traffic behind it rather than every vehicle in the lane sharing
+// one aggregate progress value. `vehicleLengthMeters` (0 by default) is a
+// physical quantity - unlike `minFollowingGap`, an opaque fraction of an
+// edge - representing genuine vehicle size rather than pure safety margin;
+// see vehicleWorldPosition() below for the other previously-unmodeled
+// piece, a literal 2D in-lane position.
 
 enum class VehicleType : int {
   Car = 0,
@@ -69,6 +82,7 @@ public:
     float minSpeed = 0.05f;           // floor so gridlock still crawls
     int lanesPerRoad = 2;              // vehicles an edge carries before congestion kicks in
     float minFollowingGap = 0.15f;     // min in-lane spacing (fraction of an edge) a follower keeps behind its leader
+    float vehicleLengthMeters = 0.0f;  // physical vehicle length added on top of minFollowingGap (see below); 0 = no effect, matching prior behavior for every existing caller
     bool enableSignals = true;         // gate intersections with alternating signals
     int signalPeriod = 6;              // steps of green per axis at each signal
     int emergencyIncidents = 0;        // number of emergency dispatches to spawn (needs facilities)
@@ -97,4 +111,19 @@ public:
     const Options& options,
     const std::vector<ServiceFacility>* facilities = nullptr
   );
+
+  // Literal 2D position of `v` in tile-space (fractional tile coordinates,
+  // not pixels or meters): its progress along the current edge, offset
+  // perpendicular to the direction of travel by its lane index (centered
+  // so lanes straddle the edge's centerline) times kLaneWidthMeters. Before
+  // this, a vehicle's only tracked position was a single float (progress)
+  // plus a lane index - enough to drive congestion/car-following, but not
+  // enough to place a vehicle anywhere a renderer could actually draw
+  // distinct lanes side by side. Pure function of `v`'s existing state; has
+  // no effect on simulation dynamics (nothing in simulate() calls this) -
+  // it exists purely as a query for callers (e.g. a future visualizer) that
+  // want an actual (x, y). Emergency vehicles and single-lane roads report
+  // the unoffset centerline position (Emergency doesn't track a lane; a
+  // single lane has nothing to offset from).
+  static glm::vec2 vehicleWorldPosition(const Vehicle& v, int lanesPerRoad);
 };
