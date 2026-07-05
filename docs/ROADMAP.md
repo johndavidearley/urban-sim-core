@@ -391,23 +391,30 @@ worth its cost at the time the note was written:
       loops explicitly by restructuring `updatePollution`'s clear/scatter
       phases and the zoning candidate scan to operate directly on the
       contiguous arrays instead of through a per-tile accessor call.
-11. Make `TrafficRouteCache` resilient to a continuously-growing city - e.g.
-    invalidate only the paths that cross a changed edge instead of clearing
-    the whole cache on any topology change - to raise its measured-modest
-    (~1-9%) benefit during active growth (M16 traffic-cache note).
+11. ~~Make `TrafficRouteCache` resilient to a continuously-growing city~~ -
+    resolved without a code change, by item 9 (realistic commute matching).
 
-    Investigated: this item's premise doesn't fully hold up. Re-tested with
-    a *topology-stable* scenario (no growth at all, 1500 ticks on a
-    saturated 40×40 city) and the cache still only helped ~1.4% - so
-    topology churn isn't actually the dominant limiter on hit rate. The
-    real cause is that commute sampling draws random (home, job) pairs from
-    a combinatorial space far larger than the number of commutes resolved
-    per tick, so repeats are rare regardless of whether the topology is
-    changing. A partial-invalidation scheme would add real complexity (a
-    fully correct version edges into incremental-shortest-path-algorithm
-    territory - a new edge can shorten a path that never touches it) for
-    a benefit this data doesn't support. Item 9 (realistic commute
-    matching) is the one that would actually move this number.
+    Investigated (first pass, before item 9): this item's premise didn't
+    fully hold up. Re-tested with a *topology-stable* scenario (no growth
+    at all, 1500 ticks on a saturated 40×40 city) and the cache still only
+    helped ~1.4% - so topology churn wasn't the dominant limiter on hit
+    rate. The real cause was that commute sampling drew random (home, job)
+    pairs from a combinatorial space far larger than the number of
+    commutes resolved per tick, so repeats were rare regardless of whether
+    the topology was changing. Predicted at the time: "item 9 (realistic
+    commute matching) is the one that would actually move this number."
+
+    Re-verified (after item 9): same topology-stable 40×40/1500-tick
+    scenario, same `--simulate-benchmark-trials 3` methodology for rigor.
+    Traffic phase median dropped from 4404ms (cache disabled) to 3771ms
+    (cache enabled) - a **~14.4% reduction**, roughly 10x the ~1.4% seen
+    before item 9's fix. Distance/capacity-weighted job selection means
+    commuters now repeatedly target the same nearby, high-capacity
+    workplaces rather than uniformly-random distant ones, so the same
+    (home, job) pairs - and thus cached paths - recur far more often.
+    Confirms the original prediction; no further code change needed, a
+    partial-invalidation scheme remains unwarranted (item 9 was the actual
+    lever, not cache granularity).
 
 ---
 
