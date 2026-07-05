@@ -104,14 +104,15 @@ void LandValueSystem::updateLandValues(
 
   for (int y = cy0; y <= cy1; ++y) {
     for (int x = cx0; x <= cx1; ++x) {
-      if (map.getTile({x, y}).type == 2) continue;  // water has no land value to speak of
+      const Tile& tile = map.getTile({x, y});
+      if (tile.type == 2) continue;  // water has no land value to speak of
       // Skip unzoned land: the active region is mostly unzoned (only what's
       // been developed matters to the economy), and resolveRoadAnchor below
       // is expensive to run on every one of those tiles - most have no
       // nearby road and cost up to 5 failed lookups each to determine that.
-      if (map.zone({x, y}) == static_cast<int>(ZoneType::None)) continue;
+      if (tile.zone == static_cast<int>(ZoneType::None)) continue;
 
-      const float base = Zoning::defaultLandValueForZone(static_cast<ZoneType>(map.zone({x, y})));
+      const float base = Zoning::defaultLandValueForZone(static_cast<ZoneType>(tile.zone));
 
       Coord anchor;
       const bool anchored = roads.resolveRoadAnchor({x, y}, anchor);
@@ -146,7 +147,15 @@ float LandValueSystem::averageLandValue(const CityMap& map) {
   uint64_t count = 0;
   for (int y = 0; y < dims.y; ++y) {
     for (int x = 0; x < dims.x; ++x) {
-      if (map.getTile({x, y}).type == 2 || map.zone({x, y}) == static_cast<int>(ZoneType::None)) continue;
+      // type/zone stay on Tile (only pollution/landValue moved to parallel
+      // arrays), so one getTile() call serves both - unlike landValue()
+      // below, which is a genuinely separate array lookup. This function
+      // scans the *whole* map unconditionally every tick (unlike
+      // updateLandValues, which is interval-gated and active-region-
+      // bounded), so avoiding a redundant second index computation here
+      // matters far more than it would in a bounded loop.
+      const Tile& tile = map.getTile({x, y});
+      if (tile.type == 2 || tile.zone == static_cast<int>(ZoneType::None)) continue;
       sum += map.landValue({x, y});
       ++count;
     }

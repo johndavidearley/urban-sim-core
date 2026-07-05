@@ -66,6 +66,7 @@ int main(int argc, char* argv[]) {
   int verifyReplayGrowthSteps = -1;
   int simulateTicks = -1;
   bool simulateInfinite = false;
+  int simulateBenchmarkTrials = 0;  // 0 = off; >=2 dispatches to runCitySimulationBenchmark instead
   std::string simulateReportPath;
   bool simulateNoTraffic = false;
   double simulateSpeed = 0.0;
@@ -326,6 +327,8 @@ int main(int argc, char* argv[]) {
       simulateTicks = std::atoi(argv[++i]);
     } else if (arg == "--simulate-infinite") {
       simulateInfinite = true;
+    } else if (arg == "--simulate-benchmark-trials" && i + 1 < argc) {
+      simulateBenchmarkTrials = std::atoi(argv[++i]);
     } else if (arg == "--simulate-speed" && i + 1 < argc) {
       simulateSpeed = std::stod(argv[++i]);
     } else if (arg == "--simulate-traffic-interval" && i + 1 < argc) {
@@ -509,6 +512,30 @@ int main(int argc, char* argv[]) {
 
     if (benchmarkPhase5Ticks >= 0) {
       return runPhase5Benchmark(mapSize, seed, benchmarkPhase5Ticks, benchmarkPhase5Focus);
+    }
+
+    if (simulateTicks >= 0 && simulateBenchmarkTrials >= 2) {
+      const int gridSpacing = (gridSpacingOverride > 0) ? gridSpacingOverride : 4;
+      return runCitySimulationBenchmark(
+        mapSize,
+        seed,
+        simulateTicks,
+        generateTerrainFlag,
+        terrainWaterFraction,
+        !simulateNoTraffic,
+        simulateBenchmarkTrials,
+        gridSpacing,
+        simulateTrafficInterval,
+        simulateServiceInterval,
+        simulatePopulationInterval,
+        simulateLandValueInterval,
+        simulateInflationRate,
+        !simulateNoTransit,
+        simulateDisasters,
+        simulateFireRisk,
+        simulateEarthquakeRisk,
+        simulateFloodRisk
+      );
     }
 
     if (simulateTicks >= 0 || simulateInfinite) {

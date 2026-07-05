@@ -21,7 +21,7 @@ GrowthMetrics GrowthMetrics::collect(const CityMap& map, const EntityStore& stor
   for (int y = 0; y < dims.y; ++y) {
     for (int x = 0; x < dims.x; ++x) {
       const Tile& tile = map.getTile({x, y});
-      const ZoneType zone = static_cast<ZoneType>(map.zone({x, y}));
+      const ZoneType zone = static_cast<ZoneType>(tile.zone);
       const bool hasBuilding = tile.buildingId != EntityIdUtils::NullEntity;
 
       if (zone == ZoneType::Residential) {

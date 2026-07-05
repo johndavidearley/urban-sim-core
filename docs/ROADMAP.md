@@ -209,7 +209,13 @@ Note on default behavior: unlike the additive M12/M13/M14 systems, fire and natu
 
 1. District-level service policies and budget controls
 2. Add persistence integrity report command for batch snapshot auditing
-3. Extend benchmark reports with percentile timings over repeated runs
+3. ~~Extend benchmark reports with percentile timings over repeated runs~~ -
+   done: `--simulate-benchmark-trials N` runs the same scenario (same seed
+   every trial, so differences reflect measurement noise, not different
+   simulated cities) N times and reports min/median/max per-phase timing
+   instead of one run's numbers. Motivated directly by the Tile-storage
+   Phase 4 checkpoint above, where a single run's noise (~20-30%) made it
+   impossible to tell a real effect from measurement variance.
 4. Add route diagnostics export mode for offline analysis
 5. Add commute demand-shaping policy experiments for scenario balancing
 
@@ -332,6 +338,25 @@ worth its cost at the time the note was written:
       it would add real complexity (rewriting loops to bypass the
       accessor call and operate on raw array pointers) on top of a change
       that hasn't shown a measurable win to build on.
+    - **Post-Phase-4 correction:** the Phase 2 migration had introduced a
+      real, quantifiable regression, found via the new `--simulate-
+      benchmark-trials` tool (see "Next Targets" item 3): several call
+      sites called `map.getTile(coord)` for one field (e.g. `.type`) and
+      then a *separate* `map.zone(coord)`/`.landValue(coord)` for another
+      field on the same coord, paying for a second index/bounds-check
+      computation that a single reused `Tile&` would have avoided for
+      free (zone never moved out of `Tile` - only pollution/landValue
+      did). The worst offender: `LandValueSystem::averageLandValue`,
+      called unconditionally every tick from `EconomySystem` (no interval
+      gate, unlike `updateLandValues`) over the *entire* map, not just the
+      active region - 250,000 tiles/tick at 500x500. Fixed there and five
+      similar spots (`CitySimulator`'s `isZoningCandidate`/
+      `emptyZonedTiles`, `GrowthMetrics::collect`, `GrowthSystem` x3,
+      `MapRenderer`/`VisualizerSDL`'s tile-color helpers). Measured with
+      the new benchmark tool: Economy phase (which is where
+      `averageLandValue`'s cost was attributed) dropped from ~2543ms to
+      ~1881ms median (5 trials, 500x500/1000 ticks) - a ~26% reduction.
+      Determinism verified unchanged.
     - Phase 5 (not pursued - see Phase 4's finding) - vectorize the hot
       loops explicitly by restructuring `updatePollution`'s clear/scatter
       phases and the zoning candidate scan to operate directly on the

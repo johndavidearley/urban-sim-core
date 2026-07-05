@@ -83,6 +83,7 @@ void printHelp() {
             << "  --simulate-fire-risk F    Scale fire ignition chance (default 1.0); only relevant with --simulate-disasters\n"
             << "  --simulate-earthquake-risk F  Scale earthquake chance per tick (default 1.0); only relevant with --simulate-disasters\n"
             << "  --simulate-flood-risk F   Scale flood chance per tick (default 1.0); only relevant with --simulate-disasters\n"
+            << "  --simulate-benchmark-trials N  Run --simulate N times (same seed) and report min/median/max per-phase timing instead of one run's numbers\n"
             << "  --micro-traffic N         Grow a city N ticks, then run vehicle-agent traffic micro-sim\n"
             << "  --micro-traffic-steps N   Step budget for the micro-sim (default 240)\n"
             << "  --micro-traffic-incidents N  Dispatch N emergency vehicles (ignore congestion/reds)\n"

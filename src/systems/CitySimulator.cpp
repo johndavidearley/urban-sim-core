@@ -147,7 +147,7 @@ void layRoadGrid(CityMap& map, RoadNetwork& roads, Coord center, int extent, int
 // incremental index (see extendZoningCandidates below).
 bool isZoningCandidate(const CityMap& map, Coord pos) {
   const Tile& tile = map.getTile(pos);
-  if (tile.type == 2 || map.zone(pos) != 0 || tile.buildingId != 0) return false;
+  if (tile.type == 2 || tile.zone != 0 || tile.buildingId != 0) return false;
   return hasRoadAccess(map, pos);
 }
 
@@ -242,7 +242,7 @@ uint32_t emptyZonedTiles(const CityMap& map, Coord center, int extent) {
   for (int y = y0; y <= y1; ++y) {
     for (int x = x0; x <= x1; ++x) {
       const Tile& tile = map.getTile({x, y});
-      const int zone = map.zone({x, y});
+      const int zone = tile.zone;
       if (zone != 0 && zone != static_cast<int>(ZoneType::Park) &&
           tile.buildingId == 0 && tile.type != 2 && hasRoadAccess(map, {x, y})) {
         ++count;

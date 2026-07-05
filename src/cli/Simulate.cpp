@@ -121,6 +121,24 @@ void printDistrictSummary(const std::vector<DistrictMetrics>& metrics) {
   }
 }
 
+// Prints one phase's min/median/max across trials. `all` must be non-empty;
+// sorts a scratch copy rather than mutating the caller's timing order.
+void printPhaseStat(const std::vector<SimPhaseTimings>& all, double SimPhaseTimings::*field, const char* label) {
+  std::vector<double> values;
+  values.reserve(all.size());
+  for (const SimPhaseTimings& t : all) {
+    values.push_back(t.*field);
+  }
+  std::sort(values.begin(), values.end());
+  const double lo = values.front();
+  const double med = values[values.size() / 2];
+  const double hi = values.back();
+  std::cout << "    " << std::left << std::setw(11) << label << std::right
+            << " min=" << std::fixed << std::setprecision(2) << std::setw(9) << lo
+            << " ms  median=" << std::setw(9) << med
+            << " ms  max=" << std::setw(9) << hi << " ms\n";
+}
+
 } // namespace
 
 int runCitySimulation(
@@ -367,6 +385,108 @@ int runCitySimulation(
   printDistrictSummary(result.finalDistrictMetrics);
   const int ranTicks = hasLastRow ? lastRow.tick + 1 : 0;
   printTimings(result.timings, ranTicks);
+
+  return 0;
+}
+
+int runCitySimulationBenchmark(
+  int mapSize,
+  uint32_t seed,
+  int ticks,
+  bool generateTerrain,
+  float waterFraction,
+  bool runTraffic,
+  int trials,
+  int gridSpacing,
+  int trafficInterval,
+  int serviceInterval,
+  int populationInterval,
+  int landValueInterval,
+  float inflationRate,
+  bool enableTransit,
+  bool enableDisasters,
+  float fireRiskMultiplier,
+  float earthquakeRiskMultiplier,
+  float floodRiskMultiplier
+) {
+  const int trialCount = std::max(1, trials);
+  if (ticks < 0) {
+    std::cerr << "Error: --simulate-benchmark-trials requires finite --simulate ticks (no infinite-mode benchmarking)\n";
+    return 1;
+  }
+
+  std::cout << "Running " << trialCount << " trial" << (trialCount == 1 ? "" : "s")
+            << " of a " << ticks << "-tick autonomous simulation on " << mapSize << "x" << mapSize
+            << " map (seed " << seed << ", same seed every trial - differences reflect measurement"
+            << " noise, not different simulated cities)...\n";
+
+  std::vector<SimPhaseTimings> allTimings;
+  allTimings.reserve(static_cast<size_t>(trialCount));
+  std::vector<double> totalMsPerTrial;
+  totalMsPerTrial.reserve(static_cast<size_t>(trialCount));
+
+  for (int trial = 0; trial < trialCount; ++trial) {
+    CityMap map({mapSize, mapSize});
+    if (generateTerrain) {
+      TerrainParams terrainParams;
+      terrainParams.waterFraction = waterFraction;
+      TerrainGenerator::generate(map, seed, terrainParams);
+    }
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+
+    SimOptions options;
+    options.runTraffic = runTraffic;
+    options.gridSpacing = gridSpacing;
+    options.trafficInterval = std::max(1, trafficInterval);
+    options.serviceInterval = std::max(1, serviceInterval);
+    options.populationInterval = std::max(1, populationInterval);
+    options.landValueInterval = std::max(1, landValueInterval);
+    options.inflationRatePerTick = inflationRate;
+    options.enableTransit = enableTransit;
+    options.enableDisasters = enableDisasters;
+    options.fireParams.baseIgnitionChance *= std::max(0.0f, fireRiskMultiplier);
+    options.disasterParams.earthquakeChancePerTick *= std::max(0.0f, earthquakeRiskMultiplier);
+    options.disasterParams.floodChancePerTick *= std::max(0.0f, floodRiskMultiplier);
+
+    const SimResult result = CitySimulator::run(map, roads, store, population, seed, ticks, options);
+    const SimPhaseTimings& t = result.timings;
+    const double total = t.roadMs + t.zoningMs + t.growthMs + t.populationMs + t.trafficMs +
+                         t.economyMs + t.serviceMs + t.landValueMs + t.transitMs + t.districtMs +
+                         t.fireMs + t.crimeMs + t.healthMs + t.disasterMs;
+
+    allTimings.push_back(t);
+    totalMsPerTrial.push_back(total);
+    std::cout << "  Trial " << (trial + 1) << "/" << trialCount << ": "
+              << std::fixed << std::setprecision(2) << total << " ms total ("
+              << (total / ticks) << " ms/tick)\n";
+  }
+
+  std::cout << "\nPer-phase timing across " << trialCount << " trial"
+            << (trialCount == 1 ? "" : "s") << " (min / median / max, ms):\n";
+  printPhaseStat(allTimings, &SimPhaseTimings::roadMs, "Roads");
+  printPhaseStat(allTimings, &SimPhaseTimings::zoningMs, "Zoning");
+  printPhaseStat(allTimings, &SimPhaseTimings::growthMs, "Growth");
+  printPhaseStat(allTimings, &SimPhaseTimings::populationMs, "Population");
+  printPhaseStat(allTimings, &SimPhaseTimings::trafficMs, "Traffic");
+  printPhaseStat(allTimings, &SimPhaseTimings::economyMs, "Economy");
+  printPhaseStat(allTimings, &SimPhaseTimings::serviceMs, "Services");
+  printPhaseStat(allTimings, &SimPhaseTimings::landValueMs, "LandValue");
+  printPhaseStat(allTimings, &SimPhaseTimings::transitMs, "Transit");
+  printPhaseStat(allTimings, &SimPhaseTimings::districtMs, "Districts");
+  printPhaseStat(allTimings, &SimPhaseTimings::fireMs, "Fire");
+  printPhaseStat(allTimings, &SimPhaseTimings::crimeMs, "Crime");
+  printPhaseStat(allTimings, &SimPhaseTimings::healthMs, "Health");
+  printPhaseStat(allTimings, &SimPhaseTimings::disasterMs, "Disasters");
+
+  std::sort(totalMsPerTrial.begin(), totalMsPerTrial.end());
+  const double loTotal = totalMsPerTrial.front();
+  const double medTotal = totalMsPerTrial[totalMsPerTrial.size() / 2];
+  const double hiTotal = totalMsPerTrial.back();
+  std::cout << "\nTotal ms/tick across trials: min=" << std::setprecision(3) << (loTotal / ticks)
+            << "  median=" << (medTotal / ticks)
+            << "  max=" << (hiTotal / ticks) << "\n";
 
   return 0;
 }

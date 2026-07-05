@@ -40,7 +40,11 @@
       "Bash(./bin/UrbanSimCore-cli --micro-traffic 30 --size 48 --seed 7 --micro-traffic-vehicle-length 15)",
       "Bash(./bin/UrbanSimCore-cli --micro-traffic 30 --size 48 --seed 7)",
       "Bash(./bin/UrbanSimCore-cli --micro-traffic 30 --size 48 --seed 7 --micro-traffic-vehicle-length 0)",
-      "Bash(./bin/test_core --gtest_filter=\"CityMapTests.*\")"
+      "Bash(./bin/test_core --gtest_filter=\"CityMapTests.*\")",
+      "Bash(./bin/UrbanSimCore-cli --simulate 200 --size 200 --seed 3 --generate-terrain --simulate-benchmark-trials 5)",
+      "Bash(./bin/UrbanSimCore-cli --simulate 200 --size 200 --seed 3 --generate-terrain)",
+      "Bash(./bin/UrbanSimCore-cli --simulate-infinite --simulate-benchmark-trials 3 --size 50)",
+      "Bash(./bin/UrbanSimCore-cli --simulate 1000 --size 500 --seed 3 --generate-terrain --simulate-benchmark-trials 5)"
     ],
     "additionalDirectories": [
       "/private/tmp/urban-sim-fresh-build"

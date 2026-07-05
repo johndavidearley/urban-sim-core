@@ -39,3 +39,32 @@ int runCitySimulation(
   float earthquakeRiskMultiplier = 1.0f,  // scales DisasterParams::earthquakeChancePerTick; only relevant when enableDisasters is set
   float floodRiskMultiplier = 1.0f     // scales DisasterParams::floodChancePerTick; only relevant when enableDisasters is set
 );
+
+// Runs the same autonomous simulation scenario `trials` times - same seed
+// every trial, so run-to-run differences reflect measurement noise
+// (scheduling, cache/thermal state), not different simulated cities - and
+// reports min/median/max per-phase timing across trials instead of a
+// single (noisy) run's numbers. Building "Next Targets" backlog item 3
+// ("Extend benchmark reports with percentile timings over repeated runs").
+// Finite ticks only (no infinite-mode benchmarking). Returns the process
+// exit code.
+int runCitySimulationBenchmark(
+  int mapSize,
+  uint32_t seed,
+  int ticks,
+  bool generateTerrain,
+  float waterFraction,
+  bool runTraffic,
+  int trials,
+  int gridSpacing = 4,
+  int trafficInterval = 1,
+  int serviceInterval = 1,
+  int populationInterval = 1,
+  int landValueInterval = 1,
+  float inflationRate = 0.0f,
+  bool enableTransit = true,
+  bool enableDisasters = false,
+  float fireRiskMultiplier = 1.0f,
+  float earthquakeRiskMultiplier = 1.0f,
+  float floodRiskMultiplier = 1.0f
+);

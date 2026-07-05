@@ -260,7 +260,7 @@ float localCongestionAtTile(const RoadNetwork& roads, Coord coord) {
 
 float demandAtTile(const CityMap& map, const RoadNetwork& roads, Coord coord) {
   const Tile& tile = map.getTile(coord);
-  const int zone = map.zone(coord);
+  const int zone = tile.zone;
   if (zone == 0 || tile.type == 2) {
     return 0.0f;
   }
@@ -508,7 +508,7 @@ RGB tileColor(
     return routeHeatColor(routeHeatAtTile(routeHeatByTile, coord));
   }
 
-  RGB color = terrainTint(tile, zoneColor(map.zone(coord)));
+  RGB color = terrainTint(tile, zoneColor(tile.zone));
 
   if (tile.hasRoad) {
     color = {64, 64, 64};

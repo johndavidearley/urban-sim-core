@@ -356,7 +356,7 @@ GrowthStats GrowthSystem::runStep(
       for (int y = y0; y <= y1; ++y) {
         for (int x = x0; x <= x1; ++x) {
           const Tile& tile = map.getTile({x, y});
-          const ZoneType zone = static_cast<ZoneType>(map.zone({x, y}));
+          const ZoneType zone = static_cast<ZoneType>(tile.zone);
           incrementZonedCount(balance, zone);
           if (tile.buildingId != EntityIdUtils::NullEntity)
             incrementBuiltCount(balance, zone);
@@ -376,7 +376,7 @@ GrowthStats GrowthSystem::runStep(
           for (int y = rowBegin; y <= rowEnd; ++y) {
             for (int x = x0; x <= x1; ++x) {
               const Tile& tile = cmap.getTile({x, y});
-              const ZoneType zone = static_cast<ZoneType>(cmap.zone({x, y}));
+              const ZoneType zone = static_cast<ZoneType>(tile.zone);
               incrementZonedCount(p, zone);
               if (tile.buildingId != EntityIdUtils::NullEntity)
                 incrementBuiltCount(p, zone);
@@ -410,7 +410,7 @@ GrowthStats GrowthSystem::runStep(
   for (int y = y0; y <= y1; ++y) {
     for (int x = x0; x <= x1; ++x) {
       Tile& tile = map.getTile({x, y});
-      const ZoneType zone = static_cast<ZoneType>(map.zone({x, y}));
+      const ZoneType zone = static_cast<ZoneType>(tile.zone);
 
       if (tile.buildingId != EntityIdUtils::NullEntity) {
         // Occupied tile: check demolition, then redevelopment if survived.
