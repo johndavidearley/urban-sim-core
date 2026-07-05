@@ -92,3 +92,65 @@ TEST(ServiceSystemTests, NearestAnyDistanceMergesTheClosestFacilityAcrossEntries
   // A coordinate unreachable by any facility must be absent entirely.
   EXPECT_EQ(cache.nearestAnyDistance.find({11, 11}), cache.nearestAnyDistance.end());
 }
+
+// Power/Water coverage is computed and reported like the original four
+// types, but must never affect servicedBuildings/overallCoverage/
+// satisfaction - those stay defined as exactly
+// (fire+police+health+education)/4, so a caller that places a Power
+// facility without otherwise opting into utilities sees no change to the
+// coverage numbers it already depends on.
+TEST(ServiceSystemTests, PowerAndWaterCoverageAreTrackedButExcludedFromOverallCoverage) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  EntityId id = store.createBuilding(BuildingType::Residential, {2, 2}, 10);
+  map.getTile({2, 2}).buildingId = static_cast<uint32_t>(id);
+  roads.buildRoad({2, 2}, {3, 2});
+
+  ServiceFacility power;
+  power.type = ServiceType::Power;
+  power.position = {3, 2};
+  power.maxTravelDistance = 6;
+
+  const ServiceCoverageSummary withPowerOnly = ServiceSystem::evaluateCoverage(store, roads, {power});
+
+  EXPECT_FLOAT_EQ(withPowerOnly.powerCoverage, 1.0f);
+  EXPECT_FLOAT_EQ(withPowerOnly.waterCoverage, 0.0f);
+  // No Fire/Police/Health/Education facility exists, so this building is
+  // not "serviced" and overall coverage is 0 - power alone doesn't count.
+  EXPECT_EQ(withPowerOnly.servicedBuildings, 0u);
+  EXPECT_FLOAT_EQ(withPowerOnly.overallCoverage, 0.0f);
+}
+
+// nearestPowerDistance/nearestWaterDistance must only merge entries of
+// their own type, unlike nearestAnyDistance which merges everything -
+// a nearby Police station must not make a tile look power-covered.
+TEST(ServiceSystemTests, NearestPowerAndWaterDistanceOnlyMergeTheirOwnType) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  for (int x = 0; x < 11; ++x) {
+    roads.buildRoad({x, 5}, {x + 1, 5});
+  }
+
+  ServiceFacility policeStation;
+  policeStation.type = ServiceType::Police;
+  policeStation.position = {5, 5};
+  policeStation.maxTravelDistance = 10;
+
+  ServiceFacility powerPlant;
+  powerPlant.type = ServiceType::Power;
+  powerPlant.position = {2, 5};
+  powerPlant.maxTravelDistance = 10;
+
+  ServiceCoverageCache cache;
+  ServiceSystem::buildCache(roads, {policeStation, powerPlant}, cache);
+
+  // (5,5) is covered by the police station (distance 0) but is 3 hops from
+  // the power plant - nearestPowerDistance must reflect only the plant.
+  EXPECT_EQ(cache.nearestAnyDistance.count({5, 5}), 1u);
+  const auto powerIt = cache.nearestPowerDistance.find({5, 5});
+  ASSERT_NE(powerIt, cache.nearestPowerDistance.end());
+  EXPECT_EQ(powerIt->second, 3);
+  EXPECT_EQ(cache.nearestWaterDistance.count({5, 5}), 0u);
+}

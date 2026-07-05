@@ -94,6 +94,7 @@ struct SimOptions {
   DisasterParams disasterParams;  // earthquake/flood tuning; only used when enableDisasters is true
   CrimeParams crimeParams;       // tunable crime-rate weights; crime is a pure read-out (no side effects), so it always runs like pollution/congestion
   HealthParams healthParams;     // tunable illness-rate weights; health is a pure read-out (no side effects), so it always runs like crime
+  bool enableUtilities = false;  // opt-in: auto-place Power/Water facilities alongside Fire/Police/Health/Education, and require both to be covered before a tile can build (Tile::connectedToPower/connectedToWater default true - the M7 utility stub - and are left untouched unless this is set)
   // Called after each tick with the row. Return false to stop the simulation.
   // Used by infinite mode; rows are not accumulated in SimResult when this is set and ticks < 0.
   std::function<bool(const SimTickMetrics&)> tickCallback;

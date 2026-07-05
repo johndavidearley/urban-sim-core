@@ -1,6 +1,6 @@
 # UrbanSimCore Development Roadmap
 
-Last updated: July 4, 2026
+Last updated: July 5, 2026
 
 ## Current Status Snapshot
 
@@ -14,7 +14,7 @@ Last updated: July 4, 2026
 - Phase 5, Milestone 14 (Districts and Policies): complete - district-level management, zoning ordinances, growth incentives, service budgets by district, and special districts (industrial/tech hub archetypes) all wired into the autonomous simulation loop
 - Phase 5, Milestone 15 (Disasters and Challenges): complete - fire spread, earthquakes, and floods (opt-in via --simulate-disasters, coverage-modulated emergency response for fire), and crime/disease simulation (always-on, feed migration desirability)
 - Phase 5, Milestone 16 (City Optimization): complete - incremental spatial index for zoning candidates, cross-tick traffic route cache, and (the big one) a default Release build type that was previously missing entirely; 500×500 map now sustains 127k population at 5.75 ms/tick, well under the 60 FPS budget
-- Automated validation: 259 tests passing
+- Automated validation: 282 tests passing
 
 ---
 
@@ -84,7 +84,8 @@ Last updated: July 4, 2026
 - [x] Service building types (fire, police, schools, hospitals)
 - [x] Coverage calculation (graph-based, not Euclidean)
 - [x] Service satisfaction affecting happiness
-- [x] Utility stubs (power, water coverage)
+- [x] Utility coverage (power, water) - upgraded from stub to a real,
+      opt-in system; see "Next Targets" item 12
 
 **Deliverable:** Service coverage affects city happiness and growth.
 
@@ -415,6 +416,56 @@ worth its cost at the time the note was written:
     Confirms the original prediction; no further code change needed, a
     partial-invalidation scheme remains unwarranted (item 9 was the actual
     lever, not cache granularity).
+12. ~~Build real power/water coverage (M7's stub)~~ - done: raised when
+    auditing what was genuinely still missing from the project, this was
+    the one concrete gap - `Tile::connectedToPower/connectedToWater`
+    existed since M7 but were hardcoded `true` and read by nothing. Built
+    as a real system reusing the existing `ServiceCoverageCache`/BFS
+    infrastructure rather than parallel code: `ServiceType` gained
+    `Power`/`Water` variants (indices 4-5), tracked through the same cache
+    with type-filtered nearest-distance maps
+    (`nearestPowerDistance`/`nearestWaterDistance`). `ServiceCoverageSummary`
+    exposes `powerCoverage`/`waterCoverage` but deliberately excludes them
+    from `overallCoverage`/`satisfaction`, so every existing caller of that
+    formula is untouched.
+
+    Fully opt-in via `SimOptions::enableUtilities` (`--simulate-utilities`
+    on the CLI, off by default): when set, facilities auto-place Power/Water
+    alongside Fire/Police/Health/Education (scaled so the original four
+    types' density is unaffected), a new `updateUtilityConnectivity` pass
+    writes real coverage into `Tile::connectedToPower/connectedToWater` each
+    active tick, and `GrowthSystem::runStep` gains a `requireUtilities` gate
+    that blocks construction on any tile not connected to both. With the
+    flag off, connectivity is left untouched at its M7 default (`true`)
+    forever - verified by a test that runs a full city and checks every
+    tile.
+
+    Found and fixed a real deadlock during testing: facility auto-placement
+    only starts once population reaches 1000 (fine for Fire/Police/Health/
+    Education, which are soft coverage stats that don't block growth), but
+    with Power/Water now a hard growth gate, a cold-start city could never
+    reach population 1000 in the first place - no buildings without
+    utilities, no utilities without population, no population without
+    buildings. Fixed by guaranteeing at least one Power and one Water
+    facility exist from the very first placement pass, independent of
+    population, while leaving the original four types' population-gated
+    timing untouched. Confirmed via `--simulate-utilities` CLI runs: before
+    the fix a city flatlined at 4 buildings/population ~6 for 80 ticks;
+    after, it grows steadily (population 46+ and climbing by tick 52 on the
+    same seed, before plateauing at the initial facilities' coverage
+    radius - expected, since only 2 of the 6 facility types exist until
+    population reaches 1000).
+13. Add sewage coverage as a third utility leg alongside power/water -
+    **not started**. Raised as a natural follow-up to item 12: the coverage
+    plumbing (a third `ServiceType` variant, cache merge, connectivity
+    field) is nearly free to add given the existing infrastructure, but a
+    coverage stat with no mechanical hook would just be decorative like a
+    third copy of power/water's growth gate. The more interesting version
+    ties uncovered sewage into `HealthSystem`'s illness-rate calculation
+    (untreated sewage raising disease risk) instead of duplicating the
+    construction gate, giving it a distinct purpose from power/water. Scope
+    still to be decided: illness-rate modifier only, an additional
+    growth-gate leg, or both.
 
 ---
 

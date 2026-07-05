@@ -365,3 +365,72 @@ TEST(GrowthSystemTests, ZeroOfficeDemandSpawnsNoOffice) {
   EXPECT_EQ(stats.totalSpawned(), 0);
   EXPECT_EQ(store.getBuildingCount(), 0u);
 }
+
+// requireUtilities=true must block growth on a tile whose Tile::connectedToPower/
+// connectedToWater haven't been set true, even though it's zoned and road-accessible.
+TEST(GrowthSystemTests, RequireUtilitiesBlocksGrowthWithoutPowerAndWater) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  roads.buildRoad({2, 2}, {3, 2});
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 3}, {2, 3}, ZoneType::Office));
+  Tile& tile = map.getTile({2, 3});
+  tile.connectedToPower = false;
+  tile.connectedToWater = false;
+
+  ZoneDemand demand;
+  demand.office = 1.0f;
+
+  const GrowthStats stats = GrowthSystem::runStep(
+    map, store, demand, 7, 1.0f, nullptr, {-1, -1}, {-1, -1}, nullptr,
+    /*requireUtilities=*/true);
+
+  EXPECT_EQ(stats.totalSpawned(), 0);
+  EXPECT_EQ(store.getBuildingCount(), 0u);
+}
+
+// Once both connectedToPower and connectedToWater are set on the tile, growth
+// proceeds normally even with requireUtilities=true.
+TEST(GrowthSystemTests, RequireUtilitiesAllowsGrowthOnceConnected) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  roads.buildRoad({2, 2}, {3, 2});
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 3}, {2, 3}, ZoneType::Office));
+  Tile& tile = map.getTile({2, 3});
+  tile.connectedToPower = true;
+  tile.connectedToWater = true;
+
+  ZoneDemand demand;
+  demand.office = 1.0f;
+
+  const GrowthStats stats = GrowthSystem::runStep(
+    map, store, demand, 7, 1.0f, nullptr, {-1, -1}, {-1, -1}, nullptr,
+    /*requireUtilities=*/true);
+
+  EXPECT_EQ(stats.spawnedOffice, 1);
+  EXPECT_EQ(stats.totalSpawned(), 1);
+  ASSERT_EQ(store.getBuildingCount(), 1u);
+}
+
+// requireUtilities defaults to false, so existing callers that never pass it
+// must be completely unaffected by Tile::connectedToPower/connectedToWater,
+// which default to true anyway (the M7 stub) but shouldn't matter either way.
+TEST(GrowthSystemTests, RequireUtilitiesDefaultsFalseAndDoesNotGateGrowth) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  roads.buildRoad({2, 2}, {3, 2});
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 3}, {2, 3}, ZoneType::Office));
+
+  ZoneDemand demand;
+  demand.office = 1.0f;
+
+  const GrowthStats stats = GrowthSystem::runStep(map, store, demand, 7, 1.0f);
+
+  EXPECT_EQ(stats.spawnedOffice, 1);
+  EXPECT_EQ(stats.totalSpawned(), 1);
+}

@@ -380,25 +380,56 @@ Coord chooseFacilitySite(
   return best;
 }
 
-// Keep roughly one facility per `popPerFacility` residents, cycling through the
-// four service types so coverage of each grows together.
+// Keep roughly one facility per `popPerFacility` residents per type, cycling
+// through the service types so coverage of each grows together. Power/Water
+// are opt-in (includeUtilities, SimOptions::enableUtilities) - when off, the
+// type cycle and total count are exactly what they were before Power/Water
+// existed. When on, the target count scales up proportionally (6/4 of the
+// base) so Fire/Police/Health/Education density is unaffected - utilities
+// are added on top, not diluted from the original four's share.
 void placeFacilitiesIfNeeded(
   const CityMap& map,
   std::vector<ServiceFacility>& facilities,
   uint32_t population,
   Coord center,
   int extent,
-  int coverageRadius
+  int coverageRadius,
+  bool includeUtilities
 ) {
   const uint32_t popPerFacility = 1000;
-  const size_t target = population / popPerFacility;
+  const int typeCount = includeUtilities ? 6 : 4;
+  const size_t target = static_cast<size_t>(population / popPerFacility) * static_cast<size_t>(typeCount) / 4;
   while (facilities.size() < target) {
     ServiceFacility facility;
-    facility.type = static_cast<ServiceType>(facilities.size() % 4);
+    facility.type = static_cast<ServiceType>(facilities.size() % static_cast<size_t>(typeCount));
     facility.position = chooseFacilitySite(map, facilities, center, extent);
     facility.maxTravelDistance = coverageRadius;
     facility.quality = 1.0f;
     facilities.push_back(facility);
+  }
+
+  // Fire/Police/Health/Education are soft coverage stats, so it's harmless
+  // for them to wait for population to reach popPerFacility before the first
+  // one appears. Power/Water are a hard growth gate (see GrowthSystem's
+  // requireUtilities check) - if they waited on the same threshold, a
+  // cold-start city could never grow past its first few buildings, since
+  // population can't reach popPerFacility without more buildings. Guarantee
+  // at least one of each utility type exists from the very first placement
+  // pass, independent of population.
+  if (includeUtilities) {
+    const auto ensureType = [&](ServiceType type) {
+      const bool exists = std::any_of(facilities.begin(), facilities.end(),
+        [type](const ServiceFacility& f) { return f.type == type; });
+      if (exists) return;
+      ServiceFacility facility;
+      facility.type = type;
+      facility.position = chooseFacilitySite(map, facilities, center, extent);
+      facility.maxTravelDistance = coverageRadius;
+      facility.quality = 1.0f;
+      facilities.push_back(facility);
+    };
+    ensureType(ServiceType::Power);
+    ensureType(ServiceType::Water);
   }
 }
 
@@ -415,6 +446,49 @@ std::vector<Coord> sampleRouteStops(const Pathfinding::Path& path, int stopSpaci
     stops.push_back(path.waypoints.back());
   }
   return stops;
+}
+
+// Updates Tile::connectedToPower/connectedToWater for every tile in the
+// active region from the coverage cache's type-restricted merges (see
+// ServiceCoverageCache::nearestPowerDistance/nearestWaterDistance) - only
+// called when options.enableUtilities is set, so a caller that never opts
+// in leaves both at their CityMap-constructor default (true, the M7
+// utility stub) forever. Parallelized across row chunks like
+// updatePollution above - each tile's result is independent.
+void updateUtilityConnectivity(
+  CityMap& map,
+  const RoadNetwork& roads,
+  const ServiceCoverageCache& cache,
+  int x0, int y0, int x1, int y1,
+  ThreadPool& pool
+) {
+  const int nRows = y1 - y0 + 1;
+  const int minRowsPerChunk = 16;
+  const int nChunks = (nRows >= minRowsPerChunk * 2)
+    ? std::max(1, std::min(static_cast<int>(pool.threadCount()), nRows / minRowsPerChunk))
+    : 1;
+  const int rowsPerChunk = (nRows + nChunks - 1) / nChunks;
+
+  std::vector<std::future<void>> futs;
+  futs.reserve(static_cast<size_t>(nChunks));
+  for (int c = 0; c < nChunks; ++c) {
+    const int ry0 = y0 + c * rowsPerChunk;
+    const int ry1 = std::min(y0 + (c + 1) * rowsPerChunk - 1, y1);
+    if (ry0 > ry1) break;
+    futs.push_back(pool.submit([&map, &roads, &cache, x0, x1, ry0, ry1]() {
+      for (int y = ry0; y <= ry1; ++y) {
+        for (int x = x0; x <= x1; ++x) {
+          Tile& tile = map.getTile({x, y});
+          if (tile.type == 2) continue;  // water tiles have no utility concept
+          Coord anchor;
+          const bool anchored = roads.resolveRoadAnchor({x, y}, anchor);
+          tile.connectedToPower = anchored && cache.nearestPowerDistance.count(anchor) != 0;
+          tile.connectedToWater = anchored && cache.nearestWaterDistance.count(anchor) != 0;
+        }
+      }
+    }));
+  }
+  for (auto& f : futs) f.get();
 }
 
 // Keep roughly one route of `mode` per `popPerRoute` residents (capped at
@@ -863,7 +937,8 @@ SimResult CitySimulator::run(
     {
       const auto t0 = Clock::now();
       GrowthSystem::runStep(map, store, demand, tickSeed, options.buildChance,
-                            &districtGrowthModifiers, {ax0, ay0}, {ax1, ay1}, &pool);
+                            &districtGrowthModifiers, {ax0, ay0}, {ax1, ay1}, &pool,
+                            options.enableUtilities);
       result.timings.growthMs += elapsedMs(t0, Clock::now());
     }
 
@@ -918,10 +993,14 @@ SimResult CitySimulator::run(
     // and must complete before the concurrent evaluation starts.
     if (serviceActive) {
       const auto t0 = Clock::now();
-      placeFacilitiesIfNeeded(map, facilities, population.getTotalPopulation(), center, extent, serviceRadius);
+      placeFacilitiesIfNeeded(map, facilities, population.getTotalPopulation(), center, extent, serviceRadius,
+                              options.enableUtilities);
       if (facilities.size() != coverageCache.builtForFacilityCount) {
         ServiceSystem::buildCache(roads, facilities, coverageCache);
         coverageCache.cachedBuildingCount = static_cast<size_t>(-1);  // distance fields changed
+      }
+      if (options.enableUtilities) {
+        updateUtilityConnectivity(map, roads, coverageCache, ax0, ay0, ax1, ay1, pool);
       }
       result.timings.serviceMs += elapsedMs(t0, Clock::now());
     }

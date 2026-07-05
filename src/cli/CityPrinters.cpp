@@ -91,6 +91,7 @@ void printHelp() {
             << "  --simulate-fire-risk F    Scale fire ignition chance (default 1.0); only relevant with --simulate-disasters\n"
             << "  --simulate-earthquake-risk F  Scale earthquake chance per tick (default 1.0); only relevant with --simulate-disasters\n"
             << "  --simulate-flood-risk F   Scale flood chance per tick (default 1.0); only relevant with --simulate-disasters\n"
+            << "  --simulate-utilities      Auto-place Power/Water facilities and require both before new construction (off by default; Tile::connectedToPower/Water otherwise stay at their M7 stub default of true)\n"
             << "  --simulate-benchmark-trials N  Run --simulate N times (same seed) and report min/median/max per-phase timing instead of one run's numbers\n"
             << "  --micro-traffic N         Grow a city N ticks, then run vehicle-agent traffic micro-sim\n"
             << "  --micro-traffic-steps N   Step budget for the micro-sim (default 240)\n"
@@ -450,6 +451,10 @@ void printServiceSummary(const ServiceCoverageSummary& summary) {
             << (summary.healthCoverage * 100.0f) << "%\n";
   std::cout << "  Education Coverage: " << std::fixed << std::setprecision(1)
             << (summary.educationCoverage * 100.0f) << "%\n";
+  std::cout << "  Power Coverage: " << std::fixed << std::setprecision(1)
+            << (summary.powerCoverage * 100.0f) << "% (excluded from Overall Coverage below - see --simulate-utilities)\n";
+  std::cout << "  Water Coverage: " << std::fixed << std::setprecision(1)
+            << (summary.waterCoverage * 100.0f) << "% (excluded from Overall Coverage below - see --simulate-utilities)\n";
   std::cout << "  Overall Coverage: " << std::fixed << std::setprecision(1)
             << (summary.overallCoverage * 100.0f) << "%\n";
   std::cout << "  Satisfaction: " << std::fixed << std::setprecision(1)

@@ -13,7 +13,9 @@ enum class ServiceType : int {
   Fire = 0,
   Police = 1,
   Health = 2,
-  Education = 3
+  Education = 3,
+  Power = 4,
+  Water = 5
 };
 
 struct ServiceFacility {
@@ -31,6 +33,15 @@ struct ServiceCoverageSummary {
   float policeCoverage = 0.0f;
   float healthCoverage = 0.0f;
   float educationCoverage = 0.0f;
+
+  // Power/water are tracked separately from overallCoverage/satisfaction
+  // below (which stay exactly (fire+police+health+education)/4, unchanged)
+  // rather than folded into that blend - utilities are opt-in
+  // (SimOptions::enableUtilities), and every existing caller that doesn't
+  // place power/water facilities would otherwise see its overall coverage
+  // silently drop once these two categories existed at all.
+  float powerCoverage = 0.0f;
+  float waterCoverage = 0.0f;
 
   float overallCoverage = 0.0f;
   float satisfaction = 0.5f;
@@ -55,6 +66,14 @@ struct ServiceCoverageCache {
   // O(entries) scan per query - a real cost at city scale, since that scan
   // used to run once per zoned, road-anchored tile every recompute.
   std::unordered_map<Coord, int, Vec2Hash> nearestAnyDistance;
+
+  // Same merge as nearestAnyDistance, but restricted to Power/Water entries
+  // respectively - lets a per-tile utility-connectivity check (e.g.
+  // CitySimulator's Tile::connectedToPower/connectedToWater update, gated
+  // behind SimOptions::enableUtilities) be a single map lookup instead of
+  // an O(entries) scan filtered by type, once per tile, every tick.
+  std::unordered_map<Coord, int, Vec2Hash> nearestPowerDistance;
+  std::unordered_map<Coord, int, Vec2Hash> nearestWaterDistance;
 
   // Result cache: valid when cachedBuildingCount == store.getBuildings().size()
   // AND builtForFacilityCount matches. Reset to SIZE_MAX to force re-evaluation.

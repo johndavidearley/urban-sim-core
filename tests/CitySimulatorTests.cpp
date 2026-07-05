@@ -752,3 +752,67 @@ TEST(CitySimulatorTests, ElevatedEarthquakeRiskDestroysBuildingsOverTime) {
     previous = row.buildingsLostToDisaster;
   }
 }
+
+// Utilities are off by default, so Tile::connectedToPower/connectedToWater
+// must be left at their M7 stub default (true) throughout the run - proving
+// this feature is fully inert unless explicitly opted into.
+TEST(CitySimulatorTests, UtilitiesDisabledByDefaultLeavesConnectivityAtStubDefault) {
+  CityMap map({48, 48});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 40, fastOptions());
+
+  ASSERT_FALSE(result.rows.empty());
+  EXPECT_GT(result.rows.back().residentialBuildings, 0u);
+  const glm::ivec2 dims = map.getDimensions();
+  for (int y = 0; y < dims.y; ++y) {
+    for (int x = 0; x < dims.x; ++x) {
+      const Tile& tile = map.getTile({x, y});
+      EXPECT_TRUE(tile.connectedToPower);
+      EXPECT_TRUE(tile.connectedToWater);
+    }
+  }
+}
+
+// With enableUtilities on, Power/Water facilities are auto-placed and growth
+// requires both before a tile can build - proving the whole pipeline (auto
+// placement, coverage cache, connectivity update, growth gate) works
+// end-to-end and doesn't stall the city out entirely.
+TEST(CitySimulatorTests, UtilitiesEnabledConnectsBuiltAreaAndCityStillGrows) {
+  CityMap map({48, 48});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  SimOptions options = fastOptions();
+  options.enableUtilities = true;
+
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 40, options);
+
+  ASSERT_FALSE(result.rows.empty());
+  const SimTickMetrics& last = result.rows.back();
+  EXPECT_GT(last.residentialBuildings, 0u);
+  EXPECT_GT(last.population, 0u);
+
+  // Power and Water are placed at independent sites, so their coverage radii
+  // don't necessarily overlap at every built tile (the same partial-coverage
+  // reality as Fire/Police/Health/Education) - but at least one built tile
+  // must show both connected, proving the auto-placement -> coverage cache ->
+  // connectivity update pipeline actually reaches real buildings.
+  bool sawBuilding = false;
+  bool sawFullyConnectedBuilding = false;
+  const glm::ivec2 dims = map.getDimensions();
+  for (int y = 0; y < dims.y; ++y) {
+    for (int x = 0; x < dims.x; ++x) {
+      const Tile& tile = map.getTile({x, y});
+      if (EntityIdUtils::isValid(tile.buildingId)) {
+        sawBuilding = true;
+        if (tile.connectedToPower && tile.connectedToWater) sawFullyConnectedBuilding = true;
+      }
+    }
+  }
+  EXPECT_TRUE(sawBuilding);
+  EXPECT_TRUE(sawFullyConnectedBuilding);
+}

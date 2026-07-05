@@ -166,7 +166,8 @@ int runCitySimulation(
   bool enableDisasters,
   float fireRiskMultiplier,
   float earthquakeRiskMultiplier,
-  float floodRiskMultiplier
+  float floodRiskMultiplier,
+  bool enableUtilities
 ) {
   const bool infinite = (ticks < 0);
   const float sideKm = tileToKm(mapSize);
@@ -214,6 +215,7 @@ int runCitySimulation(
   options.fireParams.baseIgnitionChance *= std::max(0.0f, fireRiskMultiplier);
   options.disasterParams.earthquakeChancePerTick *= std::max(0.0f, earthquakeRiskMultiplier);
   options.disasterParams.floodChancePerTick *= std::max(0.0f, floodRiskMultiplier);
+  options.enableUtilities = enableUtilities;
 
   DistrictSystem districtSystem;
   for (const SimulateDistrictRequest& req : districtRequests) {
@@ -411,7 +413,8 @@ int runCitySimulationBenchmark(
   bool enableDisasters,
   float fireRiskMultiplier,
   float earthquakeRiskMultiplier,
-  float floodRiskMultiplier
+  float floodRiskMultiplier,
+  bool enableUtilities
 ) {
   const int trialCount = std::max(1, trials);
   if (ticks < 0) {
@@ -453,6 +456,7 @@ int runCitySimulationBenchmark(
     options.fireParams.baseIgnitionChance *= std::max(0.0f, fireRiskMultiplier);
     options.disasterParams.earthquakeChancePerTick *= std::max(0.0f, earthquakeRiskMultiplier);
     options.disasterParams.floodChancePerTick *= std::max(0.0f, floodRiskMultiplier);
+    options.enableUtilities = enableUtilities;
 
     const SimResult result = CitySimulator::run(map, roads, store, population, seed, ticks, options);
     const SimPhaseTimings& t = result.timings;

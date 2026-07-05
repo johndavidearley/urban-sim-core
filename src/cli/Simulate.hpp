@@ -39,7 +39,8 @@ int runCitySimulation(
   bool enableDisasters = false,  // opt-in: buildings can be destroyed by fire/earthquake/flood (see FireSystem/NaturalDisasterSystem)
   float fireRiskMultiplier = 1.0f,     // scales FireParams::baseIgnitionChance; only relevant when enableDisasters is set
   float earthquakeRiskMultiplier = 1.0f,  // scales DisasterParams::earthquakeChancePerTick; only relevant when enableDisasters is set
-  float floodRiskMultiplier = 1.0f     // scales DisasterParams::floodChancePerTick; only relevant when enableDisasters is set
+  float floodRiskMultiplier = 1.0f,    // scales DisasterParams::floodChancePerTick; only relevant when enableDisasters is set
+  bool enableUtilities = false  // opt-in: auto-place Power/Water facilities and require both before new construction (see SimOptions::enableUtilities)
 );
 
 // Runs the same autonomous simulation scenario `trials` times - same seed
@@ -68,7 +69,8 @@ int runCitySimulationBenchmark(
   bool enableDisasters = false,
   float fireRiskMultiplier = 1.0f,
   float earthquakeRiskMultiplier = 1.0f,
-  float floodRiskMultiplier = 1.0f
+  float floodRiskMultiplier = 1.0f,
+  bool enableUtilities = false
 );
 
 // Writes a vector of per-tick simulation metrics to CSV in the same format

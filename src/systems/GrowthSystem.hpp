@@ -53,6 +53,13 @@ public:
   // developed extent. Pass {-1,-1}/{-1,-1} (default) to scan the full map.
   // If pool is non-null, the read-only zone balance scan is fanned out across
   // pool workers. Mutation passes stay sequential (EntityStore is not thread-safe).
+  // If requireUtilities is set, a tile also needs Tile::connectedToPower AND
+  // connectedToWater before new construction (not redevelopment/demolition)
+  // is considered - mirroring the existing road-access gate. Both fields
+  // default to true (the M7 utility stub) and are only ever set false by
+  // CitySimulator when SimOptions::enableUtilities is on, so this parameter
+  // defaulting to false matches prior behavior exactly for every existing
+  // caller.
   static GrowthStats runStep(
     CityMap& map,
     EntityStore& store,
@@ -62,6 +69,7 @@ public:
     const std::vector<GrowthChanceModifier>* chanceModifiers = nullptr,
     Coord activeMin = {-1, -1},
     Coord activeMax = {-1, -1},
-    ThreadPool* pool = nullptr
+    ThreadPool* pool = nullptr,
+    bool requireUtilities = false
   );
 };

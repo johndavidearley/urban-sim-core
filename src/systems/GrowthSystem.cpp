@@ -329,7 +329,8 @@ GrowthStats GrowthSystem::runStep(
   const std::vector<GrowthChanceModifier>* chanceModifiers,
   Coord activeMin,
   Coord activeMax,
-  ThreadPool* pool
+  ThreadPool* pool,
+  bool requireUtilities
 ) {
   GrowthStats stats;
   DeterministicRandom rng(seed);
@@ -457,6 +458,7 @@ GrowthStats GrowthSystem::runStep(
         if (tile.type == 2) continue;
         if (zone == ZoneType::None || zone == ZoneType::Park) continue;
         if (!hasRoadAccess(map, {x, y})) continue;
+        if (requireUtilities && !(tile.connectedToPower && tile.connectedToWater)) continue;
 
         ++stats.evaluatedTiles;
 
