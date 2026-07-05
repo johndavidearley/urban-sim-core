@@ -87,6 +87,7 @@ struct SimOptions {
   int landValueInterval = 1;   // run land-value recompute every N ticks (its job-access BFS is the costliest per-tick pass; >1 cuts CPU on large road networks)
   float inflationRatePerTick = 0.0f;  // compounding per-tick rate applied to maintenance/trade costs (not tax revenue); 0 = no inflation, matching prior behavior
   bool enableTransit = true;   // auto-place bus routes and let them offload commuters from the road network
+  float transitCapacityMultiplier = 1.0f;  // scales auto-placed routes' vehicleCount/capacityPerVehicle (both bus and rail); 1.0 = unchanged behavior for every existing caller. A policy-experiment lever (see CommutePolicySweep) for "what if transit ran N% more/fewer vehicles at the same coverage".
   int districtInterval = 1;    // re-evaluate district metrics/growth pressure every N ticks (only relevant when districts is non-null)
   bool enableDisasters = false;  // opt-in: run FireSystem/NaturalDisasterSystem each tick (destructive, so off by default unlike the additive M12/M13 systems)
   FireParams fireParams;         // only used when enableDisasters is true

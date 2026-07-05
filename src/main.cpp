@@ -16,6 +16,8 @@
 #include "src/cli/PolicySweep.hpp"
 #include "src/cli/Simulate.hpp"
 #include "src/cli/MicroTraffic.hpp"
+#include "src/cli/SnapshotAudit.hpp"
+#include "src/cli/CommutePolicySweep.hpp"
 #include "src/core/SimulationTime.hpp"
 #include "src/core/TileScale.hpp"
 #include "src/entities/EntityStore.hpp"
@@ -93,8 +95,15 @@ int main(int argc, char* argv[]) {
   std::string saveCityPath;
   std::string loadCityPath;
   std::string inspectSnapshotPath;
+  std::string auditSnapshotsDir;
+  std::string commuteSweepOutputDir;
+  std::vector<uint32_t> commuteSweepSeeds;
+  std::vector<float> commuteSweepMultipliers;
+  int commuteSweepTicks = 0;
+  bool commuteSweepNoTransitDisabled = false;
   std::vector<std::tuple<std::string, int, int, int>> serviceRequests;
   int printTopEdgesCount = -1;
+  std::string topEdgesExportPath;
   bool hasTrafficOriginFilter = false;
   int trafficOriginX = -1, trafficOriginY = -1;
   bool hasTrafficDestinationFilter = false;
@@ -231,6 +240,8 @@ int main(int argc, char* argv[]) {
       printTrafficSummaryFlag = true;
     } else if (arg == "--print-top-edges" && i + 1 < argc) {
       printTopEdgesCount = std::atoi(argv[++i]);
+    } else if (arg == "--top-edges-export" && i + 1 < argc) {
+      topEdgesExportPath = argv[++i];
     } else if (arg == "--traffic-origin" && i + 2 < argc) {
       trafficOriginX = std::atoi(argv[++i]);
       trafficOriginY = std::atoi(argv[++i]);
@@ -314,6 +325,24 @@ int main(int argc, char* argv[]) {
       loadCityPath = argv[++i];
     } else if (arg == "--inspect-snapshot" && i + 1 < argc) {
       inspectSnapshotPath = argv[++i];
+    } else if (arg == "--audit-snapshots" && i + 1 < argc) {
+      auditSnapshotsDir = argv[++i];
+    } else if (arg == "--commute-sweep" && i + 1 < argc) {
+      commuteSweepOutputDir = argv[++i];
+    } else if (arg == "--commute-sweep-seeds" && i + 1 < argc) {
+      if (!parseUint32List(argv[++i], commuteSweepSeeds)) {
+        std::cerr << "Error: --commute-sweep-seeds expects a comma-separated list of integers\n";
+        return 1;
+      }
+    } else if (arg == "--commute-sweep-transit-multipliers" && i + 1 < argc) {
+      if (!parseFloatList(argv[++i], commuteSweepMultipliers)) {
+        std::cerr << "Error: --commute-sweep-transit-multipliers expects a comma-separated list of decimal values\n";
+        return 1;
+      }
+    } else if (arg == "--commute-sweep-ticks" && i + 1 < argc) {
+      commuteSweepTicks = std::atoi(argv[++i]);
+    } else if (arg == "--commute-sweep-no-transit-disabled") {
+      commuteSweepNoTransitDisabled = true;
     } else if (arg == "--benchmark-phase5" && i + 1 < argc) {
       benchmarkPhase5Ticks = std::atoi(argv[++i]);
     } else if (arg == "--benchmark-phase5-focus" && i + 1 < argc) {
@@ -444,6 +473,16 @@ int main(int argc, char* argv[]) {
     std::cerr << "Error: --traffic-origin/--traffic-destination require --print-top-edges N\n";
     return 1;
   }
+  if (!commuteSweepOutputDir.empty()) {
+    if (commuteSweepTicks <= 0) {
+      std::cerr << "Error: --commute-sweep requires --commute-sweep-ticks N\n";
+      return 1;
+    }
+    if (commuteSweepSeeds.empty()) {
+      std::cerr << "Error: --commute-sweep requires --commute-sweep-seeds A,B,C\n";
+      return 1;
+    }
+  }
 
   try {
     if (!rankGrowthPressureBasePath.empty()) {
@@ -508,6 +547,10 @@ int main(int argc, char* argv[]) {
       }
       printSnapshotInspection(inspectedSnapshot, inspectDiagnostics);
       return 0;
+    }
+
+    if (!auditSnapshotsDir.empty()) {
+      return runSnapshotAudit(auditSnapshotsDir);
     }
 
     if (benchmarkPhase5Ticks >= 0) {
@@ -787,6 +830,23 @@ int main(int argc, char* argv[]) {
       );
     }
 
+    if (!commuteSweepOutputDir.empty()) {
+      CommutePolicySweepOptions commuteSweepOptions;
+      commuteSweepOptions.outputDir = commuteSweepOutputDir;
+      commuteSweepOptions.seeds = commuteSweepSeeds;
+      commuteSweepOptions.transitCapacityMultipliers = commuteSweepMultipliers;
+      commuteSweepOptions.includeTransitDisabledScenario = !commuteSweepNoTransitDisabled;
+      commuteSweepOptions.ticks = commuteSweepTicks;
+
+      return runCommutePolicySweep(
+        std::move(commuteSweepOptions),
+        map,
+        roads,
+        store,
+        population
+      );
+    }
+
     if (runGrowthSteps > 0) {
       std::vector<GrowthPressureReportRow> growthPressureRows;
       std::vector<GrowthPressureReportRow>* outRows = nullptr;
@@ -940,6 +1000,14 @@ int main(int argc, char* argv[]) {
       }
 
       printTopCongestedEdges(topEdges);
+
+      if (!topEdgesExportPath.empty()) {
+        if (!writeTopEdgesCSV(topEdgesExportPath, topEdges)) {
+          std::cerr << "Error: Failed to write route diagnostics to '" << topEdgesExportPath << "'\n";
+          return 1;
+        }
+        std::cout << "Wrote route diagnostics to " << topEdgesExportPath << "\n";
+      }
     }
 
     if (runEconomyCalculationFlag) {

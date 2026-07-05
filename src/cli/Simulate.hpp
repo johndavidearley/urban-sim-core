@@ -5,6 +5,8 @@
 #include <tuple>
 #include <vector>
 
+#include "src/systems/CitySimulator.hpp"
+
 // name, x1, y1, x2, y2 - mirrors main.cpp's zoneRequests tuple shape.
 using SimulateDistrictRequest = std::tuple<std::string, int, int, int, int>;
 
@@ -68,3 +70,9 @@ int runCitySimulationBenchmark(
   float earthquakeRiskMultiplier = 1.0f,
   float floodRiskMultiplier = 1.0f
 );
+
+// Writes a vector of per-tick simulation metrics to CSV in the same format
+// --simulate-report uses. Exposed for reuse by other CLI tools (e.g.
+// CommutePolicySweep) that produce SimTickMetrics rows of their own.
+// Returns false if filePath couldn't be opened for writing.
+bool writeSimulationReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows);

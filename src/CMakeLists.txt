@@ -51,6 +51,8 @@ add_executable(UrbanSimCore-cli
   cli/PolicySweep.cpp
   cli/Simulate.cpp
   cli/MicroTraffic.cpp
+  cli/SnapshotAudit.cpp
+  cli/CommutePolicySweep.cpp
 )
 
 target_link_libraries(UrbanSimCore-cli PRIVATE urban_sim_core)

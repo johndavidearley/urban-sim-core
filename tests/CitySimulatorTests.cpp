@@ -366,6 +366,50 @@ TEST(CitySimulatorTests, TransitRoutesAppearAndCarryRidershipAsCityGrows) {
   EXPECT_GT(totalRidership, 0u);
 }
 
+// options.transitCapacityMultiplier scales route capacity without changing
+// where/when routes are placed - a higher multiplier should let more
+// commuters actually ride transit (less capacity-constrained demand left
+// on the table), all else held equal (same seed).
+TEST(CitySimulatorTests, TransitCapacityMultiplierScalesRidership) {
+  auto runWithMultiplier = [](float multiplier) {
+    CityMap map({64, 64});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    SimOptions options;
+    options.transitCapacityMultiplier = multiplier;
+    return CitySimulator::run(map, roads, store, population, 7, 120, options).rows.back();
+  };
+
+  const SimTickMetrics lowCapacity = runWithMultiplier(0.25f);
+  const SimTickMetrics highCapacity = runWithMultiplier(4.0f);
+
+  EXPECT_GT(highCapacity.transitRidership, lowCapacity.transitRidership);
+}
+
+// Default (1.0) must reproduce the exact literal vehicleCount/
+// capacityPerVehicle constants every existing caller already relies on.
+TEST(CitySimulatorTests, DefaultTransitCapacityMultiplierMatchesPriorBehavior) {
+  CityMap mapExplicit({64, 64});
+  RoadNetwork roadsExplicit(mapExplicit);
+  EntityStore storeExplicit;
+  PopulationStore populationExplicit;
+  SimOptions explicitOptions;
+  explicitOptions.transitCapacityMultiplier = 1.0f;
+  const SimTickMetrics explicitDefault =
+    CitySimulator::run(mapExplicit, roadsExplicit, storeExplicit, populationExplicit, 7, 80, explicitOptions).rows.back();
+
+  CityMap mapImplicit({64, 64});
+  RoadNetwork roadsImplicit(mapImplicit);
+  EntityStore storeImplicit;
+  PopulationStore populationImplicit;
+  const SimTickMetrics implicitDefault =
+    CitySimulator::run(mapImplicit, roadsImplicit, storeImplicit, populationImplicit, 7, 80, SimOptions{}).rows.back();
+
+  EXPECT_EQ(explicitDefault.transitRoutes, implicitDefault.transitRoutes);
+  EXPECT_EQ(explicitDefault.transitRidership, implicitDefault.transitRidership);
+}
+
 // options.enableTransit = false must behave exactly like before this feature
 // existed: no routes ever placed, zero ridership reported every tick.
 TEST(CitySimulatorTests, TransitDisabledMeansNoRoutesEverPlaced) {

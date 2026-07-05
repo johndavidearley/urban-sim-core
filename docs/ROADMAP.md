@@ -207,8 +207,19 @@ Note on default behavior: unlike the additive M12/M13/M14 systems, fire and natu
 
 ## Next Targets (Post-Backlog)
 
-1. District-level service policies and budget controls
-2. Add persistence integrity report command for batch snapshot auditing
+1. ~~District-level service policies and budget controls~~ - already done,
+   this entry predates and was never pruned after M14: `DistrictSystem`
+   has `setDistrictTaxRates`/`setDistrictServiceAllocation`/
+   `setDistrictServiceBudgetCap`/`setDistrictZoningOrdinance`, all wired
+   into the autonomous `--simulate` loop via `--simulate-district`.
+2. ~~Add persistence integrity report command for batch snapshot auditing~~ -
+   done: `--audit-snapshots DIR` scans a directory for `*.json` snapshots,
+   loads and validates each via the existing `SaveLoadSystem::
+   loadSnapshotFromFile`, and prints a per-file OK/FAILED status line
+   (with migration/tile/building/population counts on success) plus an
+   aggregate summary - `--inspect-snapshot` already covered one file in
+   detail, this covers many at once. Exit code reflects any failures
+   found, for scripting/CI use.
 3. ~~Extend benchmark reports with percentile timings over repeated runs~~ -
    done: `--simulate-benchmark-trials N` runs the same scenario (same seed
    every trial, so differences reflect measurement noise, not different
@@ -216,8 +227,27 @@ Note on default behavior: unlike the additive M12/M13/M14 systems, fire and natu
    instead of one run's numbers. Motivated directly by the Tile-storage
    Phase 4 checkpoint above, where a single run's noise (~20-30%) made it
    impossible to tell a real effect from measurement variance.
-4. Add route diagnostics export mode for offline analysis
-5. Add commute demand-shaping policy experiments for scenario balancing
+4. ~~Add route diagnostics export mode for offline analysis~~ - done:
+   `--top-edges-export FILE` writes `--print-top-edges`' result set as CSV
+   (rank, endpoints, congestion, commuters, commute time) alongside the
+   existing console listing, for loading into a spreadsheet/plotting tool.
+5. ~~Add commute demand-shaping policy experiments for scenario balancing~~ -
+   done: `--commute-sweep DIR` mirrors `--run-policy-sweep`'s shape
+   (baseline snapshot captured once, applied fresh per scenario, per-
+   scenario CSV + ranked manifest) but for commute-side levers instead of
+   district budget caps. New `SimOptions::transitCapacityMultiplier`
+   (1.0 default, zero behavior change) scales auto-placed bus/rail
+   vehicleCount and capacityPerVehicle; the sweep grids seeds x
+   multipliers plus an automatic transit-disabled comparison per seed,
+   ranking by mean traffic congestion and reporting mean transit modal
+   share and mean unmet transit demand (`transitDemand - transitRidership`,
+   a capacity-shortfall signal) as deltas vs. baseline. Validated with a
+   real scenario: 0.25x transit capacity left 80 riders/tick capacity-
+   constrained (unmet demand) while 4x fully absorbed demand and
+   roughly doubled modal share - genuine, actionable signal, not just
+   plumbing. Reuses `writeSimulationReportCSV` (newly exposed from
+   `Simulate.cpp`, previously file-local) rather than duplicating the CSV
+   format.
 
 The following are deferred/out-of-scope items called out by name in this
 document's "Note on ..." sections - each is a real gap, just one judged not

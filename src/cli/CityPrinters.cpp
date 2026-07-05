@@ -1,6 +1,7 @@
 #include "src/cli/CityPrinters.hpp"
 
 #include <array>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 
@@ -32,6 +33,11 @@ void printHelp() {
             << "  --sweep-caps A,B,C  Comma-separated service cap list (-1 means uncapped)\n"
             << "  --sweep-allocations A,B,C  Comma-separated allocation list (0.0-1.0)\n"
             << "  --sweep-manifest-all-districts  Emit per-scenario per-district breakdown manifest\n"
+            << "  --commute-sweep OUT_DIR  Run a commute policy sweep (transit capacity/on-off) against the current city state and rank reports\n"
+            << "  --commute-sweep-seeds A,B,C  Comma-separated seed list for commute sweep scenarios (first is the baseline seed)\n"
+            << "  --commute-sweep-transit-multipliers A,B,C  Comma-separated transitCapacityMultiplier values to sweep (default 1.0)\n"
+            << "  --commute-sweep-ticks N  Ticks to run each commute sweep scenario for\n"
+            << "  --commute-sweep-no-transit-disabled  Skip the automatic transit-disabled comparison scenario per seed\n"
             << "  --print-growth-summary   Print growth fill-rate summary\n"
             << "  --seed-population N      Allocate N residents to housing/jobs\n"
             << "  --print-population-summary  Print population/job summary\n"
@@ -45,6 +51,7 @@ void printHelp() {
             << "  --print-top-edges N      Print top N most congested edges\n"
             << "  --traffic-origin X Y     Filter route diagnostics by origin coordinate\n"
             << "  --traffic-destination X Y Filter route diagnostics by destination coordinate\n"
+            << "  --top-edges-export FILE  Write --print-top-edges results as CSV for offline analysis\n"
             << "  --run-economy-calculation Run economy/tax calculation\n"
             << "  --print-budget-summary    Print revenue/expense/economic health summary\n"
             << "  --add-service TYPE X Y DIST  Add service facility and max road distance\n"
@@ -68,6 +75,7 @@ void printHelp() {
             << "  --save-city FILE          Save city snapshot JSON to FILE\n"
             << "  --load-city FILE          Load city snapshot JSON from FILE (prints migration diagnostics)\n"
             << "  --inspect-snapshot FILE   Inspect snapshot schema and structural summary\n"
+            << "  --audit-snapshots DIR     Batch-validate every *.json snapshot in DIR, reporting per-file status and a summary (exit code reflects any failures)\n"
             << "  --benchmark-phase5 N      Run N-tick Phase 5 performance benchmark\n"
             << "  --benchmark-phase5-focus PHASE  Time only one phase: ALL|GROWTH|POPULATION|TRAFFIC|ECONOMY|SERVICE\n"
             << "  --verify-replay N         Run deterministic replay check using N growth steps\n"
@@ -360,6 +368,26 @@ void printTopCongestedEdges(const std::vector<EdgeTrafficData>& edges) {
               << (edge.congestion * 100.0f) << "%"
               << " commuters=" << edge.totalCommuters << "\n";
   }
+}
+
+// Route diagnostics export mode (offline analysis): the same edges
+// printTopCongestedEdges prints to the console, written as CSV instead so
+// they can be loaded into a spreadsheet/plotting tool. Ranked 1..N in the
+// same order the console listing uses.
+bool writeTopEdgesCSV(const std::string& filePath, const std::vector<EdgeTrafficData>& edges) {
+  std::ofstream out(filePath);
+  if (!out.is_open()) {
+    return false;
+  }
+  out << "rank,from_x,from_y,to_x,to_y,congestion,total_commuters,total_commute_time\n";
+  for (size_t i = 0; i < edges.size(); ++i) {
+    const EdgeTrafficData& edge = edges[i];
+    out << (i + 1) << ","
+        << edge.from.x << "," << edge.from.y << ","
+        << edge.to.x << "," << edge.to.y << ","
+        << edge.congestion << "," << edge.totalCommuters << "," << edge.totalCommuteTime << "\n";
+  }
+  return static_cast<bool>(out);
 }
 
 void printRouteDiagnosticsFilter(const RouteDiagnosticsFilter& filter) {

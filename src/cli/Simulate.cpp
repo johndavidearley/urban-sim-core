@@ -141,6 +141,10 @@ void printPhaseStat(const std::vector<SimPhaseTimings>& all, double SimPhaseTimi
 
 } // namespace
 
+bool writeSimulationReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
+  return writeReportCSV(path, rows);
+}
+
 int runCitySimulation(
   int mapSize,
   uint32_t seed,

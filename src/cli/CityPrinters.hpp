@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "src/entities/EntityStore.hpp"
@@ -36,6 +37,9 @@ void printPopulationSummary(const PopulationSummary& summary);
 void printPopulationGroups(const PopulationStore& population);
 void printTrafficSummary(const TrafficSummary& summary);
 void printTopCongestedEdges(const std::vector<EdgeTrafficData>& edges);
+// Writes the same edges printTopCongestedEdges prints, as CSV, for offline
+// analysis (spreadsheet/plotting). Returns false if filePath couldn't be opened.
+bool writeTopEdgesCSV(const std::string& filePath, const std::vector<EdgeTrafficData>& edges);
 void printRouteDiagnosticsFilter(const RouteDiagnosticsFilter& filter);
 void printBudgetSummary(const EconomyState& economy);
 void printServiceSummary(const ServiceCoverageSummary& summary);

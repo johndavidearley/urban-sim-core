@@ -561,14 +561,24 @@ void placeTransitRoutesIfNeeded(
   const EntityStore& store,
   std::vector<TransitRoute>& routes,
   uint32_t population,
-  int stopCoverageRadius
+  int stopCoverageRadius,
+  float capacityMultiplier
 ) {
+  // Scales both vehicleCount and capacityPerVehicle for newly-placed routes
+  // (a route already placed at the old capacity is not retroactively
+  // resized - this only affects routes placed from here on). 1.0 reproduces
+  // the literal constants below exactly, matching prior behavior for every
+  // existing caller.
+  const auto scale = [capacityMultiplier](int base) {
+    return std::max(1, static_cast<int>(std::lround(base * capacityMultiplier)));
+  };
+
   // Bus: short local hops to the nearest job, denser placement, modest
   // per-vehicle capacity - matches TransitRoute's own defaults.
   placeTransitRoutesOfModeIfNeeded(
     roads, store, routes, population, TransitMode::Bus,
     /*popPerRoute=*/1200, /*maxOfMode=*/16, stopCoverageRadius,
-    /*vehicleCount=*/2, /*capacityPerVehicle=*/30, /*stopSpacing=*/2,
+    /*vehicleCount=*/scale(2), /*capacityPerVehicle=*/scale(30), /*stopSpacing=*/2,
     /*connectToFarthestJob=*/false
   );
 
@@ -578,7 +588,7 @@ void placeTransitRoutesIfNeeded(
   placeTransitRoutesOfModeIfNeeded(
     roads, store, routes, population, TransitMode::Rail,
     /*popPerRoute=*/4000, /*maxOfMode=*/3, stopCoverageRadius * 2,
-    /*vehicleCount=*/6, /*capacityPerVehicle=*/150, /*stopSpacing=*/1,
+    /*vehicleCount=*/scale(6), /*capacityPerVehicle=*/scale(150), /*stopSpacing=*/1,
     /*connectToFarthestJob=*/true
   );
 }
@@ -937,7 +947,8 @@ SimResult CitySimulator::run(
     TransitSummary transitSummary;
     if (options.enableTransit && trafficActive) {
       const auto t0 = Clock::now();
-      placeTransitRoutesIfNeeded(roads, store, transitRoutes, population.getTotalPopulation(), serviceRadius);
+      placeTransitRoutesIfNeeded(roads, store, transitRoutes, population.getTotalPopulation(), serviceRadius,
+                                 options.transitCapacityMultiplier);
       if (transitRoutes.size() != transitCache.builtForRouteCount) {
         TransitSystem::buildCache(roads, transitRoutes, transitCache);
       }
