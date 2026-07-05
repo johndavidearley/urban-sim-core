@@ -19,9 +19,10 @@ TEST(TileTests, TileCreation) {
 
 TEST(TileTests, TileDefaults) {
   Tile tile;
-  
-  EXPECT_EQ(tile.landValue, 100.0f);
-  EXPECT_EQ(tile.pollution, 0.0f);
+
+  // landValue/pollution defaults are CityMap-level concerns now (Phase 3 of
+  // the Tile-storage plan, docs/ROADMAP.md item 10) - see
+  // CityMapTests.FieldAccessorsDefaultToTheDocumentedValues.
   EXPECT_FALSE(tile.hasRoad);
   EXPECT_FALSE(tile.connectedToRoad);
   EXPECT_TRUE(tile.connectedToPower);   // Stub for MVP
@@ -105,36 +106,45 @@ TEST(CityMapTests, AccessTile) {
   
   Tile& tile = map.getTile({7, 11});
   tile.zone = 1;
-  tile.landValue = 150.0f;
-  
+  map.landValue({7, 11}) = 150.0f;
+
   const Tile& sameTile = map.getTile({7, 11});
   EXPECT_EQ(sameTile.zone, 1);
-  EXPECT_EQ(sameTile.landValue, 150.0f);
+  EXPECT_EQ(map.landValue({7, 11}), 150.0f);
 }
 
-// Phase 1 of the Tile-storage backlog plan (docs/ROADMAP.md item 10): these
-// accessors are pure wrappers over getTile() right now, so they must always
-// read/write the exact same underlying storage getTile() does.
-TEST(CityMapTests, FieldAccessorsReadAndWriteTheSameStorageAsGetTile) {
+// Phase 3 of the Tile-storage backlog plan (docs/ROADMAP.md item 10) moved
+// pollution/landValue out of Tile into CityMap-owned parallel arrays, so
+// these accessors are now the *only* way to read or write them - getTile()
+// no longer has these fields at all. zone stays on Tile (never moved), so
+// it's checked both ways to confirm the accessor and getTile() still agree.
+TEST(CityMapTests, FieldAccessorsDefaultToTheDocumentedValues) {
+  CityMap map({16, 16});
+
+  EXPECT_FLOAT_EQ(map.pollution({3, 4}), 0.0f);
+  EXPECT_FLOAT_EQ(map.landValue({3, 4}), 100.0f);
+  EXPECT_EQ(map.zone({3, 4}), 0);
+}
+
+TEST(CityMapTests, FieldAccessorsReadWriteRoundTripIndependently) {
   CityMap map({16, 16});
 
   map.pollution({3, 4}) = 0.75f;
-  EXPECT_FLOAT_EQ(map.getTile({3, 4}).pollution, 0.75f);
   EXPECT_FLOAT_EQ(map.pollution({3, 4}), 0.75f);
   EXPECT_FLOAT_EQ(std::as_const(map).pollution({3, 4}), 0.75f);
 
   map.landValue({3, 4}) = 222.0f;
-  EXPECT_FLOAT_EQ(map.getTile({3, 4}).landValue, 222.0f);
   EXPECT_FLOAT_EQ(map.landValue({3, 4}), 222.0f);
+  EXPECT_FLOAT_EQ(std::as_const(map).landValue({3, 4}), 222.0f);
 
   map.setZone({3, 4}, 2);
   EXPECT_EQ(map.getTile({3, 4}).zone, 2);
   EXPECT_EQ(map.zone({3, 4}), 2);
 
-  // Mutating through getTile() must be visible through the accessors too -
-  // both are windows onto the same Tile, not independent copies.
-  map.getTile({3, 4}).pollution = 0.1f;
-  EXPECT_FLOAT_EQ(map.pollution({3, 4}), 0.1f);
+  // A neighboring tile must be unaffected - confirms indexing into the
+  // parallel arrays isn't accidentally sharing storage between coords.
+  EXPECT_FLOAT_EQ(map.pollution({3, 5}), 0.0f);
+  EXPECT_FLOAT_EQ(map.landValue({3, 5}), 100.0f);
 }
 
 TEST(CityMapTests, BoundsCheckingCorners) {
@@ -197,24 +207,24 @@ TEST(CityMapTests, TileModification) {
   CityMap map({8, 8});
   
   Tile& tile = map.getTile({3, 4});
-  
+
   // Modify properties
   tile.zone = 2;
   tile.type = 1;
   tile.hasRoad = true;
   tile.connectedToRoad = true;
-  tile.landValue = 250.0f;
-  tile.pollution = 0.5f;
+  map.landValue({3, 4}) = 250.0f;
+  map.pollution({3, 4}) = 0.5f;
   tile.buildingId = 42;
-  
+
   // Verify modifications persisted
   const Tile& sameTile = map.getTile({3, 4});
   EXPECT_EQ(sameTile.zone, 2);
   EXPECT_EQ(sameTile.type, 1);
   EXPECT_TRUE(sameTile.hasRoad);
   EXPECT_TRUE(sameTile.connectedToRoad);
-  EXPECT_EQ(sameTile.landValue, 250.0f);
-  EXPECT_EQ(sameTile.pollution, 0.5f);
+  EXPECT_EQ(map.landValue({3, 4}), 250.0f);
+  EXPECT_EQ(map.pollution({3, 4}), 0.5f);
   EXPECT_EQ(sameTile.buildingId, 42);
 }
 
@@ -284,7 +294,7 @@ TEST(ZoningTests, ApplyZoneRectInclusive) {
   for (int y = 2; y <= 3; ++y) {
     for (int x = 2; x <= 4; ++x) {
       EXPECT_EQ(map.getTile({x, y}).zone, static_cast<int>(ZoneType::Residential));
-      EXPECT_EQ(map.getTile({x, y}).landValue, 120.0f);
+      EXPECT_EQ(map.landValue({x, y}), 120.0f);
     }
   }
 }
@@ -301,7 +311,7 @@ TEST(ZoningTests, ApplyZoneRectHandlesInvertedCorners) {
   for (int y = 4; y <= 5; ++y) {
     for (int x = 3; x <= 5; ++x) {
       EXPECT_EQ(map.getTile({x, y}).zone, static_cast<int>(ZoneType::Commercial));
-      EXPECT_EQ(map.getTile({x, y}).landValue, 140.0f);
+      EXPECT_EQ(map.landValue({x, y}), 140.0f);
     }
   }
 }
@@ -351,7 +361,7 @@ TEST(ZoningTests, OfficeZoneAppliesWithDistinctSymbolAndLandValue) {
 
   EXPECT_EQ(zonedCount, 4);
   EXPECT_EQ(map.getTile({1, 1}).zone, static_cast<int>(ZoneType::Office));
-  EXPECT_FLOAT_EQ(map.getTile({1, 1}).landValue, Zoning::defaultLandValueForZone(ZoneType::Office));
+  EXPECT_FLOAT_EQ(map.landValue({1, 1}), Zoning::defaultLandValueForZone(ZoneType::Office));
   EXPECT_EQ(Zoning::zoneToSymbol(static_cast<int>(ZoneType::Office)), 'O');
   EXPECT_STREQ(Zoning::zoneToString(static_cast<int>(ZoneType::Office)), "Office");
 }

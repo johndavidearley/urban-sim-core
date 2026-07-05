@@ -246,9 +246,9 @@ TEST_F(EconomySystemTests, NoMapFallsBackToPlaceholderLandValue) {
 TEST_F(EconomySystemTests, MapProvidesRealAverageLandValue) {
   CityMap map({4, 1});
   map.getTile({0, 0}).zone = static_cast<int>(ZoneType::Residential);
-  map.getTile({0, 0}).landValue = 120.0f;
+  map.landValue({0, 0}) = 120.0f;
   map.getTile({1, 0}).zone = static_cast<int>(ZoneType::Commercial);
-  map.getTile({1, 0}).landValue = 180.0f;
+  map.landValue({1, 0}) = 180.0f;
 
   EconomyState state = EconomySystem::calculateEconomy(*store, *population, TaxRates{}, &map);
 

@@ -15,7 +15,7 @@ TEST(SaveLoadSystemTests, SaveAndLoadRoundTripPreservesCoreState) {
   PopulationStore population;
 
   map.getTile({2, 2}).zone = 1;
-  map.getTile({2, 2}).pollution = 0.15f;
+  map.pollution({2, 2}) = 0.15f;
 
   EntityId buildingId = store.createBuilding(BuildingType::Residential, {2, 2}, 40);
   Building* building = store.getBuilding(buildingId);
@@ -64,7 +64,7 @@ TEST(SaveLoadSystemTests, SaveAndLoadRoundTripPreservesCoreState) {
 
   const Tile& loadedTile = loadedMap.getTile({2, 2});
   EXPECT_EQ(loadedTile.zone, 1);
-  EXPECT_FLOAT_EQ(loadedTile.pollution, 0.15f);
+  EXPECT_FLOAT_EQ(loadedMap.pollution({2, 2}), 0.15f);
   EXPECT_EQ(loadedTile.buildingId, static_cast<uint32_t>(buildingId));
 
   const Building* loadedBuilding = loadedStore.getBuilding(buildingId);

@@ -9,6 +9,8 @@ CityMap::CityMap(glm::ivec2 dims)
   
   // Initialize all tiles
   tiles.resize(dims.x * dims.y);
+  pollutions.assign(dims.x * dims.y, 0.0f);
+  landValues.assign(dims.x * dims.y, 100.0f);
   for (int y = 0; y < dims.y; ++y) {
     for (int x = 0; x < dims.x; ++x) {
       Coord pos{x, y};
@@ -16,7 +18,6 @@ CityMap::CityMap(glm::ivec2 dims)
       tile.position = pos;
       tile.type = 0;        // Empty
       tile.zone = 0;        // No zone
-      tile.landValue = 100.0f;
     }
   }
 }
@@ -42,19 +43,19 @@ bool CityMap::isValid(Coord coord) const {
 }
 
 float& CityMap::pollution(Coord coord) {
-  return getTile(coord).pollution;
+  return pollutions[getIndex(coord)];
 }
 
 float CityMap::pollution(Coord coord) const {
-  return getTile(coord).pollution;
+  return pollutions[getIndex(coord)];
 }
 
 float& CityMap::landValue(Coord coord) {
-  return getTile(coord).landValue;
+  return landValues[getIndex(coord)];
 }
 
 float CityMap::landValue(Coord coord) const {
-  return getTile(coord).landValue;
+  return landValues[getIndex(coord)];
 }
 
 int CityMap::zone(Coord coord) const {

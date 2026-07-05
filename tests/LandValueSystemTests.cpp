@@ -31,8 +31,8 @@ TEST(LandValueSystemTests, JobProximityRaisesLandValue) {
 
   LandValueSystem::updateLandValues(map, roads, store, nullptr, 0, 0, 9, 2);
 
-  const float nearValue = map.getTile({1, 0}).landValue;
-  const float farValue = map.getTile({8, 0}).landValue;
+  const float nearValue = map.landValue({1, 0});
+  const float farValue = map.landValue({8, 0});
   EXPECT_GT(nearValue, farValue);
 }
 
@@ -47,11 +47,11 @@ TEST(LandValueSystemTests, PollutionLowersLandValue) {
   // Two identical residential tiles, equidistant from the job.
   Zoning::applyZoneRect(map, {4, 0}, {4, 0}, ZoneType::Residential);
   Zoning::applyZoneRect(map, {5, 0}, {5, 0}, ZoneType::Residential);
-  map.getTile({5, 0}).pollution = 1.0f;  // maximally polluted
+  map.pollution({5, 0}) = 1.0f;  // maximally polluted
 
   LandValueSystem::updateLandValues(map, roads, store, nullptr, 0, 0, 9, 2);
 
-  EXPECT_LT(map.getTile({5, 0}).landValue, map.getTile({4, 0}).landValue);
+  EXPECT_LT(map.landValue({5, 0}), map.landValue({4, 0}));
 }
 
 TEST(LandValueSystemTests, ServiceProximityRaisesLandValue) {
@@ -71,13 +71,13 @@ TEST(LandValueSystemTests, ServiceProximityRaisesLandValue) {
 
   LandValueSystem::updateLandValues(map, roads, store, &cache, 0, 0, 9, 2);
 
-  EXPECT_GT(map.getTile({1, 0}).landValue, map.getTile({8, 0}).landValue);
+  EXPECT_GT(map.landValue({1, 0}), map.landValue({8, 0}));
 
   // Without a cache at all, the service factor contributes nothing, so the
   // near/far difference collapses to whatever the (absent) job factor gives -
   // here, zero jobs too, so both tiles land on the same base value.
   LandValueSystem::updateLandValues(map, roads, store, nullptr, 0, 0, 9, 2);
-  EXPECT_FLOAT_EQ(map.getTile({1, 0}).landValue, map.getTile({8, 0}).landValue);
+  EXPECT_FLOAT_EQ(map.landValue({1, 0}), map.landValue({8, 0}));
 }
 
 TEST(LandValueSystemTests, UnreachableTileFallsBackToBaseValue) {
@@ -93,7 +93,7 @@ TEST(LandValueSystemTests, UnreachableTileFallsBackToBaseValue) {
 
   LandValueSystem::updateLandValues(map, roads, store, nullptr, 0, 0, 9, 2);
 
-  EXPECT_FLOAT_EQ(map.getTile({5, 2}).landValue, Zoning::defaultLandValueForZone(ZoneType::Residential));
+  EXPECT_FLOAT_EQ(map.landValue({5, 2}), Zoning::defaultLandValueForZone(ZoneType::Residential));
 }
 
 TEST(LandValueSystemTests, WaterTilesAreUntouched) {
@@ -104,11 +104,11 @@ TEST(LandValueSystemTests, WaterTilesAreUntouched) {
   EntityStore store;
   Tile& water = map.getTile({2, 2});
   water.type = 2;
-  water.landValue = 42.0f;
+  map.landValue({2, 2}) = 42.0f;
 
   LandValueSystem::updateLandValues(map, roads, store, nullptr, 0, 0, 4, 4);
 
-  EXPECT_FLOAT_EQ(map.getTile({2, 2}).landValue, 42.0f);
+  EXPECT_FLOAT_EQ(map.landValue({2, 2}), 42.0f);
 }
 
 TEST(LandValueSystemTests, AverageLandValueMeansOverZonedTilesOnly) {
@@ -117,12 +117,12 @@ TEST(LandValueSystemTests, AverageLandValueMeansOverZonedTilesOnly) {
 
   // Tile 0: unzoned (excluded). Tile 1 and 2: zoned, known values. Tile 3: water (excluded).
   map.getTile({1, 0}).zone = static_cast<int>(ZoneType::Residential);
-  map.getTile({1, 0}).landValue = 100.0f;
+  map.landValue({1, 0}) = 100.0f;
   map.getTile({2, 0}).zone = static_cast<int>(ZoneType::Commercial);
-  map.getTile({2, 0}).landValue = 200.0f;
+  map.landValue({2, 0}) = 200.0f;
   map.getTile({3, 0}).zone = static_cast<int>(ZoneType::Residential);
   map.getTile({3, 0}).type = 2;  // water
-  map.getTile({3, 0}).landValue = 999.0f;
+  map.landValue({3, 0}) = 999.0f;
 
   EXPECT_FLOAT_EQ(LandValueSystem::averageLandValue(map), 150.0f);
 }

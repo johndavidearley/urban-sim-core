@@ -215,8 +215,8 @@ void printTile(const CityMap& map, int x, int y) {
   std::cout << "  Position: (" << tile.position.x << "," << tile.position.y << ")\n";
   std::cout << "  Zone: " << Zoning::zoneToString(tile.zone) << " (" << tile.zone << ")\n";
   std::cout << "  Type: " << static_cast<int>(tile.type) << "\n";
-  std::cout << "  Land Value: " << tile.landValue << "\n";
-  std::cout << "  Pollution: " << tile.pollution << "\n";
+  std::cout << "  Land Value: " << map.landValue({x, y}) << "\n";
+  std::cout << "  Pollution: " << map.pollution({x, y}) << "\n";
   std::cout << "  Has Road: " << (tile.hasRoad ? "Yes" : "No") << "\n";
   std::cout << "  Connected to Road: " << (tile.connectedToRoad ? "Yes" : "No") << "\n";
   if (tile.buildingId != 0) {

@@ -264,8 +264,8 @@ CitySnapshot SaveLoadSystem::captureSnapshot(
       serialized.y = y;
       serialized.type = tile.type;
       serialized.zone = tile.zone;
-      serialized.landValue = tile.landValue;
-      serialized.pollution = tile.pollution;
+      serialized.landValue = map.landValue({x, y});
+      serialized.pollution = map.pollution({x, y});
       serialized.hasRoad = tile.hasRoad;
       serialized.connectedToRoad = tile.connectedToRoad;
       serialized.connectedToPower = tile.connectedToPower;
@@ -322,8 +322,8 @@ bool SaveLoadSystem::applySnapshot(
     Tile& tile = map.getTile({serialized.x, serialized.y});
     tile.type = serialized.type;
     tile.zone = serialized.zone;
-    tile.landValue = serialized.landValue;
-    tile.pollution = serialized.pollution;
+    map.landValue({serialized.x, serialized.y}) = serialized.landValue;
+    map.pollution({serialized.x, serialized.y}) = serialized.pollution;
     tile.hasRoad = serialized.hasRoad;
     tile.connectedToRoad = serialized.connectedToRoad;
     tile.connectedToPower = serialized.connectedToPower;

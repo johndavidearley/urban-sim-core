@@ -166,7 +166,7 @@ TEST(CitySimulatorTests, IndustryAndHousingSegregateByPollution) {
   uint32_t industrialCount = 0;
   for (const auto& [id, building] : store.getBuildings()) {
     (void)id;
-    const float p = map.getTile(building.position).pollution;
+    const float p = map.pollution(building.position);
     if (building.type == BuildingType::Residential) {
       residentialPollution += p;
       ++residentialCount;
@@ -222,8 +222,9 @@ TEST(CitySimulatorTests, LandValueVariesAcrossZonedTiles) {
     for (int x = 0; x < dims.x; ++x) {
       const Tile& tile = map.getTile({x, y});
       if (tile.type == 2 || tile.zone == static_cast<int>(ZoneType::None)) continue;
-      minValue = std::min(minValue, tile.landValue);
-      maxValue = std::max(maxValue, tile.landValue);
+      const float landValue = map.landValue({x, y});
+      minValue = std::min(minValue, landValue);
+      maxValue = std::max(maxValue, landValue);
     }
   }
   EXPECT_GT(maxValue, minValue) << "land value should vary spatially, not be a flat constant";

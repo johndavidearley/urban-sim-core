@@ -245,11 +245,12 @@ worth its cost at the time the note was written:
    (200 trials each) proving the weighting actually favors nearer and
    higher-capacity jobs; traffic phase cost unaffected (weight computation
    is O(job buildings) per draw, negligible next to Dijkstra).
-10. Rewrite `CityMap`'s `Tile` storage as struct-of-arrays (or at minimum
-    pull the hot numeric fields - pollution, land value - into parallel
-    arrays), so per-tile field loops can actually auto-vectorize; the
-    current array-of-structs layout is the reason hand-written SIMD
-    intrinsics were ruled out as a targeted win in M16.
+10. ~~Rewrite `CityMap`'s `Tile` storage as struct-of-arrays~~ - done through
+    Phase 4 (pollution/landValue pulled into parallel arrays; see the
+    phased breakdown below). Phase 4's benchmark found no measurable perf
+    win, so Phase 5 (explicit loop vectorization) was deliberately not
+    pursued - the accessor-based API is kept for architectural reasons,
+    not a performance win that didn't materialize.
 
     Investigated: `CityMap` is referenced by 39 files - nearly every system
     in the codebase (Growth, LandValue, Service, Traffic, Population,
@@ -299,24 +300,42 @@ worth its cost at the time the note was written:
       would need direct access regardless of storage layout, so migrating
       3 of their 8-9 fields to accessors wouldn't reduce Phase 3's
       eventual blast radius at all.
-    - **Phase 3 - the actual storage swap.** Once every external caller
-      goes through accessors (no more direct `Tile&` field access outside
-      `CityMap.cpp` itself), swap `std::vector<Tile>` for parallel arrays
-      for the hot numeric fields (pollution, land value) internally. By
-      construction this change is now contained to `CityMap.hpp/.cpp` -
-      the blast radius Phases 1-2 were built to eliminate.
-    - **Phase 4 - measure, then decide.** Re-run the same benchmark
-      scenario used to produce the ~6-7% estimate above. If the real
-      number is close to that estimate, stop here - the accessor layer
-      alone is worth keeping (cleaner separation of concerns) even without
-      further work. Only proceed to Phase 5 if the data shows a
-      genuinely worthwhile win.
-    - **Phase 5 (optional) - vectorize the hot loops explicitly.**
-      Restructure `updatePollution`'s clear/scatter phases and the zoning
-      candidate scan to operate directly on the new contiguous arrays
-      (not through a per-tile accessor call inside the loop, which would
-      reintroduce the indirection Phase 3 removed), enabling real
-      auto-vectorization rather than just cache-friendlier layout.
+    - [x] **Phase 3 - the actual storage swap - done.** `Tile` no longer
+      has `landValue`/`pollution` fields at all; `CityMap` now owns them as
+      two parallel `std::vector<float>` (`pollutions`, `landValues`),
+      indexed identically to `tiles`. This turned out to have a bigger
+      blast radius than "contained to `CityMap.hpp/.cpp`" as originally
+      described: removing the fields from `Tile` broke every place that
+      read/wrote them via a bare `Tile`/`getTile()`, including 5 test files
+      that used `map.getTile(coord).pollution = X` as a test-setup
+      convenience (not just the 2 production exceptions - `CityPrinters::
+      printTile` and `SaveLoadSystem`'s snapshot capture/apply - already
+      known from Phase 2). All were migrated to the accessors first as
+      prep, then the storage swap itself compiled with zero further errors
+      - confirming the prep step had genuinely caught every caller. 273
+      tests passing throughout; a direct before/after `--simulate`
+      comparison (500x500/1000 ticks) shows byte-identical final city
+      state.
+    - [x] **Phase 4 - measure, then decide - done, decision: stop here.**
+      Re-ran the 500x500/1000-tick benchmark 3x before and after Phase 3.
+      Result: no measurable win. Roads/Zoning/Growth (the phases that
+      would benefit from contiguous float arrays) swing by roughly as much
+      from ordinary run-to-run machine noise (~20-30%) as any effect the
+      storage change could plausibly produce - consistent with the
+      original ~6-7% best-case estimate being too small to reliably
+      observe at this measurement granularity. Determinism held throughout
+      (identical final city state on every trial, both before and after).
+      Phase 3 is being kept anyway - the accessor-based API and contiguous
+      per-tile-field storage are worth having on architectural grounds
+      (cleaner separation of concerns, and a foundation the *next* hot
+      numeric field to get added won't have to redo) - but Phase 5 is not:
+      it would add real complexity (rewriting loops to bypass the
+      accessor call and operate on raw array pointers) on top of a change
+      that hasn't shown a measurable win to build on.
+    - Phase 5 (not pursued - see Phase 4's finding) - vectorize the hot
+      loops explicitly by restructuring `updatePollution`'s clear/scatter
+      phases and the zoning candidate scan to operate directly on the
+      contiguous arrays instead of through a per-tile accessor call.
 11. Make `TrafficRouteCache` resilient to a continuously-growing city - e.g.
     invalidate only the paths that cross a changed edge instead of clearing
     the whole cache on any topology change - to raise its measured-modest

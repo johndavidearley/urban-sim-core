@@ -8,7 +8,17 @@ class CityMap {
 private:
   glm::ivec2 dimensions;
   std::vector<Tile> tiles;
-  
+
+  // Phase 3 of the Tile-storage backlog plan (docs/ROADMAP.md item 10):
+  // pollution and land value split out of Tile into their own contiguous
+  // arrays, parallel to `tiles` (same index, same size). These are the
+  // fields CitySimulator's per-tick pollution field update and
+  // LandValueSystem's recompute touch for every tile in the active region,
+  // so a plain contiguous float array (rather than striding through the
+  // whole Tile struct for one field) is the whole point of this move.
+  std::vector<float> pollutions;
+  std::vector<float> landValues;
+
   size_t getIndex(Coord coord) const;
   
 public:
@@ -23,14 +33,12 @@ public:
 
   size_t getTileCount() const { return tiles.size(); }
 
-  // Phase 1 of the Tile-storage backlog plan (docs/ROADMAP.md, "Next
-  // Targets" item 10): accessors for the fields that plan intends to
-  // eventually pull into parallel arrays (pollution, land value), plus
-  // zone since callers so often touch it alongside them. Pure wrappers
-  // over getTile() right now - zero behavior or performance change - so
-  // callers can be migrated to these one file at a time (Phase 2) ahead
-  // of any actual storage change (Phase 3), instead of in one large,
-  // hard-to-verify step.
+  // Accessors for the fields split into parallel arrays above (docs/
+  // ROADMAP.md item 10), plus zone since callers so often touch it
+  // alongside them (zone stays on Tile - only pollution/landValue moved).
+  // These used to be pure wrappers over getTile() before Phase 3; now
+  // they're the *only* way to read or write pollution/landValue at all -
+  // Tile itself no longer has these fields.
   float& pollution(Coord coord);
   float pollution(Coord coord) const;
   float& landValue(Coord coord);
