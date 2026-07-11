@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 #include <utility>
 #include "src/world/CityMap.hpp"
 #include "src/world/Tile.hpp"
@@ -27,7 +27,7 @@ TEST(TileTests, TileDefaults) {
   EXPECT_FALSE(tile.connectedToRoad);
   EXPECT_TRUE(tile.connectedToPower);   // Stub for MVP
   EXPECT_TRUE(tile.connectedToWater);   // Stub for MVP
-  EXPECT_EQ(tile.buildingId, 0);
+  EXPECT_EQ(tile.buildingId, 0u);
 }
 
 TEST(TileTests, TileZoneTypes) {
@@ -58,7 +58,7 @@ TEST(CityMapTests, MapCreation) {
   
   EXPECT_EQ(map.getDimensions().x, 32);
   EXPECT_EQ(map.getDimensions().y, 32);
-  EXPECT_EQ(map.getTileCount(), 32 * 32);
+  EXPECT_EQ(map.getTileCount(), 32u * 32u);
 }
 
 TEST(CityMapTests, MapSquare) {
@@ -66,7 +66,7 @@ TEST(CityMapTests, MapSquare) {
   
   EXPECT_EQ(map.getDimensions().x, 64);
   EXPECT_EQ(map.getDimensions().y, 64);
-  EXPECT_EQ(map.getTileCount(), 64 * 64);
+  EXPECT_EQ(map.getTileCount(), 64u * 64u);
 }
 
 TEST(CityMapTests, MapRectangular) {
@@ -74,7 +74,7 @@ TEST(CityMapTests, MapRectangular) {
   
   EXPECT_EQ(map.getDimensions().x, 100);
   EXPECT_EQ(map.getDimensions().y, 50);
-  EXPECT_EQ(map.getTileCount(), 100 * 50);
+  EXPECT_EQ(map.getTileCount(), 100u * 50u);
 }
 
 TEST(CityMapTests, TilePositionInitialization) {
@@ -225,7 +225,7 @@ TEST(CityMapTests, TileModification) {
   EXPECT_TRUE(sameTile.connectedToRoad);
   EXPECT_EQ(map.landValue({3, 4}), 250.0f);
   EXPECT_EQ(map.pollution({3, 4}), 0.5f);
-  EXPECT_EQ(sameTile.buildingId, 42);
+  EXPECT_EQ(sameTile.buildingId, 42u);
 }
 
 TEST(CityMapTests, MultipleTilesIndependent) {
@@ -247,7 +247,7 @@ TEST(CityMapTests, LargeMapPerformance) {
   // Test that large map creation is fast
   CityMap map({256, 256});
   
-  EXPECT_EQ(map.getTileCount(), 256 * 256);
+  EXPECT_EQ(map.getTileCount(), 256u * 256u);
   
   // Access corners should work
   EXPECT_NO_THROW(map.getTile({0, 0}));

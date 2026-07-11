@@ -9,6 +9,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(URBAN_SIM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+option(URBAN_SIM_ENABLE_ASAN_UBSAN "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(URBAN_SIM_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
+
+if(URBAN_SIM_ENABLE_ASAN_UBSAN AND URBAN_SIM_ENABLE_TSAN)
+  message(FATAL_ERROR "ASan/UBSan and TSan cannot be enabled in the same build")
+endif()
+
 # Default to a Release build when none is specified. This is a headless
 # simulation engine with hot per-tick loops (traffic pathfinding, land value,
 # pollution field) - shipping unoptimized (-O0, the implicit default when
@@ -30,11 +38,31 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 # Compiler flags
 if(MSVC)
   add_compile_options(/W4)
+  if(URBAN_SIM_WARNINGS_AS_ERRORS)
+    add_compile_options(/WX)
+  endif()
 else()
   add_compile_options(-Wall -Wextra -Wpedantic)
+  if(URBAN_SIM_WARNINGS_AS_ERRORS)
+    add_compile_options(-Werror)
+  endif()
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(-fcolor-diagnostics)
   endif()
+endif()
+
+if(URBAN_SIM_ENABLE_ASAN_UBSAN OR URBAN_SIM_ENABLE_TSAN)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    message(FATAL_ERROR "Sanitizer builds require Clang or GCC")
+  endif()
+
+  if(URBAN_SIM_ENABLE_ASAN_UBSAN)
+    set(URBAN_SIM_SANITIZERS "address,undefined")
+  else()
+    set(URBAN_SIM_SANITIZERS "thread")
+  endif()
+  add_compile_options(-fsanitize=${URBAN_SIM_SANITIZERS} -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=${URBAN_SIM_SANITIZERS})
 endif()
 
 # Dependencies: nlohmann_json is required for snapshot persistence.
@@ -71,3 +99,6 @@ endif()
 message(STATUS "UrbanSimCore ${PROJECT_VERSION}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "Warnings as errors: ${URBAN_SIM_WARNINGS_AS_ERRORS}")
+message(STATUS "ASan/UBSan: ${URBAN_SIM_ENABLE_ASAN_UBSAN}")
+message(STATUS "TSan: ${URBAN_SIM_ENABLE_TSAN}")

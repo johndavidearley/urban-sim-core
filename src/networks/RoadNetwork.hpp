@@ -90,6 +90,7 @@ public:
   // Road management
   void buildRoad(glm::ivec2 from, glm::ivec2 to);
   void removeRoad(glm::ivec2 from, glm::ivec2 to);
+  void clear();
   bool hasRoad(glm::ivec2 from, glm::ivec2 to) const;
   
   // Connectivity

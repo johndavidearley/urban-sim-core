@@ -1,6 +1,7 @@
 #include "SaveLoadSystem.hpp"
 
 #include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <unordered_set>
 
@@ -113,18 +114,24 @@ bool migrateSnapshotJsonToCurrent(
   return root.value("version", -1) == kCurrentSnapshotVersion;
 }
 
-bool validateSnapshot(const CitySnapshot& snapshot) {
-  if (snapshot.version != kCurrentSnapshotVersion) {
+bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = nullptr) {
+  auto fail = [errorMessage](const std::string& message) {
+    if (errorMessage != nullptr) {
+      *errorMessage = message;
+    }
     return false;
+  };
+  if (snapshot.version != kCurrentSnapshotVersion) {
+    return fail("snapshot version is not the current schema version");
   }
 
   if (snapshot.width <= 0 || snapshot.height <= 0) {
-    return false;
+    return fail("map dimensions must be positive");
   }
 
   const size_t expectedTileCount = static_cast<size_t>(snapshot.width) * static_cast<size_t>(snapshot.height);
   if (snapshot.tiles.size() != expectedTileCount) {
-    return false;
+    return fail("tile count does not match map dimensions");
   }
 
   std::unordered_set<int64_t> seenTiles;
@@ -135,61 +142,61 @@ bool validateSnapshot(const CitySnapshot& snapshot) {
 
   for (const Building& building : snapshot.buildings) {
     if (building.id == EntityIdUtils::NullEntity) {
-      return false;
+      return fail("building has a null entity ID");
     }
     if (!isBuildingTypeValid(static_cast<int>(building.type))) {
-      return false;
+      return fail("building type is out of range");
     }
     if (!isInBounds(building.position.x, building.position.y, snapshot.width, snapshot.height)) {
-      return false;
+      return fail("building position is outside the map");
     }
     if (building.capacity < 0 || building.occupancy < 0 || building.occupancy > building.capacity) {
-      return false;
+      return fail("building occupancy or capacity is invalid");
     }
     buildingIds.insert(static_cast<uint32_t>(building.id));
   }
 
   for (const PopulationGroup& group : snapshot.populationGroups) {
     if (group.id == EntityIdUtils::NullEntity) {
-      return false;
+      return fail("population group has a null entity ID");
     }
     if (!isIncomeBandValid(static_cast<int>(group.band))) {
-      return false;
+      return fail("population income band is out of range");
     }
     if (group.employed > group.size) {
-      return false;
+      return fail("population employed count exceeds group size");
     }
   }
 
   for (const SerializedTile& tile : snapshot.tiles) {
     if (!isInBounds(tile.x, tile.y, snapshot.width, snapshot.height)) {
-      return false;
+      return fail("tile position is outside the map");
     }
     if (!isTileTypeValid(tile.type) || !isZoneValid(tile.zone)) {
-      return false;
+      return fail("tile type or zone is out of range");
     }
     if (tile.buildingId != 0 && buildingIds.find(tile.buildingId) == buildingIds.end()) {
-      return false;
+      return fail("tile references a missing building ID");
     }
 
     const int64_t key = tileKey(tile.x, tile.y);
     if (!seenTiles.insert(key).second) {
-      return false;
+      return fail("snapshot contains duplicate tile coordinates");
     }
   }
 
   for (const SerializedRoad& road : snapshot.roads) {
     if (!isInBounds(road.from.x, road.from.y, snapshot.width, snapshot.height)) {
-      return false;
+      return fail("road start is outside the map");
     }
     if (!isInBounds(road.to.x, road.to.y, snapshot.width, snapshot.height)) {
-      return false;
+      return fail("road end is outside the map");
     }
     if (!areAdjacentCardinal(road.from, road.to)) {
-      return false;
+      return fail("road endpoints are not cardinally adjacent");
     }
     if (road.currentLoad < 0.0f) {
-      return false;
+      return fail("road load cannot be negative");
     }
   }
 
@@ -301,19 +308,23 @@ bool SaveLoadSystem::applySnapshot(
   CityMap& map,
   RoadNetwork& roads,
   EntityStore& store,
-  PopulationStore& population
+  PopulationStore& population,
+  std::string* errorMessage
 ) {
   const glm::ivec2 dims = map.getDimensions();
   if (snapshot.width != dims.x || snapshot.height != dims.y) {
+    if (errorMessage != nullptr) {
+      *errorMessage = "snapshot dimensions do not match the destination map";
+    }
     return false;
   }
-  if (!validateSnapshot(snapshot)) {
+  if (!validateSnapshot(snapshot, errorMessage)) {
     return false;
   }
 
   store.clear();
   population.clear();
-  roads.resetCongestion();
+  roads.clear();
 
   for (const SerializedTile& serialized : snapshot.tiles) {
     if (!map.isValid({serialized.x, serialized.y})) {
@@ -425,6 +436,9 @@ bool SaveLoadSystem::loadSnapshotFromFile(
 
   std::ifstream in(filePath);
   if (!in.is_open()) {
+    if (diagnostics != nullptr) {
+      diagnostics->errorMessage = "unable to open snapshot file";
+    }
     return false;
   }
 
@@ -439,6 +453,9 @@ bool SaveLoadSystem::loadSnapshotFromFile(
     if (!migrateSnapshotJsonToCurrent(root, sourceVersion, migrationApplied, migrationPath)) {
       if (diagnostics != nullptr) {
         diagnostics->sourceVersion = sourceVersion;
+        diagnostics->errorMessage = sourceVersion > kCurrentSnapshotVersion
+          ? "snapshot schema version is newer than this build supports"
+          : "snapshot schema is unsupported or cannot be migrated";
       }
       return false;
     }
@@ -486,13 +503,25 @@ bool SaveLoadSystem::loadSnapshotFromFile(
       road.currentLoad = roadJson.at("currentLoad").get<float>();
       snapshot.roads.push_back(road);
     }
+  } catch (const std::exception& ex) {
+    if (diagnostics != nullptr) {
+      diagnostics->errorMessage = std::string("malformed snapshot: ") + ex.what();
+    }
+    return false;
   } catch (...) {
+    if (diagnostics != nullptr) {
+      diagnostics->errorMessage = "malformed snapshot: unknown parsing error";
+    }
     return false;
   }
 
-  const bool valid = validateSnapshot(snapshot);
+  std::string validationError;
+  const bool valid = validateSnapshot(snapshot, &validationError);
   if (diagnostics != nullptr) {
     diagnostics->validationPassed = valid;
+    if (!valid) {
+      diagnostics->errorMessage = validationError;
+    }
   }
   return valid;
 }
@@ -510,5 +539,10 @@ bool SaveLoadSystem::loadFromFile(
     return false;
   }
 
-  return applySnapshot(snapshot, map, roads, store, population);
+  std::string applyError;
+  const bool applied = applySnapshot(snapshot, map, roads, store, population, &applyError);
+  if (!applied && diagnostics != nullptr) {
+    diagnostics->errorMessage = applyError;
+  }
+  return applied;
 }

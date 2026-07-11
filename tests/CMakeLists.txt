@@ -26,8 +26,20 @@ add_executable(test_core
   MapRendererTests.cpp
   )
 
-target_link_libraries(test_core PRIVATE urban_sim_core gtest gtest_main)
+target_link_libraries(test_core PRIVATE urban_sim_core gtest_main)
 target_include_directories(test_core PRIVATE ${CMAKE_SOURCE_DIR})
+if(MSVC)
+  target_compile_options(test_core PRIVATE
+    "/I${CMAKE_SOURCE_DIR}/extern/googletest/googletest/include")
+else()
+  # Tests use quoted GoogleTest includes so this path wins over a globally
+  # installed, potentially ABI-incompatible copy in /usr/local/include.
+  target_compile_options(test_core PRIVATE
+    "-iquote${CMAKE_SOURCE_DIR}/extern/googletest/googletest/include")
+endif()
 
-add_test(NAME CoreTests COMMAND test_core)
-
+include(GoogleTest)
+gtest_discover_tests(test_core
+  DISCOVERY_TIMEOUT 30
+  PROPERTIES LABELS "unit"
+)

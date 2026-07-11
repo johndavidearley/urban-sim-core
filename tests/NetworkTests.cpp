@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/networks/Pathfinding.hpp"
 #include "src/world/CityMap.hpp"
@@ -8,7 +8,7 @@ TEST(RoadNetworkTests, CreateNetwork) {
   CityMap map({32, 32});
   RoadNetwork network(map);
   
-  EXPECT_EQ(network.getRoadCount(), 0);
+  EXPECT_EQ(network.getRoadCount(), 0u);
   EXPECT_TRUE(network.hasNode({0, 0}));
   EXPECT_TRUE(network.hasNode({31, 31}));
 }
@@ -20,7 +20,7 @@ TEST(RoadNetworkTests, BuildSingleRoad) {
   network.buildRoad({10, 10}, {10, 11});
   
   EXPECT_TRUE(network.hasRoad({10, 10}, {10, 11}));
-  EXPECT_EQ(network.getRoadCount(), 1);
+  EXPECT_EQ(network.getRoadCount(), 1u);
   EXPECT_TRUE(map.getTile({10, 10}).hasRoad);
   EXPECT_TRUE(map.getTile({10, 11}).hasRoad);
 }
@@ -33,7 +33,7 @@ TEST(RoadNetworkTests, BuildMultipleRoads) {
   network.buildRoad({10, 11}, {11, 11});
   network.buildRoad({11, 11}, {11, 10});
   
-  EXPECT_EQ(network.getRoadCount(), 3);
+  EXPECT_EQ(network.getRoadCount(), 3u);
   EXPECT_TRUE(network.hasRoad({10, 10}, {10, 11}));
   EXPECT_TRUE(network.hasRoad({10, 11}, {11, 11}));
   EXPECT_TRUE(network.hasRoad({11, 11}, {11, 10}));
@@ -44,11 +44,27 @@ TEST(RoadNetworkTests, RemoveRoad) {
   RoadNetwork network(map);
   
   network.buildRoad({10, 10}, {10, 11});
-  EXPECT_EQ(network.getRoadCount(), 1);
+  EXPECT_EQ(network.getRoadCount(), 1u);
   
   network.removeRoad({10, 10}, {10, 11});
-  EXPECT_EQ(network.getRoadCount(), 0);
+  EXPECT_EQ(network.getRoadCount(), 0u);
   EXPECT_FALSE(network.hasRoad({10, 10}, {10, 11}));
+}
+
+TEST(RoadNetworkTests, ClearRemovesEdgesAdjacencyAndMapFlags) {
+  CityMap map({8, 8});
+  RoadNetwork network(map);
+  network.buildRoad({1, 1}, {2, 1});
+  network.updateConnectivity({1, 1});
+  const uint64_t versionBeforeClear = network.getTopologyVersion();
+
+  network.clear();
+
+  EXPECT_EQ(network.getRoadCount(), 0u);
+  EXPECT_FALSE(network.hasRoadAdjacency({1, 1}));
+  EXPECT_FALSE(map.getTile({1, 1}).hasRoad);
+  EXPECT_FALSE(map.getTile({1, 1}).connectedToRoad);
+  EXPECT_GT(network.getTopologyVersion(), versionBeforeClear);
 }
 
 TEST(RoadNetworkTests, HasRoadAdjacencyOnlyTrueForTilesTouchingAnEdge) {
@@ -90,7 +106,7 @@ TEST(RoadNetworkTests, RoadNonAdjacent) {
   // Try to build road between non-adjacent tiles
   network.buildRoad({10, 10}, {12, 10});
   
-  EXPECT_EQ(network.getRoadCount(), 0);
+  EXPECT_EQ(network.getRoadCount(), 0u);
 }
 
 TEST(RoadNetworkTests, RoadBidirectional) {
@@ -160,7 +176,7 @@ TEST(RoadNetworkTests, GetRoadTiles) {
   
   auto roadTiles = network.getAllRoadTiles();
   
-  EXPECT_EQ(roadTiles.size(), 3);
+  EXPECT_EQ(roadTiles.size(), 3u);
 }
 
 TEST(RoadNetworkTests, CongestionUpdate) {
@@ -183,7 +199,7 @@ TEST(PathfindingTests, PathSameLocation) {
   auto path = Pathfinding::findShortestPath(network, {10, 10}, {10, 10});
   
   EXPECT_TRUE(path.found);
-  EXPECT_EQ(path.waypoints.size(), 1);
+  EXPECT_EQ(path.waypoints.size(), 1u);
   EXPECT_EQ(path.waypoints[0], glm::ivec2(10, 10));
   EXPECT_FLOAT_EQ(path.totalDistance, 0.0f);
 }
@@ -197,7 +213,7 @@ TEST(PathfindingTests, PathDirectAdjacent) {
   auto path = Pathfinding::findShortestPath(network, {10, 10}, {10, 11});
   
   EXPECT_TRUE(path.found);
-  EXPECT_EQ(path.waypoints.size(), 2);
+  EXPECT_EQ(path.waypoints.size(), 2u);
   EXPECT_EQ(path.waypoints[0], glm::ivec2(10, 10));
   EXPECT_EQ(path.waypoints[1], glm::ivec2(10, 11));
 }
@@ -213,7 +229,7 @@ TEST(PathfindingTests, PathLinear) {
   auto path = Pathfinding::findShortestPath(network, {10, 10}, {10, 13});
   
   EXPECT_TRUE(path.found);
-  EXPECT_EQ(path.waypoints.size(), 4);
+  EXPECT_EQ(path.waypoints.size(), 4u);
   EXPECT_FLOAT_EQ(path.totalDistance, 3.0f);
 }
 
@@ -240,12 +256,12 @@ TEST(PathfindingTests, PathWithBranch) {
   // Path should choose the straight line
   auto path1 = Pathfinding::findShortestPath(network, {10, 10}, {10, 12});
   EXPECT_TRUE(path1.found);
-  EXPECT_EQ(path1.waypoints.size(), 3);
+  EXPECT_EQ(path1.waypoints.size(), 3u);
   
   // Path to the branch
   auto path2 = Pathfinding::findShortestPath(network, {10, 10}, {12, 11});
   EXPECT_TRUE(path2.found);
-  EXPECT_EQ(path2.waypoints.size(), 4);
+  EXPECT_EQ(path2.waypoints.size(), 4u);
 }
 
 TEST(PathfindingTests, PathShouldTakeShortest) {
@@ -270,7 +286,7 @@ TEST(PathfindingTests, PathShouldTakeShortest) {
   
   EXPECT_TRUE(path.found);
   EXPECT_FLOAT_EQ(path.totalDistance, 2.0f);
-  EXPECT_EQ(path.waypoints.size(), 3);
+  EXPECT_EQ(path.waypoints.size(), 3u);
 }
 
 TEST(PathfindingTests, Heuristic) {

@@ -9,6 +9,43 @@
 #include <unordered_map>
 
 namespace {
+uint64_t facilitySignature(const std::vector<ServiceFacility>& facilities) {
+  // FNV-1a over fixed-width integer fields. Quality is intentionally excluded:
+  // current coverage calculations do not use it.
+  uint64_t hash = 1469598103934665603ULL;
+  auto mix = [&hash](uint32_t value) {
+    for (int shift = 0; shift < 32; shift += 8) {
+      hash ^= static_cast<uint8_t>((value >> shift) & 0xffu);
+      hash *= 1099511628211ULL;
+    }
+  };
+  mix(static_cast<uint32_t>(facilities.size()));
+  for (const ServiceFacility& facility : facilities) {
+    mix(static_cast<uint32_t>(facility.type));
+    mix(static_cast<uint32_t>(facility.position.x));
+    mix(static_cast<uint32_t>(facility.position.y));
+    mix(static_cast<uint32_t>(facility.maxTravelDistance));
+  }
+  return hash;
+}
+
+uint64_t buildingCoverageSignature(const EntityStore& store) {
+  // Combine per-building hashes commutatively because EntityStore iteration
+  // order is intentionally unspecified. Capacity, occupancy, and type do not
+  // affect whether a coordinate is covered.
+  uint64_t signature = static_cast<uint64_t>(store.getBuildingCount());
+  for (const auto& [id, building] : store.getBuildings()) {
+    uint64_t item = static_cast<uint64_t>(id) * 0x9e3779b97f4a7c15ULL;
+    item ^= static_cast<uint64_t>(static_cast<uint32_t>(building.position.x)) << 32;
+    item ^= static_cast<uint32_t>(building.position.y);
+    item ^= item >> 30;
+    item *= 0xbf58476d1ce4e5b9ULL;
+    item ^= item >> 27;
+    signature ^= item;
+  }
+  return signature;
+}
+
 int typeIndex(ServiceType type) {
   return static_cast<int>(type);
 }
@@ -137,6 +174,9 @@ void ServiceSystem::buildCache(
     }
   }
   cache.builtForFacilityCount = facilities.size();
+  cache.builtForFacilitySignature = facilitySignature(facilities);
+  cache.builtForTopologyVersion = roads.getTopologyVersion();
+  cache.cachedStoreMutationVersion = static_cast<uint64_t>(-1);
 
   // Merge all entries' fields into one nearest-any-facility lookup, done
   // once per rebuild instead of once per query. Also merge Power/Water
@@ -165,6 +205,34 @@ void ServiceSystem::buildCache(
       mergeInto(cache.nearestWaterDistance, entry.distanceField);
     }
   }
+}
+
+bool ServiceSystem::isCacheValid(
+  const RoadNetwork& roads,
+  const std::vector<ServiceFacility>& facilities,
+  const ServiceCoverageCache& cache
+) {
+  return cache.builtForFacilityCount == facilities.size()
+      && cache.builtForFacilitySignature == facilitySignature(facilities)
+      && cache.builtForTopologyVersion == roads.getTopologyVersion();
+}
+
+bool ServiceSystem::isResultCacheValid(
+  const EntityStore& store,
+  const ServiceCoverageCache& cache
+) {
+  return cache.cachedStoreMutationVersion == store.getMutationVersion()
+      && cache.cachedBuildingCoverageSignature == buildingCoverageSignature(store);
+}
+
+void ServiceSystem::storeCachedResult(
+  const EntityStore& store,
+  const ServiceCoverageSummary& result,
+  ServiceCoverageCache& cache
+) {
+  cache.cachedStoreMutationVersion = store.getMutationVersion();
+  cache.cachedBuildingCoverageSignature = buildingCoverageSignature(store);
+  cache.cachedResult = result;
 }
 
 ServiceCoverageSummary ServiceSystem::evaluateCoverage(

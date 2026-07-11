@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include "src/entities/EntityStore.hpp"
 #include "src/metrics/GrowthMetrics.hpp"

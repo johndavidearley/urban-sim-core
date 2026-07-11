@@ -1,7 +1,7 @@
 #include <filesystem>
 #include <fstream>
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 #include <nlohmann/json.hpp>
 
 #include "src/persistence/SaveLoadSystem.hpp"
@@ -82,7 +82,9 @@ TEST(SaveLoadSystemTests, LoadSnapshotFromMissingFileFails) {
     std::filesystem::temp_directory_path() / "urban_sim_core_missing_save_file.json";
 
   std::filesystem::remove(missingPath);
-  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(missingPath.string(), snapshot));
+  SnapshotLoadDiagnostics diagnostics;
+  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(missingPath.string(), snapshot, &diagnostics));
+  EXPECT_TRUE(diagnostics.errorMessage == "unable to open snapshot file");
 }
 
 TEST(SaveLoadSystemTests, MigratesLegacyVersionZeroSnapshotToCurrent) {
@@ -171,7 +173,9 @@ TEST(SaveLoadSystemTests, RejectsUnsupportedFutureSnapshotVersion) {
   out.close();
 
   CitySnapshot snapshot;
-  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot));
+  SnapshotLoadDiagnostics diagnostics;
+  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot, &diagnostics));
+  EXPECT_TRUE(diagnostics.errorMessage == "snapshot schema version is newer than this build supports");
 
   std::filesystem::remove(filePath);
 }
@@ -254,7 +258,9 @@ TEST(SaveLoadSystemTests, RejectsSnapshotWithOutOfRangeBuildingType) {
   out.close();
 
   CitySnapshot snapshot;
-  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot));
+  SnapshotLoadDiagnostics diagnostics;
+  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot, &diagnostics));
+  EXPECT_TRUE(diagnostics.errorMessage == "building type is out of range");
 
   std::filesystem::remove(filePath);
 }
@@ -295,7 +301,46 @@ TEST(SaveLoadSystemTests, RejectsSnapshotWithInvalidBuildingReference) {
   out.close();
 
   CitySnapshot snapshot;
-  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot));
+  SnapshotLoadDiagnostics diagnostics;
+  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(filePath.string(), snapshot, &diagnostics));
+  EXPECT_TRUE(diagnostics.errorMessage == "tile references a missing building ID");
 
   std::filesystem::remove(filePath);
+}
+
+TEST(SaveLoadSystemTests, ApplySnapshotReplacesExistingRoadTopology) {
+  CityMap map({4, 4});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  roads.buildRoad({0, 0}, {1, 0});
+
+  CityMap sourceMap({4, 4});
+  RoadNetwork sourceRoads(sourceMap);
+  EntityStore sourceStore;
+  PopulationStore sourcePopulation;
+  sourceRoads.buildRoad({2, 2}, {3, 2});
+  const CitySnapshot snapshot = SaveLoadSystem::captureSnapshot(
+    sourceMap, sourceRoads, sourceStore, sourcePopulation);
+
+  ASSERT_TRUE(SaveLoadSystem::applySnapshot(snapshot, map, roads, store, population));
+  EXPECT_FALSE(roads.hasRoad({0, 0}, {1, 0}));
+  EXPECT_TRUE(roads.hasRoad({2, 2}, {3, 2}));
+  EXPECT_EQ(roads.getRoadCount(), 1u);
+}
+
+TEST(SaveLoadSystemTests, ApplySnapshotReportsDimensionMismatchWithoutMutatingState) {
+  CityMap map({4, 4});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  roads.buildRoad({0, 0}, {1, 0});
+
+  CitySnapshot snapshot;
+  snapshot.width = 5;
+  snapshot.height = 5;
+  std::string error;
+  EXPECT_FALSE(SaveLoadSystem::applySnapshot(snapshot, map, roads, store, population, &error));
+  EXPECT_TRUE(error == "snapshot dimensions do not match the destination map");
+  EXPECT_TRUE(roads.hasRoad({0, 0}, {1, 0}));
 }

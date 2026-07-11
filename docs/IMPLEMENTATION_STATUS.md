@@ -83,28 +83,13 @@ Last updated: June 27, 2026
 
 ✅ **Build successful**
 
-✅ **151 tests passing** (20 test suites)
+✅ **289 tests passing** (28 test suites)
 
 ### Test Suite Breakdown
-- EntityIdTests: 1
-- CityMapTests: 21
-- TileTests: 4
-- ZoningTests: 5
-- EntityStoreTests: 4
-- RoadNetworkTests: 11
-- PathfindingTests: 8
-- GrowthSystemTests: 11
-- GrowthMetricsTests: 3
-- PopulationSystemTests: 6
-- TrafficSystemTests: 13
-- EconomySystemTests: 17
-- MetricsSystemTests: 2
-- SaveLoadSystemTests: 2
-- ReplayVerifierTests: 2
-- ServiceSystemTests: 2
-- MapRendererTests: 2
-- DistrictSystemTests: (included in above totals)
-- CitySimulatorTests: (included in above totals)
+
+CTest discovers each GoogleTest case individually. Use `ctest --test-dir
+build --show-only` for the current authoritative list; this avoids maintaining
+a second, quickly stale per-suite inventory here.
 
 ---
 
@@ -474,4 +459,3 @@ Implemented so far:
 
 Next implementation target:
 - Performance tuning and route diagnostics refinement
-

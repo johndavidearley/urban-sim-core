@@ -47,12 +47,8 @@ int runSnapshotAudit(const std::string& directoryPath) {
     std::cout << "  " << std::left << std::setw(40) << file.filename().string() << std::right;
 
     if (!loaded) {
-      std::cout << "FAILED";
-      if (diagnostics.sourceVersion >= 0) {
-        std::cout << " (parsed as version " << diagnostics.sourceVersion << ", failed migration/validation)";
-      } else {
-        std::cout << " (unreadable or malformed)";
-      }
+      std::cout << "FAILED (" << (diagnostics.errorMessage.empty()
+        ? "unknown snapshot error" : diagnostics.errorMessage) << ")";
       std::cout << "\n";
       ++failedCount;
       continue;

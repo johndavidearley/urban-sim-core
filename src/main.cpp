@@ -545,7 +545,8 @@ int main(int argc, char* argv[]) {
       CitySnapshot inspectedSnapshot;
       SnapshotLoadDiagnostics inspectDiagnostics;
       if (!SaveLoadSystem::loadSnapshotFromFile(inspectSnapshotPath, inspectedSnapshot, &inspectDiagnostics)) {
-        std::cerr << "Error: Failed to inspect city snapshot from '" << inspectSnapshotPath << "'\n";
+        std::cerr << "Error: Failed to inspect city snapshot from '" << inspectSnapshotPath
+                  << "': " << inspectDiagnostics.errorMessage << "\n";
         return 1;
       }
       printSnapshotInspection(inspectedSnapshot, inspectDiagnostics);
@@ -632,7 +633,8 @@ int main(int argc, char* argv[]) {
     SnapshotLoadDiagnostics snapshotDiagnostics;
     if (!loadCityPath.empty()) {
       if (!SaveLoadSystem::loadSnapshotFromFile(loadCityPath, loadedSnapshot, &snapshotDiagnostics)) {
-        std::cerr << "Error: Failed to load city snapshot from '" << loadCityPath << "'\n";
+        std::cerr << "Error: Failed to load city snapshot from '" << loadCityPath
+                  << "': " << snapshotDiagnostics.errorMessage << "\n";
         return 1;
       }
       std::cout << "Snapshot diagnostics: sourceVersion=" << snapshotDiagnostics.sourceVersion
@@ -702,8 +704,9 @@ int main(int argc, char* argv[]) {
     };
 
     if (!loadCityPath.empty()) {
-      if (!SaveLoadSystem::applySnapshot(loadedSnapshot, map, roads, store, population)) {
-        std::cerr << "Error: Loaded snapshot dimensions do not match current city map\n";
+      std::string applyError;
+      if (!SaveLoadSystem::applySnapshot(loadedSnapshot, map, roads, store, population, &applyError)) {
+        std::cerr << "Error: Failed to apply loaded snapshot: " << applyError << "\n";
         return 1;
       }
       populationSummary = buildPopulationSummaryFromState(store, population);

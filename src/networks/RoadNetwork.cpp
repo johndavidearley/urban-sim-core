@@ -93,6 +93,20 @@ void RoadNetwork::removeRoad(glm::ivec2 from, glm::ivec2 to) {
   }
 }
 
+void RoadNetwork::clear() {
+  if (!edges.empty()) {
+    ++topologyVersion;
+  }
+  edges.clear();
+  CityMap& mutableMap = const_cast<CityMap&>(cityMap);
+  for (auto& [coord, node] : nodes) {
+    node.adjacent.clear();
+    node.connected = false;
+    mutableMap.getTile(coord).hasRoad = false;
+    mutableMap.getTile(coord).connectedToRoad = false;
+  }
+}
+
 bool RoadNetwork::hasRoad(glm::ivec2 from, glm::ivec2 to) const {
   EdgeKey edgeKey = makeEdgeKey(from, to);
   return edges.find(edgeKey) != edges.end();

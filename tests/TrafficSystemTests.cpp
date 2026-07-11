@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 #include "src/core/ThreadPool.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/networks/RoadNetwork.hpp"
@@ -40,7 +40,7 @@ TEST_F(TrafficSystemTests, NoCommutesWithNoBuildingsProducesZeroTraffic) {
     store, population, *network, 42
   );
 
-  EXPECT_EQ(summary.commutingPopulation, 0);
+  EXPECT_EQ(summary.commutingPopulation, 0u);
   EXPECT_EQ(summary.averageCommuteTime, 0.0f);
   EXPECT_EQ(summary.maxEdgeCongestion, 0.0f);
 }
@@ -59,11 +59,11 @@ TEST_F(TrafficSystemTests, NoJobBuildingsProducesZeroCommutes) {
   // Create population group
   population.createGroup(IncomeBand::Middle, 50, 0);
 
-  TrafficSummary summary = TrafficSystem::simulateCommutes(
+  const TrafficSummary summary = TrafficSystem::simulateCommutes(
     store, population, *network, 42
   );
 
-  EXPECT_EQ(summary.commutingPopulation, 0); // No employed
+  EXPECT_EQ(summary.commutingPopulation, 0u); // No employed
 }
 
 // Test: Commutes generated when both residential and job buildings exist
@@ -88,7 +88,7 @@ TEST_F(TrafficSystemTests, CommuteSimulationWithResidentialAndJobs) {
     store, population, *network, 42
   );
 
-  EXPECT_GT(summary.commutingPopulation, 0);
+  EXPECT_GT(summary.commutingPopulation, 0u);
   EXPECT_GT(summary.averageCommuteTime, 0.0f);
 }
 
@@ -189,8 +189,8 @@ TEST_F(TrafficSystemTests, DifferentSeedsProduceDifferentCommuteDistribution) {
   // At least congestion distribution should potentially differ with multiple options
   // (or at minimum, the test passes if they're the same since routes are consistent)
   // We verify the simulation completed successfully
-  EXPECT_GT(summary1.commutingPopulation, 0);
-  EXPECT_GT(summary2.commutingPopulation, 0);
+  EXPECT_GT(summary1.commutingPopulation, 0u);
+  EXPECT_GT(summary2.commutingPopulation, 0u);
 }
 
 // Test: Metrics integration with CityMetrics
@@ -225,7 +225,7 @@ TEST_F(TrafficSystemTests, ZeroCommuteTimeWithNoEmployees) {
     store, population, *network, 42
   );
 
-  EXPECT_EQ(summary.commutingPopulation, 0);
+  EXPECT_EQ(summary.commutingPopulation, 0u);
   EXPECT_EQ(summary.averageCommuteTime, 0.0f);
 }
 
@@ -243,9 +243,7 @@ TEST_F(TrafficSystemTests, TopCongestedEdgesAreSorted) {
   population.createGroup(IncomeBand::Middle, 100, 80);
   population.createGroup(IncomeBand::High, 100, 80);
 
-  TrafficSummary summary = TrafficSystem::simulateCommutes(
-    store, population, *network, 42
-  );
+  TrafficSystem::simulateCommutes(store, population, *network, 42);
 
   auto topEdges = TrafficSystem::getTopCongestedEdges(*network, 5);
 
@@ -275,7 +273,7 @@ TEST_F(TrafficSystemTests, MultiplePathwaysDistributeCommuters) {
   );
 
   // Should have commuters and some congestion
-  EXPECT_GT(summary.commutingPopulation, 0);
+  EXPECT_GT(summary.commutingPopulation, 0u);
   EXPECT_GT(summary.averageCommuteTime, 0.0f);
   // Congestion may be 0 if load is well distributed, just verify structure
   EXPECT_GE(summary.maxEdgeCongestion, 0.0f);

@@ -1,7 +1,7 @@
 #include <filesystem>
 #include <fstream>
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include "src/visualization/MapRenderer.hpp"
 #include "src/networks/RoadNetwork.hpp"

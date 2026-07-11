@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include "src/entities/EntityStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
@@ -11,7 +11,7 @@ TEST(GrowthSystemTests, SpawnsWhenZonedAndRoadAccessible) {
   EntityStore store;
 
   roads.buildRoad({2, 2}, {3, 2});
-  EXPECT_EQ(roads.getRoadCount(), 1);
+  EXPECT_EQ(roads.getRoadCount(), 1u);
   EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 3}, {2, 3}, ZoneType::Residential));
 
   ZoneDemand demand;
@@ -52,7 +52,7 @@ TEST(GrowthSystemTests, NoSpawnForUnzonedTiles) {
   EntityStore store;
 
   roads.buildRoad({1, 1}, {2, 1});
-  EXPECT_EQ(roads.getRoadCount(), 1);
+  EXPECT_EQ(roads.getRoadCount(), 1u);
 
   ZoneDemand demand;
   demand.residential = 1.0f;
@@ -77,8 +77,8 @@ TEST(GrowthSystemTests, DeterministicForSameSeed) {
   roadsA.buildRoad({2, 1}, {3, 1});
   roadsB.buildRoad({1, 1}, {2, 1});
   roadsB.buildRoad({2, 1}, {3, 1});
-  EXPECT_EQ(roadsA.getRoadCount(), 2);
-  EXPECT_EQ(roadsB.getRoadCount(), 2);
+  EXPECT_EQ(roadsA.getRoadCount(), 2u);
+  EXPECT_EQ(roadsB.getRoadCount(), 2u);
 
   EXPECT_TRUE(Zoning::applyZoneRect(mapA, {1, 2}, {3, 2}, ZoneType::Industrial));
   EXPECT_TRUE(Zoning::applyZoneRect(mapB, {1, 2}, {3, 2}, ZoneType::Industrial));

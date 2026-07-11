@@ -12,19 +12,28 @@ EntityId EntityStore::createBuilding(BuildingType type, Coord position, int capa
 
   const EntityId id = building.id;
   buildings[id] = building;
+  ++mutationVersion;
   return id;
 }
 
 bool EntityStore::removeBuilding(EntityId id) {
-  return buildings.erase(id) > 0;
+  if (buildings.erase(id) == 0) {
+    return false;
+  }
+  ++mutationVersion;
+  return true;
 }
 
 void EntityStore::clear() {
+  if (!buildings.empty()) {
+    ++mutationVersion;
+  }
   buildings.clear();
 }
 
 void EntityStore::upsertBuilding(const Building& building) {
   buildings[building.id] = building;
+  ++mutationVersion;
 }
 
 Building* EntityStore::getBuilding(EntityId id) {
@@ -49,4 +58,8 @@ const std::unordered_map<EntityId, Building>& EntityStore::getBuildings() const 
 
 size_t EntityStore::getBuildingCount() const {
   return buildings.size();
+}
+
+uint64_t EntityStore::getMutationVersion() const {
+  return mutationVersion;
 }

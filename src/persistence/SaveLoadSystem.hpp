@@ -44,6 +44,7 @@ struct SnapshotLoadDiagnostics {
   bool migrationApplied = false;
   bool validationPassed = false;
   std::string migrationPath;
+  std::string errorMessage;
 };
 
 class SaveLoadSystem {
@@ -60,7 +61,8 @@ public:
     CityMap& map,
     RoadNetwork& roads,
     EntityStore& store,
-    PopulationStore& population
+    PopulationStore& population,
+    std::string* errorMessage = nullptr
   );
 
   static bool saveToFile(

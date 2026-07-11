@@ -288,7 +288,7 @@ TrafficSummary runCommuteLoop(
         }
       }
       pending[i] = true;
-      futures[i] = pool->submit([&network, spec = specs[i], kCongestionWeight]() {
+      futures[i] = pool->submit([&network, spec = specs[i]]() {
         return Pathfinding::findShortestPathWithCongestionWeight(
           network, spec.homeAnchor, spec.workAnchor, kCongestionWeight);
       });

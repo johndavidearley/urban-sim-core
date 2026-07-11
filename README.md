@@ -23,7 +23,7 @@ fetched automatically at configure time if not installed locally.
 ### Run Headless Simulation
 
 ```bash
-./build/UrbanSimCore-cli --help
+./build/bin/UrbanSimCore-cli --help
 ```
 
 ### Optional Live Visualizer (SDL2)
@@ -34,7 +34,7 @@ If SDL2 is installed, CMake adds an extra executable target named `UrbanSimCore-
 cd build
 cmake ..
 cmake --build . --config Release
-./UrbanSimCore-visualizer
+./bin/UrbanSimCore-visualizer
 ```
 
 Controls:
@@ -63,11 +63,48 @@ cd build
 ctest --verbose
 ```
 
+### Strict and Sanitizer Builds
+
+With CMake 3.21 or newer, presets provide the shortest path to each maintained
+configuration:
+
+```bash
+cmake --preset strict && cmake --build --preset strict && ctest --preset strict
+cmake --preset asan && cmake --build --preset asan && ctest --preset asan
+cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan
+```
+
+The normal build remains unchanged. The equivalent explicit strict-build
+commands are:
+
+```bash
+cmake -S . -B build-strict -DURBAN_SIM_WARNINGS_AS_ERRORS=ON
+cmake --build build-strict -j
+ctest --test-dir build-strict --output-on-failure
+```
+
+Clang and GCC builds can also enable AddressSanitizer plus UBSan, or
+ThreadSanitizer. Use separate directories because TSan cannot be combined with
+ASan/UBSan:
+
+```bash
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DURBAN_SIM_ENABLE_ASAN_UBSAN=ON
+cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug -DURBAN_SIM_ENABLE_TSAN=ON
+```
+
+On macOS, AppleClang's ASan runtime may not support LeakSanitizer; run tests
+with `ASAN_OPTIONS=detect_leaks=0` there. Address and undefined-behavior checks
+remain enabled.
+
+GitHub Actions runs the strict RelWithDebInfo configuration, Debug ASan/UBSan
+with Linux leak detection, and Debug ThreadSanitizer for every pull request and
+push to `main`.
+
 ### Procedural Terrain
 
 ```bash
-./build/UrbanSimCore-cli --size 40 --seed 7 --generate-terrain --print-map
-./build/UrbanSimCore-cli --size 40 --seed 7 --terrain-water 0.30 --render-map city.ppm
+./build/bin/UrbanSimCore-cli --size 40 --seed 7 --generate-terrain --print-map
+./build/bin/UrbanSimCore-cli --size 40 --seed 7 --terrain-water 0.30 --render-map city.ppm
 ```
 
 `--generate-terrain` stamps water and rough terrain onto the map from a seeded,
@@ -79,16 +116,16 @@ only on a fresh map; loading a snapshot restores its saved terrain instead.
 ### Autonomous Demand-Driven Simulation
 
 ```bash
-./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 80
-./build/UrbanSimCore-cli --size 64 --seed 7 --generate-terrain --simulate 80 --simulate-report run.csv
-./build/UrbanSimCore-cli --size 96 --seed 7 --simulate 50 --simulate-no-traffic
-./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 80 --simulate-inflation-rate 0.02
-./build/UrbanSimCore-cli --size 32 --seed 5 --zone-rect 10 10 15 15 OFFICE --place-road 10 16 15 16 --run-growth 20 --print-budget-summary
-./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 100
-./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 100 --simulate-no-transit
-./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 60 --simulate-district Downtown 20 20 44 44 --simulate-district Suburbs 46 20 63 44
-./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 60 --simulate-district Factory 20 20 44 44 --simulate-district-archetype Factory INDUSTRIAL --simulate-district Innovation 46 20 63 44 --simulate-district-archetype Innovation TECHHUB
-./build/UrbanSimCore-cli --size 64 --seed 7 --simulate 100 --simulate-disasters --simulate-fire-risk 3
+./build/bin/UrbanSimCore-cli --size 64 --seed 7 --simulate 80
+./build/bin/UrbanSimCore-cli --size 64 --seed 7 --generate-terrain --simulate 80 --simulate-report run.csv
+./build/bin/UrbanSimCore-cli --size 96 --seed 7 --simulate 50 --simulate-no-traffic
+./build/bin/UrbanSimCore-cli --size 64 --seed 7 --simulate 80 --simulate-inflation-rate 0.02
+./build/bin/UrbanSimCore-cli --size 32 --seed 5 --zone-rect 10 10 15 15 OFFICE --place-road 10 16 15 16 --run-growth 20 --print-budget-summary
+./build/bin/UrbanSimCore-cli --size 64 --seed 7 --simulate 100
+./build/bin/UrbanSimCore-cli --size 64 --seed 7 --simulate 100 --simulate-no-transit
+./build/bin/UrbanSimCore-cli --size 64 --seed 7 --simulate 60 --simulate-district Downtown 20 20 44 44 --simulate-district Suburbs 46 20 63 44
+./build/bin/UrbanSimCore-cli --size 64 --seed 7 --simulate 60 --simulate-district Factory 20 20 44 44 --simulate-district-archetype Factory INDUSTRIAL --simulate-district Innovation 46 20 63 44 --simulate-district-archetype Innovation TECHHUB
+./build/bin/UrbanSimCore-cli --size 64 --seed 7 --simulate 100 --simulate-disasters --simulate-fire-risk 3
 ```
 
 `--simulate N` grows a city autonomously from a near-empty map for N ticks. Each
@@ -228,11 +265,11 @@ land value), or `--simulate-no-traffic` to skip the (dominant) commute phase.
 ### Traffic Micro-Simulation (Phase 5, M11 — complete)
 
 ```bash
-./build/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30
-./build/UrbanSimCore-cli --size 64 --seed 7 --micro-traffic 40 --micro-traffic-steps 400
-./build/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30 --micro-traffic-incidents 5
-./build/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30 --micro-traffic-lanes 4
-./build/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30 --micro-traffic-following-gap 0.25
+./build/bin/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30
+./build/bin/UrbanSimCore-cli --size 64 --seed 7 --micro-traffic 40 --micro-traffic-steps 400
+./build/bin/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30 --micro-traffic-incidents 5
+./build/bin/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30 --micro-traffic-lanes 4
+./build/bin/UrbanSimCore-cli --size 48 --seed 7 --micro-traffic 30 --micro-traffic-following-gap 0.25
 ```
 
 `--micro-traffic N` grows a city for N ticks, then runs an individual
@@ -271,9 +308,9 @@ milestone's fidelity.
 ### Phase 5 Benchmarking
 
 ```bash
-./build/UrbanSimCore-cli --size 96 --benchmark-phase5 24
-./build/UrbanSimCore-cli --size 96 --benchmark-phase5 24 --benchmark-phase5-focus TRAFFIC
-./build/UrbanSimCore-cli --size 96 --benchmark-phase5 24 --benchmark-phase5-focus SERVICE
+./build/bin/UrbanSimCore-cli --size 96 --benchmark-phase5 24
+./build/bin/UrbanSimCore-cli --size 96 --benchmark-phase5 24 --benchmark-phase5-focus TRAFFIC
+./build/bin/UrbanSimCore-cli --size 96 --benchmark-phase5 24 --benchmark-phase5-focus SERVICE
 ```
 
 Use `--benchmark-phase5-focus` with one of `ALL`, `GROWTH`, `POPULATION`, `TRAFFIC`, `ECONOMY`, or `SERVICE` to isolate timing for a single subsystem while still executing the full simulation pipeline.
@@ -281,10 +318,10 @@ Use `--benchmark-phase5-focus` with one of `ALL`, `GROWTH`, `POPULATION`, `TRAFF
 ### Traffic Route Diagnostics
 
 ```bash
-./build/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5
-./build/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5 --traffic-origin 10 10
-./build/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5 --traffic-destination 15 10
-./build/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5 --traffic-origin 10 10 --traffic-destination 15 10
+./build/bin/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5
+./build/bin/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5 --traffic-origin 10 10
+./build/bin/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5 --traffic-destination 15 10
+./build/bin/UrbanSimCore-cli --size 32 --seed-population 500 --run-commute-simulation --print-top-edges 5 --traffic-origin 10 10 --traffic-destination 15 10
 ```
 
 Use `--traffic-origin X Y` and/or `--traffic-destination X Y` with `--print-top-edges N` to inspect congestion hotspots for specific commute route subsets.
@@ -292,8 +329,8 @@ Use `--traffic-origin X Y` and/or `--traffic-destination X Y` with `--print-top-
 ### District Management
 
 ```bash
-./build/UrbanSimCore-cli --size 64 --seed 42 --create-district Downtown 5 5 25 25 --create-district Industrial 35 35 55 55 --list-districts
-./build/UrbanSimCore-cli --size 64 --seed 42 --run-growth 10 --seed-population 2000 --create-district Downtown 5 5 25 25 --print-district-summary 1
+./build/bin/UrbanSimCore-cli --size 64 --seed 42 --create-district Downtown 5 5 25 25 --create-district Industrial 35 35 55 55 --list-districts
+./build/bin/UrbanSimCore-cli --size 64 --seed 42 --run-growth 10 --seed-population 2000 --create-district Downtown 5 5 25 25 --print-district-summary 1
 ```
 
 Create districts with `--create-district NAME X1 Y1 X2 Y2` (rectangular bounds). List all districts with `--list-districts`. Print district metrics with `--print-district-summary DIST_ID`.

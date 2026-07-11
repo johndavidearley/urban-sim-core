@@ -983,21 +983,14 @@ SimResult CitySimulator::run(
     const bool serviceActive = (tick % std::max(1, options.serviceInterval) == 0);
     const bool trafficActive = options.runTraffic && (tick % std::max(1, options.trafficInterval) == 0);
 
-    // Coverage only changes when buildings are added/removed or facilities
-    // change. Redevelopment replaces at the same position so it doesn't
-    // invalidate the result. Snapshot the count before service prep so the
-    // check is consistent with what's in the cache.
-    const size_t currentBuildingCount = store.getBuildings().size();
-
     // Service prep: facility placement and BFS cache rebuild are state-mutating
     // and must complete before the concurrent evaluation starts.
     if (serviceActive) {
       const auto t0 = Clock::now();
       placeFacilitiesIfNeeded(map, facilities, population.getTotalPopulation(), center, extent, serviceRadius,
                               options.enableUtilities);
-      if (facilities.size() != coverageCache.builtForFacilityCount) {
+      if (!ServiceSystem::isCacheValid(roads, facilities, coverageCache)) {
         ServiceSystem::buildCache(roads, facilities, coverageCache);
-        coverageCache.cachedBuildingCount = static_cast<size_t>(-1);  // distance fields changed
       }
       if (options.enableUtilities) {
         updateUtilityConnectivity(map, roads, coverageCache, ax0, ay0, ax1, ay1, pool);
@@ -1007,14 +1000,16 @@ SimResult CitySimulator::run(
 
     // Submit service evaluation to a pool worker so it runs concurrently with
     // the traffic pathfinding that follows on the main thread.
-    // Skip if neither buildings nor facilities changed since the last evaluation.
+    // Skip if neither the building coordinates nor distance fields changed.
     std::future<std::pair<ServiceCoverageSummary, double>> serviceFuture;
-    if (serviceActive && currentBuildingCount != coverageCache.cachedBuildingCount) {
-      serviceFuture = pool.submit([&store, &roads, &coverageCache, &pool, currentBuildingCount]() {
+    if (serviceActive && !ServiceSystem::isResultCacheValid(store, coverageCache)) {
+      serviceFuture = pool.submit([&store, &roads, &coverageCache]() {
         const auto t0 = Clock::now();
-        auto svc = ServiceSystem::evaluateFromCache(store, roads, coverageCache, &pool);
-        coverageCache.cachedBuildingCount = currentBuildingCount;
-        coverageCache.cachedResult = svc;
+        // This task already occupies a pool worker. Do not recursively submit
+        // slices to the same pool: a one-worker pool would deadlock waiting for
+        // work that cannot start.
+        auto svc = ServiceSystem::evaluateFromCache(store, roads, coverageCache, nullptr);
+        ServiceSystem::storeCachedResult(store, svc, coverageCache);
         return std::make_pair(svc, elapsedMs(t0, Clock::now()));
       });
     }

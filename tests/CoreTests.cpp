@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 #include "src/core/EntityId.hpp"
 #include "src/world/CityMap.hpp"
 
@@ -16,7 +16,7 @@ TEST(CityMapTests, CreateAndAccess) {
   
   EXPECT_EQ(map.getDimensions().x, 32);
   EXPECT_EQ(map.getDimensions().y, 32);
-  EXPECT_EQ(map.getTileCount(), 32 * 32);
+  EXPECT_EQ(map.getTileCount(), 32u * 32u);
 }
 
 TEST(CityMapTests, TileInitialization) {

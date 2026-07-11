@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include "src/entities/EntityStore.hpp"
 
@@ -46,4 +46,28 @@ TEST(EntityStoreTests, MutableAccessUpdatesOccupancy) {
   const Building* same = store.getBuilding(id);
   ASSERT_NE(same, nullptr);
   EXPECT_EQ(same->occupancy, 12);
+}
+
+TEST(EntityStoreTests, StructuralMutationsAdvanceVersion) {
+  EntityStore store;
+  const uint64_t initial = store.getMutationVersion();
+
+  const EntityId first = store.createBuilding(BuildingType::Residential, {1, 1}, 8);
+  EXPECT_GT(store.getMutationVersion(), initial);
+  const uint64_t afterCreate = store.getMutationVersion();
+
+  EXPECT_FALSE(store.removeBuilding(999999));
+  EXPECT_EQ(store.getMutationVersion(), afterCreate);
+
+  ASSERT_TRUE(store.removeBuilding(first));
+  EXPECT_GT(store.getMutationVersion(), afterCreate);
+  const uint64_t afterRemove = store.getMutationVersion();
+
+  Building replacement;
+  replacement.id = first;
+  replacement.type = BuildingType::Commercial;
+  replacement.position = {7, 7};
+  replacement.capacity = 20;
+  store.upsertBuilding(replacement);
+  EXPECT_GT(store.getMutationVersion(), afterRemove);
 }

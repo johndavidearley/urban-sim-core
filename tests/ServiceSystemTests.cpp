@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include "src/systems/ServiceSystem.hpp"
 
@@ -153,4 +153,71 @@ TEST(ServiceSystemTests, NearestPowerAndWaterDistanceOnlyMergeTheirOwnType) {
   ASSERT_NE(powerIt, cache.nearestPowerDistance.end());
   EXPECT_EQ(powerIt->second, 3);
   EXPECT_EQ(cache.nearestWaterDistance.count({5, 5}), 0u);
+}
+
+TEST(ServiceSystemTests, CacheRecordsRoadTopologyVersion) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  roads.buildRoad({1, 1}, {2, 1});
+
+  ServiceFacility fire;
+  fire.type = ServiceType::Fire;
+  fire.position = {1, 1};
+
+  ServiceCoverageCache cache;
+  ServiceSystem::buildCache(roads, {fire}, cache);
+  EXPECT_TRUE(ServiceSystem::isCacheValid(roads, {fire}, cache));
+  EXPECT_EQ(cache.builtForTopologyVersion, roads.getTopologyVersion());
+
+  roads.buildRoad({2, 1}, {3, 1});
+  EXPECT_FALSE(ServiceSystem::isCacheValid(roads, {fire}, cache));
+  EXPECT_NE(cache.builtForTopologyVersion, roads.getTopologyVersion());
+}
+
+TEST(ServiceSystemTests, CacheInvalidatesWhenFacilityChangesWithoutChangingCount) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  roads.buildRoad({1, 1}, {2, 1});
+  roads.buildRoad({2, 1}, {3, 1});
+
+  std::vector<ServiceFacility> facilities(1);
+  facilities[0].type = ServiceType::Fire;
+  facilities[0].position = {1, 1};
+  facilities[0].maxTravelDistance = 4;
+
+  ServiceCoverageCache cache;
+  ServiceSystem::buildCache(roads, facilities, cache);
+  ASSERT_TRUE(ServiceSystem::isCacheValid(roads, facilities, cache));
+
+  facilities[0].position = {3, 1};
+  EXPECT_FALSE(ServiceSystem::isCacheValid(roads, facilities, cache));
+
+  facilities[0].position = {1, 1};
+  facilities[0].maxTravelDistance = 1;
+  EXPECT_FALSE(ServiceSystem::isCacheValid(roads, facilities, cache));
+
+  facilities[0].maxTravelDistance = 4;
+  facilities[0].type = ServiceType::Police;
+  EXPECT_FALSE(ServiceSystem::isCacheValid(roads, facilities, cache));
+}
+
+TEST(ServiceSystemTests, ResultCacheInvalidatesAfterMutableBuildingPositionChange) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  EntityStore store;
+  const EntityId id = store.createBuilding(BuildingType::Residential, {1, 1}, 10);
+
+  ServiceCoverageCache cache;
+  ServiceCoverageSummary result;
+  result.totalBuildings = 1;
+  ServiceSystem::storeCachedResult(store, result, cache);
+  ASSERT_TRUE(ServiceSystem::isResultCacheValid(store, cache));
+
+  Building* building = store.getBuilding(id);
+  ASSERT_NE(building, nullptr);
+  building->position = {9, 9};
+
+  // Mutable access deliberately does not advance EntityStore's structural
+  // version, so the position signature must detect this change.
+  EXPECT_FALSE(ServiceSystem::isResultCacheValid(store, cache));
 }

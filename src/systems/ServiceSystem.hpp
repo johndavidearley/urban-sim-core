@@ -49,8 +49,8 @@ struct ServiceCoverageSummary {
 
 // Pre-built BFS distance fields for all facilities. Rebuild only when the
 // facility list changes; reuse across ticks to avoid redundant BFS work.
-// The result cache (cachedResult / cachedBuildingCount) avoids re-evaluating
-// building coverage when neither buildings nor facilities have changed.
+// The result cache avoids re-evaluating building coverage when neither the
+// entity store nor the topology-dependent distance fields have changed.
 struct ServiceCoverageCache {
   struct Entry {
     ServiceType type = ServiceType::Fire;
@@ -58,6 +58,8 @@ struct ServiceCoverageCache {
   };
   std::vector<Entry> entries;
   size_t builtForFacilityCount = 0;
+  uint64_t builtForFacilitySignature = 0;
+  uint64_t builtForTopologyVersion = static_cast<uint64_t>(-1);
 
   // Nearest distance to *any* facility of *any* type, merged (min) across all
   // entries' distance fields once here in buildCache() rather than re-derived
@@ -75,9 +77,12 @@ struct ServiceCoverageCache {
   std::unordered_map<Coord, int, Vec2Hash> nearestPowerDistance;
   std::unordered_map<Coord, int, Vec2Hash> nearestWaterDistance;
 
-  // Result cache: valid when cachedBuildingCount == store.getBuildings().size()
-  // AND builtForFacilityCount matches. Reset to SIZE_MAX to force re-evaluation.
-  size_t cachedBuildingCount = static_cast<size_t>(-1);
+  // Result cache: valid when cachedStoreMutationVersion matches the entity
+  // store and the distance fields remain valid. A count alone is insufficient:
+  // demolition followed by construction can change positions without changing
+  // the number of buildings.
+  uint64_t cachedStoreMutationVersion = static_cast<uint64_t>(-1);
+  uint64_t cachedBuildingCoverageSignature = 0;
   ServiceCoverageSummary cachedResult;
 };
 
@@ -97,6 +102,28 @@ public:
   static void buildCache(
     const RoadNetwork& roads,
     const std::vector<ServiceFacility>& facilities,
+    ServiceCoverageCache& cache
+  );
+
+  // True when the topology and every coverage-relevant facility property
+  // still match the state used by buildCache().
+  static bool isCacheValid(
+    const RoadNetwork& roads,
+    const std::vector<ServiceFacility>& facilities,
+    const ServiceCoverageCache& cache
+  );
+
+  // Result reuse additionally checks building IDs and positions. This catches
+  // coverage-relevant edits made through EntityStore's mutable Building API,
+  // which do not advance the store's structural mutation version.
+  static bool isResultCacheValid(
+    const EntityStore& store,
+    const ServiceCoverageCache& cache
+  );
+
+  static void storeCachedResult(
+    const EntityStore& store,
+    const ServiceCoverageSummary& result,
     ServiceCoverageCache& cache
   );
 
