@@ -1,5 +1,9 @@
 # UrbanSimCore Development Roadmap
 
+For the authoritative current validation baseline and active priorities, see
+[STATUS.md](STATUS.md). This document retains detailed milestone history and
+future ideas.
+
 Last updated: July 5, 2026
 
 ## Current Status Snapshot
@@ -14,7 +18,8 @@ Last updated: July 5, 2026
 - Phase 5, Milestone 14 (Districts and Policies): complete - district-level management, zoning ordinances, growth incentives, service budgets by district, and special districts (industrial/tech hub archetypes) all wired into the autonomous simulation loop
 - Phase 5, Milestone 15 (Disasters and Challenges): complete - fire spread, earthquakes, and floods (opt-in via --simulate-disasters, coverage-modulated emergency response for fire), and crime/disease simulation (always-on, feed migration desirability)
 - Phase 5, Milestone 16 (City Optimization): complete - incremental spatial index for zoning candidates, cross-tick traffic route cache, and (the big one) a default Release build type that was previously missing entirely; 500×500 map now sustains 127k population at 5.75 ms/tick, well under the 60 FPS budget
-- Automated validation: 282 tests passing
+- Automated validation: 289 tests passing; regular, strict, ASan/UBSan, and
+  TSan configurations verified
 
 ---
 
@@ -491,4 +496,3 @@ By end of Phase 4:
 By end of Phase 5:
 - Advanced systems add depth without sacrificing performance
 - Engine handles 100k+ population with advanced features
-

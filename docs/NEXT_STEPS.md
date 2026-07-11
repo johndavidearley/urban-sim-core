@@ -1,5 +1,9 @@
 # Next Steps: Immediate Implementation Tasks
 
+> Historical backlog record. The numbered slices below are retained for context
+> and are not the active work queue. See [STATUS.md](STATUS.md) for current
+> priorities.
+
 ## Post-Backlog Focus (Phase 3 Continuation)
 
 1. Deterministic replay parity checks
@@ -313,4 +317,3 @@ Following completion of Slice 11, planned future work includes:
 | 10 | Save/Load | ✅ Complete |
 | 11 | District Management | ✅ Complete |
 | 12 | District Service Policies | 🚧 In Progress |
-

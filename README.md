@@ -2,6 +2,10 @@
 
 A high-performance simulation engine for modeling living cities. Designed to simulate population dynamics, urban growth, economics, traffic, and services at scale.
 
+Current implementation and validation details are maintained in
+[docs/STATUS.md](docs/STATUS.md). The detailed [roadmap](docs/ROADMAP.md) is a
+milestone history and idea backlog rather than the active status source.
+
 ## Quick Start
 
 ### Build
@@ -96,9 +100,9 @@ On macOS, AppleClang's ASan runtime may not support LeakSanitizer; run tests
 with `ASAN_OPTIONS=detect_leaks=0` there. Address and undefined-behavior checks
 remain enabled.
 
-GitHub Actions runs the strict RelWithDebInfo configuration, Debug ASan/UBSan
-with Linux leak detection, and Debug ThreadSanitizer for every pull request and
-push to `main`.
+GitHub Actions runs strict RelWithDebInfo builds on Linux and macOS, plus Linux
+Debug ASan/UBSan with leak detection and Debug ThreadSanitizer, for every pull
+request and push to `main`.
 
 ### Procedural Terrain
 

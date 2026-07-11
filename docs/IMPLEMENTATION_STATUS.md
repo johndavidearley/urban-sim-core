@@ -1,5 +1,9 @@
 # Implementation Status
 
+> Historical development journal. Several "current" and "next" sections below
+> reflect the point in time when they were written. See [STATUS.md](STATUS.md)
+> for the authoritative current state and priorities.
+
 Last updated: June 27, 2026
 
 ## Overview

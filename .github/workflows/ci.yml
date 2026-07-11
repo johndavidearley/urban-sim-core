@@ -15,8 +15,12 @@ concurrency:
 
 jobs:
   strict:
-    name: Strict build and tests
-    runs-on: ubuntu-latest
+    name: Strict (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - name: Check out repository
