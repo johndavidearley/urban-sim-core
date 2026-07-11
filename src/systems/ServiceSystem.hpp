@@ -15,8 +15,11 @@ enum class ServiceType : int {
   Health = 2,
   Education = 3,
   Power = 4,
-  Water = 5
+  Water = 5,
+  Sanitation = 6
 };
+
+constexpr size_t kServiceTypeCount = 7;
 
 struct ServiceFacility {
   ServiceType type = ServiceType::Fire;
@@ -34,14 +37,15 @@ struct ServiceCoverageSummary {
   float healthCoverage = 0.0f;
   float educationCoverage = 0.0f;
 
-  // Power/water are tracked separately from overallCoverage/satisfaction
+  // Utilities are tracked separately from overallCoverage/satisfaction
   // below (which stay exactly (fire+police+health+education)/4, unchanged)
   // rather than folded into that blend - utilities are opt-in
   // (SimOptions::enableUtilities), and every existing caller that doesn't
-  // place power/water facilities would otherwise see its overall coverage
+  // place utility facilities would otherwise see its overall coverage
   // silently drop once these two categories existed at all.
   float powerCoverage = 0.0f;
   float waterCoverage = 0.0f;
+  float sanitationCoverage = 0.0f;
 
   float overallCoverage = 0.0f;
   float satisfaction = 0.5f;

@@ -19,6 +19,7 @@ struct ServicePriority {
   float policeWeight = 1.0f;
   float healthWeight = 1.0f;
   float educationWeight = 1.0f;
+  float sanitationWeight = 0.0f; // opt-in so existing district scores remain unchanged
 };
 
 // A named preset bundling a coherent set of zoning ordinances and service

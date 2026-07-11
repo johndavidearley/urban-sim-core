@@ -133,6 +133,11 @@ bool ServiceSystem::parseServiceType(const std::string& raw, ServiceType& outTyp
     outType = ServiceType::Water;
     return true;
   }
+  if (normalized == "SANITATION" || normalized == "WASTE" ||
+      normalized == "GARBAGE" || normalized == "RECYCLING") {
+    outType = ServiceType::Sanitation;
+    return true;
+  }
 
   return false;
 }
@@ -151,6 +156,8 @@ const char* ServiceSystem::serviceTypeToString(ServiceType type) {
       return "Power";
     case ServiceType::Water:
       return "Water";
+    case ServiceType::Sanitation:
+      return "Sanitation";
     default:
       return "Unknown";
   }
@@ -267,14 +274,14 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   }
 
   // "Serviced" (and the count feeding it) deliberately covers only the
-  // original four types (Fire/Police/Health/Education) - Power/Water are
+  // original four types (Fire/Police/Health/Education) - utilities are
   // tracked in the same byType array for symmetry but excluded from `any`,
   // so manually placing a utility facility (e.g. via --place-facility
-  // POWER) can never change servicedBuildings/overallCoverage for a caller
+  // POWER or SANITATION) can never change servicedBuildings/overallCoverage for a caller
   // who isn't otherwise using utilities.
   struct Partial {
     uint32_t serviced = 0;
-    std::array<uint32_t, 6> byType = {0, 0, 0, 0, 0, 0};
+    std::array<uint32_t, kServiceTypeCount> byType{};
   };
 
   // Evaluate a contiguous slice of the buildings vector.
@@ -283,7 +290,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     for (size_t i = begin; i < end; ++i) {
       Coord anchor;
       if (!roads.resolveRoadAnchor(buildings[i]->position, anchor)) continue;
-      std::array<bool, 6> hit = {false, false, false, false, false, false};
+      std::array<bool, kServiceTypeCount> hit{};
       bool any = false;
       for (const ServiceCoverageCache::Entry& entry : cache.entries) {
         if (entry.distanceField.count(anchor) == 0) continue;
@@ -292,7 +299,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
         if (t < 4) any = true;
       }
       if (any) ++p.serviced;
-      for (int t = 0; t < 6; ++t) { if (hit[t]) ++p.byType[t]; }
+      for (size_t t = 0; t < kServiceTypeCount; ++t) { if (hit[t]) ++p.byType[t]; }
     }
     return p;
   };
@@ -305,7 +312,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     ? std::min(static_cast<size_t>(pool->threadCount()), (n + 63) / 64)
     : 1;
 
-  std::array<uint32_t, 6> coveredByType = {0, 0, 0, 0, 0, 0};
+  std::array<uint32_t, kServiceTypeCount> coveredByType{};
 
   if (nChunks <= 1) {
     const Partial p = evalSlice(0, n);
@@ -324,7 +331,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     for (auto& f : futures) {
       const Partial p = f.get();
       summary.servicedBuildings += p.serviced;
-      for (int t = 0; t < 6; ++t) coveredByType[t] += p.byType[t];
+      for (size_t t = 0; t < kServiceTypeCount; ++t) coveredByType[t] += p.byType[t];
     }
   }
 
@@ -335,6 +342,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   summary.educationCoverage = coveredByType[typeIndex(ServiceType::Education)] / denom;
   summary.powerCoverage     = coveredByType[typeIndex(ServiceType::Power)]     / denom;
   summary.waterCoverage     = coveredByType[typeIndex(ServiceType::Water)]     / denom;
+  summary.sanitationCoverage = coveredByType[typeIndex(ServiceType::Sanitation)] / denom;
   // Deliberately unchanged: only the original four types feed
   // overallCoverage/satisfaction (see the Partial/hit comment above).
   summary.overallCoverage   = (summary.fireCoverage + summary.policeCoverage +

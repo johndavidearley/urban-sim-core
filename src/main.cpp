@@ -727,7 +727,8 @@ int main(int argc, char* argv[]) {
       ServiceType type;
       if (!ServiceSystem::parseServiceType(typeRaw, type)) {
         std::cerr << "Error: Unknown service type '" << typeRaw
-                  << "'. Use FIRE, POLICE, HEALTH/HOSPITAL, EDUCATION/SCHOOL.\n";
+                  << "'. Use FIRE, POLICE, HEALTH/HOSPITAL, EDUCATION/SCHOOL, "
+                     "POWER, WATER, or SANITATION/WASTE.\n";
         return 1;
       }
       if (!map.isValid({x, y})) {

@@ -1,8 +1,12 @@
-# Next Steps: Immediate Implementation Tasks
+# Historical Backlog: Immediate Implementation Tasks
 
 > Historical backlog record. The numbered slices below are retained for context
 > and are not the active work queue. See [STATUS.md](STATUS.md) for current
 > priorities.
+>
+> Snapshot date: this sequence predates completion of the later Phase 5
+> milestones recorded in [ROADMAP.md](ROADMAP.md). Status labels are preserved
+> as historical evidence unless explicitly marked as superseded.
 
 ## Post-Backlog Focus (Phase 3 Continuation)
 
@@ -72,7 +76,7 @@
 
 ---
 
-## Current: Backlog Slice 5 - Building Growth
+## Historical Slice 5 - Building Growth
 
 **Goal:** Automatic building spawning based on demand and road-connected zoning
 
@@ -108,7 +112,7 @@
 
 ---
 
-## Current: Backlog Slice 6 - Population and Jobs
+## Historical Slice 6 - Population and Jobs
 
 **Goal:** Model residents, employment, and housing/job allocation
 
@@ -134,7 +138,7 @@
 
 ---
 
-## Current: Backlog Slice 7 - Traffic and Commute
+## Historical Slice 7 - Traffic and Commute
 
 **Goal:** Introduce commute time and congestion impact from worker movement
 
@@ -165,7 +169,7 @@
 
 ---
 
-## Current: Backlog Slice 8 - Economy and Finances
+## Historical Slice 8 - Economy and Finances
 
 **Goal:** Model city budget, taxation, and economic impact
 
@@ -191,7 +195,7 @@
 
 ---
 
-## Current: Backlog Slice 9 - Metrics and Summary
+## Historical Slice 9 - Metrics and Summary
 
 **Goal:** Consolidate subsystem metrics into one citywide summary workflow
 
@@ -212,7 +216,7 @@
 
 ---
 
-## Current: Backlog Slice 10 - Save and Load
+## Historical Slice 10 - Save and Load
 
 **Goal:** Add persistence scaffolding for city state snapshots
 
@@ -235,7 +239,7 @@
 
 ---
 
-## Current: Backlog Slice 11 - District Management
+## Historical Slice 11 - District Management
 
 **Goal:** Add district-level policy controls for targeted urban planning
 
@@ -254,7 +258,7 @@
 - ✅ Added 12 tests covering CRUD, boundary checks, metrics calculation
 - ✅ Test count: 114 -> 126 (all passing)
 
-4. **Next steps** ⏭️
+4. **Follow-up list recorded at the time**
 - ✅ Integrate per-district tax rate applications in district metrics path
 - ✅ Integrate service facility assignment and priority-weighted service coverage in district metrics path
 - ✅ Add district-level budget allocation and constraints
@@ -275,13 +279,14 @@
 - ✅ Add early aging/demolition scaffolding pass for overbuilt, low-demand parcels
 - ⏭️ Begin Slice 15 economy refinements (interest/loan scaffolding baseline)
 
-**Slice 11 status:** ✅ Foundation complete; policy integration pending.
+**Status recorded at the time:** foundation complete; policy integration was
+pending. This was subsequently completed; see Roadmap Milestone 14.
 
 ---
 
-## Remaining Slices
+## Planned Slices at the Time
 
-Following completion of Slice 11, planned future work includes:
+The historical plan following Slice 11 was:
 - **Slice 12:** District service policies - Per-district service facility priorities and budget allocation
 	- ✅ Begun: facility assignment lifecycle CLI (`--unassign-facility`, `--print-district-facilities`) with unit coverage
 	- ✅ Automated policy sweep runner added (`--run-policy-sweep`, seed/cap/allocation sweep parameters)
@@ -301,7 +306,11 @@ Following completion of Slice 11, planned future work includes:
 
 ---
 
-## Timeline & Progress
+## Historical Timeline Snapshot
+
+The table below is intentionally not updated. In particular, its Slice 12
+"In Progress" state has been superseded by completed district-policy work in
+Roadmap Milestone 14.
 
 | Slice | Goal | Status |
 |-------|------|--------|

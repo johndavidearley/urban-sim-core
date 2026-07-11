@@ -11,7 +11,8 @@ development logs and should not be used to determine current priorities.
 
 The headless simulation engine and optional visualization stack are functional.
 Implemented systems include world generation, zoning and growth, population,
-traffic and commute routing, economy and trade, services and utilities,
+traffic and commute routing, economy and trade, services and utilities
+(including power, water, and sanitation coverage),
 district policy, public transit, disasters, crime and health, persistence,
 replay verification, micro-traffic, metrics, CLI reporting, PPM rendering, and
 the optional SDL2 visualizer.
@@ -22,7 +23,7 @@ iteration rather than completion of a missing MVP subsystem.
 
 ## Validation Baseline
 
-- 289 tests across 28 GoogleTest suites.
+- 292 tests across 28 GoogleTest suites.
 - Tests are discovered individually by CTest.
 - Regular and warnings-as-errors builds pass.
 - Full ASan/UBSan and ThreadSanitizer runs pass.

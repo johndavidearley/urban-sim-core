@@ -381,10 +381,11 @@ Coord chooseFacilitySite(
 }
 
 // Keep roughly one facility per `popPerFacility` residents per type, cycling
-// through the service types so coverage of each grows together. Power/Water
+// through the service types so coverage of each grows together. Power/Water/
+// Sanitation
 // are opt-in (includeUtilities, SimOptions::enableUtilities) - when off, the
 // type cycle and total count are exactly what they were before Power/Water
-// existed. When on, the target count scales up proportionally (6/4 of the
+// existed. When on, the target count scales up proportionally (7/4 of the
 // base) so Fire/Police/Health/Education density is unaffected - utilities
 // are added on top, not diluted from the original four's share.
 void placeFacilitiesIfNeeded(
@@ -397,7 +398,7 @@ void placeFacilitiesIfNeeded(
   bool includeUtilities
 ) {
   const uint32_t popPerFacility = 1000;
-  const int typeCount = includeUtilities ? 6 : 4;
+  const int typeCount = includeUtilities ? static_cast<int>(kServiceTypeCount) : 4;
   const size_t target = static_cast<size_t>(population / popPerFacility) * static_cast<size_t>(typeCount) / 4;
   while (facilities.size() < target) {
     ServiceFacility facility;
@@ -430,6 +431,7 @@ void placeFacilitiesIfNeeded(
     };
     ensureType(ServiceType::Power);
     ensureType(ServiceType::Water);
+    ensureType(ServiceType::Sanitation);
   }
 }
 
@@ -1171,6 +1173,7 @@ SimResult CitySimulator::run(
     row.trafficCongestion = traffic.maxEdgeCongestion;
     row.avgPollution = averageResidentialPollution(map, store);
     row.serviceCoverage = service.overallCoverage;
+    row.sanitationCoverage = service.sanitationCoverage;
     row.serviceFacilities = static_cast<uint32_t>(facilities.size());
     row.avgLandValue = economy.averageLandValue;
     row.tradeBalance = economy.tradeBalance;

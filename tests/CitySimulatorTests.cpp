@@ -776,8 +776,8 @@ TEST(CitySimulatorTests, UtilitiesDisabledByDefaultLeavesConnectivityAtStubDefau
   }
 }
 
-// With enableUtilities on, Power/Water facilities are auto-placed and growth
-// requires both before a tile can build - proving the whole pipeline (auto
+// With enableUtilities on, Power/Water/Sanitation facilities are auto-placed
+// and growth requires Power and Water before a tile can build - proving the whole pipeline (auto
 // placement, coverage cache, connectivity update, growth gate) works
 // end-to-end and doesn't stall the city out entirely.
 TEST(CitySimulatorTests, UtilitiesEnabledConnectsBuiltAreaAndCityStillGrows) {
@@ -795,6 +795,7 @@ TEST(CitySimulatorTests, UtilitiesEnabledConnectsBuiltAreaAndCityStillGrows) {
   const SimTickMetrics& last = result.rows.back();
   EXPECT_GT(last.residentialBuildings, 0u);
   EXPECT_GT(last.population, 0u);
+  EXPECT_GT(last.sanitationCoverage, 0.0f);
 
   // Power and Water are placed at independent sites, so their coverage radii
   // don't necessarily overlap at every built tile (the same partial-coverage

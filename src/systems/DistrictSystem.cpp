@@ -455,7 +455,8 @@ DistrictMetrics DistrictSystem::evaluateDistrictMetrics(
       const float policeWeight = std::max(0.0f, district->servicePriorities.policeWeight);
       const float healthWeight = std::max(0.0f, district->servicePriorities.healthWeight);
       const float educationWeight = std::max(0.0f, district->servicePriorities.educationWeight);
-      const float totalWeight = fireWeight + policeWeight + healthWeight + educationWeight;
+      const float sanitationWeight = std::max(0.0f, district->servicePriorities.sanitationWeight);
+      const float totalWeight = fireWeight + policeWeight + healthWeight + educationWeight + sanitationWeight;
 
       float weightedCoverage = coverage.overallCoverage;
       if (totalWeight > 0.0f) {
@@ -463,7 +464,8 @@ DistrictMetrics DistrictSystem::evaluateDistrictMetrics(
           (coverage.fireCoverage * fireWeight +
            coverage.policeCoverage * policeWeight +
            coverage.healthCoverage * healthWeight +
-           coverage.educationCoverage * educationWeight) / totalWeight;
+           coverage.educationCoverage * educationWeight +
+           coverage.sanitationCoverage * sanitationWeight) / totalWeight;
       }
 
       const float allocationFactor = 0.5f + (0.5f * std::max(0.0f, std::min(1.0f, district->serviceAllocation)));

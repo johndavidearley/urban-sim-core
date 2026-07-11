@@ -25,7 +25,7 @@ static const char* kCSVHeader =
   "tick,demand_residential,demand_commercial,demand_industrial,demand_office,"
   "population,employed,residential_buildings,commercial_buildings,industrial_buildings,office_buildings,"
   "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
-  "service_coverage,service_facilities,avg_land_value,trade_balance,inflation_multiplier,"
+  "service_coverage,sanitation_coverage,service_facilities,avg_land_value,trade_balance,inflation_multiplier,"
   "transit_routes,transit_bus_routes,transit_rail_routes,transit_ridership,transit_demand,transit_modal_share,"
   "active_fires,buildings_lost_to_fire,crime_rate,illness_rate,"
   "earthquake_occurred,flood_occurred,buildings_lost_to_disaster\n";
@@ -58,7 +58,8 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.officeBuildings << ","
       << row.roadTiles << "," << row.budgetBalance << ","
       << row.trafficCongestion << "," << row.avgPollution << ","
-      << row.serviceCoverage << "," << row.serviceFacilities << "," << row.avgLandValue << ","
+      << row.serviceCoverage << "," << row.sanitationCoverage << ","
+      << row.serviceFacilities << "," << row.avgLandValue << ","
       << row.tradeBalance << "," << row.inflationMultiplier << ","
       << row.transitRoutes << "," << row.transitBusRoutes << "," << row.transitRailRoutes << ","
       << row.transitRidership << "," << row.transitDemand << ","

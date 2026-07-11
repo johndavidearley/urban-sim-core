@@ -123,6 +123,34 @@ TEST(ServiceSystemTests, PowerAndWaterCoverageAreTrackedButExcludedFromOverallCo
   EXPECT_FLOAT_EQ(withPowerOnly.overallCoverage, 0.0f);
 }
 
+TEST(ServiceSystemTests, ParsesSanitationAliases) {
+  ServiceType type = ServiceType::Fire;
+  for (const char* alias : {"SANITATION", "waste", "Garbage", "RECYCLING"}) {
+    ASSERT_TRUE(ServiceSystem::parseServiceType(alias, type));
+    EXPECT_EQ(type, ServiceType::Sanitation);
+  }
+  EXPECT_STREQ(ServiceSystem::serviceTypeToString(ServiceType::Sanitation), "Sanitation");
+}
+
+TEST(ServiceSystemTests, SanitationCoverageIsTrackedButExcludedFromOverallCoverage) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  EntityStore store;
+  store.createBuilding(BuildingType::Residential, {2, 2}, 10);
+  roads.buildRoad({2, 2}, {3, 2});
+
+  ServiceFacility sanitation;
+  sanitation.type = ServiceType::Sanitation;
+  sanitation.position = {3, 2};
+  sanitation.maxTravelDistance = 6;
+
+  const ServiceCoverageSummary summary =
+    ServiceSystem::evaluateCoverage(store, roads, {sanitation});
+  EXPECT_FLOAT_EQ(summary.sanitationCoverage, 1.0f);
+  EXPECT_EQ(summary.servicedBuildings, 0u);
+  EXPECT_FLOAT_EQ(summary.overallCoverage, 0.0f);
+}
+
 // nearestPowerDistance/nearestWaterDistance must only merge entries of
 // their own type, unlike nearestAnyDistance which merges everything -
 // a nearby Police station must not make a tile look power-covered.

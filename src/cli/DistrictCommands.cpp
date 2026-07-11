@@ -159,7 +159,8 @@ void printDistrictList(const DistrictSystem& districtSystem) {
     std::cout << "    Service Priorities: Fire=" << district.servicePriorities.fireWeight
               << " Police=" << district.servicePriorities.policeWeight
               << " Health=" << district.servicePriorities.healthWeight
-              << " Education=" << district.servicePriorities.educationWeight << "\n";
+              << " Education=" << district.servicePriorities.educationWeight
+              << " Sanitation=" << district.servicePriorities.sanitationWeight << "\n";
     std::cout << "    Assigned Facilities: ";
     if (district.assignedFacilityIds.empty()) {
       std::cout << "none\n";

@@ -319,6 +319,32 @@ TEST_F(DistrictSystemTests, CanUnassignPreviouslyAssignedFacility) {
   EXPECT_FALSE(districtSystem.unassignFacilityFromDistrict(id, 7));
 }
 
+TEST_F(DistrictSystemTests, SanitationCanDriveDistrictServiceCoverageWhenPrioritized) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  store.createBuilding(BuildingType::Residential, {2, 2}, 20);
+  roads.buildRoad({2, 2}, {3, 2});
+
+  const DistrictId id = districtSystem.createDistrict("Sanitation", {0, 0}, {8, 8});
+  ServicePriority sanitationOnly;
+  sanitationOnly.fireWeight = 0.0f;
+  sanitationOnly.policeWeight = 0.0f;
+  sanitationOnly.healthWeight = 0.0f;
+  sanitationOnly.educationWeight = 0.0f;
+  sanitationOnly.sanitationWeight = 1.0f;
+  ASSERT_TRUE(districtSystem.setDistrictServicePriorities(id, sanitationOnly));
+  ASSERT_TRUE(districtSystem.setDistrictServiceAllocation(id, 1.0f));
+
+  const std::vector<ServiceFacility> facilities = {
+    ServiceFacility{ServiceType::Sanitation, {3, 2}, 6, 1.0f}
+  };
+  const DistrictMetrics metrics = districtSystem.evaluateDistrictMetrics(
+    id, map, store, population, &roads, &facilities);
+  EXPECT_GT(metrics.serviceCoverage, 0.9f);
+}
+
 TEST_F(DistrictSystemTests, ServiceBudgetCapConstrainsCoverageAndBudgetAllocation) {
   CityMap map({20, 20});
   RoadNetwork roads(map);

@@ -40,7 +40,7 @@ int runCitySimulation(
   float fireRiskMultiplier = 1.0f,     // scales FireParams::baseIgnitionChance; only relevant when enableDisasters is set
   float earthquakeRiskMultiplier = 1.0f,  // scales DisasterParams::earthquakeChancePerTick; only relevant when enableDisasters is set
   float floodRiskMultiplier = 1.0f,    // scales DisasterParams::floodChancePerTick; only relevant when enableDisasters is set
-  bool enableUtilities = false  // opt-in: auto-place Power/Water facilities and require both before new construction (see SimOptions::enableUtilities)
+  bool enableUtilities = false  // opt-in: auto-place Power/Water/Sanitation; require Power and Water before new construction
 );
 
 // Runs the same autonomous simulation scenario `trials` times - same seed
