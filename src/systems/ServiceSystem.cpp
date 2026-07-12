@@ -25,6 +25,9 @@ uint64_t facilitySignature(const std::vector<ServiceFacility>& facilities) {
     mix(static_cast<uint32_t>(facility.position.x));
     mix(static_cast<uint32_t>(facility.position.y));
     mix(static_cast<uint32_t>(facility.maxTravelDistance));
+    mix(static_cast<uint32_t>(facility.powerSource));
+    mix(static_cast<uint32_t>(std::hash<float>{}(facility.powerCapacityMW)));
+    mix(static_cast<uint32_t>(std::hash<float>{}(facility.emissionsKgPerMWh)));
   }
   return hash;
 }
@@ -163,14 +166,63 @@ const char* ServiceSystem::serviceTypeToString(ServiceType type) {
   }
 }
 
+bool ServiceSystem::parsePowerSourceType(const std::string& raw, PowerSourceType& outType) {
+  const std::string normalized = upper(raw);
+  if (normalized == "GENERIC") outType = PowerSourceType::Generic;
+  else if (normalized == "COAL") outType = PowerSourceType::Coal;
+  else if (normalized == "GAS" || normalized == "NATURAL_GAS" || normalized == "NATURAL-GAS") outType = PowerSourceType::NaturalGas;
+  else if (normalized == "NUCLEAR") outType = PowerSourceType::Nuclear;
+  else if (normalized == "SOLAR") outType = PowerSourceType::Solar;
+  else if (normalized == "WIND") outType = PowerSourceType::Wind;
+  else if (normalized == "HYDRO" || normalized == "HYDROELECTRIC") outType = PowerSourceType::Hydro;
+  else return false;
+  return true;
+}
+
+const char* ServiceSystem::powerSourceTypeToString(PowerSourceType type) {
+  switch (type) {
+    case PowerSourceType::Generic: return "Generic";
+    case PowerSourceType::Coal: return "Coal";
+    case PowerSourceType::NaturalGas: return "Natural Gas";
+    case PowerSourceType::Nuclear: return "Nuclear";
+    case PowerSourceType::Solar: return "Solar";
+    case PowerSourceType::Wind: return "Wind";
+    case PowerSourceType::Hydro: return "Hydro";
+    default: return "Unknown";
+  }
+}
+
+float ServiceSystem::defaultPowerEmissions(PowerSourceType type) {
+  switch (type) {
+    case PowerSourceType::Coal: return 1000.0f;
+    case PowerSourceType::NaturalGas: return 450.0f;
+    case PowerSourceType::Generic: return 400.0f;
+    case PowerSourceType::Nuclear: return 12.0f;
+    case PowerSourceType::Solar: return 45.0f;
+    case PowerSourceType::Wind: return 11.0f;
+    case PowerSourceType::Hydro: return 24.0f;
+    default: return 0.0f;
+  }
+}
+
 void ServiceSystem::buildCache(
   const RoadNetwork& roads,
   const std::vector<ServiceFacility>& facilities,
   ServiceCoverageCache& cache
 ) {
   cache.entries.clear();
+  cache.powerGenerationCapacityMW = 0.0f;
+  cache.powerWeightedEmissions = 0.0f;
   cache.entries.reserve(facilities.size());
   for (const ServiceFacility& facility : facilities) {
+    // Generation exists independently of road-based distribution coverage.
+    // A disconnected plant still contributes to the city's installed source
+    // mix, while buildings only receive Power coverage through the graph.
+    if (facility.type == ServiceType::Power) {
+      const float capacity = std::max(0.0f, facility.powerCapacityMW);
+      cache.powerGenerationCapacityMW += capacity;
+      cache.powerWeightedEmissions += capacity * std::max(0.0f, facility.emissionsKgPerMWh);
+    }
     Coord anchor;
     if (!roads.resolveRoadAnchor(facility.position, anchor)) {
       continue;
@@ -260,6 +312,10 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
 ) {
   ServiceCoverageSummary summary;
   summary.totalBuildings = static_cast<uint32_t>(store.getBuildings().size());
+  summary.powerGenerationMW = cache.powerGenerationCapacityMW;
+  summary.powerEmissionsKgPerMWh = summary.powerGenerationMW > 0.0f
+    ? cache.powerWeightedEmissions / summary.powerGenerationMW
+    : 0.0f;
   if (summary.totalBuildings == 0) {
     summary.satisfaction = 0.5f;
     return summary;
@@ -343,6 +399,15 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   summary.powerCoverage     = coveredByType[typeIndex(ServiceType::Power)]     / denom;
   summary.waterCoverage     = coveredByType[typeIndex(ServiceType::Water)]     / denom;
   summary.sanitationCoverage = coveredByType[typeIndex(ServiceType::Sanitation)] / denom;
+  for (const auto& [id, building] : store.getBuildings()) {
+    (void)id;
+    const float occupants = static_cast<float>(std::max(0, building.occupancy));
+    summary.powerDemandMW += occupants *
+      (building.type == BuildingType::Residential ? 0.002f : 0.004f);
+  }
+  summary.powerSupplyRatio = summary.powerDemandMW > 0.0f
+    ? std::min(1.0f, summary.powerGenerationMW / summary.powerDemandMW)
+    : 1.0f;
   // Deliberately unchanged: only the original four types feed
   // overallCoverage/satisfaction (see the Partial/hit comment above).
   summary.overallCoverage   = (summary.fireCoverage + summary.policeCoverage +

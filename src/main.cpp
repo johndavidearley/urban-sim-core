@@ -103,6 +103,7 @@ int main(int argc, char* argv[]) {
   int commuteSweepTicks = 0;
   bool commuteSweepNoTransitDisabled = false;
   std::vector<std::tuple<std::string, int, int, int>> serviceRequests;
+  std::vector<std::tuple<std::string, int, int, int, float>> powerSourceRequests;
   int printTopEdgesCount = -1;
   std::string topEdgesExportPath;
   bool hasTrafficOriginFilter = false;
@@ -304,6 +305,13 @@ int main(int argc, char* argv[]) {
       int y = std::atoi(argv[++i]);
       int dist = std::atoi(argv[++i]);
       serviceRequests.emplace_back(serviceType, x, y, dist);
+    } else if (arg == "--add-power-source" && i + 5 < argc) {
+      std::string sourceType = argv[++i];
+      int x = std::atoi(argv[++i]);
+      int y = std::atoi(argv[++i]);
+      int dist = std::atoi(argv[++i]);
+      float capacityMW = std::stof(argv[++i]);
+      powerSourceRequests.emplace_back(sourceType, x, y, dist, capacityMW);
     } else if (arg == "--run-service-evaluation") {
       runServiceEvaluationFlag = true;
     } else if (arg == "--print-service-summary") {
@@ -689,7 +697,7 @@ int main(int argc, char* argv[]) {
     bool hasServiceSummary = false;
 
     std::vector<ServiceFacility> serviceFacilities;
-    serviceFacilities.reserve(serviceRequests.size());
+    serviceFacilities.reserve(serviceRequests.size() + powerSourceRequests.size());
 
     auto saveIfRequested = [&]() -> bool {
       if (saveCityPath.empty()) {
@@ -744,6 +752,30 @@ int main(int argc, char* argv[]) {
                 << " (" << ServiceSystem::serviceTypeToString(type)
                 << ") at (" << x << "," << y << ")"
                 << " distance=" << facility.maxTravelDistance << "\n";
+    }
+
+    for (const auto& [sourceRaw, x, y, dist, capacityMW] : powerSourceRequests) {
+      PowerSourceType sourceType;
+      if (!ServiceSystem::parsePowerSourceType(sourceRaw, sourceType)) {
+        std::cerr << "Error: Unknown power source '" << sourceRaw
+                  << "'. Use GENERIC, COAL, GAS, NUCLEAR, SOLAR, WIND, or HYDRO.\n";
+        return 1;
+      }
+      if (!map.isValid({x, y}) || capacityMW < 0.0f) {
+        std::cerr << "Error: Invalid power source location or negative capacity\n";
+        return 1;
+      }
+      ServiceFacility facility;
+      facility.type = ServiceType::Power;
+      facility.position = {x, y};
+      facility.maxTravelDistance = std::max(0, dist);
+      facility.powerSource = sourceType;
+      facility.powerCapacityMW = capacityMW;
+      facility.emissionsKgPerMWh = ServiceSystem::defaultPowerEmissions(sourceType);
+      serviceFacilities.push_back(facility);
+      std::cout << "Added " << ServiceSystem::powerSourceTypeToString(sourceType)
+                << " power source #" << serviceFacilities.size() << " at ("
+                << x << "," << y << "), capacity=" << capacityMW << " MW\n";
     }
 
     // Handle inspection commands
@@ -1135,7 +1167,7 @@ int main(int argc, char* argv[]) {
         printGrowthSummaryFlag || seedPopulation >= 0 || printPopulationSummaryFlag ||
         printPopulationGroupsFlag || runCommuteSimulationFlag || printTrafficSummaryFlag ||
         printTopEdgesCount > 0 || runEconomyCalculationFlag || printBudgetSummaryFlag ||
-        runServiceEvaluationFlag || printServiceSummaryFlag || !serviceRequests.empty() ||
+        runServiceEvaluationFlag || printServiceSummaryFlag || !serviceRequests.empty() || !powerSourceRequests.empty() ||
         printCitySummaryFlag || !renderMapPath.empty() || !saveCityPath.empty() || !loadCityPath.empty() ||
         listDistrictsFlag || printDistrictSummaryId >= 0 ||
         printDistrictFacilitiesId >= 0 ||

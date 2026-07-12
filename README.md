@@ -6,6 +6,13 @@ Current implementation and validation details are maintained in
 [docs/STATUS.md](docs/STATUS.md). The detailed [roadmap](docs/ROADMAP.md) is a
 milestone history and idea backlog rather than the active status source.
 
+Power facilities can be generic coverage utilities or typed generators with
+capacity and lifecycle emissions:
+
+```bash
+./build/bin/UrbanSimCore-cli --size 32 --add-power-source SOLAR 10 10 12 25 --run-service-evaluation --print-service-summary
+```
+
 ## Quick Start
 
 ### Build

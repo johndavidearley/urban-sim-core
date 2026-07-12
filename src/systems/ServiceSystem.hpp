@@ -21,11 +21,24 @@ enum class ServiceType : int {
 
 constexpr size_t kServiceTypeCount = 7;
 
+enum class PowerSourceType : int {
+  Generic = 0,
+  Coal = 1,
+  NaturalGas = 2,
+  Nuclear = 3,
+  Solar = 4,
+  Wind = 5,
+  Hydro = 6
+};
+
 struct ServiceFacility {
   ServiceType type = ServiceType::Fire;
   Coord position{0, 0};
   int maxTravelDistance = 10; // Road-edge hops
   float quality = 1.0f;
+  PowerSourceType powerSource = PowerSourceType::Generic;
+  float powerCapacityMW = 100.0f;
+  float emissionsKgPerMWh = 400.0f;
 };
 
 struct ServiceCoverageSummary {
@@ -46,6 +59,10 @@ struct ServiceCoverageSummary {
   float powerCoverage = 0.0f;
   float waterCoverage = 0.0f;
   float sanitationCoverage = 0.0f;
+  float powerDemandMW = 0.0f;
+  float powerGenerationMW = 0.0f;
+  float powerSupplyRatio = 1.0f;
+  float powerEmissionsKgPerMWh = 0.0f;
 
   float overallCoverage = 0.0f;
   float satisfaction = 0.5f;
@@ -64,6 +81,8 @@ struct ServiceCoverageCache {
   size_t builtForFacilityCount = 0;
   uint64_t builtForFacilitySignature = 0;
   uint64_t builtForTopologyVersion = static_cast<uint64_t>(-1);
+  float powerGenerationCapacityMW = 0.0f;
+  float powerWeightedEmissions = 0.0f;
 
   // Nearest distance to *any* facility of *any* type, merged (min) across all
   // entries' distance fields once here in buildCache() rather than re-derived
@@ -94,6 +113,9 @@ class ServiceSystem {
 public:
   static bool parseServiceType(const std::string& raw, ServiceType& outType);
   static const char* serviceTypeToString(ServiceType type);
+  static bool parsePowerSourceType(const std::string& raw, PowerSourceType& outType);
+  static const char* powerSourceTypeToString(PowerSourceType type);
+  static float defaultPowerEmissions(PowerSourceType type);
 
   // Full evaluation: builds BFS fields then scores buildings. Use when no cache is available.
   static ServiceCoverageSummary evaluateCoverage(

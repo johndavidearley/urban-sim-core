@@ -55,6 +55,7 @@ void printHelp() {
             << "  --run-economy-calculation Run economy/tax calculation\n"
             << "  --print-budget-summary    Print revenue/expense/economic health summary\n"
             << "  --add-service TYPE X Y DIST  Add FIRE|POLICE|HEALTH|EDUCATION|POWER|WATER|SANITATION facility\n"
+            << "  --add-power-source SOURCE X Y DIST MW  Add GENERIC|COAL|GAS|NUCLEAR|SOLAR|WIND|HYDRO generator\n"
             << "  --run-service-evaluation  Evaluate service coverage from facilities\n"
             << "  --print-service-summary   Print service coverage and satisfaction\n"
             << "  --print-city-summary      Print consolidated city metrics summary\n"
@@ -457,6 +458,13 @@ void printServiceSummary(const ServiceCoverageSummary& summary) {
             << (summary.waterCoverage * 100.0f) << "% (excluded from Overall Coverage below - see --simulate-utilities)\n";
   std::cout << "  Sanitation Coverage: " << std::fixed << std::setprecision(1)
             << (summary.sanitationCoverage * 100.0f) << "% (excluded from Overall Coverage below - see --simulate-utilities)\n";
+  std::cout << "  Power Demand: " << std::fixed << std::setprecision(2)
+            << summary.powerDemandMW << " MW\n";
+  std::cout << "  Power Generation: " << summary.powerGenerationMW << " MW\n";
+  std::cout << "  Power Supply Ratio: " << std::setprecision(1)
+            << (summary.powerSupplyRatio * 100.0f) << "%\n";
+  std::cout << "  Generation Emissions: " << std::setprecision(1)
+            << summary.powerEmissionsKgPerMWh << " kg CO2e/MWh\n";
   std::cout << "  Overall Coverage: " << std::fixed << std::setprecision(1)
             << (summary.overallCoverage * 100.0f) << "%\n";
   std::cout << "  Satisfaction: " << std::fixed << std::setprecision(1)

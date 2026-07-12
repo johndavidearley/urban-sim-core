@@ -151,6 +151,40 @@ TEST(ServiceSystemTests, SanitationCoverageIsTrackedButExcludedFromOverallCovera
   EXPECT_FLOAT_EQ(summary.overallCoverage, 0.0f);
 }
 
+TEST(ServiceSystemTests, ParsesPowerSourceTypesAndProvidesDefaultEmissions) {
+  PowerSourceType type = PowerSourceType::Generic;
+  ASSERT_TRUE(ServiceSystem::parsePowerSourceType("natural_gas", type));
+  EXPECT_EQ(type, PowerSourceType::NaturalGas);
+  EXPECT_GT(ServiceSystem::defaultPowerEmissions(PowerSourceType::Coal),
+            ServiceSystem::defaultPowerEmissions(PowerSourceType::Solar));
+  EXPECT_STREQ(ServiceSystem::powerSourceTypeToString(PowerSourceType::Nuclear), "Nuclear");
+}
+
+TEST(ServiceSystemTests, PowerSupplyTracksCapacityDemandAndGenerationEmissions) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  EntityStore store;
+  const EntityId homeId = store.createBuilding(BuildingType::Residential, {2, 2}, 20);
+  const EntityId jobId = store.createBuilding(BuildingType::Commercial, {3, 2}, 20);
+  store.getBuilding(homeId)->occupancy = 10;
+  store.getBuilding(jobId)->occupancy = 10;
+  roads.buildRoad({2, 2}, {3, 2});
+
+  ServiceFacility coal;
+  coal.type = ServiceType::Power;
+  coal.position = {3, 2};
+  coal.maxTravelDistance = 6;
+  coal.powerSource = PowerSourceType::Coal;
+  coal.powerCapacityMW = 0.03f;
+  coal.emissionsKgPerMWh = ServiceSystem::defaultPowerEmissions(coal.powerSource);
+
+  const ServiceCoverageSummary summary = ServiceSystem::evaluateCoverage(store, roads, {coal});
+  EXPECT_NEAR(summary.powerDemandMW, 0.06f, 0.0001f);
+  EXPECT_NEAR(summary.powerGenerationMW, 0.03f, 0.0001f);
+  EXPECT_NEAR(summary.powerSupplyRatio, 0.5f, 0.0001f);
+  EXPECT_FLOAT_EQ(summary.powerEmissionsKgPerMWh, 1000.0f);
+}
+
 // nearestPowerDistance/nearestWaterDistance must only merge entries of
 // their own type, unlike nearestAnyDistance which merges everything -
 // a nearby Police station must not make a tile look power-covered.
