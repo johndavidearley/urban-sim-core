@@ -125,11 +125,29 @@ TEST(ServiceSystemTests, PowerAndWaterCoverageAreTrackedButExcludedFromOverallCo
 
 TEST(ServiceSystemTests, ParsesSanitationAliases) {
   ServiceType type = ServiceType::Fire;
-  for (const char* alias : {"SANITATION", "waste", "Garbage", "RECYCLING"}) {
+  for (const char* alias : {"SANITATION", "sewage", "WASTEWATER"}) {
     ASSERT_TRUE(ServiceSystem::parseServiceType(alias, type));
     EXPECT_EQ(type, ServiceType::Sanitation);
   }
   EXPECT_STREQ(ServiceSystem::serviceTypeToString(ServiceType::Sanitation), "Sanitation");
+}
+
+TEST(ServiceSystemTests, ParsesDistinctGarbageAndRecyclingTypes) {
+  ServiceType type = ServiceType::Fire;
+  ASSERT_TRUE(ServiceSystem::parseServiceType("garbage", type));
+  EXPECT_EQ(type, ServiceType::Garbage);
+  ASSERT_TRUE(ServiceSystem::parseServiceType("recycling", type));
+  EXPECT_EQ(type, ServiceType::Recycling);
+  EXPECT_STREQ(ServiceSystem::serviceTypeToString(ServiceType::Garbage), "Garbage");
+  EXPECT_STREQ(ServiceSystem::serviceTypeToString(ServiceType::Recycling), "Recycling");
+}
+
+TEST(ServiceSystemTests, ParsesDistinctDeathcareTypes) {
+  ServiceType type = ServiceType::Fire;
+  ASSERT_TRUE(ServiceSystem::parseServiceType("cemetery", type));
+  EXPECT_EQ(type, ServiceType::Cemetery);
+  ASSERT_TRUE(ServiceSystem::parseServiceType("crematorium", type));
+  EXPECT_EQ(type, ServiceType::Crematorium);
 }
 
 TEST(ServiceSystemTests, SanitationCoverageIsTrackedButExcludedFromOverallCoverage) {

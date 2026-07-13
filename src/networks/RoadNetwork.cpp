@@ -89,6 +89,14 @@ void RoadNetwork::removeRoad(glm::ivec2 from, glm::ivec2 to) {
       toNode.adjacent.erase(toIt);
     }
 
+    // A tile is visually a road tile only while at least one road segment
+    // still touches it. Keeping this synchronized matters for interactive
+    // demolition and prevents removed dead ends from remaining painted as
+    // roads or blocking zoning.
+    CityMap& mutableMap = const_cast<CityMap&>(cityMap);
+    mutableMap.getTile(from).hasRoad = !fromNode.adjacent.empty();
+    mutableMap.getTile(to).hasRoad = !toNode.adjacent.empty();
+
     ++topologyVersion;
   }
 }

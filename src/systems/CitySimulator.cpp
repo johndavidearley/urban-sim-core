@@ -398,7 +398,10 @@ void placeFacilitiesIfNeeded(
   bool includeUtilities
 ) {
   const uint32_t popPerFacility = 1000;
-  const int typeCount = includeUtilities ? static_cast<int>(kServiceTypeCount) : 4;
+  // Garbage/Recycling are currently player-placed gameplay facilities; keep
+  // autonomous engine placement on the established four civic + three
+  // utility types so enabling utilities does not silently change its mix.
+  const int typeCount = includeUtilities ? 7 : 4;
   const size_t target = static_cast<size_t>(population / popPerFacility) * static_cast<size_t>(typeCount) / 4;
   while (facilities.size() < target) {
     ServiceFacility facility;

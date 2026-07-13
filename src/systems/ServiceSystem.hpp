@@ -16,10 +16,14 @@ enum class ServiceType : int {
   Education = 3,
   Power = 4,
   Water = 5,
-  Sanitation = 6
+  Sanitation = 6,
+  Garbage = 7,
+  Recycling = 8,
+  Cemetery = 9,
+  Crematorium = 10
 };
 
-constexpr size_t kServiceTypeCount = 7;
+constexpr size_t kServiceTypeCount = 11;
 
 enum class PowerSourceType : int {
   Generic = 0,
@@ -59,6 +63,10 @@ struct ServiceCoverageSummary {
   float powerCoverage = 0.0f;
   float waterCoverage = 0.0f;
   float sanitationCoverage = 0.0f;
+  float garbageCoverage = 0.0f;
+  float recyclingCoverage = 0.0f;
+  float cemeteryCoverage = 0.0f;
+  float crematoriumCoverage = 0.0f;
   float powerDemandMW = 0.0f;
   float powerGenerationMW = 0.0f;
   float powerSupplyRatio = 1.0f;

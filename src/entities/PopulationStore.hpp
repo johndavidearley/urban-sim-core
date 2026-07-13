@@ -23,4 +23,5 @@ public:
   size_t getGroupCount() const;
   uint32_t getTotalPopulation() const;
   uint32_t getTotalEmployed() const;
+  uint32_t applyDeaths(uint32_t deaths);
 };

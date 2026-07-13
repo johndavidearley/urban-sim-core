@@ -1,0 +1,18 @@
+{
+  "citySnapshot": "urban_sim_session.json.city.json",
+  "demand": {
+    "commercial": 0.08937195688486099,
+    "industrial": 0.09386648237705231,
+    "office": 0.1966286599636078,
+    "residential": 0.9856334328651428
+  },
+  "facilities": [],
+  "funds": 552386,
+  "paused": true,
+  "tick": 550,
+  "tickIntervalMs": 350,
+  "treasuryExpenses": 3,
+  "treasuryNet": 597,
+  "treasuryRevenue": 600,
+  "version": 1
+}

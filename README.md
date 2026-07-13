@@ -49,7 +49,26 @@ cmake --build . --config Release
 ```
 
 Controls:
+- On launch, choose a 32, 64, or 96 tile map, toggle procedural terrain,
+  start a new city, or load the existing session
+- `F1`: show or hide the new-city guide
+- `F2`: toggle large or compact UI text (large is the default)
+- Click the bottom tool palette to select Roads, Zoning, Bulldoze, or Services;
+  clicking an active Zoning or Service button cycles its subtype
+- Click Play/Pause or `1X`/`2X`/`3X` in the HUD to control simulation time
+- Click Save/Load in the HUD, or press `F5`/`F9`, to persist the playable session
+- `R`: toggle the road construction tool
+- `Z`: activate the zoning tool; press repeatedly to cycle Residential,
+  Commercial, Industrial, and Office
+- `B`: toggle the bulldozer tool
+- `S`: activate the service tool; press repeatedly to cycle Fire, Police,
+  Health, Education, Power, Water, Sanitation, Garbage, Recycling, Cemetery,
+  and Crematorium
+- Left-drag: preview and build an x-then-y road while the road tool is active
+- Right-click: cancel the current road drag
 - Arrow keys: pan viewport
+- Middle-button drag: pan the map
+- Mouse wheel: zoom while keeping the tile beneath the cursor anchored
 - `+` / `-`: zoom in/out
 - `1`: zone overlay
 - `2`: land value overlay
@@ -59,13 +78,120 @@ Controls:
 - `6`: demand overlay
 - `7`: happiness overlay
 - `8`: route heatmap overlay
+- Click buttons `1`–`8` in the legend to select the matching overlay directly
 - `O`: cycle route heatmap origin filter (residential anchors)
 - `D`: cycle route heatmap destination filter (job anchors)
 - `C`: clear route heatmap filters
 - `Space`: pause/resume live deterministic ticks
 - `.` or `N`: single simulation tick while paused
 - `H`: show/hide in-window legend panel
-- `Esc`: quit
+- `Esc`: cancel the active tool/drag, or quit when no tool is active
+
+The playable-builder road tool starts with a $50,000 construction fund and
+charges $100 for each new road segment. Green previews are buildable; red
+previews cross blocked terrain/buildings or exceed available funds. Existing
+segments included in a dragged route are not charged again.
+
+Zoning costs $25 per changed tile and uses rectangular drag selection. It
+cannot cover water or roads, and occupied tiles cannot be changed to another
+zone type. Reapplying the same zone is free and does not consume funds.
+
+The bulldozer uses rectangular drag selection and removes buildings, zoning,
+and every road segment touching the selection. Demolition costs $200 per
+building, $20 per road segment, and $5 per zoned tile. Orange previews are
+valid; empty or unaffordable selections appear red.
+
+Service buildings use single-click placement and require an empty, non-road
+tile adjacent to the road network. Fire costs $5,000, Police $4,500, Health
+$6,500, Education $5,500, Power $12,000, Water $8,000, and Sanitation $7,000.
+The placement preview and map marker use a distinct color for each service,
+and coverage refreshes immediately.
+
+Garbage facilities cost $9,000 and provide 400 units of collection capacity;
+Recycling facilities cost $11,000 and divert up to 35% of generated waste with
+200 units of processing capacity. Uncollected waste raises pollution on zoned
+land and lowers the Happiness overlay. The HUD reports the current waste
+collection percentage, while both facility types add operating costs and can
+be removed with the bulldozer.
+
+Population mortality accumulates deterministically from a baseline rate plus
+illness and pollution risk. Deaths reduce population and create a deceased
+backlog. Cemeteries cost $10,000 and process 50 per tick; crematoriums cost
+$14,000 and process 100 per tick, subject to road coverage. An unprocessed
+backlog reduces happiness and raises health pressure. Mortality remainder,
+population target, and backlog persist in saved sessions.
+
+New buildings require both road-reachable power and water coverage. Sanitation
+adds sewage-service coverage and operating cost but is not a construction
+gate. The tile inspector reports current Power and Water connectivity, and the
+new-city guide walks through placing both utilities before a civic service.
+
+The in-window HUD remains visible independently of the debug legend and shows
+simulation state, tick, population, building count, construction funds, and
+the selected tool. Keyboard shortcuts remain available alongside the clickable
+palette.
+
+Four live demand bars in the HUD show residential, commercial, industrial,
+and office demand using the same colors as their zoning tools. The speed
+buttons run ticks at approximately 700 ms, 350 ms, or 120 ms intervals.
+
+Invalid placement reasons are displayed beside the cursor while previewing a
+tool. Every attempted road, zone, demolition, or service action also produces
+a short-lived in-window success or error notification, including the amount
+spent for successful actions.
+
+Hovering over the map outlines the inspected tile and opens an information
+panel with coordinates, terrain, zone, land value, pollution, road congestion,
+building type and occupancy, and civic-service type and range. Inspection is
+suppressed while the pointer is over HUD panels or the tool palette.
+
+Clickable controls brighten on hover, while selected tools, overlays, map
+sizes, terrain mode, and simulation speed retain their stronger active-state
+highlight. This feedback applies to both the start screen and in-game UI.
+
+Compact labels in the built-in bitmap font render at twice their original size
+by default for readability on Retina and other high-density displays. `F2`
+restores the legacy compact size when more panel space is preferred.
+
+Hovering over tool-palette, overlay, playback, speed, save, and load buttons
+also displays a descriptive tooltip. Tooltips explain interactions, current
+subtypes, construction costs, simulation timing, and overlay meaning.
+
+Quitting routes through an in-window confirmation dialog with Save & Quit,
+Quit Without Saving, and Cancel choices. Active tools are still cancelled by
+the first Escape press; a subsequent Escape opens the dialog. Simulation time
+stops while confirmation is open, and closing the OS window uses the same flow.
+
+The default save slot is `urban_sim_session.json`, with the validated core city
+snapshot stored beside it as `urban_sim_session.json.city.json`. A session
+restores the map, roads, buildings, population, civic facilities, funds, tick,
+pause state, simulation speed, and current demand values.
+
+The launch screen can also be controlled with Enter/`N` for a new city, `L`
+to load, `T` to toggle terrain, and Escape to quit. Loading inspects the saved
+city dimensions before constructing the simulation map.
+
+New cities now begin paused and genuinely empty rather than loading a seeded
+demonstration layout. The in-window guide walks through constructing the first
+road, zoning land, starting simulation time, and placing a civic service.
+Loaded sessions bypass the guide.
+
+The construction fund is also the live city treasury. Each simulation tick
+applies one percent of the economy system's tax/export revenue and
+maintenance/import expenses to match the visualizer's short tick cadence.
+The HUD shows the latest scaled income, expenses, and net treasury change;
+these values are preserved by session saves.
+
+Each placed service also has a recurring per-tick operating cost: Fire $25,
+Police $22, Health $35, and Education $30. These costs join the HUD's `OUT`
+figure without the economy scaling step because they are already expressed in
+playable tick units. The HUD warns below $5,000 and reports an unfunded deficit
+when expenses would push an empty treasury below zero; recovery is announced
+when the balance becomes healthy again.
+
+Bulldozer selections include civic facilities as first-class demolition
+targets. Removing one costs $100, clears its map marker and coverage, and
+immediately removes its recurring upkeep from the projected `OUT` figure.
 
 ### Run Tests
 

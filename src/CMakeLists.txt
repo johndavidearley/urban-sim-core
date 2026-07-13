@@ -20,6 +20,13 @@ add_library(urban_sim_core
   systems/CrimeSystem.cpp
   systems/HealthSystem.cpp
   systems/NaturalDisasterSystem.cpp
+  systems/WasteSystem.cpp
+  systems/DeathcareSystem.cpp
+  gameplay/RoadTool.cpp
+  gameplay/ZoneTool.cpp
+  gameplay/BulldozeTool.cpp
+  gameplay/ServiceTool.cpp
+  gameplay/TreasurySystem.cpp
   world/CityMap.cpp
   world/Tile.cpp
   world/Zoning.cpp
@@ -30,6 +37,7 @@ add_library(urban_sim_core
   metrics/CityMetrics.cpp
   persistence/SaveLoadSystem.cpp
   persistence/ReplayVerifier.cpp
+  persistence/GameplaySessionSystem.cpp
   visualization/MapRenderer.cpp
 )
 

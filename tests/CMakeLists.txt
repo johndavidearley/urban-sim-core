@@ -24,6 +24,14 @@ add_executable(test_core
   SaveLoadSystemTests.cpp
   ReplayVerifierTests.cpp
   MapRendererTests.cpp
+  RoadToolTests.cpp
+  ZoneToolTests.cpp
+  BulldozeToolTests.cpp
+  ServiceToolTests.cpp
+  GameplaySessionSystemTests.cpp
+  TreasurySystemTests.cpp
+  WasteSystemTests.cpp
+  DeathcareSystemTests.cpp
   )
 
 target_link_libraries(test_core PRIVATE urban_sim_core gtest_main)

@@ -1,6 +1,7 @@
 #include "src/entities/PopulationStore.hpp"
 
 #include <algorithm>
+#include <vector>
 
 #include "src/core/EntityId.hpp"
 
@@ -68,4 +69,34 @@ uint32_t PopulationStore::getTotalEmployed() const {
     total += group.employed;
   }
   return total;
+}
+
+uint32_t PopulationStore::applyDeaths(uint32_t deaths) {
+  const uint32_t total = getTotalPopulation();
+  const uint32_t applied = std::min(deaths, total);
+  if (applied == 0) return 0;
+  std::vector<EntityId> ids;
+  ids.reserve(groups.size());
+  for (const auto& [id, group] : groups) {
+    (void)group;
+    ids.push_back(id);
+  }
+  std::sort(ids.begin(), ids.end());
+  uint32_t remaining = applied;
+  uint32_t populationRemaining = total;
+  for (const EntityId id : ids) {
+    PopulationGroup& group = groups[id];
+    const uint32_t groupDeaths = populationRemaining > 0
+      ? std::min(group.size, static_cast<uint32_t>(
+          (static_cast<uint64_t>(remaining) * group.size) / populationRemaining))
+      : 0;
+    const uint32_t actual = (id == ids.back()) ? std::min(group.size, remaining) : groupDeaths;
+    const uint32_t employedDeaths = group.size > 0
+      ? static_cast<uint32_t>((static_cast<uint64_t>(group.employed) * actual) / group.size) : 0;
+    group.size -= actual;
+    group.employed -= std::min(group.employed, employedDeaths);
+    remaining -= actual;
+    populationRemaining -= (group.size + actual);
+  }
+  return applied - remaining;
 }

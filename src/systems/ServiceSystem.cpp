@@ -136,9 +136,24 @@ bool ServiceSystem::parseServiceType(const std::string& raw, ServiceType& outTyp
     outType = ServiceType::Water;
     return true;
   }
-  if (normalized == "SANITATION" || normalized == "WASTE" ||
-      normalized == "GARBAGE" || normalized == "RECYCLING") {
+  if (normalized == "SANITATION" || normalized == "SEWAGE" || normalized == "WASTEWATER") {
     outType = ServiceType::Sanitation;
+    return true;
+  }
+  if (normalized == "GARBAGE" || normalized == "LANDFILL" || normalized == "WASTE") {
+    outType = ServiceType::Garbage;
+    return true;
+  }
+  if (normalized == "RECYCLING" || normalized == "RECYCLE") {
+    outType = ServiceType::Recycling;
+    return true;
+  }
+  if (normalized == "CEMETERY" || normalized == "BURIAL") {
+    outType = ServiceType::Cemetery;
+    return true;
+  }
+  if (normalized == "CREMATORIUM" || normalized == "CREMATION") {
+    outType = ServiceType::Crematorium;
     return true;
   }
 
@@ -161,6 +176,14 @@ const char* ServiceSystem::serviceTypeToString(ServiceType type) {
       return "Water";
     case ServiceType::Sanitation:
       return "Sanitation";
+    case ServiceType::Garbage:
+      return "Garbage";
+    case ServiceType::Recycling:
+      return "Recycling";
+    case ServiceType::Cemetery:
+      return "Cemetery";
+    case ServiceType::Crematorium:
+      return "Crematorium";
     default:
       return "Unknown";
   }
@@ -399,6 +422,10 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   summary.powerCoverage     = coveredByType[typeIndex(ServiceType::Power)]     / denom;
   summary.waterCoverage     = coveredByType[typeIndex(ServiceType::Water)]     / denom;
   summary.sanitationCoverage = coveredByType[typeIndex(ServiceType::Sanitation)] / denom;
+  summary.garbageCoverage    = coveredByType[typeIndex(ServiceType::Garbage)] / denom;
+  summary.recyclingCoverage  = coveredByType[typeIndex(ServiceType::Recycling)] / denom;
+  summary.cemeteryCoverage   = coveredByType[typeIndex(ServiceType::Cemetery)] / denom;
+  summary.crematoriumCoverage = coveredByType[typeIndex(ServiceType::Crematorium)] / denom;
   for (const auto& [id, building] : store.getBuildings()) {
     (void)id;
     const float occupants = static_cast<float>(std::max(0, building.occupancy));

@@ -49,6 +49,8 @@ TEST(RoadNetworkTests, RemoveRoad) {
   network.removeRoad({10, 10}, {10, 11});
   EXPECT_EQ(network.getRoadCount(), 0u);
   EXPECT_FALSE(network.hasRoad({10, 10}, {10, 11}));
+  EXPECT_FALSE(map.getTile({10, 10}).hasRoad);
+  EXPECT_FALSE(map.getTile({10, 11}).hasRoad);
 }
 
 TEST(RoadNetworkTests, ClearRemovesEdgesAdjacencyAndMapFlags) {
