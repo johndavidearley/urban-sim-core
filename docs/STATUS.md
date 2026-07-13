@@ -1,6 +1,6 @@
 # Project Status
 
-Last verified: July 11, 2026
+Last verified: July 13, 2026
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -23,12 +23,12 @@ iteration rather than completion of a missing MVP subsystem.
 
 ## Validation Baseline
 
-- 294 tests across 28 GoogleTest suites.
+- 319 tests across the GoogleTest suites.
 - Tests are discovered individually by CTest.
 - Regular and warnings-as-errors builds pass.
 - Full ASan/UBSan and ThreadSanitizer runs pass.
-- GitHub Actions runs strict Linux and macOS jobs plus Linux ASan/UBSan and
-  TSan jobs.
+- GitHub Actions runs strict Linux, macOS, and Windows jobs plus Linux
+  ASan/UBSan and TSan jobs.
 - CMake presets provide matching `regular`, `strict`, `asan`, and `tsan`
   configure/build/test workflows.
 

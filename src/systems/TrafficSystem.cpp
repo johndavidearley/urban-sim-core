@@ -288,7 +288,7 @@ TrafficSummary runCommuteLoop(
         }
       }
       pending[i] = true;
-      futures[i] = pool->submit([&network, spec = specs[i]]() {
+      futures[i] = pool->submit([&network, spec = specs[i], kCongestionWeight]() {
         return Pathfinding::findShortestPathWithCongestionWeight(
           network, spec.homeAnchor, spec.workAnchor, kCongestionWeight);
       });
@@ -303,8 +303,8 @@ TrafficSummary runCommuteLoop(
     }
   } else {
     // Sequential with route cache + adaptive congestion weight feedback.
-    RoutePathCache routeCache;
-    routeCache.reserve(256);
+    RoutePathCache pathCache;
+    pathCache.reserve(256);
     float adaptiveCongestionWeight = 0.5f;
     float pendingCongestionWeight = 0.5f;
     constexpr uint32_t kFeedbackEpoch = 8;
@@ -314,11 +314,11 @@ TrafficSummary runCommuteLoop(
       if (processed > 0 && (processed % kFeedbackEpoch) == 0 &&
           std::abs(pendingCongestionWeight - adaptiveCongestionWeight) > 0.0001f) {
         adaptiveCongestionWeight = pendingCongestionWeight;
-        routeCache.clear();
+        pathCache.clear();
       }
       paths[i] = getOrComputeRoute(
         network, specs[i].homeAnchor, specs[i].workAnchor,
-        adaptiveCongestionWeight, routeCache);
+        adaptiveCongestionWeight, pathCache);
 
       // Accumulate congestion immediately so later paths route around buildup.
       if (paths[i].found && paths[i].waypoints.size() > 1) {

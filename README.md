@@ -233,9 +233,9 @@ On macOS, AppleClang's ASan runtime may not support LeakSanitizer; run tests
 with `ASAN_OPTIONS=detect_leaks=0` there. Address and undefined-behavior checks
 remain enabled.
 
-GitHub Actions runs strict RelWithDebInfo builds on Linux and macOS, plus Linux
-Debug ASan/UBSan with leak detection and Debug ThreadSanitizer, for every pull
-request and push to `main`.
+GitHub Actions runs strict RelWithDebInfo builds on Linux, macOS, and Windows,
+plus Linux Debug ASan/UBSan with leak detection and Debug ThreadSanitizer, for
+every pull request and push to `main`.
 
 ### Procedural Terrain
 
