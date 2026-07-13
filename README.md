@@ -37,9 +37,11 @@ fetched automatically at configure time if not installed locally.
 ./build/bin/UrbanSimCore-cli --help
 ```
 
-### Optional Live Visualizer (SDL2)
+### Live Visualizer (SDL2)
 
-If SDL2 is installed, CMake adds an extra executable target named `UrbanSimCore-visualizer`.
+The default build adds an `UrbanSimCore-visualizer` executable. CMake uses an
+installed SDL2 package when available and otherwise fetches a pinned SDL2
+release automatically. Pass `-DURBAN_SIM_BUILD_VISUALIZER=OFF` to omit it.
 
 ```bash
 cd build

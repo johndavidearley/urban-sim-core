@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(URBAN_SIM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(URBAN_SIM_ENABLE_ASAN_UBSAN "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(URBAN_SIM_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
+option(URBAN_SIM_BUILD_VISUALIZER "Build the SDL2 live visualizer" ON)
 
 if(URBAN_SIM_ENABLE_ASAN_UBSAN AND URBAN_SIM_ENABLE_TSAN)
   message(FATAL_ERROR "ASan/UBSan and TSan cannot be enabled in the same build")
@@ -75,6 +76,38 @@ if(NOT nlohmann_json_FOUND)
     URL_HASH SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d
   )
   FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
+# SDL2 is used by the live visualizer. Prefer a package supplied by the system
+# or toolchain, then fetch a pinned SDL2 release so the default build works on
+# Windows, macOS, and Linux without a separate SDL2 installation.
+if(URBAN_SIM_BUILD_VISUALIZER)
+  find_package(SDL2 QUIET CONFIG)
+  if(NOT TARGET SDL2::SDL2)
+    message(STATUS "SDL2 not found locally; fetching 2.32.10")
+    include(FetchContent)
+    set(SDL_SHARED ON CACHE BOOL "Build the SDL2 shared library" FORCE)
+    set(SDL_STATIC OFF CACHE BOOL "Build the SDL2 static library" FORCE)
+    set(SDL_TEST OFF CACHE BOOL "Build the SDL2 test library" FORCE)
+    set(SDL_TESTS OFF CACHE BOOL "Build the SDL2 tests" FORCE)
+    set(SDL_CCACHE OFF CACHE BOOL "Use ccache while building SDL2" FORCE)
+    set(SDL2_DISABLE_INSTALL ON CACHE BOOL "Disable SDL2 install rules" FORCE)
+    FetchContent_Declare(SDL2
+      GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+      GIT_TAG release-2.32.10
+      GIT_SHALLOW TRUE
+    )
+
+    # Do not leak this project's warning/sanitizer flags into third-party C
+    # sources. The SDL subdirectory supplies its own compiler options.
+    get_directory_property(URBAN_SIM_COMPILE_OPTIONS COMPILE_OPTIONS)
+    get_directory_property(URBAN_SIM_LINK_OPTIONS LINK_OPTIONS)
+    set_property(DIRECTORY PROPERTY COMPILE_OPTIONS "")
+    set_property(DIRECTORY PROPERTY LINK_OPTIONS "")
+    FetchContent_MakeAvailable(SDL2)
+    set_property(DIRECTORY PROPERTY COMPILE_OPTIONS "${URBAN_SIM_COMPILE_OPTIONS}")
+    set_property(DIRECTORY PROPERTY LINK_OPTIONS "${URBAN_SIM_LINK_OPTIONS}")
+  endif()
 endif()
 
 # Google Test (for testing)
