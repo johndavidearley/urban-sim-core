@@ -55,6 +55,9 @@ Controls:
   start a new city, or load the existing session
 - `F1`: show or hide the new-city guide
 - `F2`: toggle large or compact UI text (large is the default)
+- `F3`: toggle the isometric and top-down map views
+- `F4`: toggle detailed panels and the compact clean-gameplay HUD
+- `F`: center the isometric camera on the developed area
 - Click the bottom tool palette to select Roads, Zoning, Bulldoze, or Services;
   clicking an active Zoning or Service button cycles its subtype
 - Click Play/Pause or `1X`/`2X`/`3X` in the HUD to control simulation time
@@ -70,6 +73,7 @@ Controls:
 - Right-click: cancel the current road drag
 - Arrow keys: pan viewport
 - Middle-button drag: pan the map
+- Isometric middle-button dragging pans smoothly at pixel precision
 - Mouse wheel: zoom while keeping the tile beneath the cursor anchored
 - `+` / `-`: zoom in/out
 - `1`: zone overlay
@@ -154,6 +158,23 @@ highlight. This feedback applies to both the start screen and in-game UI.
 Compact labels in the built-in bitmap font render at twice their original size
 by default for readability on Retina and other high-density displays. `F2`
 restores the legacy compact size when more panel space is preferred.
+
+The normal map view uses deterministic procedural detail at every zoom level:
+terrain variation, moving water bands, connected road surfaces and lane
+markings, dimensional building facades with occupancy-driven height, windows,
+shadows, and distinct civic facility markers. Analytical overlays remain flat
+and unobstructed so their data stays readable.
+Unzoned land also gains sparse procedural trees and shoreline transitions,
+roads sit within visible sidewalk tiles, and zoom is constrained to keep the
+map filling the window instead of exposing an empty edge.
+
+The renderer now also has a tested isometric projection boundary with forward
+tile projection and inverse mouse picking. This is the foundation for moving
+the live terrain, depth-sorted buildings, and construction tools into an
+optional isometric view without coupling projection math to simulation state.
+The live isometric view centers the city vertically and adds wider road
+surfaces, scaled building height, vegetation, shoreline accents, and shaded
+map edges while retaining `F3` as a top-down fallback.
 
 Hovering over tool-palette, overlay, playback, speed, save, and load buttons
 also displays a descriptive tooltip. Tooltips explain interactions, current

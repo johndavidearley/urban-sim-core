@@ -39,6 +39,7 @@ add_library(urban_sim_core
   persistence/ReplayVerifier.cpp
   persistence/GameplaySessionSystem.cpp
   visualization/MapRenderer.cpp
+  visualization/IsometricProjection.cpp
 )
 
 target_include_directories(urban_sim_core PUBLIC

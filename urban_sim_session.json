@@ -1,18 +1,21 @@
 {
+  "awaitingDisposition": 2,
   "citySnapshot": "urban_sim_session.json.city.json",
   "demand": {
-    "commercial": 0.08937195688486099,
-    "industrial": 0.09386648237705231,
-    "office": 0.1966286599636078,
-    "residential": 0.9856334328651428
+    "commercial": 0.8899767398834229,
+    "industrial": 0.6689469814300537,
+    "office": 0.9983174204826355,
+    "residential": 0.5741708874702454
   },
   "facilities": [],
-  "funds": 552386,
+  "fractionalDeaths": 0.25262472045142204,
+  "funds": 588059,
   "paused": true,
-  "tick": 550,
+  "populationTarget": 478,
+  "tick": 755,
   "tickIntervalMs": 350,
-  "treasuryExpenses": 3,
-  "treasuryNet": 597,
-  "treasuryRevenue": 600,
+  "treasuryExpenses": 1,
+  "treasuryNet": 159,
+  "treasuryRevenue": 160,
   "version": 1
 }

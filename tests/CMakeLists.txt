@@ -24,6 +24,7 @@ add_executable(test_core
   SaveLoadSystemTests.cpp
   ReplayVerifierTests.cpp
   MapRendererTests.cpp
+  IsometricProjectionTests.cpp
   RoadToolTests.cpp
   ZoneToolTests.cpp
   BulldozeToolTests.cpp
