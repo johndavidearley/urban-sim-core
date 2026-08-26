@@ -25,6 +25,9 @@ struct GameplaySessionState {
   double fractionalDeaths = 0.0;
   uint32_t awaitingDisposition = 0;
   std::vector<ServiceFacility> facilities;
+  // Visualizer G-mode: CitySimulator-style autonomous road/zone expansion.
+  bool autonomousGrowth = false;
+  int autonomousExtent = 0;
 };
 
 class GameplaySessionSystem {

@@ -1,6 +1,12 @@
 #include "gtest/gtest.h"
 
+#include "src/entities/EntityStore.hpp"
+#include "src/entities/PopulationStore.hpp"
+#include "src/networks/RoadNetwork.hpp"
+#include "src/systems/CitySimulator.hpp"
 #include "src/systems/MetricsSystem.hpp"
+#include "src/systems/PlayableCityTick.hpp"
+#include "src/world/CityMap.hpp"
 
 TEST(MetricsSystemTests, CollectCityMetricsCombinesSubsystemResults) {
   PopulationSummary population;
@@ -46,4 +52,44 @@ TEST(MetricsSystemTests, SummaryReportIncludesBudgetFields) {
   EXPECT_NE(report.find("Population: 80"), std::string::npos);
   EXPECT_NE(report.find("Budget Balance: $-10000"), std::string::npos);
   EXPECT_NE(report.find("Budget Status: Deficit"), std::string::npos);
+}
+
+TEST(MetricsSystemTests, CollectFromStoreMatchesSummarizeAndPlayable) {
+  EntityStore store;
+  PopulationStore population;
+  store.createBuilding(BuildingType::Residential, {1, 1}, 20);
+  store.createBuilding(BuildingType::Commercial, {2, 1}, 10);
+  PopulationSystem::allocate(store, population, 12, 3);
+
+  TrafficSummary traffic;
+  traffic.maxEdgeCongestion = 0.4f;
+  EconomyState economy;
+  economy.totalRevenue = 1000;
+  economy.totalExpenses = 400;
+  economy.averageLandValue = 110.0f;
+
+  CityMetrics fromStore = MetricsSystem::collectCityMetrics(store, population, traffic, economy);
+  EXPECT_EQ(fromStore.population, 12u);
+  EXPECT_EQ(fromStore.cityRevenue, 1000);
+  EXPECT_FLOAT_EQ(fromStore.trafficCongestion, 0.4f);
+
+  PlayableCityTickState playable;
+  playable.trafficSummary = traffic;
+  playable.economy = economy;
+  CityMetrics fromPlayable = MetricsSystem::collectFromPlayable(store, population, playable);
+  EXPECT_EQ(fromPlayable.population, fromStore.population);
+  EXPECT_EQ(fromPlayable.cityRevenue, fromStore.cityRevenue);
+}
+
+TEST(MetricsSystemTests, SimulatorFinalMetricsMatchLiveStock) {
+  CityMap map({32, 32});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  SimOptions options;
+  options.runTraffic = false;
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 20, options);
+  ASSERT_FALSE(result.rows.empty());
+  EXPECT_EQ(result.finalMetrics.population, result.rows.back().population);
+  EXPECT_EQ(result.finalMetrics.population, population.getTotalPopulation());
 }

@@ -12,7 +12,9 @@ add_library(urban_sim_core
   systems/MetricsSystem.cpp
   systems/ServiceSystem.cpp
   systems/DistrictSystem.cpp
+  systems/CitySimSupport.cpp
   systems/CitySimulator.cpp
+  systems/PlayableCityTick.cpp
   systems/TrafficMicroSim.cpp
   systems/LandValueSystem.cpp
   systems/TransitSystem.cpp
@@ -52,6 +54,10 @@ target_link_libraries(urban_sim_core PUBLIC nlohmann_json::nlohmann_json)
 # CLI executable
 add_executable(UrbanSimCore-cli
   main.cpp
+  cli/CliParse.cpp
+  cli/CliEarlyDispatch.cpp
+  cli/CliCityWorkflow.cpp
+  cli/CliApp.cpp
   cli/Benchmark.cpp
   cli/CityPrinters.cpp
   cli/CliUtils.cpp
@@ -69,6 +75,11 @@ target_link_libraries(UrbanSimCore-cli PRIVATE urban_sim_core)
 # Optional live visualizer (SDL2)
 if(URBAN_SIM_BUILD_VISUALIZER)
   add_executable(UrbanSimCore-visualizer WIN32
+    visualization/VisualizerTypes.cpp
+    visualization/VisualizerOverlay.cpp
+    visualization/VisualizerRender.cpp
+    visualization/VisualizerHud.cpp
+    visualization/VisualizerSession.cpp
     visualization/VisualizerSDL.cpp
   )
   target_link_libraries(UrbanSimCore-visualizer PRIVATE urban_sim_core)

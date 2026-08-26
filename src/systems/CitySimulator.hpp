@@ -13,6 +13,7 @@
 #include "src/systems/HealthSystem.hpp"
 #include "src/systems/NaturalDisasterSystem.hpp"
 #include "src/systems/TransitSystem.hpp"
+#include "src/metrics/CityMetrics.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
 
@@ -52,6 +53,13 @@ struct SimTickMetrics {
   bool earthquakeOccurred = false;         // an earthquake struck this tick (only possible when options.enableDisasters is set)
   bool floodOccurred = false;              // a flood struck this tick (only possible when options.enableDisasters is set)
   uint32_t buildingsLostToDisaster = 0;    // cumulative buildings destroyed by earthquake/flood since the run started
+  // Waste / deathcare (same systems as the playable visualizer path).
+  float wasteCollectionRate = 1.0f;        // 0-1 fraction of generated waste collected/recycled
+  int64_t wasteUncollected = 0;
+  float wastePollutionPenalty = 0.0f;
+  uint32_t deathsThisTick = 0;
+  uint32_t deathcareBacklog = 0;           // awaiting disposition after processing capacity
+  float deathcareHappinessPenalty = 0.0f;
 };
 
 struct SimPhaseTimings {
@@ -69,12 +77,15 @@ struct SimPhaseTimings {
   double crimeMs = 0.0;
   double healthMs = 0.0;
   double disasterMs = 0.0;
+  double wasteMs = 0.0;
+  double deathcareMs = 0.0;
 };
 
 struct SimResult {
   std::vector<SimTickMetrics> rows;
   SimPhaseTimings timings;
   std::vector<DistrictMetrics> finalDistrictMetrics;  // one entry per district passed to run(), evaluated on the final tick
+  CityMetrics finalMetrics;  // same collector as --print-city-summary, from the last tick's summaries
 };
 
 struct SimOptions {

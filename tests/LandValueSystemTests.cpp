@@ -125,6 +125,10 @@ TEST(LandValueSystemTests, AverageLandValueMeansOverZonedTilesOnly) {
   map.landValue({3, 0}) = 999.0f;
 
   EXPECT_FLOAT_EQ(LandValueSystem::averageLandValue(map), 150.0f);
+  // Bounded sample that includes the zoned tile matches full-map mean.
+  EXPECT_FLOAT_EQ(LandValueSystem::averageLandValue(map, 0, 0, 5, 5), 150.0f);
+  // Region with no zoned tiles returns the neutral default.
+  EXPECT_FLOAT_EQ(LandValueSystem::averageLandValue(map, 10, 10, 12, 12), 100.0f);
 }
 
 TEST(LandValueSystemTests, AverageLandValueDefaultsWhenNothingZoned) {

@@ -5,37 +5,26 @@
 #include <vector>
 
 namespace {
-std::vector<EntityId> collectBuildingIds(const EntityStore& store, BuildingType type) {
-  std::vector<EntityId> ids;
-  ids.reserve(store.getBuildings().size());
-
-  for (const auto& [id, building] : store.getBuildings()) {
-    if (building.type == type) {
-      ids.push_back(id);
-    }
-  }
-
-  std::sort(ids.begin(), ids.end());
-  return ids;
+// EntityStore already keeps ID-sorted type indices.
+const std::vector<EntityId>& collectBuildingIds(const EntityStore& store, BuildingType type) {
+  return store.idsByBuildingType(type);
 }
 
-uint32_t capacityFor(const EntityStore& store, const std::vector<EntityId>& ids) {
-  uint32_t total = 0;
-  for (EntityId id : ids) {
-    const Building* building = store.getBuilding(id);
-    if (building != nullptr && building->capacity > 0) {
-      total += static_cast<uint32_t>(building->capacity);
-    }
-  }
-  return total;
+uint32_t capacityFor(const EntityStore& store, BuildingType type) {
+  return store.capacityOfType(type);
 }
 
 void resetAllOccupancy(EntityStore& store) {
-  for (const auto& [id, entry] : store.getBuildings()) {
-    (void)entry;
-    Building* building = store.getBuilding(id);
-    if (building != nullptr) {
-      building->occupancy = 0;
+  static constexpr BuildingType kTypes[] = {
+    BuildingType::Residential, BuildingType::Commercial,
+    BuildingType::Industrial, BuildingType::Office
+  };
+  for (BuildingType type : kTypes) {
+    for (EntityId id : store.idsByBuildingType(type)) {
+      Building* building = store.getBuilding(id);
+      if (building != nullptr) {
+        building->occupancy = 0;
+      }
     }
   }
 }
@@ -161,15 +150,15 @@ PopulationSummary PopulationSystem::allocate(
 ) {
   resetAllOccupancy(store);
 
-  const std::vector<EntityId> residential = collectBuildingIds(store, BuildingType::Residential);
-  const std::vector<EntityId> commercial = collectBuildingIds(store, BuildingType::Commercial);
-  const std::vector<EntityId> industrial = collectBuildingIds(store, BuildingType::Industrial);
-  const std::vector<EntityId> office = collectBuildingIds(store, BuildingType::Office);
+  const std::vector<EntityId>& residential = collectBuildingIds(store, BuildingType::Residential);
+  const std::vector<EntityId>& commercial = collectBuildingIds(store, BuildingType::Commercial);
+  const std::vector<EntityId>& industrial = collectBuildingIds(store, BuildingType::Industrial);
+  const std::vector<EntityId>& office = collectBuildingIds(store, BuildingType::Office);
 
-  const uint32_t housingCapacity = capacityFor(store, residential);
-  const uint32_t commercialCapacity = capacityFor(store, commercial);
-  const uint32_t industrialCapacity = capacityFor(store, industrial);
-  const uint32_t officeCapacity = capacityFor(store, office);
+  const uint32_t housingCapacity = capacityFor(store, BuildingType::Residential);
+  const uint32_t commercialCapacity = capacityFor(store, BuildingType::Commercial);
+  const uint32_t industrialCapacity = capacityFor(store, BuildingType::Industrial);
+  const uint32_t officeCapacity = capacityFor(store, BuildingType::Office);
   const uint32_t jobCapacity = commercialCapacity + industrialCapacity + officeCapacity;
 
   const uint32_t housed = std::min(requestedPopulation, housingCapacity);
@@ -233,6 +222,51 @@ PopulationSummary PopulationSystem::allocate(
   summary.middleIncomeEmployed = std::min(housedByBand[1], employedByBand[1]);
   summary.highIncomeEmployed = std::min(housedByBand[2], employedByBand[2]);
 
+  return summary;
+}
+
+PopulationSummary PopulationSystem::summarize(
+  const EntityStore& store,
+  const PopulationStore& population
+) {
+  PopulationSummary summary;
+  summary.housedPopulation = population.getTotalPopulation();
+  summary.employedPopulation = population.getTotalEmployed();
+  summary.requestedPopulation = summary.housedPopulation;
+  summary.unemployedPopulation = summary.housedPopulation > summary.employedPopulation
+    ? summary.housedPopulation - summary.employedPopulation : 0u;
+
+  const uint32_t housingCapacity = store.capacityOfType(BuildingType::Residential);
+  const uint32_t jobCapacity =
+    store.capacityOfType(BuildingType::Commercial)
+    + store.capacityOfType(BuildingType::Industrial)
+    + store.capacityOfType(BuildingType::Office);
+  summary.availableHousing = housingCapacity > summary.housedPopulation
+    ? housingCapacity - summary.housedPopulation : 0u;
+  summary.availableJobs = jobCapacity > summary.employedPopulation
+    ? jobCapacity - summary.employedPopulation : 0u;
+  if (summary.housedPopulation > 0) {
+    summary.unemploymentRate =
+      static_cast<float>(summary.unemployedPopulation) / static_cast<float>(summary.housedPopulation);
+  }
+
+  for (const auto& [id, group] : population.getGroups()) {
+    (void)id;
+    switch (group.band) {
+      case IncomeBand::Low:
+        summary.lowIncomePopulation += group.size;
+        summary.lowIncomeEmployed += group.employed;
+        break;
+      case IncomeBand::Middle:
+        summary.middleIncomePopulation += group.size;
+        summary.middleIncomeEmployed += group.employed;
+        break;
+      case IncomeBand::High:
+        summary.highIncomePopulation += group.size;
+        summary.highIncomeEmployed += group.employed;
+        break;
+    }
+  }
   return summary;
 }
 

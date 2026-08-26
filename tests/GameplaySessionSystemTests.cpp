@@ -27,6 +27,8 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   saved.populationTarget = 900;
   saved.fractionalDeaths = 0.75;
   saved.awaitingDisposition = 12;
+  saved.autonomousGrowth = true;
+  saved.autonomousExtent = 24;
   saved.facilities.push_back({ServiceType::Fire, {2, 2}, 16, 0.8f});
 
   const auto path = std::filesystem::temp_directory_path() / "urban_sim_gameplay_session.json";
@@ -56,6 +58,8 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   EXPECT_EQ(loaded.populationTarget, 900u);
   EXPECT_DOUBLE_EQ(loaded.fractionalDeaths, 0.75);
   EXPECT_EQ(loaded.awaitingDisposition, 12u);
+  EXPECT_TRUE(loaded.autonomousGrowth);
+  EXPECT_EQ(loaded.autonomousExtent, 24);
   ASSERT_EQ(loaded.facilities.size(), 1u);
   EXPECT_EQ(loaded.facilities.front().position, Coord(2, 2));
   EXPECT_EQ(map.zone({2, 2}), 1);

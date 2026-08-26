@@ -1,25 +1,25 @@
 #include "src/systems/CitySimulator.hpp"
 
 #include <algorithm>
-#include <array>
 #include <chrono>
 #include <cmath>
 #include <future>
-#include <limits>
 #include <thread>
-#include <unordered_set>
 #include <vector>
 
 #include "src/core/ThreadPool.hpp"
+#include "src/systems/CitySimSupport.hpp"
 #include "src/systems/CrimeSystem.hpp"
+#include "src/systems/DeathcareSystem.hpp"
 #include "src/systems/EconomySystem.hpp"
 #include "src/systems/GrowthSystem.hpp"
 #include "src/systems/LandValueSystem.hpp"
+#include "src/systems/MetricsSystem.hpp"
 #include "src/systems/PopulationSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/systems/TrafficSystem.hpp"
 #include "src/systems/TransitSystem.hpp"
-#include "src/networks/Pathfinding.hpp"
+#include "src/systems/WasteSystem.hpp"
 
 namespace {
 
@@ -28,748 +28,10 @@ double elapsedMs(Clock::time_point a, Clock::time_point b) {
   return std::chrono::duration<double, std::milli>(b - a).count();
 }
 
-struct CapacitySummary {
-  uint32_t resCapacity = 0;
-  uint32_t comCapacity = 0;
-  uint32_t indCapacity = 0;
-  uint32_t officeCapacity = 0;
-  uint32_t resBuildings = 0;
-  uint32_t comBuildings = 0;
-  uint32_t indBuildings = 0;
-  uint32_t officeBuildings = 0;
-};
-
-CapacitySummary summarize(const EntityStore& store) {
-  CapacitySummary cap;
-  for (const auto& [id, building] : store.getBuildings()) {
-    (void)id;
-    const uint32_t c = static_cast<uint32_t>(std::max(0, building.capacity));
-    switch (building.type) {
-      case BuildingType::Residential:
-        cap.resCapacity += c;
-        ++cap.resBuildings;
-        break;
-      case BuildingType::Commercial:
-        cap.comCapacity += c;
-        ++cap.comBuildings;
-        break;
-      case BuildingType::Industrial:
-        cap.indCapacity += c;
-        ++cap.indBuildings;
-        break;
-      case BuildingType::Office:
-        cap.officeCapacity += c;
-        ++cap.officeBuildings;
-        break;
-    }
-  }
-  return cap;
-}
-
-float clamp01(float v) {
-  return std::max(0.0f, std::min(1.0f, v));
-}
-
-// City desirability from unemployment: 1.0 at full employment, falling to 0 as
-// unemployment approaches 40% (the population system leaves some structural
-// unemployment even when total jobs suffice).
-float attractivenessFromUnemployment(float unemployment) {
-  return clamp01(1.0f - unemployment / 0.40f);
-}
-
-bool isLand(const CityMap& map, int x, int y) {
-  return map.isValid({x, y}) && map.getTile({x, y}).type != 2;
-}
-
-bool hasRoadAccess(const CityMap& map, Coord pos) {
-  if (map.getTile(pos).hasRoad) {
-    return true;
-  }
-  const Coord neighbors[4] = {
-    {pos.x + 1, pos.y}, {pos.x - 1, pos.y}, {pos.x, pos.y + 1}, {pos.x, pos.y - 1}
-  };
-  for (const Coord& n : neighbors) {
-    if (map.isValid(n) && map.getTile(n).hasRoad) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Map center, nudged to the nearest land tile so the seed grid lands on dry ground.
-Coord cityCenter(const CityMap& map) {
-  const glm::ivec2 dims = map.getDimensions();
-  const Coord c{dims.x / 2, dims.y / 2};
-  if (isLand(map, c.x, c.y)) {
-    return c;
-  }
-  for (int r = 1; r < std::max(dims.x, dims.y); ++r) {
-    for (int dy = -r; dy <= r; ++dy) {
-      for (int dx = -r; dx <= r; ++dx) {
-        if (isLand(map, c.x + dx, c.y + dy)) {
-          return {c.x + dx, c.y + dy};
-        }
-      }
-    }
-  }
-  return c;
-}
-
-// Lay a grid of roads centered on `center`, within +/- extent, on land only.
-// buildRoad is edge-keyed so re-laying existing roads is harmless.
-void layRoadGrid(CityMap& map, RoadNetwork& roads, Coord center, int extent, int spacing) {
-  const glm::ivec2 dims = map.getDimensions();
-  const int x0 = std::max(0, center.x - extent);
-  const int x1 = std::min(dims.x - 1, center.x + extent);
-  const int y0 = std::max(0, center.y - extent);
-  const int y1 = std::min(dims.y - 1, center.y + extent);
-
-  for (int gx = center.x % spacing; gx < dims.x; gx += spacing) {
-    if (gx < x0 || gx > x1) continue;
-    for (int y = y0; y < y1; ++y) {
-      if (isLand(map, gx, y) && isLand(map, gx, y + 1)) {
-        roads.buildRoad({gx, y}, {gx, y + 1});
-      }
-    }
-  }
-  for (int gy = center.y % spacing; gy < dims.y; gy += spacing) {
-    if (gy < y0 || gy > y1) continue;
-    for (int x = x0; x < x1; ++x) {
-      if (isLand(map, x, gy) && isLand(map, x + 1, gy)) {
-        roads.buildRoad({x, gy}, {x + 1, gy});
-      }
-    }
-  }
-}
-
-// A buildable, road-adjacent, currently-unzoned tile: the same qualifying
-// condition zonableCandidates checked per-tile before this became an
-// incremental index (see extendZoningCandidates below).
-bool isZoningCandidate(const CityMap& map, Coord pos) {
-  const Tile& tile = map.getTile(pos);
-  if (tile.type == 2 || tile.zone != 0 || tile.buildingId != 0) return false;
-  return hasRoadAccess(map, pos);
-}
-
-// Scans an explicit box (not necessarily centered on anything) for candidate
-// tiles and inserts any found into `out`. Parallelized across row chunks,
-// same approach as the pollution field update above.
-void scanBoxForCandidates(const CityMap& map, int x0, int y0, int x1, int y1,
-                          ThreadPool& pool, std::unordered_set<Coord, Vec2Hash>& out) {
-  if (x0 > x1 || y0 > y1) return;
-
-  const int nRows   = y1 - y0 + 1;
-  const int minRowsPerChunk = 8;
-  const int nChunks = (nRows >= minRowsPerChunk * 2)
-    ? std::max(1, std::min(static_cast<int>(pool.threadCount()), nRows / minRowsPerChunk))
-    : 1;
-  const int rowsPerChunk = (nRows + nChunks - 1) / nChunks;
-
-  std::vector<std::future<std::vector<Coord>>> futs;
-  futs.reserve(static_cast<size_t>(nChunks));
-  for (int c = 0; c < nChunks; ++c) {
-    const int ry0 = y0 + c * rowsPerChunk;
-    const int ry1 = std::min(y0 + (c + 1) * rowsPerChunk - 1, y1);
-    if (ry0 > ry1) break;
-    futs.push_back(pool.submit([&map, x0, x1, ry0, ry1]() {
-      std::vector<Coord> partial;
-      for (int y = ry0; y <= ry1; ++y) {
-        for (int x = x0; x <= x1; ++x) {
-          if (isZoningCandidate(map, {x, y})) partial.push_back({x, y});
-        }
-      }
-      return partial;
-    }));
-  }
-
-  for (auto& f : futs) {
-    auto partial = f.get();
-    out.insert(partial.begin(), partial.end());
-  }
-}
-
-// Extends a persistent, incrementally-maintained candidate index (a spatial
-// hash keyed by tile coordinate, replacing a full O(extent^2) rescan every
-// tick) to cover growth from `oldExtent` to `newExtent` around `center`.
-// Zoning candidacy can only be lost by autoZone actually zoning a tile (the
-// caller removes those directly - see the zoning step in run()) and can
-// only be gained by a tile becoming newly road-accessible. Roads in this
-// loop only ever grow outward in fixed steps via layRoadGrid, so any tile
-// that just became road-accessible lies within the new ring between
-// oldExtent and newExtent - shrunk by one tile of buffer on the inside,
-// since a tile just inside the old boundary can gain road access from a
-// brand new neighbor just outside it. That keeps each call's cost
-// proportional to the new ring's area, not the whole developed region.
-void extendZoningCandidates(const CityMap& map, Coord center, int oldExtent, int newExtent,
-                            ThreadPool& pool, std::unordered_set<Coord, Vec2Hash>& out) {
-  if (newExtent <= oldExtent) return;
-  const glm::ivec2 dims = map.getDimensions();
-  const int ox0 = std::max(0, center.x - newExtent);
-  const int ox1 = std::min(dims.x - 1, center.x + newExtent);
-  const int oy0 = std::max(0, center.y - newExtent);
-  const int oy1 = std::min(dims.y - 1, center.y + newExtent);
-
-  if (oldExtent <= 0) {
-    // Nothing scanned yet - no interior to exclude.
-    scanBoxForCandidates(map, ox0, oy0, ox1, oy1, pool, out);
-    return;
-  }
-
-  const int inner = oldExtent - 1;
-  const int ix0 = std::max(0, center.x - inner);
-  const int ix1 = std::min(dims.x - 1, center.x + inner);
-  const int iy0 = std::max(0, center.y - inner);
-  const int iy1 = std::min(dims.y - 1, center.y + inner);
-
-  // Picture-frame decomposition of (new box) minus (inner box): top band,
-  // bottom band, then left/right bands spanning only the inner y-range so
-  // the four pieces never overlap.
-  scanBoxForCandidates(map, ox0, oy0, ox1, iy0 - 1, pool, out);  // top
-  scanBoxForCandidates(map, ox0, iy1 + 1, ox1, oy1, pool, out);  // bottom
-  scanBoxForCandidates(map, ox0, iy0, ix0 - 1, iy1, pool, out);  // left
-  scanBoxForCandidates(map, ix1 + 1, iy0, ox1, iy1, pool, out);  // right
-}
-
-// Count zoned tiles still waiting for a building (road-accessible).
-uint32_t emptyZonedTiles(const CityMap& map, Coord center, int extent) {
-  const glm::ivec2 dims = map.getDimensions();
-  const int x0 = std::max(0, center.x - extent);
-  const int x1 = std::min(dims.x - 1, center.x + extent);
-  const int y0 = std::max(0, center.y - extent);
-  const int y1 = std::min(dims.y - 1, center.y + extent);
-
-  uint32_t count = 0;
-  for (int y = y0; y <= y1; ++y) {
-    for (int x = x0; x <= x1; ++x) {
-      const Tile& tile = map.getTile({x, y});
-      const int zone = tile.zone;
-      if (zone != 0 && zone != static_cast<int>(ZoneType::Park) &&
-          tile.buildingId == 0 && tile.type != 2 && hasRoadAccess(map, {x, y})) {
-        ++count;
-      }
-    }
-  }
-  return count;
-}
-
-// Recompute the pollution field from scratch each tick: industry is a heavy
-// emitter, commerce a light one, spread over a small radius with linear falloff.
-//
-// The clear phase is parallelized across row strips (no overlap, no races).
-// The scatter phase stays sequential: there are rarely more than ~100 emitters,
-// each affecting a 7×7 patch, and concurrent writes to the same tile would
-// race.  A precomputed weight LUT removes all sqrt() calls from the hot loop.
-void updatePollution(CityMap& map, const EntityStore& store,
-                     int x0, int y0, int x1, int y1, ThreadPool& pool) {
-  // Precompute per-(dx,dy) falloff weights for radius 3. Values outside the
-  // circle are 0; computed once, reused for every emitter this tick.
-  constexpr int kRadius = 3;
-  constexpr int kDiam   = kRadius * 2 + 1;
-  float lut[kDiam][kDiam];
-  for (int dy = -kRadius; dy <= kRadius; ++dy) {
-    for (int dx = -kRadius; dx <= kRadius; ++dx) {
-      const float d = std::sqrt(static_cast<float>(dx * dx + dy * dy));
-      lut[dy + kRadius][dx + kRadius] =
-        (d > static_cast<float>(kRadius)) ? 0.0f : (1.0f - d / static_cast<float>(kRadius + 1));
-    }
-  }
-
-  // Parallel clear: partition rows across pool workers.
-  const int nRows   = y1 - y0 + 1;
-  // Parallel clear only pays off when there are enough rows to fill each
-  // worker's chunk without drowning in task-submission overhead.
-  const int minRowsPerChunk = 16;
-  const int nChunks = (nRows >= minRowsPerChunk * 2)
-    ? std::max(1, std::min(static_cast<int>(pool.threadCount()), nRows / minRowsPerChunk))
-    : 1;
-  {
-    std::vector<std::future<void>> futs;
-    futs.reserve(static_cast<size_t>(nChunks));
-    const int rowsPerChunk = (nRows + nChunks - 1) / nChunks;
-    for (int c = 0; c < nChunks; ++c) {
-      const int ry0 = y0 + c * rowsPerChunk;
-      const int ry1 = std::min(y0 + (c + 1) * rowsPerChunk - 1, y1);
-      if (ry0 > ry1) break;
-      futs.push_back(pool.submit([&map, x0, x1, ry0, ry1]() {
-        for (int y = ry0; y <= ry1; ++y) {
-          for (int x = x0; x <= x1; ++x) {
-            map.pollution({x, y}) = 0.0f;
-          }
-        }
-      }));
-    }
-    for (auto& f : futs) f.get();
-  }
-
-  // Sequential scatter using the LUT (no sqrt in the hot loop).
-  for (const auto& [id, building] : store.getBuildings()) {
-    (void)id;
-    float emit = 0.0f;
-    if      (building.type == BuildingType::Industrial) emit = 1.0f;
-    else if (building.type == BuildingType::Commercial)  emit = 0.25f;
-    if (emit <= 0.0f) continue;
-
-    const Coord c = building.position;
-    for (int dy = -kRadius; dy <= kRadius; ++dy) {
-      for (int dx = -kRadius; dx <= kRadius; ++dx) {
-        const float w = lut[dy + kRadius][dx + kRadius];
-        if (w <= 0.0f) continue;
-        const int tx = c.x + dx;
-        const int ty = c.y + dy;
-        if (tx < x0 || tx > x1 || ty < y0 || ty > y1) continue;
-        float& pollution = map.pollution({tx, ty});
-        pollution = std::min(1.0f, pollution + emit * w);
-      }
-    }
-  }
-}
-
-float averageResidentialPollution(const CityMap& map, const EntityStore& store) {
-  double sum = 0.0;
-  uint32_t n = 0;
-  for (const auto& [id, building] : store.getBuildings()) {
-    (void)id;
-    if (building.type == BuildingType::Residential) {
-      sum += map.pollution(building.position);
-      ++n;
-    }
-  }
-  return n > 0 ? static_cast<float>(sum / n) : 0.0f;
-}
-
-// Pick a road-accessible land site for a new service facility: the first sits
-// at the center, later ones go to the developed tile farthest from all existing
-// facilities, spreading coverage across the city.
-Coord chooseFacilitySite(
-  const CityMap& map,
-  const std::vector<ServiceFacility>& facilities,
-  Coord center,
-  int extent
-) {
-  const glm::ivec2 dims = map.getDimensions();
-  const int x0 = std::max(0, center.x - extent);
-  const int x1 = std::min(dims.x - 1, center.x + extent);
-  const int y0 = std::max(0, center.y - extent);
-  const int y1 = std::min(dims.y - 1, center.y + extent);
-
-  Coord best = center;
-  long bestScore = -1;
-  for (int y = y0; y <= y1; ++y) {
-    for (int x = x0; x <= x1; ++x) {
-      if (map.getTile({x, y}).type == 2) continue;        // water
-      if (!hasRoadAccess(map, {x, y})) continue;
-      long score;
-      if (facilities.empty()) {
-        // Prefer the center for the first facility (smallest distance wins).
-        const long dc = (x - center.x) * (x - center.x) + (y - center.y) * (y - center.y);
-        score = -dc;
-      } else {
-        long nearest = std::numeric_limits<long>::max();
-        for (const ServiceFacility& f : facilities) {
-          const long d = (x - f.position.x) * (x - f.position.x) + (y - f.position.y) * (y - f.position.y);
-          nearest = std::min(nearest, d);
-        }
-        score = nearest;  // maximize distance to the closest existing facility
-      }
-      if (score > bestScore) {
-        bestScore = score;
-        best = {x, y};
-      }
-    }
-  }
-  return best;
-}
-
-// Keep roughly one facility per `popPerFacility` residents per type, cycling
-// through the service types so coverage of each grows together. Power/Water/
-// Sanitation
-// are opt-in (includeUtilities, SimOptions::enableUtilities) - when off, the
-// type cycle and total count are exactly what they were before Power/Water
-// existed. When on, the target count scales up proportionally (7/4 of the
-// base) so Fire/Police/Health/Education density is unaffected - utilities
-// are added on top, not diluted from the original four's share.
-void placeFacilitiesIfNeeded(
-  const CityMap& map,
-  std::vector<ServiceFacility>& facilities,
-  uint32_t population,
-  Coord center,
-  int extent,
-  int coverageRadius,
-  bool includeUtilities
-) {
-  const uint32_t popPerFacility = 1000;
-  // Garbage/Recycling are currently player-placed gameplay facilities; keep
-  // autonomous engine placement on the established four civic + three
-  // utility types so enabling utilities does not silently change its mix.
-  const int typeCount = includeUtilities ? 7 : 4;
-  const size_t target = static_cast<size_t>(population / popPerFacility) * static_cast<size_t>(typeCount) / 4;
-  while (facilities.size() < target) {
-    ServiceFacility facility;
-    facility.type = static_cast<ServiceType>(facilities.size() % static_cast<size_t>(typeCount));
-    facility.position = chooseFacilitySite(map, facilities, center, extent);
-    facility.maxTravelDistance = coverageRadius;
-    facility.quality = 1.0f;
-    facilities.push_back(facility);
-  }
-
-  // Fire/Police/Health/Education are soft coverage stats, so it's harmless
-  // for them to wait for population to reach popPerFacility before the first
-  // one appears. Power/Water are a hard growth gate (see GrowthSystem's
-  // requireUtilities check) - if they waited on the same threshold, a
-  // cold-start city could never grow past its first few buildings, since
-  // population can't reach popPerFacility without more buildings. Guarantee
-  // at least one of each utility type exists from the very first placement
-  // pass, independent of population.
-  if (includeUtilities) {
-    const auto ensureType = [&](ServiceType type) {
-      const bool exists = std::any_of(facilities.begin(), facilities.end(),
-        [type](const ServiceFacility& f) { return f.type == type; });
-      if (exists) return;
-      ServiceFacility facility;
-      facility.type = type;
-      facility.position = chooseFacilitySite(map, facilities, center, extent);
-      facility.maxTravelDistance = coverageRadius;
-      facility.quality = 1.0f;
-      facilities.push_back(facility);
-    };
-    ensureType(ServiceType::Power);
-    ensureType(ServiceType::Water);
-    ensureType(ServiceType::Sanitation);
-  }
-}
-
-// Sample every `stopSpacing`-th waypoint of a road path (plus the endpoint)
-// as a bus stop, so a route has a handful of stops rather than one per tile.
-std::vector<Coord> sampleRouteStops(const Pathfinding::Path& path, int stopSpacing) {
-  std::vector<Coord> stops;
-  if (path.waypoints.empty()) return stops;
-  const size_t step = static_cast<size_t>(std::max(1, stopSpacing));
-  for (size_t i = 0; i < path.waypoints.size(); i += step) {
-    stops.push_back(path.waypoints[i]);
-  }
-  if (stops.back() != path.waypoints.back()) {
-    stops.push_back(path.waypoints.back());
-  }
-  return stops;
-}
-
-// Updates Tile::connectedToPower/connectedToWater for every tile in the
-// active region from the coverage cache's type-restricted merges (see
-// ServiceCoverageCache::nearestPowerDistance/nearestWaterDistance) - only
-// called when options.enableUtilities is set, so a caller that never opts
-// in leaves both at their CityMap-constructor default (true, the M7
-// utility stub) forever. Parallelized across row chunks like
-// updatePollution above - each tile's result is independent.
-void updateUtilityConnectivity(
-  CityMap& map,
-  const RoadNetwork& roads,
-  const ServiceCoverageCache& cache,
-  int x0, int y0, int x1, int y1,
-  ThreadPool& pool
-) {
-  const int nRows = y1 - y0 + 1;
-  const int minRowsPerChunk = 16;
-  const int nChunks = (nRows >= minRowsPerChunk * 2)
-    ? std::max(1, std::min(static_cast<int>(pool.threadCount()), nRows / minRowsPerChunk))
-    : 1;
-  const int rowsPerChunk = (nRows + nChunks - 1) / nChunks;
-
-  std::vector<std::future<void>> futs;
-  futs.reserve(static_cast<size_t>(nChunks));
-  for (int c = 0; c < nChunks; ++c) {
-    const int ry0 = y0 + c * rowsPerChunk;
-    const int ry1 = std::min(y0 + (c + 1) * rowsPerChunk - 1, y1);
-    if (ry0 > ry1) break;
-    futs.push_back(pool.submit([&map, &roads, &cache, x0, x1, ry0, ry1]() {
-      for (int y = ry0; y <= ry1; ++y) {
-        for (int x = x0; x <= x1; ++x) {
-          Tile& tile = map.getTile({x, y});
-          if (tile.type == 2) continue;  // water tiles have no utility concept
-          Coord anchor;
-          const bool anchored = roads.resolveRoadAnchor({x, y}, anchor);
-          tile.connectedToPower = anchored && cache.nearestPowerDistance.count(anchor) != 0;
-          tile.connectedToWater = anchored && cache.nearestWaterDistance.count(anchor) != 0;
-        }
-      }
-    }));
-  }
-  for (auto& f : futs) f.get();
-}
-
-// Keep roughly one route of `mode` per `popPerRoute` residents (capped at
-// `maxOfMode`, since each route adds a per-tick BFS to the transit coverage
-// cache): connect the residential building farthest from existing route
-// coverage (of either mode - both compete for the same underserved areas) to
-// a job building (commercial/industrial/office) via the road network. Simple
-// and deterministic, in the same spirit as placeFacilitiesIfNeeded, though
-// routes need an endpoint pair rather than a single site.
-//
-// Bus and rail share this one placement routine, differing only in
-// parameters: bus connects to the *nearest* job (short local hops, denser
-// placement, modest capacity), while rail connects to the *farthest* job
-// (a long trunk line spanning the city, sparse placement, high capacity) -
-// passed in via `connectToFarthestJob`. The BFS coverage/offload mechanism
-// downstream doesn't care how a route's stops were chosen.
-void placeTransitRoutesOfModeIfNeeded(
-  const RoadNetwork& roads,
-  const EntityStore& store,
-  std::vector<TransitRoute>& routes,
-  uint32_t population,
-  TransitMode mode,
-  uint32_t popPerRoute,
-  size_t maxOfMode,
-  int stopCoverageRadius,
-  int vehicleCount,
-  int capacityPerVehicle,
-  int stopSpacing,
-  bool connectToFarthestJob
-) {
-  const size_t existingOfMode = static_cast<size_t>(std::count_if(
-    routes.begin(), routes.end(), [mode](const TransitRoute& r) { return r.mode == mode; }));
-  const size_t target = std::min<size_t>(population / popPerRoute, maxOfMode);
-  if (existingOfMode >= target) return;
-
-  std::vector<const Building*> residential;
-  std::vector<const Building*> jobs;
-  for (const auto& [id, b] : store.getBuildings()) {
-    (void)id;
-    if (b.type == BuildingType::Residential) {
-      residential.push_back(&b);
-    } else if (b.type == BuildingType::Commercial || b.type == BuildingType::Industrial ||
-               b.type == BuildingType::Office) {
-      jobs.push_back(&b);
-    }
-  }
-  if (residential.empty() || jobs.empty()) return;
-
-  // Buildings live in a hash map; every other per-tick decision loop in this
-  // file sorts by ID first to keep iteration (and thus RNG-free tie-breaking
-  // here) deterministic across platforms.
-  auto byId = [](const Building* a, const Building* b) { return a->id < b->id; };
-  std::sort(residential.begin(), residential.end(), byId);
-  std::sort(jobs.begin(), jobs.end(), byId);
-
-  // Residential buildings proven disconnected from every job building this
-  // call are excluded from further "farthest-uncovered" candidacy, so one
-  // stranded building (e.g. beyond a water gap the road grid hasn't crossed
-  // yet) can't permanently block placement for the whole city.
-  std::vector<const Building*> unreachableHomes;
-  size_t placed = existingOfMode;
-
-  while (placed < target) {
-    // Farthest-from-existing-stop residential building anchors the new
-    // route, spreading routes across the city instead of clustering them.
-    // Existing stops of either mode count, since both compete to cover the
-    // same underserved areas.
-    const Building* bestHome = nullptr;
-    Coord bestHomeAnchor{};
-    long bestScore = -1;
-    for (const Building* home : residential) {
-      Coord homeAnchor;
-      if (!roads.resolveRoadAnchor(home->position, homeAnchor)) continue;
-      if (std::find(unreachableHomes.begin(), unreachableHomes.end(), home) != unreachableHomes.end()) continue;
-      long nearestStopDist = std::numeric_limits<long>::max();
-      for (const TransitRoute& r : routes) {
-        for (const Coord& stop : r.stops) {
-          const long dx = home->position.x - stop.x;
-          const long dy = home->position.y - stop.y;
-          nearestStopDist = std::min(nearestStopDist, dx * dx + dy * dy);
-        }
-      }
-      // Maximize distance to the closest existing stop (least-covered wins);
-      // with no routes yet, every candidate ties at "uncovered" and the
-      // first in ID order is picked.
-      if (nearestStopDist > bestScore) {
-        bestScore = nearestStopDist;
-        bestHome = home;
-        bestHomeAnchor = homeAnchor;
-      }
-    }
-    if (bestHome == nullptr) break;
-
-    // Try job buildings nearest-first or farthest-first depending on mode
-    // (straight-line distance; cheap ordering heuristic - the route itself
-    // follows actual roads via Pathfinding). Falls through to the next
-    // candidate if the preferred one turns out unreachable, so one
-    // disconnected job doesn't strand this route attempt.
-    std::vector<const Building*> jobsOrdered = jobs;
-    std::sort(jobsOrdered.begin(), jobsOrdered.end(), [&](const Building* a, const Building* b) {
-      const long dax = a->position.x - bestHome->position.x, day = a->position.y - bestHome->position.y;
-      const long dbx = b->position.x - bestHome->position.x, dby = b->position.y - bestHome->position.y;
-      const long da = dax * dax + day * day, db = dbx * dbx + dby * dby;
-      if (da != db) return connectToFarthestJob ? (da > db) : (da < db);
-      return a->id < b->id;
-    });
-
-    // Buildings sit next to roads, not necessarily on them (see
-    // hasRoadAccess's self-or-neighbor rule) - route between resolved road
-    // anchors, not raw building positions, so a route can actually connect
-    // through a building whose own tile has no road edge.
-    Pathfinding::Path path;
-    bool connected = false;
-    for (const Building* job : jobsOrdered) {
-      Coord jobAnchor;
-      if (!roads.resolveRoadAnchor(job->position, jobAnchor)) continue;
-      path = Pathfinding::findShortestPath(roads, bestHomeAnchor, jobAnchor);
-      if (path.found && path.waypoints.size() >= 2) {
-        connected = true;
-        break;
-      }
-    }
-
-    if (!connected) {
-      unreachableHomes.push_back(bestHome);
-      if (unreachableHomes.size() >= residential.size()) break;  // exhausted every candidate
-      continue;
-    }
-
-    TransitRoute route;
-    route.id = static_cast<TransitRouteId>(routes.size() + 1);
-    route.mode = mode;
-    route.stops = sampleRouteStops(path, stopSpacing);
-    route.stopCoverageRadius = stopCoverageRadius;
-    route.vehicleCount = vehicleCount;
-    route.capacityPerVehicle = capacityPerVehicle;
-    routes.push_back(std::move(route));
-    ++placed;
-  }
-}
-
-void placeTransitRoutesIfNeeded(
-  const RoadNetwork& roads,
-  const EntityStore& store,
-  std::vector<TransitRoute>& routes,
-  uint32_t population,
-  int stopCoverageRadius,
-  float capacityMultiplier
-) {
-  // Scales both vehicleCount and capacityPerVehicle for newly-placed routes
-  // (a route already placed at the old capacity is not retroactively
-  // resized - this only affects routes placed from here on). 1.0 reproduces
-  // the literal constants below exactly, matching prior behavior for every
-  // existing caller.
-  const auto scale = [capacityMultiplier](int base) {
-    return std::max(1, static_cast<int>(std::lround(base * capacityMultiplier)));
-  };
-
-  // Bus: short local hops to the nearest job, denser placement, modest
-  // per-vehicle capacity - matches TransitRoute's own defaults.
-  placeTransitRoutesOfModeIfNeeded(
-    roads, store, routes, population, TransitMode::Bus,
-    /*popPerRoute=*/1200, /*maxOfMode=*/16, stopCoverageRadius,
-    /*vehicleCount=*/scale(2), /*capacityPerVehicle=*/scale(30), /*stopSpacing=*/2,
-    /*connectToFarthestJob=*/false
-  );
-
-  // Rail: a long trunk line to the farthest job, sparse (a city only
-  // justifies a handful of lines), much higher capacity and a wider
-  // catchment - riders travel farther to reach a station than a bus stop.
-  placeTransitRoutesOfModeIfNeeded(
-    roads, store, routes, population, TransitMode::Rail,
-    /*popPerRoute=*/4000, /*maxOfMode=*/3, stopCoverageRadius * 2,
-    /*vehicleCount=*/scale(6), /*capacityPerVehicle=*/scale(150), /*stopSpacing=*/1,
-    /*connectToFarthestJob=*/true
-  );
-}
-
-// True unless some district containing `coord` has a zoning ordinance
-// banning `zone` (see District::bannedZoneTypes). districts == nullptr means
-// no restriction, matching prior behavior for every caller that doesn't
-// pass one.
-bool zoneAllowedAt(const DistrictSystem* districts, Coord coord, ZoneType zone) {
-  if (districts == nullptr) return true;
-  for (const District& d : districts->getDistricts()) {
-    if (d.contains(coord) && !d.allowsZone(zone)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// Zone up to `batch` of the nearest candidate tiles, splitting counts by demand
-// but placing the cleanest tiles residential and the most polluted industrial,
-// so housing and industry self-segregate as the pollution field develops.
-// Tiles a district's zoning ordinance blocks for their assigned type are
-// left unzoned this tick (they remain candidates and get retried later) -
-// counts are not reallocated to another type, so a heavily-restricted
-// district genuinely produces less of the banned type city-wide, the same
-// as a real ordinance would.
-void autoZone(CityMap& map, const std::vector<Coord>& candidates, const ZoneDemand& demand, int batch,
-              const DistrictSystem* districts) {
-  const float total = std::max(0.0f, demand.residential) +
-                      std::max(0.0f, demand.commercial) +
-                      std::max(0.0f, demand.industrial) +
-                      std::max(0.0f, demand.office);
-  const int limit = std::min(static_cast<int>(candidates.size()), batch);
-  if (total <= 1e-3f || limit <= 0) {
-    return;
-  }
-
-  int nR = static_cast<int>(std::lround(limit * std::max(0.0f, demand.residential) / total));
-  int nI = static_cast<int>(std::lround(limit * std::max(0.0f, demand.industrial) / total));
-  int nO = static_cast<int>(std::lround(limit * std::max(0.0f, demand.office) / total));
-  if (nR + nI + nO > limit) {
-    nI = std::min(nI, limit);
-    nO = std::min(nO, limit - nI);
-    nR = std::min(nR, limit - nI - nO);
-  }
-  const int nC = limit - nR - nI - nO;
-
-  // The nearest `limit` candidates keep growth compact; sort them by pollution
-  // so the assignment below segregates dirty industry from clean housing.
-  // Order of assignment (cleanest to dirtiest tiles): Residential, Office,
-  // Commercial, Industrial - office space is as pollution-sensitive as
-  // housing (it commands the highest land value), retail tolerates more, and
-  // industry gets whatever's left.
-  std::vector<Coord> batchTiles(candidates.begin(), candidates.begin() + limit);
-  std::sort(batchTiles.begin(), batchTiles.end(), [&map](const Coord& a, const Coord& b) {
-    const float pa = map.pollution(a);
-    const float pb = map.pollution(b);
-    if (pa != pb) return pa < pb;
-    if (a.y != b.y) return a.y < b.y;
-    return a.x < b.x;
-  });
-
-  static constexpr ZoneType kZoneFallbackOrder[4] = {
-    ZoneType::Residential, ZoneType::Office, ZoneType::Commercial, ZoneType::Industrial
-  };
-
-  for (int i = 0; i < limit; ++i) {
-    ZoneType zone;
-    if (i < nR) zone = ZoneType::Residential;
-    else if (i < nR + nO) zone = ZoneType::Office;
-    else if (i < nR + nO + nC) zone = ZoneType::Commercial;
-    else zone = ZoneType::Industrial;
-
-    if (!zoneAllowedAt(districts, batchTiles[i], zone)) {
-      // Ordinance blocks the demand-driven choice here; fall back to the
-      // first still-allowed type in a fixed order rather than leaving the
-      // tile stranded. A real ordinance restricts what a parcel becomes, it
-      // doesn't make land undevelopable forever - and if it did (e.g. a
-      // district banning everything, or one that happens to cover the
-      // city's growth origin and bans the only type demand wants yet), that
-      // would otherwise deadlock the whole city's bootstrap, not just this
-      // district.
-      bool found = false;
-      for (ZoneType candidate : kZoneFallbackOrder) {
-        if (candidate != zone && zoneAllowedAt(districts, batchTiles[i], candidate)) {
-          zone = candidate;
-          found = true;
-          break;
-        }
-      }
-      if (!found) continue;  // every type banned here; leave unzoned
-    }
-
-    map.setZone(batchTiles[i], static_cast<int>(zone));
-    map.landValue(batchTiles[i]) = Zoning::defaultLandValueForZone(zone);
-  }
-}
-
-} // namespace
+}  // namespace
 
 ZoneDemand CitySimulator::evaluateDemand(const EntityStore& store, const PopulationStore& population) {
-  const CapacitySummary cap = summarize(store);
+  const city_sim::CapacitySummary cap = city_sim::summarize(store);
   const float pop = static_cast<float>(population.getTotalPopulation());
   const float employed = static_cast<float>(population.getTotalEmployed());
   const float jobCapacity = static_cast<float>(cap.comCapacity + cap.indCapacity);
@@ -780,27 +42,27 @@ ZoneDemand CitySimulator::evaluateDemand(const EntityStore& store, const Populat
   // The population system employs everyone up to total job capacity, so a
   // healthy, attractive city needs roughly one job per resident, split between
   // commercial and industrial (~0.5 of population each).
-  const float unemployment = pop > 0.0f ? clamp01((pop - employed) / pop) : 0.0f;
+  const float unemployment = pop > 0.0f ? city_sim::clamp01((pop - employed) / pop) : 0.0f;
 
   // Residential: build housing when the city is attractive (jobs plentiful) AND
   // existing homes are filling up. Empty housing (low occupancy) suppresses
   // further construction so housing tracks the migrating population rather than
   // racing ahead of it. A startup floor seeds the first homes while tiny.
-  const float attractiveness = attractivenessFromUnemployment(unemployment);
-  const float housingOccupancy = cap.resCapacity > 0 ? clamp01(pop / static_cast<float>(cap.resCapacity)) : 0.0f;
+  const float attractiveness = city_sim::attractivenessFromUnemployment(unemployment);
+  const float housingOccupancy = cap.resCapacity > 0 ? city_sim::clamp01(pop / static_cast<float>(cap.resCapacity)) : 0.0f;
   const float resStartup = (cap.resCapacity < 40) ? 0.8f : 0.0f;
-  demand.residential = clamp01(std::max(resStartup, attractiveness * housingOccupancy));
+  demand.residential = city_sim::clamp01(std::max(resStartup, attractiveness * housingOccupancy));
 
   // Commercial: retail jobs serving residents. Target ~50% of population.
   const float comTarget = 0.5f * pop;
-  demand.commercial = comTarget > 0.0f ? clamp01((comTarget - static_cast<float>(cap.comCapacity)) / comTarget) : 0.0f;
+  demand.commercial = comTarget > 0.0f ? city_sim::clamp01((comTarget - static_cast<float>(cap.comCapacity)) / comTarget) : 0.0f;
 
   // Industrial: base/export jobs. Target ~50% of population, with a startup
   // floor so the first jobs appear once anyone has moved in.
   const float indTarget = 0.5f * pop;
-  const float indGap = indTarget > 0.0f ? clamp01((indTarget - static_cast<float>(cap.indCapacity)) / indTarget) : 0.0f;
+  const float indGap = indTarget > 0.0f ? city_sim::clamp01((indTarget - static_cast<float>(cap.indCapacity)) / indTarget) : 0.0f;
   const float indStartup = (cap.indCapacity < 24 && cap.resCapacity > 0) ? 0.6f : 0.0f;
-  demand.industrial = clamp01(std::max(indStartup, indGap));
+  demand.industrial = city_sim::clamp01(std::max(indStartup, indGap));
 
   // Office: higher-tier white-collar employment that follows commercial
   // establishment rather than leading it (office towers/parks cluster around
@@ -810,10 +72,10 @@ ZoneDemand CitySimulator::evaluateDemand(const EntityStore& store, const Populat
   // a city with no commercial base yet generates no office demand.
   const float officeTarget = 0.25f * pop;
   const float commercialEstablishment = comTarget > 0.0f
-    ? clamp01(static_cast<float>(cap.comCapacity) / comTarget) : 0.0f;
+    ? city_sim::clamp01(static_cast<float>(cap.comCapacity) / comTarget) : 0.0f;
   const float officeGap = officeTarget > 0.0f
-    ? clamp01((officeTarget - static_cast<float>(cap.officeCapacity)) / officeTarget) : 0.0f;
-  demand.office = clamp01(officeGap * commercialEstablishment);
+    ? city_sim::clamp01((officeTarget - static_cast<float>(cap.officeCapacity)) / officeTarget) : 0.0f;
+  demand.office = city_sim::clamp01(officeGap * commercialEstablishment);
 
   return demand;
 }
@@ -833,18 +95,6 @@ SimResult CitySimulator::run(
   result.rows.reserve(static_cast<size_t>(std::max(0, ticks)));
 
   const int spacing = std::max(2, options.gridSpacing);
-  const Coord center = cityCenter(map);
-  const glm::ivec2 dims = map.getDimensions();
-  const int maxExtent = std::max(dims.x, dims.y);
-
-  // Seed an initial neighborhood of roads.
-  int extent = std::min(maxExtent, spacing * 2);
-  {
-    const auto t0 = Clock::now();
-    layRoadGrid(map, roads, center, extent, spacing);
-    roads.updateConnectivity(center);
-    result.timings.roadMs += elapsedMs(t0, Clock::now());
-  }
 
   float lastCongestion = 0.0f;          // previous tick's peak congestion, feeds desirability
   float lastServiceSatisfaction = 0.5f; // previous tick's service satisfaction, feeds desirability
@@ -852,7 +102,6 @@ SimResult CitySimulator::run(
   float lastIllnessRate = 0.0f;         // previous tick's illness rate, feeds desirability
   std::vector<ServiceFacility> facilities;
   ServiceCoverageCache coverageCache;
-  const int serviceRadius = spacing * 3;
   std::vector<TransitRoute> transitRoutes;
   TransitCoverageCache transitCache;
   TrafficRouteCache trafficRouteCache;  // topology-only paths, reused across ticks until roads change
@@ -863,8 +112,15 @@ SimResult CitySimulator::run(
   std::vector<BurningTile> burningTiles;         // persists only when options.enableDisasters
   uint32_t cumulativeBuildingsLostToFire = 0;
   uint32_t cumulativeBuildingsLostToDisaster = 0;
-  std::unordered_set<Coord, Vec2Hash> zoningCandidates;  // spatial index, extended incrementally as roads grow
-  int zoningCandidatesExtent = 0;  // highest extent already scanned into zoningCandidates
+  city_sim::ConstructionState construction;
+  DeathcareState deathcareState;  // fractional deaths + disposition backlog across ticks
+  // Hoisted so interval skips reuse last summaries instead of zeroing
+  // downstream coverage (crime/health/waste/deathcare/metrics).
+  TrafficSummary traffic;
+  ServiceCoverageSummary service;
+  TransitSummary transitSummary;
+  EconomyState economy;
+  float lastResPollution = 0.0f;
 
   // Thread pool for parallel pathfinding (traffic) and building coverage
   // (services), and for running both concurrently within each tick.
@@ -876,76 +132,49 @@ SimResult CitySimulator::run(
     const uint32_t tickSeed = seed + static_cast<uint32_t>(tick);
 
     const ZoneDemand demand = evaluateDemand(store, population);
-    const float overallDemand = std::max({demand.residential, demand.commercial, demand.industrial, demand.office});
 
-    // Expand the road grid outward while demand persists, paced so zoned land
-    // does not run too far ahead of what has actually been built.
-    {
-      const auto t0 = Clock::now();
-      const bool wantsRoom = emptyZonedTiles(map, center, extent) < static_cast<uint32_t>(3 * options.zoneBatchPerTick);
-      if (overallDemand > 0.12f && wantsRoom && extent < maxExtent) {
-        extent = std::min(maxExtent, extent + spacing);
-        layRoadGrid(map, roads, center, extent, spacing);
-        roads.updateConnectivity(center);
-      }
-      result.timings.roadMs += elapsedMs(t0, Clock::now());
-    }
+    city_sim::ConstructionOptions constructionOpts;
+    constructionOpts.gridSpacing = spacing;
+    constructionOpts.zoneBatchPerTick = options.zoneBatchPerTick;
+    constructionOpts.districts = districts;
+    const city_sim::ConstructionRegion region = city_sim::expandConstruction(
+      map, roads, store, population, facilities, transitRoutes,
+      construction, pool, demand, constructionOpts);
+    result.timings.roadMs += region.roadMs;
+    result.timings.zoningMs += region.zoningMs;
 
     // Active region bounds — all tile-scanning passes clamp to this box so the
     // work scales with the developed area rather than the full map.
-    const int ax0 = std::max(0, center.x - extent);
-    const int ay0 = std::max(0, center.y - extent);
-    const int ax1 = std::min(dims.x - 1, center.x + extent);
-    const int ay1 = std::min(dims.y - 1, center.y + extent);
-
-    // Refresh the pollution field, then zone land in proportion to demand,
-    // steering housing to clean tiles and industry to dirty ones.
-    {
-      const auto t0 = Clock::now();
-      updatePollution(map, store, ax0, ay0, ax1, ay1, pool);
-
-      extendZoningCandidates(map, center, zoningCandidatesExtent, extent, pool, zoningCandidates);
-      zoningCandidatesExtent = extent;
-
-      // autoZone only ever consumes the nearest zoneBatchPerTick candidates
-      // (compact growth), so a partial_sort of just that many - not a full
-      // sort of the whole index - is all that's needed here.
-      std::vector<Coord> candidates(zoningCandidates.begin(), zoningCandidates.end());
-      const int batchLimit = std::min(static_cast<int>(candidates.size()), options.zoneBatchPerTick);
-      std::partial_sort(candidates.begin(), candidates.begin() + batchLimit, candidates.end(),
-        [center](const Coord& a, const Coord& b) {
-          const int da = (a.x - center.x) * (a.x - center.x) + (a.y - center.y) * (a.y - center.y);
-          const int db = (b.x - center.x) * (b.x - center.x) + (b.y - center.y) * (b.y - center.y);
-          if (da != db) return da < db;
-          if (a.y != b.y) return a.y < b.y;
-          return a.x < b.x;
-        });
-
-      autoZone(map, candidates, demand, options.zoneBatchPerTick, districts);
-
-      // Whichever of the batch actually got zoned (as opposed to left
-      // unzoned because every allowed type was banned by a district
-      // ordinance) are no longer valid candidates - drop them from the
-      // index so it never rescans them.
-      for (int i = 0; i < batchLimit; ++i) {
-        if (map.zone(candidates[i]) != 0) {
-          zoningCandidates.erase(candidates[i]);
-        }
-      }
-
-      result.timings.zoningMs += elapsedMs(t0, Clock::now());
-    }
+    const Coord center = region.center;
+    const int extent = region.extent;
+    const int ax0 = region.ax0;
+    const int ay0 = region.ay0;
+    const int ax1 = region.ax1;
+    const int ay1 = region.ay1;
+    const int serviceRadius = region.serviceRadius;
 
     // Build on zoned, road-accessible land in proportion to demand. District
     // growth-pressure modifiers (if any) come from the previous tick's
     // service-budget/density evaluation below.
     {
       const auto t0 = Clock::now();
-      GrowthSystem::runStep(map, store, demand, tickSeed, options.buildChance,
+      const GrowthStats growth = GrowthSystem::runStep(map, store, demand, tickSeed, options.buildChance,
                             &districtGrowthModifiers, {ax0, ay0}, {ax1, ay1}, &pool,
                             options.enableUtilities);
+      // Spawn fills empty zoned tiles; demolition frees them. Redevelopment
+      // is excluded from both counters inside GrowthSystem.
+      city_sim::applyEmptyZonedDelta(
+        construction,
+        static_cast<int64_t>(growth.totalDemolished())
+          - static_cast<int64_t>(growth.totalSpawned()));
       result.timings.growthMs += elapsedMs(t0, Clock::now());
     }
+
+    // Capacity and residential pollution after growth: reused for population,
+    // health, and metrics later in the tick so we do not re-walk every
+    // building three times. Recomputed only if disasters destroy buildings.
+    city_sim::CapacitySummary tickCap = city_sim::summarize(store);
+    float tickResPollution = city_sim::averageResidentialPollution(map, store);
 
     // Migration: residents move in (or out) gradually rather than instantly
     // filling new housing. The rate scales with city desirability - jobs being
@@ -955,18 +184,18 @@ SimResult CitySimulator::run(
     // (cheap arithmetic); the expensive full allocation only runs on the interval.
     {
       const auto t0 = Clock::now();
-      const CapacitySummary cap = summarize(store);
       const uint32_t prevPop = population.getTotalPopulation();
       const uint32_t prevEmployed = population.getTotalEmployed();
-      const float unemployment = prevPop > 0 ? clamp01(static_cast<float>(prevPop - prevEmployed) / prevPop) : 0.0f;
-      float desirability = attractivenessFromUnemployment(unemployment);
-      desirability *= clamp01(1.0f - 0.4f * lastCongestion);
-      desirability *= clamp01(1.0f - 0.5f * averageResidentialPollution(map, store));
-      desirability *= clamp01(0.6f + 0.4f * lastServiceSatisfaction);
-      desirability *= clamp01(1.0f - 0.25f * lastCrimeRate);
-      desirability *= clamp01(1.0f - 0.3f * lastIllnessRate);
+      const float unemployment = prevPop > 0 ? city_sim::clamp01(static_cast<float>(prevPop - prevEmployed) / prevPop) : 0.0f;
+      float desirability = city_sim::attractivenessFromUnemployment(unemployment);
+      desirability *= city_sim::clamp01(1.0f - 0.4f * lastCongestion);
+      desirability *= city_sim::clamp01(1.0f - 0.5f * tickResPollution);
+      desirability *= city_sim::clamp01(0.6f + 0.4f * lastServiceSatisfaction);
+      desirability *= city_sim::clamp01(1.0f - 0.25f * lastCrimeRate);
+      desirability *= city_sim::clamp01(1.0f - 0.3f * lastIllnessRate);
 
-      const float headroom = cap.resCapacity > prevPop ? static_cast<float>(cap.resCapacity - prevPop) : 0.0f;
+      const float headroom = tickCap.resCapacity > prevPop
+        ? static_cast<float>(tickCap.resCapacity - prevPop) : 0.0f;
       float requested;
       if (desirability < 0.05f && prevPop > 0) {
         requested = static_cast<float>(prevPop) * 0.98f;
@@ -974,7 +203,7 @@ SimResult CitySimulator::run(
         requested = static_cast<float>(prevPop) + 0.25f * desirability * headroom + 3.0f * desirability;
       }
       const uint32_t requestedPop = static_cast<uint32_t>(
-        std::max(0.0f, std::min(static_cast<float>(cap.resCapacity), requested)));
+        std::max(0.0f, std::min(static_cast<float>(tickCap.resCapacity), requested)));
 
       if (tick % std::max(1, options.populationInterval) == 0) {
         PopulationSystem::allocate(store, population, requestedPop, tickSeed + 1u);
@@ -992,13 +221,13 @@ SimResult CitySimulator::run(
     // and must complete before the concurrent evaluation starts.
     if (serviceActive) {
       const auto t0 = Clock::now();
-      placeFacilitiesIfNeeded(map, facilities, population.getTotalPopulation(), center, extent, serviceRadius,
-                              options.enableUtilities);
+      city_sim::placeFacilitiesIfNeeded(map, facilities, population.getTotalPopulation(), center, extent, serviceRadius,
+                              options.enableUtilities, /*includeWasteDeathcare=*/true);
       if (!ServiceSystem::isCacheValid(roads, facilities, coverageCache)) {
         ServiceSystem::buildCache(roads, facilities, coverageCache);
       }
       if (options.enableUtilities) {
-        updateUtilityConnectivity(map, roads, coverageCache, ax0, ay0, ax1, ay1, pool);
+        city_sim::updateUtilityConnectivity(map, roads, coverageCache, ax0, ay0, ax1, ay1, pool);
       }
       result.timings.serviceMs += elapsedMs(t0, Clock::now());
     }
@@ -1023,10 +252,9 @@ SimResult CitySimulator::run(
     // like facility placement above, and must complete before traffic uses
     // them. Routes only grow (never removed), so this is cheap once the
     // route count has caught up to its population-based target.
-    TransitSummary transitSummary;
     if (options.enableTransit && trafficActive) {
       const auto t0 = Clock::now();
-      placeTransitRoutesIfNeeded(roads, store, transitRoutes, population.getTotalPopulation(), serviceRadius,
+      city_sim::placeTransitRoutesIfNeeded(roads, store, transitRoutes, population.getTotalPopulation(), serviceRadius,
                                  options.transitCapacityMultiplier);
       if (transitRoutes.size() != transitCache.builtForRouteCount) {
         TransitSystem::buildCache(roads, transitRoutes, transitCache);
@@ -1036,7 +264,6 @@ SimResult CitySimulator::run(
 
     // Traffic runs on the main thread so it can safely wait for inner pool
     // tasks (parallel Dijkstra) without risking pool deadlock.
-    TrafficSummary traffic;
     if (trafficActive) {
       const auto t0 = Clock::now();
       TransitOffload offload(transitRoutes, transitCache);
@@ -1048,7 +275,8 @@ SimResult CitySimulator::run(
     }
 
     // Collect the service result (likely already done while traffic ran).
-    ServiceCoverageSummary service;
+    // If this tick skipped the service pass, `service` keeps the previous
+    // tick's summary so crime/health/waste/deathcare do not see zero coverage.
     if (serviceFuture.valid()) {
       auto [svc, ms] = serviceFuture.get();
       service = svc;
@@ -1076,6 +304,17 @@ SimResult CitySimulator::run(
       disaster = NaturalDisasterSystem::step(map, store, tickSeed + 6u, options.disasterParams);
       cumulativeBuildingsLostToDisaster += disaster.buildingsDestroyed;
       result.timings.disasterMs += elapsedMs(t1, Clock::now());
+
+      // Building set changed: refresh the shared post-growth snapshots so
+      // health and metrics rows match the store after destruction.
+      if (fire.buildingsDestroyed > 0 || disaster.buildingsDestroyed > 0) {
+        city_sim::applyEmptyZonedDelta(
+          construction,
+          static_cast<int64_t>(fire.buildingsDestroyed)
+            + static_cast<int64_t>(disaster.buildingsDestroyed));
+        tickCap = city_sim::summarize(store);
+        tickResPollution = city_sim::averageResidentialPollution(map, store);
+      }
     }
 
     // Refresh land value from the freshest available job positions, service
@@ -1091,14 +330,20 @@ SimResult CitySimulator::run(
       result.timings.landValueMs += elapsedMs(t0, Clock::now());
     }
 
-    EconomyState economy;
     {
       const auto t0 = Clock::now();
       // Compounding price-level index from elapsed ticks; a 0 rate keeps this
       // at exactly 1.0 (default), matching prior behavior for every existing
       // caller that doesn't opt in via options.inflationRatePerTick.
       const float inflationMultiplier = std::pow(1.0f + options.inflationRatePerTick, static_cast<float>(tick));
-      economy = EconomySystem::calculateEconomy(store, population, TaxRates{}, &map, TradeRates{}, inflationMultiplier);
+      EconomyLandValueBounds lvBounds;
+      lvBounds.useBounds = true;
+      lvBounds.x0 = ax0;
+      lvBounds.y0 = ay0;
+      lvBounds.x1 = ax1;
+      lvBounds.y1 = ay1;
+      economy = EconomySystem::calculateEconomy(
+        store, population, TaxRates{}, &map, TradeRates{}, inflationMultiplier, lvBounds);
       result.timings.economyMs += elapsedMs(t0, Clock::now());
     }
 
@@ -1114,7 +359,7 @@ SimResult CitySimulator::run(
       const uint32_t popNow = population.getTotalPopulation();
       const uint32_t employedNow = population.getTotalEmployed();
       const float unemploymentNow = popNow > 0
-        ? clamp01(static_cast<float>(popNow - employedNow) / static_cast<float>(popNow)) : 0.0f;
+        ? city_sim::clamp01(static_cast<float>(popNow - employedNow) / static_cast<float>(popNow)) : 0.0f;
       crime = CrimeSystem::evaluate(unemploymentNow, service.policeCoverage, economy.averageLandValue, options.crimeParams);
       lastCrimeRate = crime.overallRate;
       result.timings.crimeMs += elapsedMs(t0, Clock::now());
@@ -1128,12 +373,43 @@ SimResult CitySimulator::run(
     HealthSummary health;
     {
       const auto t0 = Clock::now();
-      const CapacitySummary healthCap = summarize(store);
-      const float housingDensity = healthCap.resCapacity > 0
-        ? clamp01(static_cast<float>(population.getTotalPopulation()) / static_cast<float>(healthCap.resCapacity)) : 0.0f;
-      health = HealthSystem::evaluate(housingDensity, averageResidentialPollution(map, store), service.healthCoverage, options.healthParams);
+      const float housingDensity = tickCap.resCapacity > 0
+        ? city_sim::clamp01(static_cast<float>(population.getTotalPopulation()) / static_cast<float>(tickCap.resCapacity)) : 0.0f;
+      health = HealthSystem::evaluate(housingDensity, tickResPollution, service.healthCoverage, options.healthParams);
       lastIllnessRate = health.illnessRate;
       result.timings.healthMs += elapsedMs(t0, Clock::now());
+    }
+
+    // Waste + deathcare: same systems as the playable visualizer path. Safe when
+    // no garbage/cemetery facilities exist (collection rate stays 1.0 / no
+    // processing capacity). Pollution from uncollected waste updates the map
+    // so land value and residential pollution see it next tick.
+    WasteSummary waste;
+    {
+      const auto t0 = Clock::now();
+      waste = WasteSystem::evaluate(store, facilities, service);
+      if (waste.pollutionPenalty > 0.0f) {
+        city_sim::applyWastePollution(map, waste.pollutionPenalty, ax0, ay0, ax1, ay1);
+        tickResPollution = city_sim::averageResidentialPollution(map, store);
+      }
+      result.timings.wasteMs += elapsedMs(t0, Clock::now());
+    }
+
+    DeathcareSummary deathcare;
+    {
+      const auto t0 = Clock::now();
+      deathcare = DeathcareSystem::step(
+        population, facilities, service, health.illnessRate, tickResPollution, deathcareState
+      );
+      // applyDeaths already shrunk PopulationStore; re-sync building occupancy
+      // to the new total so the next allocate/growth pass sees consistent stock.
+      if (deathcare.deaths > 0) {
+        PopulationSystem::allocate(
+          store, population, population.getTotalPopulation(), tickSeed + 7u
+        );
+        tickCap = city_sim::summarize(store);
+      }
+      result.timings.deathcareMs += elapsedMs(t0, Clock::now());
     }
 
     // District policy: re-evaluate service-budget fulfillment and density per
@@ -1158,7 +434,6 @@ SimResult CitySimulator::run(
       result.timings.districtMs += elapsedMs(t0, Clock::now());
     }
 
-    const CapacitySummary cap = summarize(store);
     SimTickMetrics row;
     row.tick = tick;
     row.demandResidential = demand.residential;
@@ -1167,14 +442,15 @@ SimResult CitySimulator::run(
     row.demandOffice = demand.office;
     row.population = population.getTotalPopulation();
     row.employed = population.getTotalEmployed();
-    row.residentialBuildings = cap.resBuildings;
-    row.commercialBuildings = cap.comBuildings;
-    row.industrialBuildings = cap.indBuildings;
-    row.officeBuildings = cap.officeBuildings;
+    row.residentialBuildings = tickCap.resBuildings;
+    row.commercialBuildings = tickCap.comBuildings;
+    row.industrialBuildings = tickCap.indBuildings;
+    row.officeBuildings = tickCap.officeBuildings;
     row.roadTiles = static_cast<uint32_t>(roads.getRoadCount());
     row.budgetBalance = economy.balance;
     row.trafficCongestion = traffic.maxEdgeCongestion;
-    row.avgPollution = averageResidentialPollution(map, store);
+    lastResPollution = tickResPollution;
+    row.avgPollution = tickResPollution;
     row.serviceCoverage = service.overallCoverage;
     row.sanitationCoverage = service.sanitationCoverage;
     row.serviceFacilities = static_cast<uint32_t>(facilities.size());
@@ -1194,6 +470,12 @@ SimResult CitySimulator::run(
     row.earthquakeOccurred = disaster.earthquakeOccurred;
     row.floodOccurred = disaster.floodOccurred;
     row.buildingsLostToDisaster = cumulativeBuildingsLostToDisaster;
+    row.wasteCollectionRate = waste.collectionRate;
+    row.wasteUncollected = waste.uncollected;
+    row.wastePollutionPenalty = waste.pollutionPenalty;
+    row.deathsThisTick = deathcare.deaths;
+    row.deathcareBacklog = deathcare.awaitingDisposition;
+    row.deathcareHappinessPenalty = deathcare.happinessPenalty;
     if (!infinite) {
       result.rows.push_back(row);
     }
@@ -1202,5 +484,8 @@ SimResult CitySimulator::run(
     }
   }
 
+  result.finalMetrics = MetricsSystem::collectCityMetrics(
+    store, population, traffic, economy, &service);
+  result.finalMetrics.pollution = lastResPollution;
   return result;
 }

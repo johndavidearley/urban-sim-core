@@ -89,6 +89,13 @@ TEST(PopulationSystemTests, AllocationRespectsHousingAndJobs) {
     occupancyByType(buildings, BuildingType::Industrial),
     8u
   );
+
+  const PopulationSummary live = PopulationSystem::summarize(buildings, people);
+  EXPECT_EQ(live.housedPopulation, summary.housedPopulation);
+  EXPECT_EQ(live.employedPopulation, summary.employedPopulation);
+  EXPECT_EQ(live.availableHousing, summary.availableHousing);
+  EXPECT_EQ(live.availableJobs, summary.availableJobs);
+  EXPECT_EQ(live.lowIncomePopulation, summary.lowIncomePopulation);
 }
 
 TEST(PopulationSystemTests, AllocationWithNoBuildingsProducesZeroPopulation) {

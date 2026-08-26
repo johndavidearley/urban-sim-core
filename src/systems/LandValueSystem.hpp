@@ -38,7 +38,11 @@ public:
     const LandValueParams& params = LandValueParams{}
   );
 
-  // Mean Tile::landValue across zoned (non-empty, non-water) tiles on the
-  // whole map. Returns 100.0 (the neutral base) if none are zoned.
+  // Mean Tile::landValue across zoned (non-empty, non-water) tiles.
+  // Full-map overload retained for callers without an active region.
+  // Bounded overload clamps to [x0,y0]-[x1,y1] inclusive (CitySimulator's
+  // developed extent) so cost scales with city size rather than map size.
+  // Returns 100.0 (the neutral base) if none are zoned in the sample region.
   static float averageLandValue(const CityMap& map);
+  static float averageLandValue(const CityMap& map, int x0, int y0, int x1, int y1);
 };

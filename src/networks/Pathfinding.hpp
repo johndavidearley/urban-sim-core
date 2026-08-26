@@ -19,14 +19,14 @@ public:
       : waypoints(wp), totalDistance(dist), found(true) {}
   };
   
-  // Find shortest path using Dijkstra's algorithm
+  // Find shortest path (A* with Manhattan heuristic; unit edge costs).
   static Path findShortestPath(
     const RoadNetwork& network,
     glm::ivec2 start,
     glm::ivec2 goal
   );
   
-  // Find shortest path with congestion penalties
+  // Find shortest path with congestion penalties (A*; min edge cost still 1).
   static Path findShortestPathWithCongestion(
     const RoadNetwork& network,
     glm::ivec2 start,

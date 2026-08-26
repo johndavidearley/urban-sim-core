@@ -14,6 +14,8 @@ add_executable(test_core
   ServiceSystemTests.cpp
   DistrictSystemTests.cpp
   CitySimulatorTests.cpp
+  CitySimSupportTests.cpp
+  PlayableCityTickTests.cpp
   TrafficMicroSimTests.cpp
   LandValueSystemTests.cpp
   TransitSystemTests.cpp

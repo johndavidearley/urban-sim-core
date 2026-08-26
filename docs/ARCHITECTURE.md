@@ -1,511 +1,552 @@
 # UrbanSimCore Architecture
 
-## Design Philosophy
+This document describes the **implemented** engine. It is the source of truth
+for system boundaries and data flow. `STATUS.md` tracks validation and
+priorities; `ROADMAP.md` and `MVP_SPEC.md` retain milestone history and the
+original product spec.
 
-The engine is built on these core principles:
-
-1. **Simulation-first:** The engine runs headless. Visualization and UI are completely decoupled.
-2. **Deterministic:** Fixed-tick updates with seeded RNG enable replays and testing.
-3. **Modular systems:** Each system (Population, Traffic, Economy) is independent and testable.
-4. **Aggregate-first, agents-later:** Start with group-level simulation; add agents for visible entities.
-5. **Inspectable:** Debug overlays and metrics are part of the core design, not afterthoughts.
+If code and this document disagree, fix the document or the code in the same
+change. Do not leave intended-but-unbuilt designs in this file.
 
 ---
 
-## High-Level Architecture
+## Design Principles
 
-```
-┌─────────────────────────────────────────────────────────┐
-│           City Simulation Engine                          │
-├─────────────────────────────────────────────────────────┤
-│                                                           │
-│  ┌─────────────┐                                         │
-│  │ Time System │ – Ticks, speed, scheduled events       │
-│  └─────────────┘                                         │
-│                                                           │
-│  ┌──────────────┐                                        │
-│  │ World Model  │ – Map, tiles, parcels, districts      │
-│  └──────────────┘                                        │
-│                                                           │
-│  ┌──────────────┐                                        │
-│  │ Entity Store │ – Buildings, citizens, vehicles       │
-│  └──────────────┘                                        │
-│                                                           │
-│  ┌─────────────────────────────────────────────┐         │
-│  │         Simulation Systems                   │         │
-│  ├──────────────┬──────────────┬──────────────┤         │
-│  │ Population   │ Zoning       │ Economy      │         │
-│  ├──────────────┼──────────────┼──────────────┤         │
-│  │ Traffic      │ Utilities    │ Services     │         │
-│  └──────────────┴──────────────┴──────────────┘         │
-│                                                           │
-│  ┌──────────────┐     ┌──────────────┐                  │
-│  │ Network Sys  │ --- │  Pathfinding │                  │
-│  └──────────────┘     └──────────────┘                  │
-│                                                           │
-│  ┌──────────────┐     ┌──────────────┐                  │
-│  │ Metrics      │     │ Persistence  │                  │
-│  └──────────────┘     └──────────────┘                  │
-│                                                           │
-└─────────────────────────────────────────────────────────┘
-         ↕ Commands, State Queries
-┌─────────────────────────────────────────────────────────┐
-│     Visualization / UI / External Tools                  │
-└─────────────────────────────────────────────────────────┘
-```
+1. **Simulation-first.** `urban_sim_core` compiles and runs without SDL. CLI,
+   tests, and the optional visualizer are hosts of the same library.
+2. **Deterministic ticks.** Integer tick counters and seeded RNG. Same seed +
+   same mutations → same snapshot checksum.
+3. **Aggregate-first.** Buildings and population groups are the unit of
+   simulation. Individual vehicle agents exist only in the optional
+   `TrafficMicroSim` sidecar.
+4. **Static systems over a shared world.** Subsystems are classes of static
+   methods. They take `CityMap`, `RoadNetwork`, `EntityStore`, and
+   `PopulationStore` by reference. There is no `SimulationState` object and
+   no `SimulationSystem` interface.
+5. **Inspectable.** Metrics, overlays, PPM export, and CLI printers read the
+   same stores the tick mutates.
 
-### Key Invariant
-
-> **The engine does not depend on the renderer.**
-
-The engine can run in:
-- A headless CLI
-- Server/networking context
-- Automated tests
-- A game engine (Unity, Godot, custom)
-- Browser (via WASM, future)
+The engine **does not depend on SDL**. Headless PPM rendering
+(`MapRenderer`) and isometric math (`IsometricProjection`) live in the
+library so CLI and tests can render without a window. The live visualizer
+is a separate executable that calls systems and gameplay tools directly;
+there is no command/query façade yet.
 
 ---
 
-## Core Components
+## Targets
 
-### 1. Time System
-
-Manages simulation ticks and updates.
-
-```cpp
-class SimulationTime {
-public:
-  uint64_t tickCount;           // Current tick (0-based)
-  uint32_t ticksPerDay = 24;    // Ticks per in-game day
-  float simulationSpeed = 1.0f; // 1.0 = real-time, 2.0 = 2x speed
-  
-  float getCurrentTime() const; // Hours (for debug)
-  void advance();               // Move to next tick
-  bool isDayBoundary() const;
-  bool isMonthBoundary() const;
-};
+```
+┌─────────────────────────────────────────────────────────────┐
+│  urban_sim_core  (static library)                           │
+│                                                             │
+│  Stores:  CityMap  RoadNetwork  EntityStore  PopulationStore│
+│  Systems: Growth Population Traffic Transit Services …      │
+│  Orchestration: CitySimulator::run  |  playableCityTick     │
+│  Helpers: city_sim::*  (roads, zoning, facilities, transit) │
+│  Gameplay: RoadTool ZoneTool BulldozeTool ServiceTool       │
+│  Persistence: SaveLoadSystem  GameplaySessionSystem         │
+│  Headless viz: MapRenderer  IsometricProjection             │
+└───────────────┬─────────────────────────────┬───────────────┘
+                │                             │
+     UrbanSimCore-cli              UrbanSimCore-visualizer
+     parse → dispatch →            SDL loop → tools +
+     CitySimulator or inspect      playableCityTick
 ```
 
-### 2. Entity System
+CMake (`src/CMakeLists.txt`):
 
-All city entities (buildings, citizens, vehicles) are stored in a single registry with unique IDs.
+| Target | Kind | Role |
+|--------|------|------|
+| `urban_sim_core` | static lib | World, systems, tools, persistence, metrics, PPM/iso |
+| `UrbanSimCore-cli` | executable | Flag-driven host (`src/main.cpp` + `src/cli/`) |
+| `UrbanSimCore-visualizer` | optional executable | SDL2 live builder (`URBAN_SIM_BUILD_VISUALIZER`) |
 
-```cpp
-using EntityId = uint32_t;
+Visualizer sources are **not** in `urban_sim_core`. SDL is linked only to the
+visualizer target.
 
-class EntityStore {
-  std::unordered_map<EntityId, Building> buildings;
-  std::unordered_map<EntityId, PopulationGroup> populationGroups;
-  std::unordered_map<EntityId, Vehicle> vehicles;
-  // ... etc
-  
-  EntityId createEntity();
-  void removeEntity(EntityId id);
-};
-```
+---
 
-### 3. World Model
+## Shared Stores
 
-The spatial foundation.
+There is no single world object. Hosts and orchestrators pass four stores
+plus caller-owned extras (facilities, transit routes, funds, caches).
+
+### CityMap (`src/world/`)
+
+Dense row-major grid. A tile **is** the parcel; there is no `Parcel` type.
 
 ```cpp
 struct Tile {
-  glm::ivec2 position;       // Grid coordinates
-  TileType type;             // Terrain, zone, etc.
-  ZoneType zone;             // Residential, commercial, industrial
-  float landValue;
-  float pollution;
-  bool hasRoad;
-  bool connectedToPower;
-  bool connectedToWater;
-  EntityId buildingId;       // Optional building on this tile
-};
-
-class CityMap {
-  std::vector<Tile> tiles;
-  glm::ivec2 dimensions;
-  
-  Tile& getTile(glm::ivec2 coord);
-  bool isValid(glm::ivec2 coord) const;
+  Coord position;
+  int type;                 // 0=empty, 1=terrain, 2=water
+  int zone;                 // 0=none, 1=R, 2=C, 3=I; Office is ZoneType::Office (5)
+  bool hasRoad = false;
+  bool connectedToRoad = false;
+  bool connectedToPower = true;   // live when utilities are enabled
+  bool connectedToWater = true;
+  uint32_t buildingId = 0;        // 0 = empty; spatial index into EntityStore
 };
 ```
 
-### 4. Network Systems
+`landValue` and `pollution` are parallel `std::vector<float>` on `CityMap`,
+not fields on `Tile`. Hot per-tick numeric loops go through
+`CityMap::pollution` / `CityMap::landValue`.
 
-Roads, power, water, transit, etc. are modeled as graphs.
+`Tile::buildingId` is the only position → building index. Growth, fire,
+disasters, and `BulldozeTool` must keep it in sync with `EntityStore`.
 
-```cpp
-class RoadNetwork {
-  struct Node {
-    glm::ivec2 position;
-    std::vector<EdgeId> adjacentEdges;
-  };
-  
-  struct Edge {
-    NodeId from, to;
-    float capacity;
-    float currentLoad;
-    float congestion;
-  };
-  
-  std::unordered_map<NodeId, Node> nodes;
-  std::unordered_map<EdgeId, Edge> edges;
-  
-  Path findShortestPath(NodeId start, NodeId end);
-  float getTrafficCongestion(EdgeId edge) const;
-};
-```
+### RoadNetwork (`src/networks/`)
 
-### 5. Simulation Systems
+Undirected graph keyed by tile coordinates. Nodes are **lazy**: only tiles
+that currently touch a road edge exist in the node table.
 
-Each system is independent and updates state based on the simulation time.
+- `buildRoad` / `removeRoad` mutate edges and denormalize `Tile::hasRoad`
+  (via `const_cast` on the stored `const CityMap&`).
+- `topologyVersion` increments only when an edge is actually added or
+  removed. Relaying an existing segment is a no-op and does not invalidate
+  caches.
+- `resolveRoadAnchor` maps a building tile to the road node it paths from
+  (self if adjacent to an edge, else first orthogonal neighbor).
 
-```cpp
-class SimulationSystem {
-  virtual ~SimulationSystem() = default;
-  virtual void update(SimulationState& state) = 0;
-};
+`Pathfinding` is a separate stateless A* (Manhattan heuristic, unit edge
+costs; optional congestion weight). It is not a method on `RoadNetwork`.
 
-class PopulationSystem : public SimulationSystem {
-  void update(SimulationState& state) override;
-  // Called every day
-};
+There is no power/water/transit graph in this layer. Utilities are service
+facilities; transit is `TransitSystem` routes over the road graph.
 
-class EconomySystem : public SimulationSystem {
-  void update(SimulationState& state) override;
-  // Called every month
-};
-```
+### EntityStore (`src/entities/`)
 
-### 6. Commands
-
-Player actions are expressed as immutable commands, enabling replays and testing.
-
-```cpp
-class Command {
-public:
-  virtual ~Command() = default;
-  virtual void execute(SimulationState& state) = 0;
-  virtual std::string describe() const = 0;
-};
-
-class BuildRoadCommand : public Command {
-  glm::ivec2 from, to;
-  void execute(SimulationState& state) override;
-};
-
-class ZoneAreaCommand : public Command {
-  Rect area;
-  ZoneType zone;
-  void execute(SimulationState& state) override;
-};
-```
-
-### 7. Metrics
-
-Aggregated statistics about the city.
-
-```cpp
-struct CityMetrics {
-  uint32_t population = 0;
-  uint32_t availableHousing = 0;
-  uint32_t availableJobs = 0;
-  float unemployment = 0.0f;
-  float happiness = 0.5f;
-  float pollution = 0.0f;
-  float landValue = 0.0f;
-  Money cityRevenue;
-  Money cityExpenses;
-  // ... 20+ more metrics
-};
-```
-
----
-
-## Data Flow
-
-### Simulation Loop
-
-```cpp
-while (simulation.isRunning()) {
-  // 1. Process player commands
-  for (auto& cmd : commandQueue) {
-    cmd->execute(state);
-  }
-  
-  // 2. Update systems based on time
-  if (state.time.isDayBoundary()) {
-    populationSystem.update(state);
-    trafficSystem.update(state);
-    serviceSystem.update(state);
-  }
-  
-  if (state.time.isMonthBoundary()) {
-    economySystem.update(state);
-    zoningSystem.update(state);
-  }
-  
-  // 3. Update metrics
-  metricsSystem.calculateMetrics(state);
-  
-  // 4. Advance time
-  state.time.advance();
-}
-```
-
-### Update Frequency Guide
-
-```
-Every tick (high frequency):
-  - Road traffic (simple)
-  
-Every day:
-  - Commute simulation
-  - Happiness update
-  - Service coverage check
-  
-Every week:
-  - Zoning growth evaluation
-  - Building upgrades
-  
-Every month:
-  - City budget (taxes, expenses)
-  - Population migration
-  - Demand recalculation
-  - Economy updates
-```
-
----
-
-## Data Model
-
-### Building
+Buildings only.
 
 ```cpp
 struct Building {
   EntityId id;
-  BuildingType type;              // Residential, Commercial, Industrial, Service
-  glm::ivec2 position;
-  uint8_t level;                  // 1-5, affects capacity
-  uint16_t capacity;              // Max residents/jobs
-  uint16_t occupants;             // Current residents or employees
-  uint16_t jobsProvided;          // For commercial/industrial
-  float landValue;
-  float happinessEffect;          // Local modifier
-  bool connectedToRoad;
-  bool connectedToPower;
-  bool connectedToWater;
-  uint32_t yearConstructed;
-  float maintenanceDebt;
+  BuildingType type;   // Residential, Commercial, Industrial, Office
+  Coord position;
+  int capacity;
+  int occupancy;
 };
 ```
 
-### PopulationGroup
+Secondary indices maintained on create/remove/upsert:
+
+- ID-sorted vectors per `BuildingType`, plus combined `jobIds()`
+- O(1) `countOfType` / `capacityOfType`
+- `mutationVersion` — bumped on structural APIs (`create` / `remove` /
+  `upsert` / non-empty `clear`). Occupancy writes through `getBuilding()`
+  do **not** bump it. Service result caches rely on this.
+
+Not thread-safe. Mutation stays on the tick's sequential phases.
+
+IDs come from a process-global `EntityIdUtils::generateEntityId()`.
+`clear()` does not reset the generator. Buildings and population groups
+share the ID space.
+
+### PopulationStore (`src/entities/`)
 
 ```cpp
 struct PopulationGroup {
   EntityId id;
-  EntityId homeDistrictId;
-  uint32_t size;                  // Group population
-  IncomeLevel incomeLevel;        // Low, Middle, High
+  IncomeBand band;     // Low, Middle, High
+  uint32_t size;
   uint32_t employed;
-  uint32_t unemployed;
-  float happiness;
-  float education;
-  float commuteCost;              // Travel burden
 };
 ```
 
-### Parcel
+Groups are not bound to a home tile or district. `PopulationSystem::allocate`
+writes `Building::occupancy`. Totals are scanned, not cached.
+`applyDeaths` sorts IDs then reduces proportionally (determinism).
 
-```cpp
-struct Parcel {
-  glm::ivec2 gridCell;
-  ZoneType zoning;
-  float landValue;
-  bool hasRoadAccess;
-  bool hasPowerAccess;
-  bool hasWaterAccess;
-  float pollution;
-  float noiseLevel;
-  float serviceCoverage;          // Aggregate coverage %
-  uint8_t developmentLevel;       // 0-5
-  EntityId occupantBuildingId;    // If developed
-};
-```
+### Caller-owned extras (not in the four stores)
 
-### District
-
-```cpp
-struct District {
-  EntityId id;
-  std::string name;
-  std::vector<glm::ivec2> parcels;
-  float averageLandValue;
-  float pollution;
-  float desirability;             // Aggregate
-};
-```
+| Extra | Typical owner | Notes |
+|-------|---------------|--------|
+| `std::vector<ServiceFacility>` | `CitySimulator::run` locals, or gameplay session | Civic buildings are not `EntityStore` entries |
+| `std::vector<TransitRoute>` + `TransitCoverageCache` | same | Routes only grow in current placement |
+| `int64_t funds` | visualizer session / `playableCityTick` | Construction treasury |
+| `DistrictSystem` | CLI host | AABB policy; autonomous loop reads it |
+| `ZoningCandidateIndex`, `TrafficRouteCache`, `ServiceCoverageCache` | orchestrator locals | See Caching |
 
 ---
 
-## Time Model
+## Orchestration: two tick pipelines
 
-### Tick Convention
+Construction ownership is the split. Shared subsystems are the same static
+`*System` calls. `city_sim::*` (`src/systems/CitySimSupport.hpp`) holds
+road-grid, zoning-candidate, pollution, facility, and transit placement
+helpers used by the autonomous path (and, today, copied in part by
+visualizer G-mode).
 
-- **1 tick = 1 in-game hour**
-- **24 ticks = 1 in-game day**
-- **30 days ≈ 1 in-game month (720 ticks)**
-- **360 ticks ≈ 1 in-game year**
+There is no calendar. `SimulationTime` (`ticksPerDay` / `isMonthBoundary`)
+exists and is unused by either tick. Visualizer “speed” is wall-clock delay
+between ticks (`tickIntervalMs`).
 
-This is adjustable via configuration.
+### Autonomous — `CitySimulator::run`
 
-### Update Scheduler
-
-Systems are registered with the scheduler and called only when needed:
+Host: CLI `--simulate`, default `--ticks N`, policy sweeps, micro-traffic
+warmup. The simulator **builds** the city: road grid, demand zoning, civic
+facilities, transit.
 
 ```cpp
-class UpdateScheduler {
-  void registerSystem(std::shared_ptr<SimulationSystem> system, UpdateFrequency freq);
-  void updateSystems(SimulationState& state);
-};
-
-enum class UpdateFrequency {
-  EveryTick,    // Every tick
-  Daily,        // Every day boundary
-  Weekly,       // Every 7 days
-  Monthly,      // Every 30 days
-  Yearly        // Every 360 ticks
-};
+static SimResult run(
+  CityMap& map,
+  RoadNetwork& roads,
+  EntityStore& store,
+  PopulationStore& population,
+  uint32_t seed,
+  int ticks,
+  const SimOptions& options = {},
+  const DistrictSystem* districts = nullptr);
 ```
+
+`ticks < 0` runs until `options.tickCallback` returns false (infinite /
+SIGINT mode). Cross-tick state (caches, burning tiles, deathcare remainder,
+lag scalars) lives as locals inside `run`, not on a world object.
+
+Per-tick order:
+
+```
+evaluateDemand(store, population)
+  → expand road grid if demand high and empty zoned land is scarce
+  → updatePollution (active AABB)
+  → extendZoningCandidates → partial_sort nearest batch → autoZone
+  → GrowthSystem::runStep          [district modifiers from previous tick]
+  → desirability (jobs, lagged congestion/services/crime/illness, pollution)
+  → PopulationSystem::allocate     [if populationInterval]
+  → placeFacilitiesIfNeeded + ServiceSystem cache
+  → pool: service evaluateFromCache  ∥  main: transit + TrafficSystem
+  → FireSystem + NaturalDisasterSystem   [if enableDisasters]
+  → LandValueSystem                    [if landValueInterval]
+  → EconomySystem
+  → CrimeSystem / HealthSystem         [lag into next tick's desirability]
+  → WasteSystem / DeathcareSystem
+  → DistrictSystem → GrowthChanceModifier for next tick
+  → SimTickMetrics row
+```
+
+One-tick lag is intentional: this tick's growth and migration see last
+tick's congestion, service satisfaction, crime, illness, and district
+pressure.
+
+`SimOptions` interval fields (`trafficInterval`, `serviceInterval`,
+`populationInterval`, `landValueInterval`, `districtInterval`) skip
+expensive passes. Traffic, service, and transit summaries are reused from
+the previous computed tick so crime, health, waste, deathcare, and the
+metrics row do not see zero coverage on a skipped pass. Land values
+already persist on the map between recomputes.
+
+Demand is `CitySimulator::evaluateDemand` (stock vs population).
+`Zoning::calculateDemand(seed)` is an RNG stub used only as a playable
+empty-map fallback.
+
+### Playable — `playableCityTick`
+
+Host: SDL visualizer (and any host that places roads/zones itself).
+Construction stays with the host. Same subsystem names, narrower pipeline,
+no thread pool, no interval gating.
+
+```cpp
+void playableCityTick(
+  CityMap& map,
+  RoadNetwork& roads,
+  EntityStore& store,
+  PopulationStore& population,
+  const std::vector<ServiceFacility>& facilities,
+  PlayableCityTickState& state,
+  int64_t& funds,
+  const PlayableCityTickOptions& options = {});
+```
+
+Order (a subset of the autonomous phase list): demand → pollution emitters
+→ utility connectivity → growth → allocate `populationTarget` → transit +
+traffic → services → land value → economy → `HealthSystem` → waste →
+deathcare → `TreasurySystem`.
+
+Playable does **not** run `CrimeSystem`, districts, or disasters.
+Population is a session target, not migration desirability. Pollution
+emitters and land value default on (`PlayableCityTickOptions`) so overlays
+and economy see the same environment model as `--simulate`.
+
+### Visualizer G-mode
+
+`LiveSimulationState::autonomousGrowth` runs `runAutonomousGrowthStep`,
+which calls `city_sim::expandConstruction` (the same road/zone/pollution
+helper as `CitySimulator::run`) then `playableCityTick`. G-mode opts into
+facility placement (utilities + waste/deathcare) during construction;
+transit is left to `playableCityTick` so routes are not placed twice.
+Empty-zoned pacing and pollution-before-zone match the autonomous path.
+Districts are still CLI-only (`ConstructionOptions::districts` is null in
+the visualizer). Session save persists the G-mode flag and developed
+extent.
+
+---
+
+## Systems
+
+Subsystems are `class FooSystem { public: static … };` with no base class
+and no registration. `DistrictSystem` is the only stateful instance.
+Adding a system means editing both tick functions (and often G-mode).
+
+| System | Mutates | Cadence (autonomous) | In playable tick? |
+|--------|---------|----------------------|-------------------|
+| `GrowthSystem` | map, store | every tick | yes |
+| `PopulationSystem` | occupancy, groups | `populationInterval` | yes (target, not migration) |
+| `TrafficSystem` | edge load | `trafficInterval` | yes |
+| `TransitSystem` | cache; offload during traffic | with traffic if `enableTransit` | yes |
+| `ServiceSystem` | cache | `serviceInterval` | yes |
+| `LandValueSystem` | `map.landValue` | `landValueInterval` | yes (optional flag, default on) |
+| `EconomySystem` | none (pure) | every tick | yes |
+| `WasteSystem` | map pollution if uncollected | every tick | yes |
+| `DeathcareSystem` | population, `DeathcareState` | every tick | yes |
+| `HealthSystem` | none | every tick | yes |
+| `CrimeSystem` | none | every tick | yes |
+| `MetricsSystem` | none | after `CitySimulator::run`; CLI `--print-city-summary` | via `collectFromPlayable` |
+| `FireSystem` / `NaturalDisasterSystem` | map, store | `enableDisasters` | no |
+| `DistrictSystem` | none during tick (host-owned defs) | `districtInterval` | no |
+| `TrafficMicroSim` | local vehicles | CLI `--micro-traffic` after a growth run | no |
+| `TreasurySystem` | `funds` | playable only | yes |
+
+`TrafficMicroSim` is a second traffic model (per-vehicle lanes, car-following,
+signals). It does not replace `TrafficSystem` and is not composed into either
+tick.
+
+`MetricsSystem` / `CityMetrics` is the CLI snapshot schema. Autonomous
+time series remain `SimTickMetrics` (one row per tick). After a run,
+`SimResult::finalMetrics` is collected with the same `MetricsSystem`
+path as `--print-city-summary`. The HUD reads `LiveSimulationState` (treasury, waste, deathcare, crime,
+illness) rather than `CityMetrics`.
+
+---
+
+## Gameplay tools
+
+Player mutations are **plan-then-apply tools**, not a `Command` hierarchy
+and not a replay log.
+
+| Tool | Plan type | Used by |
+|------|-----------|---------|
+| `RoadTool` | `RoadPlan` | visualizer; CLI `--place-road` |
+| `ZoneTool` | `ZonePlan` | visualizer; CLI `--zone-rect` (R/C/I/Office) |
+| `BulldozeTool` | `BulldozePlan` | visualizer |
+| `ServiceTool` | `ServicePlan` | visualizer; CLI `--add-service` / `--add-power-source`; `operatingCostPerTick` in `playableCityTick` |
+
+`apply` / `build` re-runs `plan` and refuses if the world diverged. Funds
+are `int64_t&` owned by the session.
+
+CLI inspect/setup has **no treasury**. It still calls the tools so water,
+occupied tiles, and (for roads/zones) geometry match the visualizer; it
+passes `INT64_MAX` so construction cost is waived. `--add-service` and
+`--add-power-source` are coverage fixtures: they set
+`ServicePlacementOptions::requireRoadAccess = false` and an optional
+distance override so `--run-service-evaluation` works on an empty map.
+`--zone-rect PARK|NONE` still uses `Zoning::applyZoneRect` because those
+types are not player paint tools. District ordinances constrain
+autonomous `autoZone` only; manual `--zone-rect` does not apply them.
+
+---
+
+## Hosts
+
+### CLI
+
+```
+main
+  parseCliArgs          // CliParse — help / validation may exit
+  runCliApp             // try/catch
+    tryEarlyCliDispatch // --simulate, --benchmark-phase5, --micro-traffic,
+                        // snapshot inspect/audit, pressure CSV tools
+    runCityCliWorkflow  // load/inspect/mutate a city, or default --ticks N
+```
+
+Default `--ticks N` (size/seed/terrain only) calls the same
+`CitySimulator` path as `--simulate`. Inspect flags (`--run-growth`,
+`--seed-population`, `--run-commute-simulation`, `--run-economy-calculation`,
+`--run-service-evaluation`) are **one-shot subsystem probes** on purpose:
+they do not advance `playableCityTick`. Economy inspect passes the map so
+land value matches the playable/autonomous model.
+
+### Visualizer
+
+File split, not a façade: `VisualizerTypes`, `Overlay`, `Render`, `Hud`,
+`Session`, and `VisualizerSDL.cpp` (`main`, event loop, tool dispatch).
+After a tool apply or session load the visualizer calls
+`refreshLiveDerivedState` → `refreshDerivedCityState` (utilities, services,
+land value, economy, health, crime, optional occupancy/traffic) instead of
+invoking those systems ad-hoc. The HUD reads those fields from
+`LiveSimulationState`. Overlays may still call `TrafficSystem` diagnostics
+for route heat.
+
+---
+
+## Persistence
+
+Snapshots, not command logs.
+
+**City snapshot** (`SaveLoadSystem` / `CitySnapshot`): versioned JSON of
+map, buildings, population groups, roads. No facilities, treasury, tick,
+transit, or G-mode. CLI `--save-city` / `--load-city`. Current schema
+version is 1 (0→1 migration exists).
+
+**Gameplay session** (`GameplaySessionSystem`): visualizer default
+`urban_sim_session.json` plus sidecar `*.city.json`. Session JSON holds
+funds, tick, pause, speed, demand, treasury, population target, deathcare
+remainder, facilities, G-mode flag/extent. Transit routes are not
+persisted; the next tick rebuilds them.
+
+**Replay** (`ReplayVerifier`): run a **scripted** zone/road/growth/pop/
+commute/economy scenario twice and compare a snapshot checksum. This
+proves determinism of that script. It is not player-command replay.
 
 ---
 
 ## Determinism
 
-All randomness is seeded and deterministic:
+- `DeterministicRandom` wraps seeded `std::mt19937`.
+- Hash-map iteration is unordered; systems that consume RNG sort by
+  `EntityId` (or use `EntityStore` type indices, which are kept ID-sorted).
+- Traffic commute specs are collected sequentially (RNG), then pathfinding
+  may run in parallel (pure topology reads after `resetCongestion`).
+- `ReplayVerifier` and sanitizer CI (ASan/UBSan, TSan) are the safety net.
 
-```cpp
-class DeterministicRandom {
-  std::mt19937 generator;
-  
-  DeterministicRandom(uint32_t seed) 
-    : generator(seed) {}
-  
-  float uniform(float min, float max);
-  uint32_t integer(uint32_t min, uint32_t max);
-};
-```
-
-Consequences:
-
-```
-City initialSeed = seed_42
-Replay: seed_42 + all player commands = same city state
-
-This enables:
-- Deterministic testing
-- Save/load validation
-- Command replay for debugging
-```
+`EntityIdUtils::generateEntityId` is not atomic. Entity creation must stay
+off pool workers.
 
 ---
 
-## Save/Load and Snapshots
+## Concurrency and caching
 
-All state is serializable to JSON.
+The autonomous tick creates one `ThreadPool` (`hardware_concurrency - 1`
+workers) and reuses it every tick. Playable ticks are serial.
 
-```cpp
-class SaveGame {
-  SimulationState state;
-  std::vector<std::shared_ptr<Command>> commandHistory;
-  uint32_t randomSeed;
-  std::string version;
-  
-  static SaveGame load(const std::string& filepath);
-  void save(const std::string& filepath);
-};
+| Pass | Parallel | Sequential |
+|------|----------|------------|
+| Traffic | A* chunks across workers | Spec collection (RNG), congestion accumulation |
+| Services | Building coverage slices; whole eval can overlap traffic | Facility placement, BFS cache rebuild |
+| Pollution | Clear pass (row strips) | Scatter onto the shared field |
+| Zoning candidates | Row-strip scan | Tile mutation, partial_sort, `autoZone` |
+| Growth | Read-only zone-balance scan | Spawn/demolish (`EntityStore` is not thread-safe) |
 
-class Snapshot {
-  // Lightweight copy for rollback / branching
-  SimulationState capturedState;
-  uint64_t capturedAtTick;
-};
-```
+**Deadlock rule:** only the main thread submits work that waits for pool
+results. Pool tasks never wait on inner pool tasks. Traffic therefore runs
+on the main thread (it waits for Dijkstra chunks) while service evaluation
+occupies a worker. `evaluateFromCache(..., &pool)` from that worker would
+deadlock a one-worker pool; the overlapping service task passes `nullptr`.
 
----
+Work-size gates skip pool submit on small maps (e.g. row strips below a
+minimum row count).
 
-## Testing Strategy
+### Caches
 
-1. **Unit tests:** Individual systems with mock state.
-2. **Integration tests:** Full simulation loop with known commands.
-3. **Determinism tests:** Same seed + commands = same result.
-4. **Performance tests:** Tick throughput with large cities.
-5. **Replay tests:** Load save, replay commands, compare metrics.
+| Cache | Invalidation |
+|-------|----------------|
+| `ServiceCoverageCache` | Facility signature + road `topologyVersion`; result cache uses `EntityStore::mutationVersion` |
+| `TransitCoverageCache` | `routes.size() != builtForRouteCount` (routes only grow) |
+| `TrafficRouteCache` | `RoadNetwork::getTopologyVersion()` — **autonomous only** |
+| `ZoningCandidateIndex` | Incremental ring as extent grows; erase+compact after a zone batch |
+| `emptyZonedCount` | Spawn/demolish/disaster deltas — **autonomous only** |
+| Land-value dense distance field | Generation stamp (avoid full-map clears) |
 
----
+### Measured throughput (reference)
 
-## Performance Considerations
-
-### Concurrency Architecture
-
-The simulation tick runs on the main thread. A `ThreadPool` (fixed size, `hardware_concurrency - 1` workers) is created once before the tick loop and reused every tick. Systems use it for embarrassingly parallel sub-phases:
-
-| System | What's parallel | What stays sequential |
-|--------|----------------|----------------------|
-| Traffic | Dijkstra path-finds (all edges read-only after reset) | Spec collection (RNG), congestion accumulation |
-| Services | Building coverage evaluation (partitioned across workers) | BFS cache rebuild, facility placement |
-| Pollution | Clear pass (row strips) | Scatter (writes shared pollution field) |
-| Zoning | Candidate scan (row strips, partial vector merge) | Tile mutation, sort by distance |
-| Growth | Zone balance scan (row strips, partial struct reduce) | Mutation passes (EntityStore not thread-safe) |
-
-**Traffic and services run concurrently**: services are submitted to the pool as a `std::future` immediately after BFS cache prep; traffic runs on the main thread (safe to wait for inner Dijkstra tasks); `future.get()` joins before the economy phase.
-
-**Deadlock prevention**: only the main thread submits work that waits for pool results. Pool tasks never submit inner tasks. This guarantees progress on any pool size ≥ 1.
-
-**Work-size gating**: every parallel path has a minimum work threshold (e.g., `nRows >= 32` for row-strip scans, `buildings × facilities >= 4096` for service chunks) to avoid submission overhead dominating at small city sizes.
-
-### Key Caching Strategies
-
-- **Service result cache**: `ServiceCoverageCache` stores `cachedBuildingCount + cachedResult`. Coverage is skipped entirely when neither building count nor facility count changed since the last evaluation. At 200k+ population this skips ~98% of service evaluations with no observable quality loss (coverage only changes when buildings are added/removed or facilities move).
-- **Service BFS cache**: One BFS distance field per facility, rebuilt only when `facilities.size()` changes. Amortizes O(edges) BFS cost across all ticks between facility placements.
-- **Population proportional fill**: O(buildings) instead of O(people). Each building receives `floor(capped × capacity / totalCapacity)` residents in a single pass; a small round-robin loop handles remainders. Eliminates the per-person hash map lookup loop.
-- **Pollution LUT**: 7×7 precomputed falloff weight table eliminates `sqrt()` from the scatter hot loop.
-
-### Measured Throughput
-
-At 200k+ population on an 8-core machine (7 pool workers):
+At 200k+ population on an 8-core machine (7 pool workers), a prior
+instrumented run:
 
 ```
-Total: ~1.96 ms/tick  (~2.8× vs. single-threaded baseline of 5.53 ms/tick)
-  Traffic:     1.14 ms  (parallel Dijkstra; dominant bottleneck)
+Total: ~1.96 ms/tick  (~2.8× vs. single-threaded ~5.53 ms/tick)
+  Traffic:     1.14 ms  (parallel A*; dominant)
   Services:   ~0.01 ms  (result cache hit on stable ticks)
-  Growth:     ~0.18 ms  (parallel scan + single combined mutation pass)
+  Growth:     ~0.18 ms
   Zoning:     ~0.34 ms
   Population: ~0.01 ms
 ```
 
-### Remaining Bottlenecks
+Re-measure with `./build/bin/UrbanSimCore-cli --benchmark-phase5 50` after
+hot-path changes. Release builds matter: the default configure type is
+Release for this reason.
 
-- **Traffic (58% of total)**: Parallel Dijkstra already implemented. Further gains would require route reuse across ticks (detect topology changes, invalidate selectively) or reducing commute sample count.
-- **Zoning (17% of total)**: `autoZone` tile mutation is sequential; candidate scan is already parallel. Spatial indexing could reduce the scan to dirty tiles only.
-
-### General Guidelines
-
-- `unordered_map` for O(1) entity lookups; iteration order is non-deterministic so sort by ID before seeded RNG walks.
-- All randomness is seeded; sort entity collections by ID before consuming RNG draws to preserve replay determinism.
-- Profile before adding complexity — the two optimizations with the largest impact (proportional fill, service result cache) were both algorithmic, not structural.
+Remaining autonomous bottlenecks: traffic (route reuse is implemented;
+sample count is the next lever) and sequential `autoZone` mutation.
 
 ---
 
-## Visualization (Future)
+## Testing
 
-The engine outputs JSON state. A separate visualization layer consumes it:
+- Unit tests per system with constructed `CityMap` / stores (GoogleTest).
+- Integration: `CitySimulator` runs, growth, traffic, services.
+- Determinism: `ReplayVerifier` plus tests that parallel pathfinding
+  matches serial output.
+- Performance: `--benchmark-phase5` (optional `--benchmark-phase5-focus`).
+- CI: strict RelWithDebInfo on Linux/macOS/Windows; Linux ASan/UBSan and
+  TSan. See `STATUS.md` for the live test count.
 
-- **2D Isometric or Top-Down:** Unity, Godot, custom SFML/SDL2
-- **Web:** Wasm + WebGL
-- **Terminal:** ASCII debug overlay
+---
 
-The important point: visualization is not part of `UrbanSimCore`. It's a separate project that reads the engine's JSON output.
+## Source map
 
+| Directory | Contents |
+|-----------|----------|
+| `src/core/` | `EntityId`, `DeterministicRandom`, `SimulationTime` (unused by ticks), `ThreadPool`, `TileScale` |
+| `src/world/` | `CityMap`, `Tile`, `Zoning`, `TerrainGenerator` |
+| `src/entities/` | `EntityStore`, `Building`, `PopulationStore`, `BuildingPartitions` |
+| `src/networks/` | `RoadNetwork`, `Pathfinding` |
+| `src/systems/` | Subsystems, `CitySimulator`, `PlayableCityTick`, `CitySimSupport` |
+| `src/gameplay/` | Plan/apply tools, `TreasurySystem` |
+| `src/metrics/` | `CityMetrics`, `GrowthMetrics` |
+| `src/persistence/` | Snapshot, session, replay checksum |
+| `src/cli/` | Parse, dispatch, workflow, printers, sweeps (CLI exe only) |
+| `src/visualization/` | `MapRenderer` + iso in the lib; `Visualizer*` in the SDL exe |
+
+Districts live in `DistrictSystem`, not `src/world/`.
+
+---
+
+## Intentional gaps (do not “fix” by inventing the old design)
+
+These appeared in earlier drafts of this document and **are not** the
+implementation. Do not add them unless a concrete host needs them:
+
+- Virtual `Command` / `commandQueue` / command-history replay. Tools +
+  snapshots are the player API. Record tools only if true session replay
+  is required.
+- `SimulationSystem` + `UpdateScheduler` + day/week/month frequencies.
+  Interval fields on `SimOptions` and a hardcoded phase list are the
+  scheduler.
+- A mega `SimulationState` that copies the four stores. Pass references.
+  A thin holder type is fine; a bag of copies is not.
+- Vehicles, citizens, or facilities inside `EntityStore`.
+- Power/water as separate graph types. Coverage is `ServiceSystem` BFS
+  over the road graph.
+
+---
+
+## Next architecture work
+
+Keep the four stores and static systems. Close the host fork:
+
+1. ~~**One construction helper**~~ done: `city_sim::expandConstruction`
+   is shared by `CitySimulator::run` and visualizer G-mode.
+2. ~~**Playable as a subset of autonomous**~~ done: `playableCityTick`
+   runs the same environment/civic phases (pollution, services, land
+   value, health, crime, waste, deathcare, economy) with host-owned
+   construction and treasury. Interval-skip reuses last traffic/service
+   summaries instead of zeroing coverage. Districts and disasters stay
+   autonomous/opt-in.
+3. ~~**Keep tools as the player mutation API.**~~ done: CLI
+   `--place-road` / `--zone-rect` / `--add-service` / `--add-power-source`
+   call the gameplay tools. Cost is waived (no CLI treasury); service
+   flags skip the road gate because they are coverage fixtures.
+4. **Do not add a command/query façade** until a second interactive
+   frontend (WASM, editor, network) exists. File-level splits of CLI and
+   visualizer are enough at this size.
+5. ~~**Unify metrics**~~ done for the CLI snapshot: `MetricsSystem`
+   collects `CityMetrics` from live stores (`PopulationSystem::summarize`)
+   or `PlayableCityTickState`. `SimResult::finalMetrics` is that snapshot
+   after `CitySimulator::run`; `--simulate` and `--print-city-summary`
+   print the same report. `SimTickMetrics` remains the per-tick time
+   series (CSV / evolution table); HUD still reads playable fields
+   directly.
+
+Compile isolation of large reporters (`CityPrinters`,
+`GrowthPressureReport`, `VisualizerSDL.cpp`) is a build-time concern, not
+an architecture change. See `STATUS.md` for current priorities.

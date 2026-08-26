@@ -281,7 +281,7 @@ TEST(ServiceSystemTests, CacheInvalidatesWhenFacilityChangesWithoutChangingCount
   EXPECT_FALSE(ServiceSystem::isCacheValid(roads, facilities, cache));
 }
 
-TEST(ServiceSystemTests, ResultCacheInvalidatesAfterMutableBuildingPositionChange) {
+TEST(ServiceSystemTests, ResultCacheInvalidatesOnStructuralStoreMutation) {
   CityMap map({12, 12});
   RoadNetwork roads(map);
   EntityStore store;
@@ -293,11 +293,19 @@ TEST(ServiceSystemTests, ResultCacheInvalidatesAfterMutableBuildingPositionChang
   ServiceSystem::storeCachedResult(store, result, cache);
   ASSERT_TRUE(ServiceSystem::isResultCacheValid(store, cache));
 
+  // Bare non-const pointer edits do not advance mutationVersion; structural
+  // APIs (create/remove/upsert) do. Coverage-relevant position changes must
+  // go through upsertBuilding so the result cache invalidates in O(1).
   Building* building = store.getBuilding(id);
   ASSERT_NE(building, nullptr);
   building->position = {9, 9};
+  EXPECT_TRUE(ServiceSystem::isResultCacheValid(store, cache));
 
-  // Mutable access deliberately does not advance EntityStore's structural
-  // version, so the position signature must detect this change.
+  store.upsertBuilding(*building);
+  EXPECT_FALSE(ServiceSystem::isResultCacheValid(store, cache));
+
+  ServiceSystem::storeCachedResult(store, result, cache);
+  ASSERT_TRUE(ServiceSystem::isResultCacheValid(store, cache));
+  store.createBuilding(BuildingType::Commercial, {2, 2}, 5);
   EXPECT_FALSE(ServiceSystem::isResultCacheValid(store, cache));
 }

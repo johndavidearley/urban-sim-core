@@ -9,12 +9,19 @@
 class CityMap;
 class RoadNetwork;
 
+struct ServicePlacementOptions {
+  bool requireRoadAccess = true;
+  // -1 keeps the type default from coverageDistance().
+  int coverageDistanceOverride = -1;
+};
+
 struct ServicePlan {
   ServiceFacility facility;
   int64_t cost = 0;
   bool hasSite = false;
   bool valid = false;
   std::string error;
+  ServicePlacementOptions options;
 };
 
 class ServiceTool {
@@ -29,7 +36,8 @@ public:
     const std::vector<ServiceFacility>& facilities,
     ServiceType type,
     Coord position,
-    int64_t availableFunds
+    int64_t availableFunds,
+    const ServicePlacementOptions& options = {}
   );
 
   static bool build(

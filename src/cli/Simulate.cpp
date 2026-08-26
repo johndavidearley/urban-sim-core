@@ -13,6 +13,7 @@
 #include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/CitySimulator.hpp"
+#include "src/systems/MetricsSystem.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/TerrainGenerator.hpp"
 
@@ -28,7 +29,9 @@ static const char* kCSVHeader =
   "service_coverage,sanitation_coverage,service_facilities,avg_land_value,trade_balance,inflation_multiplier,"
   "transit_routes,transit_bus_routes,transit_rail_routes,transit_ridership,transit_demand,transit_modal_share,"
   "active_fires,buildings_lost_to_fire,crime_rate,illness_rate,"
-  "earthquake_occurred,flood_occurred,buildings_lost_to_disaster\n";
+  "earthquake_occurred,flood_occurred,buildings_lost_to_disaster,"
+  "waste_collection_rate,waste_uncollected,waste_pollution_penalty,"
+  "deaths_this_tick,deathcare_backlog,deathcare_happiness_penalty\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -65,7 +68,9 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.transitRidership << "," << row.transitDemand << ","
       << row.transitModalShare << ","
       << row.activeFires << "," << row.buildingsLostToFire << "," << row.crimeRate << "," << row.illnessRate << ","
-      << (row.earthquakeOccurred ? 1 : 0) << "," << (row.floodOccurred ? 1 : 0) << "," << row.buildingsLostToDisaster << "\n";
+      << (row.earthquakeOccurred ? 1 : 0) << "," << (row.floodOccurred ? 1 : 0) << "," << row.buildingsLostToDisaster << ","
+      << row.wasteCollectionRate << "," << row.wasteUncollected << "," << row.wastePollutionPenalty << ","
+      << row.deathsThisTick << "," << row.deathcareBacklog << "," << row.deathcareHappinessPenalty << "\n";
 }
 
 bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
@@ -83,7 +88,7 @@ bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& 
 void printTimings(const SimPhaseTimings& t, int ranTicks) {
   const double totalMs = t.roadMs + t.zoningMs + t.growthMs + t.populationMs + t.trafficMs +
                          t.economyMs + t.serviceMs + t.landValueMs + t.transitMs + t.districtMs + t.fireMs +
-                         t.crimeMs + t.healthMs + t.disasterMs;
+                         t.crimeMs + t.healthMs + t.disasterMs + t.wasteMs + t.deathcareMs;
   std::cout << "\nPhase timing over " << ranTicks << " ticks (total "
             << std::fixed << std::setprecision(2) << totalMs << " ms, "
             << (ranTicks > 0 ? totalMs / ranTicks : 0.0) << " ms/tick):\n";
@@ -101,6 +106,8 @@ void printTimings(const SimPhaseTimings& t, int ranTicks) {
   std::cout << "    Crime:      " << t.crimeMs << " ms\n";
   std::cout << "    Health:     " << t.healthMs << " ms\n";
   std::cout << "    Disasters:  " << t.disasterMs << " ms\n";
+  std::cout << "    Waste:      " << t.wasteMs << " ms\n";
+  std::cout << "    Deathcare:  " << t.deathcareMs << " ms\n";
 }
 
 void printDistrictSummary(const std::vector<DistrictMetrics>& metrics) {
@@ -287,6 +294,7 @@ int runCitySimulation(
                 << " crimeRate=" << std::setprecision(1) << (last.crimeRate * 100.0f) << "%"
                 << " illnessRate=" << (last.illnessRate * 100.0f) << "%"
                 << " buildingsLostToDisaster=" << last.buildingsLostToDisaster << "\n";
+      std::cout << "\n" << MetricsSystem::createCitySummaryReport(result.finalMetrics);
     }
 
     printDistrictSummary(result.finalDistrictMetrics);

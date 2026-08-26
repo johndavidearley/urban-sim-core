@@ -1,10 +1,11 @@
 #include "TrafficSystem.hpp"
+#include "src/entities/BuildingPartitions.hpp"
 #include "src/networks/Pathfinding.hpp"
 #include "src/systems/TransitSystem.hpp"
 #include <algorithm>
 #include <future>
-#include <random>
 #include <numeric>
+#include <random>
 
 namespace {
 
@@ -65,15 +66,6 @@ bool matchesRouteFilter(
   return true;
 }
 
-// Entity stores are hash maps, so iteration order varies with absolute ID
-// values (and across standard libraries). Commute sampling consumes seeded RNG
-// draws per element, so iterate in creation (ID) order to keep replays
-// deterministic.
-void sortBuildingsById(std::vector<const Building*>& buildings) {
-  std::sort(buildings.begin(), buildings.end(),
-    [](const Building* a, const Building* b) { return a->id < b->id; });
-}
-
 std::vector<const PopulationGroup*> groupsInIdOrder(const PopulationStore& population) {
   std::vector<const PopulationGroup*> ordered;
   ordered.reserve(population.getGroups().size());
@@ -115,29 +107,109 @@ struct CommuteSpec {
   Coord workAnchor;  // road tile work->position resolves to
 };
 
+// Spatial hash of job buildings for near-home candidate gathering. Built once
+// per commute collection so pickWeightedJob is O(nearby) instead of O(all jobs).
+struct JobSpatialIndex {
+  static constexpr int kCellSize = 16;
+  static constexpr int kTargetCandidates = 48;
+
+  int minX = 0;
+  int minY = 0;
+  int cellsX = 1;
+  int cellsY = 1;
+  std::vector<std::vector<const Building*>> cells;
+  const std::vector<const Building*>* allJobs = nullptr;
+
+  void build(const std::vector<const Building*>& jobBuildings) {
+    allJobs = &jobBuildings;
+    cells.clear();
+    if (jobBuildings.empty()) {
+      cellsX = cellsY = 1;
+      cells.resize(1);
+      return;
+    }
+    minX = jobBuildings[0]->position.x;
+    minY = jobBuildings[0]->position.y;
+    int maxX = minX;
+    int maxY = minY;
+    for (const Building* b : jobBuildings) {
+      minX = std::min(minX, b->position.x);
+      minY = std::min(minY, b->position.y);
+      maxX = std::max(maxX, b->position.x);
+      maxY = std::max(maxY, b->position.y);
+    }
+    cellsX = std::max(1, (maxX - minX) / kCellSize + 1);
+    cellsY = std::max(1, (maxY - minY) / kCellSize + 1);
+    cells.assign(static_cast<size_t>(cellsX * cellsY), {});
+    for (const Building* b : jobBuildings) {
+      const int cx = std::min(cellsX - 1, std::max(0, (b->position.x - minX) / kCellSize));
+      const int cy = std::min(cellsY - 1, std::max(0, (b->position.y - minY) / kCellSize));
+      cells[static_cast<size_t>(cy * cellsX + cx)].push_back(b);
+    }
+  }
+
+  void cellCoords(Coord home, int& outCx, int& outCy) const {
+    outCx = std::min(cellsX - 1, std::max(0, (home.x - minX) / kCellSize));
+    outCy = std::min(cellsY - 1, std::max(0, (home.y - minY) / kCellSize));
+  }
+};
+
 // Distance- and capacity-weighted job pick for a commute batch anchored at
-// `home`: nearer, larger job buildings are more likely, rather than every
-// job building anywhere on the map being equally likely regardless of
-// distance (the previous model). Straight-line (Manhattan) distance is used
-// as a cheap proxy for commute cost rather than a per-draw road-network BFS
-// - the same "cheap heuristic, actual routing follows real roads via
-// Pathfinding" tradeoff CitySimulator's own transit-route placement already
-// makes. `jobBuildings` must be in a fixed order (sorted by ID) for
-// determinism; consumes exactly one RNG draw, same as the uniform pick it
-// replaces.
+// `home`: nearer, larger job buildings are more likely. Straight-line
+// (Manhattan) distance is the cheap proxy; actual routing still uses the road
+// network. Candidates are gathered from expanding spatial-hash rings until
+// kTargetCandidates is reached (falling back to the full list for tiny cities)
+// so cost stays O(nearby) rather than O(all jobs) per draw. `jobBuildings` /
+// index cell contents are ID-sorted for determinism; one RNG draw per call.
 const Building* pickWeightedJob(
-  const std::vector<const Building*>& jobBuildings,
+  const JobSpatialIndex& index,
   Coord home,
   std::mt19937& rng
 ) {
   constexpr float kDistanceDecay = 0.05f;  // higher = stronger preference for nearby jobs
-  std::vector<float> weights(jobBuildings.size());
+  if (index.allJobs == nullptr || index.allJobs->empty()) {
+    return nullptr;
+  }
+
+  std::vector<const Building*> candidates;
+  candidates.reserve(static_cast<size_t>(JobSpatialIndex::kTargetCandidates));
+
+  int homeCx = 0;
+  int homeCy = 0;
+  index.cellCoords(home, homeCx, homeCy);
+  const int maxRing = std::max(index.cellsX, index.cellsY);
+
+  for (int ring = 0; ring <= maxRing && static_cast<int>(candidates.size()) < JobSpatialIndex::kTargetCandidates; ++ring) {
+    for (int dy = -ring; dy <= ring; ++dy) {
+      for (int dx = -ring; dx <= ring; ++dx) {
+        if (ring > 0 && std::max(std::abs(dx), std::abs(dy)) != ring) {
+          continue;  // only the ring perimeter
+        }
+        const int cx = homeCx + dx;
+        const int cy = homeCy + dy;
+        if (cx < 0 || cy < 0 || cx >= index.cellsX || cy >= index.cellsY) {
+          continue;
+        }
+        const auto& cell = index.cells[static_cast<size_t>(cy * index.cellsX + cx)];
+        for (const Building* b : cell) {
+          candidates.push_back(b);
+        }
+      }
+    }
+  }
+
+  // Tiny / sparse cities: fall back to the full ID-sorted job list.
+  if (candidates.empty()) {
+    candidates = *index.allJobs;
+  }
+
   float totalWeight = 0.0f;
-  for (size_t i = 0; i < jobBuildings.size(); ++i) {
-    const int dx = jobBuildings[i]->position.x - home.x;
-    const int dy = jobBuildings[i]->position.y - home.y;
+  std::vector<float> weights(candidates.size());
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    const int dx = candidates[i]->position.x - home.x;
+    const int dy = candidates[i]->position.y - home.y;
     const float dist = static_cast<float>(std::abs(dx) + std::abs(dy));
-    const float capacityWeight = static_cast<float>(std::max(1, jobBuildings[i]->capacity));
+    const float capacityWeight = static_cast<float>(std::max(1, candidates[i]->capacity));
     const float w = capacityWeight / (1.0f + kDistanceDecay * dist);
     weights[i] = w;
     totalWeight += w;
@@ -147,9 +219,9 @@ const Building* pickWeightedJob(
   float r = pick(rng);
   for (size_t i = 0; i < weights.size(); ++i) {
     r -= weights[i];
-    if (r <= 0.0f) return jobBuildings[i];
+    if (r <= 0.0f) return candidates[i];
   }
-  return jobBuildings.back();  // floating-point rounding fallback
+  return candidates.back();  // floating-point rounding fallback
 }
 
 // Phase 1: deterministic RNG walk to collect commute home/work/count triples.
@@ -173,24 +245,14 @@ std::vector<CommuteSpec> collectCommuteSpecs(
   std::vector<CommuteSpec> specs;
   outTotalCommuters = 0;
 
-  const auto& buildings = store.getBuildings();
-  std::vector<const Building*> residentialBuildings;
-  std::vector<const Building*> jobBuildings;
-  residentialBuildings.reserve(buildings.size());
-  jobBuildings.reserve(buildings.size());
-  for (const auto& [id, b] : buildings) {
-    (void)id;
-    if (b.type == BuildingType::Residential) residentialBuildings.push_back(&b);
-    else if (b.type == BuildingType::Commercial || b.type == BuildingType::Industrial ||
-             b.type == BuildingType::Office) jobBuildings.push_back(&b);
-  }
-  if (residentialBuildings.empty() || jobBuildings.empty()) return specs;
+  const BuildingPartitions parts = BuildingPartitions::fromStore(store, /*sortById=*/true);
+  if (parts.residential.empty() || parts.jobs.empty()) return specs;
 
-  sortBuildingsById(residentialBuildings);
-  sortBuildingsById(jobBuildings);
+  JobSpatialIndex jobIndex;
+  jobIndex.build(parts.jobs);
 
   std::mt19937 rng(seed);
-  std::uniform_int_distribution<size_t> resDist(0, residentialBuildings.size() - 1);
+  std::uniform_int_distribution<size_t> resDist(0, parts.residential.size() - 1);
 
   for (const PopulationGroup* gp : groupsInIdOrder(population)) {
     if (gp->employed == 0) continue;
@@ -198,8 +260,9 @@ std::vector<CommuteSpec> collectCommuteSpecs(
     const uint32_t wpc = std::max(1u, gp->employed / 10u);
     const uint32_t n = (gp->employed + wpc - 1) / wpc;
     for (uint32_t c = 0; c < n; ++c) {
-      const Building* home = residentialBuildings[resDist(rng)];
-      const Building* work = pickWeightedJob(jobBuildings, home->position, rng);
+      const Building* home = parts.residential[resDist(rng)];
+      const Building* work = pickWeightedJob(jobIndex, home->position, rng);
+      if (work == nullptr) continue;
       Coord homeAnchor, workAnchor;
       if (!network.resolveRoadAnchor(home->position, homeAnchor)) continue;
       if (!network.resolveRoadAnchor(work->position, workAnchor)) continue;
@@ -275,9 +338,13 @@ TrafficSummary runCommuteLoop(
     // happens in phase 3 below) - so the path found here depends only on
     // topology, never on congestionWeight or which tick it is. That's what
     // makes routeCache safe to reuse across ticks.
+    //
+    // Misses are batched into ~threadCount chunks rather than one pool task
+    // per commute: packaged_task + mutex queue overhead otherwise dominates
+    // short Dijkstra runs when thousands of OD pairs miss the route cache.
     constexpr float kCongestionWeight = 0.5f;
-    std::vector<std::future<Pathfinding::Path>> futures(specs.size());
-    std::vector<bool> pending(specs.size(), false);
+    std::vector<size_t> misses;
+    misses.reserve(specs.size());
     for (size_t i = 0; i < specs.size(); ++i) {
       const RouteEndpointKey key{specs[i].homeAnchor, specs[i].workAnchor};
       if (routeCache != nullptr) {
@@ -287,18 +354,43 @@ TrafficSummary runCommuteLoop(
           continue;
         }
       }
-      pending[i] = true;
-      futures[i] = pool->submit([&network, spec = specs[i], kCongestionWeight]() {
-        return Pathfinding::findShortestPathWithCongestionWeight(
-          network, spec.homeAnchor, spec.workAnchor, kCongestionWeight);
-      });
+      misses.push_back(i);
     }
-    for (size_t i = 0; i < specs.size(); ++i) {
-      if (!pending[i]) continue;
-      paths[i] = futures[i].get();
+
+    if (!misses.empty()) {
+      const size_t nChunks = std::min(
+        static_cast<size_t>(std::max(1u, pool->threadCount())),
+        misses.size());
+      if (nChunks <= 1) {
+        for (size_t i : misses) {
+          paths[i] = Pathfinding::findShortestPathWithCongestionWeight(
+            network, specs[i].homeAnchor, specs[i].workAnchor, kCongestionWeight);
+        }
+      } else {
+        std::vector<std::future<void>> futures;
+        futures.reserve(nChunks);
+        const size_t chunkSize = (misses.size() + nChunks - 1) / nChunks;
+        for (size_t c = 0; c < nChunks; ++c) {
+          const size_t begin = c * chunkSize;
+          if (begin >= misses.size()) break;
+          const size_t end = std::min(begin + chunkSize, misses.size());
+          futures.push_back(pool->submit([&, begin, end]() {
+            for (size_t k = begin; k < end; ++k) {
+              const size_t i = misses[k];
+              paths[i] = Pathfinding::findShortestPathWithCongestionWeight(
+                network, specs[i].homeAnchor, specs[i].workAnchor, kCongestionWeight);
+            }
+          }));
+        }
+        for (auto& f : futures) {
+          f.get();
+        }
+      }
       if (routeCache != nullptr) {
-        const RouteEndpointKey key{specs[i].homeAnchor, specs[i].workAnchor};
-        routeCache->paths.emplace(key, paths[i]);
+        for (size_t i : misses) {
+          const RouteEndpointKey key{specs[i].homeAnchor, specs[i].workAnchor};
+          routeCache->paths.emplace(key, paths[i]);
+        }
       }
     }
   } else {

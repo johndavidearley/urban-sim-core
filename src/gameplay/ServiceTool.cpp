@@ -60,11 +60,16 @@ ServicePlan ServiceTool::plan(
   const std::vector<ServiceFacility>& facilities,
   ServiceType type,
   Coord position,
-  int64_t availableFunds
+  int64_t availableFunds,
+  const ServicePlacementOptions& options
 ) {
   ServicePlan result;
   result.hasSite = true;
-  result.facility = ServiceFacility{type, position, coverageDistance(type), 1.0f};
+  result.options = options;
+  const int range = options.coverageDistanceOverride >= 0
+    ? options.coverageDistanceOverride
+    : coverageDistance(type);
+  result.facility = ServiceFacility{type, position, range, 1.0f};
   result.cost = constructionCost(type);
   if (!map.isValid(position)) {
     result.error = "site is outside the map";
@@ -91,10 +96,12 @@ ServicePlan ServiceTool::plan(
     }
   }
 
-  Coord roadAnchor;
-  if (!roads.resolveRoadAnchor(position, roadAnchor)) {
-    result.error = "service requires road access";
-    return result;
+  if (options.requireRoadAccess) {
+    Coord roadAnchor;
+    if (!roads.resolveRoadAnchor(position, roadAnchor)) {
+      result.error = "service requires road access";
+      return result;
+    }
   }
   if (result.cost > availableFunds) {
     result.error = "insufficient funds";
@@ -116,7 +123,8 @@ bool ServiceTool::build(
     return false;
   }
   const ServicePlan current = ServiceTool::plan(
-    map, roads, facilities, plan.facility.type, plan.facility.position, availableFunds
+    map, roads, facilities, plan.facility.type, plan.facility.position,
+    availableFunds, plan.options
   );
   if (!current.valid || current.cost != plan.cost) {
     return false;

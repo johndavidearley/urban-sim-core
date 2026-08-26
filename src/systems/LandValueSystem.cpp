@@ -1,54 +1,108 @@
 #include "src/systems/LandValueSystem.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <queue>
-#include <unordered_map>
+#include <vector>
 
 #include "src/world/Zoning.hpp"
 
 namespace {
 
+// Dense generation-stamped distance field over the full map grid. Only road
+// nodes are written (via RoadNetwork adjacency); lookups are O(1) array
+// index instead of unordered_map probes. Generation counters avoid O(W*H)
+// clears between recomputes.
+struct DenseDistanceField {
+  int width = 0;
+  int height = 0;
+  std::vector<int> dist;
+  std::vector<uint32_t> stamp;
+  uint32_t generation = 0;
+
+  void ensure(int w, int h) {
+    const size_t n = static_cast<size_t>(w) * static_cast<size_t>(h);
+    if (dist.size() < n) {
+      dist.assign(n, -1);
+      stamp.assign(n, 0);
+      generation = 0;
+    }
+    width = w;
+    height = h;
+  }
+
+  void begin() {
+    ++generation;
+    if (generation == 0) {
+      std::fill(stamp.begin(), stamp.end(), 0);
+      generation = 1;
+    }
+  }
+
+  size_t index(Coord c) const {
+    return static_cast<size_t>(c.y) * static_cast<size_t>(width) + static_cast<size_t>(c.x);
+  }
+
+  bool inBounds(Coord c) const {
+    return c.x >= 0 && c.y >= 0 && c.x < width && c.y < height;
+  }
+
+  // Returns true if `c` was newly marked at distance `d`.
+  bool tryVisit(Coord c, int d) {
+    if (!inBounds(c)) return false;
+    const size_t i = index(c);
+    if (stamp[i] == generation) return false;
+    stamp[i] = generation;
+    dist[i] = d;
+    return true;
+  }
+
+  int get(Coord c) const {
+    if (!inBounds(c)) return -1;
+    const size_t i = index(c);
+    return stamp[i] == generation ? dist[i] : -1;
+  }
+};
+
 // Multi-source BFS: distance from every road-reachable tile within
 // `maxDistance` to the nearest of `sources`, in one O(V+E) pass (all sources
 // pushed at distance 0 up front). Capped at maxDistance because proximityBonus
-// is zero beyond it anyway - uncapped, this would walk the entire road
-// network every call regardless of city size.
-std::unordered_map<Coord, int, Vec2Hash> multiSourceDistanceField(
+// is zero beyond it anyway.
+void multiSourceDistanceField(
   const RoadNetwork& roads,
   const std::vector<Coord>& sources,
-  int maxDistance
+  int maxDistance,
+  DenseDistanceField& field
 ) {
-  std::unordered_map<Coord, int, Vec2Hash> distance;
-  if (maxDistance < 0) {
-    return distance;
+  field.begin();
+  if (maxDistance < 0 || sources.empty()) {
+    return;
   }
 
   std::queue<Coord> frontier;
   for (const Coord& s : sources) {
-    if (distance.count(s) != 0) continue;
-    distance[s] = 0;
-    frontier.push(s);
+    if (field.tryVisit(s, 0)) {
+      frontier.push(s);
+    }
   }
 
   while (!frontier.empty()) {
     const Coord current = frontier.front();
     frontier.pop();
-    const int currentDistance = distance[current];
-    if (currentDistance >= maxDistance) continue;
+    const int currentDistance = field.get(current);
+    if (currentDistance < 0 || currentDistance >= maxDistance) continue;
 
     const RoadNetwork::Node* node = roads.getNode(current);
     if (node == nullptr) continue;
 
     for (const RoadNodeId& neighborId : node->adjacent) {
       const Coord next = neighborId.coord;
-      if (distance.count(next) != 0) continue;
-      distance[next] = currentDistance + 1;
-      frontier.push(next);
+      if (field.tryVisit(next, currentDistance + 1)) {
+        frontier.push(next);
+      }
     }
   }
-
-  return distance;
 }
 
 // Nearest-facility distance for `coord` from an already-built service cache:
@@ -81,22 +135,26 @@ void LandValueSystem::updateLandValues(
   const LandValueParams& params
 ) {
   std::vector<Coord> jobSources;
-  for (const auto& [id, building] : store.getBuildings()) {
-    (void)id;
-    if (building.type != BuildingType::Commercial && building.type != BuildingType::Industrial &&
-        building.type != BuildingType::Office) {
-      continue;
-    }
+  jobSources.reserve(store.jobIds().size());
+  for (EntityId id : store.jobIds()) {
+    const Building* building = store.getBuilding(id);
+    if (building == nullptr) continue;
     Coord anchor;
-    if (roads.resolveRoadAnchor(building.position, anchor)) {
+    if (roads.resolveRoadAnchor(building->position, anchor)) {
       jobSources.push_back(anchor);
     }
   }
-  const std::unordered_map<Coord, int, Vec2Hash> jobDistance =
-    jobSources.empty() ? std::unordered_map<Coord, int, Vec2Hash>{}
-      : multiSourceDistanceField(roads, jobSources, static_cast<int>(params.jobAccessRadius));
 
   const glm::ivec2 dims = map.getDimensions();
+  // Reused across calls: avoids reallocating W*H vectors every land-value tick.
+  static thread_local DenseDistanceField jobField;
+  jobField.ensure(dims.x, dims.y);
+  if (!jobSources.empty()) {
+    multiSourceDistanceField(roads, jobSources, static_cast<int>(params.jobAccessRadius), jobField);
+  } else {
+    jobField.begin();  // empty generation: all lookups return -1
+  }
+
   const int cx0 = std::max(0, x0);
   const int cy0 = std::max(0, y0);
   const int cx1 = std::min(dims.x - 1, x1);
@@ -120,8 +178,7 @@ void LandValueSystem::updateLandValues(
       float jobBonus = 0.0f;
       float serviceBonus = 0.0f;
       if (anchored) {
-        const auto jobIt = jobDistance.find(anchor);
-        const int jobDist = (jobIt != jobDistance.end()) ? jobIt->second : -1;
+        const int jobDist = jobSources.empty() ? -1 : jobField.get(anchor);
         jobBonus = proximityBonus(jobDist, params.jobAccessRadius, params.maxJobBonus);
 
         if (serviceCache != nullptr) {
@@ -143,17 +200,25 @@ void LandValueSystem::updateLandValues(
 
 float LandValueSystem::averageLandValue(const CityMap& map) {
   const glm::ivec2 dims = map.getDimensions();
+  return averageLandValue(map, 0, 0, dims.x - 1, dims.y - 1);
+}
+
+float LandValueSystem::averageLandValue(const CityMap& map, int x0, int y0, int x1, int y1) {
+  const glm::ivec2 dims = map.getDimensions();
+  const int cx0 = std::max(0, x0);
+  const int cy0 = std::max(0, y0);
+  const int cx1 = std::min(dims.x - 1, x1);
+  const int cy1 = std::min(dims.y - 1, y1);
+  if (cx0 > cx1 || cy0 > cy1) {
+    return 100.0f;
+  }
+
   double sum = 0.0;
   uint64_t count = 0;
-  for (int y = 0; y < dims.y; ++y) {
-    for (int x = 0; x < dims.x; ++x) {
+  for (int y = cy0; y <= cy1; ++y) {
+    for (int x = cx0; x <= cx1; ++x) {
       // type/zone stay on Tile (only pollution/landValue moved to parallel
-      // arrays), so one getTile() call serves both - unlike landValue()
-      // below, which is a genuinely separate array lookup. This function
-      // scans the *whole* map unconditionally every tick (unlike
-      // updateLandValues, which is interval-gated and active-region-
-      // bounded), so avoiding a redundant second index computation here
-      // matters far more than it would in a bounded loop.
+      // arrays), so one getTile() call serves both.
       const Tile& tile = map.getTile({x, y});
       if (tile.type == 2 || tile.zone == static_cast<int>(ZoneType::None)) continue;
       sum += map.landValue({x, y});

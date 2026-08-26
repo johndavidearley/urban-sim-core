@@ -76,6 +76,11 @@ struct ServiceCoverageSummary {
   float satisfaction = 0.5f;
 };
 
+// Bit pack of which ServiceType values cover a road node. kServiceTypeCount
+// is 11, so a uint16_t is enough for one bit per type.
+using ServiceCoverageMask = uint16_t;
+static_assert(kServiceTypeCount <= 16, "ServiceCoverageMask needs more bits");
+
 // Pre-built BFS distance fields for all facilities. Rebuild only when the
 // facility list changes; reuse across ticks to avoid redundant BFS work.
 // The result cache avoids re-evaluating building coverage when neither the
@@ -108,12 +113,17 @@ struct ServiceCoverageCache {
   std::unordered_map<Coord, int, Vec2Hash> nearestPowerDistance;
   std::unordered_map<Coord, int, Vec2Hash> nearestWaterDistance;
 
+  // Per road-node bitset of covering service types, built once in buildCache.
+  // evaluateFromCache does one map lookup per building instead of scanning
+  // every facility distance field (O(buildings) vs O(buildings × facilities)).
+  std::unordered_map<Coord, ServiceCoverageMask, Vec2Hash> coverageMask;
+
   // Result cache: valid when cachedStoreMutationVersion matches the entity
-  // store and the distance fields remain valid. A count alone is insufficient:
-  // demolition followed by construction can change positions without changing
-  // the number of buildings.
+  // store. EntityStore bumps this on create/remove/clear/upsert, so a full
+  // building-position rehash is unnecessary for structural edits. In-place
+  // mutation through a non-const Building* without upsert does not invalidate
+  // — callers that edit buildings in place should use upsertBuilding.
   uint64_t cachedStoreMutationVersion = static_cast<uint64_t>(-1);
-  uint64_t cachedBuildingCoverageSignature = 0;
   ServiceCoverageSummary cachedResult;
 };
 
@@ -147,9 +157,8 @@ public:
     const ServiceCoverageCache& cache
   );
 
-  // Result reuse additionally checks building IDs and positions. This catches
-  // coverage-relevant edits made through EntityStore's mutable Building API,
-  // which do not advance the store's structural mutation version.
+  // True when the entity store has not been structurally mutated since the
+  // last storeCachedResult (O(1) mutation-version compare).
   static bool isResultCacheValid(
     const EntityStore& store,
     const ServiceCoverageCache& cache

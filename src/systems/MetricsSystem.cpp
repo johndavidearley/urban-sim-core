@@ -1,7 +1,10 @@
 #include "MetricsSystem.hpp"
 
+#include <algorithm>
 #include <iomanip>
 #include <sstream>
+
+#include "src/systems/PlayableCityTick.hpp"
 
 CityMetrics MetricsSystem::collectCityMetrics(
   const PopulationSummary& population,
@@ -16,6 +19,28 @@ CityMetrics MetricsSystem::collectCityMetrics(
   if (serviceSummary != nullptr) {
     ServiceSystem::applyToMetrics(*serviceSummary, metrics);
   }
+  return metrics;
+}
+
+CityMetrics MetricsSystem::collectCityMetrics(
+  const EntityStore& store,
+  const PopulationStore& population,
+  const TrafficSummary& traffic,
+  const EconomyState& economy,
+  const ServiceCoverageSummary* serviceSummary
+) {
+  return collectCityMetrics(
+    PopulationSystem::summarize(store, population), traffic, economy, serviceSummary);
+}
+
+CityMetrics MetricsSystem::collectFromPlayable(
+  const EntityStore& store,
+  const PopulationStore& population,
+  const PlayableCityTickState& state
+) {
+  CityMetrics metrics = collectCityMetrics(
+    store, population, state.trafficSummary, state.economy, &state.serviceSummary);
+  metrics.pollution = std::max(metrics.pollution, state.waste.pollutionPenalty);
   return metrics;
 }
 

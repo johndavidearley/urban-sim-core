@@ -33,5 +33,8 @@ public:
     uint32_t seed = 0
   );
 
+  // Read-only snapshot of current groups and building capacities (no reallocation).
+  static PopulationSummary summarize(const EntityStore& store, const PopulationStore& population);
+
   static void applyToMetrics(const PopulationSummary& summary, CityMetrics& metrics);
 };

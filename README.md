@@ -133,9 +133,9 @@ gate. The tile inspector reports current Power and Water connectivity, and the
 new-city guide walks through placing both utilities before a civic service.
 
 The in-window HUD remains visible independently of the debug legend and shows
-simulation state, tick, population, building count, construction funds, and
-the selected tool. Keyboard shortcuts remain available alongside the clickable
-palette.
+simulation state, tick, population, building count, construction funds,
+illness, crime, waste, deathcare, and the selected tool. Keyboard shortcuts
+remain available alongside the clickable palette.
 
 Four live demand bars in the HUD show residential, commercial, industrial,
 and office demand using the same colors as their zoning tools. The speed
@@ -497,31 +497,32 @@ Create districts with `--create-district NAME X1 Y1 X2 Y2` (rectangular bounds).
 
 ## Project Structure
 
-- **src/core/** — Foundation (Time, Random, EntityId, Commands)
-- **src/world/** — Map, Tiles, Parcels, Districts
-- **src/entities/** — Building, PopulationGroup, Business, Vehicle
-- **src/networks/** — RoadNetwork, UtilityNetwork, Pathfinding
-- **src/systems/** — PopulationSystem, ZoningSystem, EconomySystem, DistrictSystem, etc.
-- **src/metrics/** — CityMetrics aggregation
-- **src/persistence/** — SaveGame, Snapshot, Replay
-- **tests/** — Unit and integration tests
-- **examples/** — Example simulations and configs
-- **configs/** — Configuration files (JSON/YAML)
-- **docs/** — Architecture, roadmap, design docs
+- **src/core/** — EntityId, seeded RNG, ThreadPool, tile scale (`SimulationTime` exists but is unused by ticks)
+- **src/world/** — CityMap, Tile, Zoning, TerrainGenerator (a tile is the parcel)
+- **src/entities/** — EntityStore (buildings), PopulationStore (aggregate groups)
+- **src/networks/** — RoadNetwork (lazy graph), Pathfinding (A*)
+- **src/systems/** — Static `*System` classes, `CitySimulator`, `PlayableCityTick`, `CitySimSupport`
+- **src/gameplay/** — Road/Zone/Bulldoze/Service tools and TreasurySystem
+- **src/metrics/** — CityMetrics, GrowthMetrics
+- **src/persistence/** — City snapshot, gameplay session, replay checksum
+- **src/cli/** — Flag CLI (not part of `urban_sim_core`)
+- **src/visualization/** — Headless PPM/iso in the library; SDL visualizer sources in the optional exe
+- **tests/** — GoogleTest suites
+- **docs/** — Architecture, status, roadmap, historical logs
 
 ## Current Status
 
-✅ **Backlog Slices 1-10 Complete** — Core headless simulation, persistence, replay verification, and visualization scaffolding are implemented.
-
-See [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for detailed progress.
+Phase 1–5 milestone work is complete. See [docs/STATUS.md](docs/STATUS.md)
+for the live implementation, test, and priority baseline, and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system boundaries.
 
 ## Technology Stack
 
-- **Language:** C++17/20
+- **Language:** C++17
 - **Build:** CMake 3.16+
 - **Testing:** Google Test
 - **Serialization:** nlohmann/json
-- **Optional:** SFML or SDL2 for future visualization
+- **Optional:** SDL2 live visualizer (`UrbanSimCore-visualizer`)
 
 ## Vision
 
@@ -531,11 +532,12 @@ From there, expand into traffic micro-simulation, utilities, services, and polic
 
 ## Documentation
 
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — Engine design, data models, systems
-- [ROADMAP.md](docs/ROADMAP.md) — Development milestones
-- [MVP_SPEC.md](docs/MVP_SPEC.md) — MVP features and simulation loop
-- [NEXT_STEPS.md](docs/NEXT_STEPS.md) — What to build next
-- [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) — Progress tracking
+- [STATUS.md](docs/STATUS.md) — Current implementation, validation, priorities
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — Implemented engine boundaries and data flow
+- [ROADMAP.md](docs/ROADMAP.md) — Milestone history and future ideas
+- [MVP_SPEC.md](docs/MVP_SPEC.md) — Original product scope
+- [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) — Historical implementation journal
+- [NEXT_STEPS.md](docs/NEXT_STEPS.md) — Historical backlog sequence
 
 ## License
 

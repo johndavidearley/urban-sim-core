@@ -102,11 +102,9 @@ public:
   Node* getNode(glm::ivec2 coord);
   bool hasNode(glm::ivec2 coord) const;
 
-  // True if this tile directly touches at least one road edge. Every tile is
-  // pre-registered as a graph node at construction (see the constructor), so
-  // hasNode() alone can't distinguish "on the road network" from "just a
-  // valid map coordinate" - callers that actually care whether a tile can
-  // path anywhere want this, or resolveRoadAnchor() below.
+  // True if this tile directly touches at least one road edge. Nodes are
+  // created lazily on buildRoad, so hasNode() is also false for never-road
+  // tiles; prefer this (or resolveRoadAnchor) when checking path access.
   bool hasRoadAdjacency(glm::ivec2 coord) const;
 
   // Resolves the road tile a building/facility at `coord` should path
@@ -149,10 +147,14 @@ public:
 private:
   const CityMap& cityMap;
   std::unordered_map<EdgeKey, Edge, EdgeKeyHash> edges;
+  // Only tiles that currently touch a road edge (lazy). Empty map until
+  // the first buildRoad; cleared nodes with no remaining edges are erased
+  // on removeRoad so memory tracks the live road network.
   std::unordered_map<glm::ivec2, Node, Vec2Hash> nodes;
   uint64_t topologyVersion = 0;
   
   RoadNodeId makeNodeId(glm::ivec2 coord) const;
   bool isValidCoord(glm::ivec2 coord) const;
   EdgeKey makeEdgeKey(glm::ivec2 from, glm::ivec2 to) const;
+  Node& ensureNode(glm::ivec2 coord);
 };

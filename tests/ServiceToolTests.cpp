@@ -55,6 +55,27 @@ TEST(ServiceToolTests, BuildsFacilityAndDeductsFunds) {
   EXPECT_EQ(funds, 4500);
 }
 
+TEST(ServiceToolTests, FixturePlacementSkipsRoadAccessAndHonorsRangeOverride) {
+  CityMap map({16, 16});
+  RoadNetwork roads(map);
+  std::vector<ServiceFacility> facilities;
+  int64_t funds = 20000;
+  ServicePlacementOptions options;
+  options.requireRoadAccess = false;
+  options.coverageDistanceOverride = 12;
+
+  const ServicePlan plan = ServiceTool::plan(
+    map, roads, facilities, ServiceType::Power, {10, 10}, funds, options
+  );
+  ASSERT_TRUE(plan.valid) << plan.error;
+  EXPECT_EQ(plan.facility.maxTravelDistance, 12);
+  ASSERT_TRUE(ServiceTool::build(map, roads, facilities, plan, funds));
+  ASSERT_EQ(facilities.size(), 1u);
+  EXPECT_EQ(facilities.front().position, Coord(10, 10));
+  EXPECT_EQ(facilities.front().maxTravelDistance, 12);
+  EXPECT_EQ(funds, 20000 - ServiceTool::constructionCost(ServiceType::Power));
+}
+
 TEST(ServiceToolTests, CivicTypesHaveDistinctPositiveOperatingCosts) {
   EXPECT_GT(ServiceTool::operatingCostPerTick(ServiceType::Fire), 0);
   EXPECT_GT(ServiceTool::operatingCostPerTick(ServiceType::Police), 0);

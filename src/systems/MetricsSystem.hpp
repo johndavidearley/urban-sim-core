@@ -8,6 +8,8 @@
 #include "src/systems/EconomySystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 
+struct PlayableCityTickState;
+
 class MetricsSystem {
 public:
   // Compose a single city metrics snapshot from subsystem summaries.
@@ -16,6 +18,20 @@ public:
     const TrafficSummary& traffic,
     const EconomyState& economy,
     const ServiceCoverageSummary* serviceSummary = nullptr
+  );
+
+  static CityMetrics collectCityMetrics(
+    const EntityStore& store,
+    const PopulationStore& population,
+    const TrafficSummary& traffic,
+    const EconomyState& economy,
+    const ServiceCoverageSummary* serviceSummary = nullptr
+  );
+
+  static CityMetrics collectFromPlayable(
+    const EntityStore& store,
+    const PopulationStore& population,
+    const PlayableCityTickState& state
   );
 
   // Generate a human-readable city report for CLI output.

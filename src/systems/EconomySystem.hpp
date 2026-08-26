@@ -74,6 +74,18 @@ struct TradeRates {
   float importCostPerUnit = 60.0f;        // expense per unit of shortfall goods imported
 };
 
+// Optional clamp for averageLandValue when a map is provided. When
+// `useBounds` is false the full map is sampled (prior behavior). CitySimulator
+// passes the developed active region so land-value averaging scales with
+// city size rather than raw map dimensions.
+struct EconomyLandValueBounds {
+  bool useBounds = false;
+  int x0 = 0;
+  int y0 = 0;
+  int x1 = 0;
+  int y1 = 0;
+};
+
 class EconomySystem {
 public:
   // Calculate economic state from city current entities and population.
@@ -99,7 +111,8 @@ public:
     const TaxRates& rates = TaxRates{},
     const CityMap* map = nullptr,
     const TradeRates& tradeRates = TradeRates{},
-    float inflationMultiplier = 1.0f
+    float inflationMultiplier = 1.0f,
+    EconomyLandValueBounds landValueBounds = {}
   );
 
   // Apply economy state to city metrics

@@ -2,14 +2,9 @@
 #include <algorithm>
 
 RoadNetwork::RoadNetwork(const CityMap& map) : cityMap(map) {
-  // Initialize all potential nodes (one per tile)
-  glm::ivec2 dims = map.getDimensions();
-  for (int y = 0; y < dims.y; ++y) {
-    for (int x = 0; x < dims.x; ++x) {
-      glm::ivec2 coord{x, y};
-      nodes[coord] = {makeNodeId(coord), {}, false};
-    }
-  }
+  // Lazy node creation: only tiles that participate in a road edge are
+  // inserted. Pre-registering every map tile made a 500x500 city hold 250k
+  // empty hash-map nodes and forced updateConnectivity to reset them all.
 }
 
 RoadNodeId RoadNetwork::makeNodeId(glm::ivec2 coord) const {
@@ -22,6 +17,14 @@ RoadNetwork::EdgeKey RoadNetwork::makeEdgeKey(glm::ivec2 from, glm::ivec2 to) co
 
 bool RoadNetwork::isValidCoord(glm::ivec2 coord) const {
   return cityMap.isValid(coord);
+}
+
+RoadNetwork::Node& RoadNetwork::ensureNode(glm::ivec2 coord) {
+  auto it = nodes.find(coord);
+  if (it == nodes.end()) {
+    it = nodes.emplace(coord, Node{makeNodeId(coord), {}, false}).first;
+  }
+  return it->second;
 }
 
 void RoadNetwork::buildRoad(glm::ivec2 from, glm::ivec2 to) {
@@ -43,9 +46,9 @@ void RoadNetwork::buildRoad(glm::ivec2 from, glm::ivec2 to) {
     Edge newEdge{makeNodeId(from), makeNodeId(to), 1.0f, 10.0f, 0.0f};
     edges[edgeKey] = newEdge;
     
-    // Add to adjacency lists
-    auto& fromNode = nodes[from];
-    auto& toNode = nodes[to];
+    // Add to adjacency lists (nodes created on demand)
+    auto& fromNode = ensureNode(from);
+    auto& toNode = ensureNode(to);
     
     if (std::find(fromNode.adjacent.begin(), fromNode.adjacent.end(), makeNodeId(to)) 
         == fromNode.adjacent.end()) {
@@ -76,17 +79,19 @@ void RoadNetwork::removeRoad(glm::ivec2 from, glm::ivec2 to) {
     edges.erase(it);
     
     // Remove from adjacency lists
-    auto& fromNode = nodes[from];
-    auto& toNode = nodes[to];
-    
-    auto fromIt = std::find(fromNode.adjacent.begin(), fromNode.adjacent.end(), makeNodeId(to));
-    if (fromIt != fromNode.adjacent.end()) {
-      fromNode.adjacent.erase(fromIt);
+    auto* fromNode = getNode(from);
+    auto* toNode = getNode(to);
+    if (fromNode != nullptr) {
+      auto fromIt = std::find(fromNode->adjacent.begin(), fromNode->adjacent.end(), makeNodeId(to));
+      if (fromIt != fromNode->adjacent.end()) {
+        fromNode->adjacent.erase(fromIt);
+      }
     }
-    
-    auto toIt = std::find(toNode.adjacent.begin(), toNode.adjacent.end(), makeNodeId(from));
-    if (toIt != toNode.adjacent.end()) {
-      toNode.adjacent.erase(toIt);
+    if (toNode != nullptr) {
+      auto toIt = std::find(toNode->adjacent.begin(), toNode->adjacent.end(), makeNodeId(from));
+      if (toIt != toNode->adjacent.end()) {
+        toNode->adjacent.erase(toIt);
+      }
     }
 
     // A tile is visually a road tile only while at least one road segment
@@ -94,25 +99,35 @@ void RoadNetwork::removeRoad(glm::ivec2 from, glm::ivec2 to) {
     // demolition and prevents removed dead ends from remaining painted as
     // roads or blocking zoning.
     CityMap& mutableMap = const_cast<CityMap&>(cityMap);
-    mutableMap.getTile(from).hasRoad = !fromNode.adjacent.empty();
-    mutableMap.getTile(to).hasRoad = !toNode.adjacent.empty();
+    if (fromNode != nullptr) {
+      mutableMap.getTile(from).hasRoad = !fromNode->adjacent.empty();
+      if (fromNode->adjacent.empty()) {
+        nodes.erase(from);
+      }
+    }
+    if (toNode != nullptr) {
+      mutableMap.getTile(to).hasRoad = !toNode->adjacent.empty();
+      if (toNode->adjacent.empty()) {
+        nodes.erase(to);
+      }
+    }
 
     ++topologyVersion;
   }
 }
 
 void RoadNetwork::clear() {
-  if (!edges.empty()) {
+  if (!edges.empty() || !nodes.empty()) {
     ++topologyVersion;
   }
-  edges.clear();
   CityMap& mutableMap = const_cast<CityMap&>(cityMap);
   for (auto& [coord, node] : nodes) {
-    node.adjacent.clear();
-    node.connected = false;
+    (void)node;
     mutableMap.getTile(coord).hasRoad = false;
     mutableMap.getTile(coord).connectedToRoad = false;
   }
+  edges.clear();
+  nodes.clear();
 }
 
 bool RoadNetwork::hasRoad(glm::ivec2 from, glm::ivec2 to) const {
@@ -125,15 +140,23 @@ void RoadNetwork::updateConnectivity(glm::ivec2 startCoord) {
     return;
   }
   
-  // Reset all connectivity flags
-  for (auto& pair : nodes) {
-    pair.second.connected = false;
+  CityMap& mutableMap = const_cast<CityMap&>(cityMap);
+
+  // Reset only existing road nodes (lazy graph - not the full map).
+  for (auto& [coord, node] : nodes) {
+    node.connected = false;
+    mutableMap.getTile(coord).connectedToRoad = false;
+  }
+
+  if (nodes.find(startCoord) == nodes.end()) {
+    return;
   }
   
   // BFS from start node
   std::queue<glm::ivec2> queue;
   queue.push(startCoord);
   nodes[startCoord].connected = true;
+  mutableMap.getTile(startCoord).connectedToRoad = true;
   
   while (!queue.empty()) {
     glm::ivec2 current = queue.front();
@@ -149,21 +172,7 @@ void RoadNetwork::updateConnectivity(glm::ivec2 startCoord) {
       if (neighborNode && !neighborNode->connected) {
         neighborNode->connected = true;
         queue.push(neighborCoord);
-        
-        // Update city map
-        const_cast<CityMap&>(cityMap).getTile(neighborCoord).connectedToRoad = true;
-      }
-    }
-  }
-  
-  // Mark disconnected tiles
-  glm::ivec2 dims = cityMap.getDimensions();
-  for (int y = 0; y < dims.y; ++y) {
-    for (int x = 0; x < dims.x; ++x) {
-      glm::ivec2 coord{x, y};
-      auto it = nodes.find(coord);
-      if (it != nodes.end()) {
-        const_cast<CityMap&>(cityMap).getTile(coord).connectedToRoad = it->second.connected;
+        mutableMap.getTile(neighborCoord).connectedToRoad = true;
       }
     }
   }
@@ -238,17 +247,15 @@ size_t RoadNetwork::getRoadCount() const {
 }
 
 std::vector<glm::ivec2> RoadNetwork::getAllRoadTiles() const {
+  // Only road-touching nodes exist under lazy creation; collect those with
+  // at least one edge rather than scanning the full map for hasRoad flags.
   std::vector<glm::ivec2> roads;
-  glm::ivec2 dims = cityMap.getDimensions();
-  
-  for (int y = 0; y < dims.y; ++y) {
-    for (int x = 0; x < dims.x; ++x) {
-      if (cityMap.getTile({x, y}).hasRoad) {
-        roads.push_back({x, y});
-      }
+  roads.reserve(nodes.size());
+  for (const auto& [coord, node] : nodes) {
+    if (!node.adjacent.empty()) {
+      roads.push_back(coord);
     }
   }
-  
   return roads;
 }
 
@@ -260,6 +267,7 @@ void RoadNetwork::resetCongestion() {
 
 std::vector<RoadNetwork::EdgeTrafficInfo> RoadNetwork::getAllEdgeTraffic() const {
   std::vector<EdgeTrafficInfo> traffic;
+  traffic.reserve(edges.size());
   
   for (const auto& [key, edge] : edges) {
     EdgeTrafficInfo info;

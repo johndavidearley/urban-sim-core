@@ -1,5 +1,7 @@
 #include "gtest/gtest.h"
 
+#include <algorithm>
+
 #include "src/entities/EntityStore.hpp"
 
 TEST(EntityStoreTests, CreateBuilding) {
@@ -70,4 +72,52 @@ TEST(EntityStoreTests, StructuralMutationsAdvanceVersion) {
   replacement.capacity = 20;
   store.upsertBuilding(replacement);
   EXPECT_GT(store.getMutationVersion(), afterRemove);
+}
+
+TEST(EntityStoreTests, TypeIndicesAndCapacityAggregates) {
+  EntityStore store;
+  const EntityId r1 = store.createBuilding(BuildingType::Residential, {1, 1}, 10);
+  const EntityId r2 = store.createBuilding(BuildingType::Residential, {2, 2}, 6);
+  const EntityId c1 = store.createBuilding(BuildingType::Commercial, {3, 3}, 20);
+  const EntityId i1 = store.createBuilding(BuildingType::Industrial, {4, 4}, 30);
+  const EntityId o1 = store.createBuilding(BuildingType::Office, {5, 5}, 18);
+
+  EXPECT_EQ(store.countOfType(BuildingType::Residential), 2u);
+  EXPECT_EQ(store.capacityOfType(BuildingType::Residential), 16u);
+  EXPECT_EQ(store.countOfType(BuildingType::Commercial), 1u);
+  EXPECT_EQ(store.capacityOfType(BuildingType::Commercial), 20u);
+  EXPECT_EQ(store.jobIds().size(), 3u);
+
+  // IDs stay sorted within each type list and the job list.
+  const auto& resIds = store.idsByBuildingType(BuildingType::Residential);
+  ASSERT_EQ(resIds.size(), 2u);
+  EXPECT_LT(resIds[0], resIds[1]);
+  const auto& jobs = store.jobIds();
+  EXPECT_TRUE(std::is_sorted(jobs.begin(), jobs.end()));
+  EXPECT_NE(std::find(jobs.begin(), jobs.end(), c1), jobs.end());
+  EXPECT_NE(std::find(jobs.begin(), jobs.end(), i1), jobs.end());
+  EXPECT_NE(std::find(jobs.begin(), jobs.end(), o1), jobs.end());
+  EXPECT_EQ(std::find(jobs.begin(), jobs.end(), r1), jobs.end());
+
+  ASSERT_TRUE(store.removeBuilding(r1));
+  EXPECT_EQ(store.countOfType(BuildingType::Residential), 1u);
+  EXPECT_EQ(store.capacityOfType(BuildingType::Residential), 6u);
+  EXPECT_EQ(store.idsByBuildingType(BuildingType::Residential).size(), 1u);
+  EXPECT_EQ(store.idsByBuildingType(BuildingType::Residential)[0], r2);
+
+  // Type change via upsert moves indices and capacity between buckets.
+  Building moved = *store.getBuilding(c1);
+  moved.type = BuildingType::Residential;
+  moved.capacity = 12;
+  store.upsertBuilding(moved);
+  EXPECT_EQ(store.countOfType(BuildingType::Commercial), 0u);
+  EXPECT_EQ(store.capacityOfType(BuildingType::Commercial), 0u);
+  EXPECT_EQ(store.countOfType(BuildingType::Residential), 2u);
+  EXPECT_EQ(store.capacityOfType(BuildingType::Residential), 18u);
+  EXPECT_EQ(store.jobIds().size(), 2u);
+
+  store.clear();
+  EXPECT_EQ(store.getBuildingCount(), 0u);
+  EXPECT_EQ(store.countOfType(BuildingType::Residential), 0u);
+  EXPECT_TRUE(store.jobIds().empty());
 }

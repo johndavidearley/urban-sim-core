@@ -151,6 +151,32 @@ TEST(CitySimulatorTests, ProvidesServicesAsItGrows) {
   EXPECT_GT(last.serviceCoverage, 0.0f);
 }
 
+// Skipping the service pass must reuse last coverage, not zero crime/health/waste inputs.
+TEST(CitySimulatorTests, IntervalSkipReusesServiceCoverage) {
+  CityMap map({64, 64});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+
+  SimOptions options = fastOptions();
+  options.serviceInterval = 2;
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 80, options);
+
+  float lastEvenCoverage = 0.0f;
+  bool sawPositive = false;
+  for (const SimTickMetrics& row : result.rows) {
+    if (row.tick % 2 == 0) {
+      if (row.serviceCoverage > 0.0f) {
+        sawPositive = true;
+      }
+      lastEvenCoverage = row.serviceCoverage;
+    } else if (sawPositive) {
+      EXPECT_FLOAT_EQ(row.serviceCoverage, lastEvenCoverage) << "skipped tick " << row.tick;
+    }
+  }
+  EXPECT_TRUE(sawPositive);
+}
+
 // Pollution-aware zoning should push industry into dirtier areas than housing.
 TEST(CitySimulatorTests, IndustryAndHousingSegregateByPollution) {
   CityMap map({64, 64});

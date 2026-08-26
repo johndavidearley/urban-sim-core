@@ -100,6 +100,8 @@ bool GameplaySessionSystem::save(
     {"populationTarget", session.populationTarget},
     {"fractionalDeaths", session.fractionalDeaths},
     {"awaitingDisposition", session.awaitingDisposition},
+    {"autonomousGrowth", session.autonomousGrowth},
+    {"autonomousExtent", session.autonomousExtent},
     {"demand", {
       {"residential", session.demand.residential},
       {"commercial", session.demand.commercial},
@@ -148,8 +150,13 @@ bool GameplaySessionSystem::load(
     loaded.populationTarget = root.value("populationTarget", uint32_t{480});
     loaded.fractionalDeaths = root.value("fractionalDeaths", 0.0);
     loaded.awaitingDisposition = root.value("awaitingDisposition", uint32_t{0});
+    loaded.autonomousGrowth = root.value("autonomousGrowth", false);
+    loaded.autonomousExtent = root.value("autonomousExtent", 0);
     if (loaded.funds < 0 || loaded.tickIntervalMs < 16 || loaded.tickIntervalMs > 5000) {
       return fail(errorMessage, "gameplay session has invalid funds or speed");
+    }
+    if (loaded.autonomousExtent < 0) {
+      return fail(errorMessage, "gameplay session has invalid autonomousExtent");
     }
     const json& demand = root.at("demand");
     loaded.demand = {

@@ -4,65 +4,80 @@
 
 #include "src/systems/LandValueSystem.hpp"
 
+namespace {
+
+struct TypeTaxResult {
+  int count = 0;
+  int64_t taxRevenue = 0;
+  int64_t occupancy = 0;
+};
+
+// Walk one type's ID index: tax from capacity, optional occupancy sum.
+TypeTaxResult accumulateType(
+  const EntityStore& store,
+  BuildingType type,
+  float taxRate
+) {
+  TypeTaxResult result;
+  const std::vector<EntityId>& ids = store.idsByBuildingType(type);
+  result.count = static_cast<int>(ids.size());
+  for (EntityId id : ids) {
+    const Building* building = store.getBuilding(id);
+    if (building == nullptr) continue;
+    const int64_t buildingValue =
+      EconomySystem::estimateBuildingValue(building->type, building->capacity);
+    result.taxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * taxRate);
+    result.occupancy += std::max(0, building->occupancy);
+  }
+  return result;
+}
+
+} // namespace
+
 EconomyState EconomySystem::calculateEconomy(
   const EntityStore& store,
   const PopulationStore& population,
   const TaxRates& rates,
   const CityMap* map,
   const TradeRates& tradeRates,
-  float inflationMultiplier
+  float inflationMultiplier,
+  EconomyLandValueBounds landValueBounds
 ) {
   EconomyState state;
   state.inflationMultiplier = inflationMultiplier;
 
-  // Calculate property value-based revenue from buildings
-  const auto& buildings = store.getBuildings();
-
-  int residentialCount = 0;
-  int commercialCount = 0;
-  int industrialCount = 0;
-  int officeCount = 0;
-  int64_t totalCapacity = 0;
-  int64_t totalOccupancy = 0;
-  int64_t commercialOccupancy = 0;
-  int64_t industrialOccupancy = 0;
-
+  // Per-type ID indices: one pass per type (no hash-map iteration).
   // Currency math runs in double: float's 24-bit mantissa loses integer
   // precision above ~16.7M, which city-scale values exceed.
-  for (const auto& [id, building] : buildings) {
-    int64_t buildingValue = estimateBuildingValue(building.type, building.capacity);
-    totalCapacity += std::max(0, building.capacity);
-    totalOccupancy += std::max(0, building.occupancy);
+  const TypeTaxResult residential = accumulateType(store, BuildingType::Residential, rates.residentialRate);
+  const TypeTaxResult commercial = accumulateType(store, BuildingType::Commercial, rates.commercialRate);
+  const TypeTaxResult industrial = accumulateType(store, BuildingType::Industrial, rates.industrialRate);
+  const TypeTaxResult office = accumulateType(store, BuildingType::Office, rates.officeRate);
 
-    switch (building.type) {
-      case BuildingType::Residential:
-        residentialCount++;
-        state.residentialTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.residentialRate);
-        state.residentialMaintenance += static_cast<int64_t>(
-          static_cast<double>(rates.maintenanceResidential) * inflationMultiplier);
-        break;
-      case BuildingType::Commercial:
-        commercialCount++;
-        commercialOccupancy += std::max(0, building.occupancy);
-        state.commercialTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.commercialRate);
-        state.commercialMaintenance += static_cast<int64_t>(
-          static_cast<double>(rates.maintenanceCommercial) * inflationMultiplier);
-        break;
-      case BuildingType::Industrial:
-        industrialCount++;
-        industrialOccupancy += std::max(0, building.occupancy);
-        state.industrialTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.industrialRate);
-        state.industrialMaintenance += static_cast<int64_t>(
-          static_cast<double>(rates.maintenanceIndustrial) * inflationMultiplier);
-        break;
-      case BuildingType::Office:
-        officeCount++;
-        state.officeTaxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * rates.officeRate);
-        state.officeMaintenance += static_cast<int64_t>(
-          static_cast<double>(rates.maintenanceOffice) * inflationMultiplier);
-        break;
-    }
-  }
+  state.residentialTaxRevenue = residential.taxRevenue;
+  state.commercialTaxRevenue = commercial.taxRevenue;
+  state.industrialTaxRevenue = industrial.taxRevenue;
+  state.officeTaxRevenue = office.taxRevenue;
+
+  // Maintenance is a fixed cost per building of that type.
+  state.residentialMaintenance = static_cast<int64_t>(
+    static_cast<double>(residential.count) * rates.maintenanceResidential * inflationMultiplier);
+  state.commercialMaintenance = static_cast<int64_t>(
+    static_cast<double>(commercial.count) * rates.maintenanceCommercial * inflationMultiplier);
+  state.industrialMaintenance = static_cast<int64_t>(
+    static_cast<double>(industrial.count) * rates.maintenanceIndustrial * inflationMultiplier);
+  state.officeMaintenance = static_cast<int64_t>(
+    static_cast<double>(office.count) * rates.maintenanceOffice * inflationMultiplier);
+
+  const int64_t totalCapacity =
+    static_cast<int64_t>(store.capacityOfType(BuildingType::Residential)) +
+    static_cast<int64_t>(store.capacityOfType(BuildingType::Commercial)) +
+    static_cast<int64_t>(store.capacityOfType(BuildingType::Industrial)) +
+    static_cast<int64_t>(store.capacityOfType(BuildingType::Office));
+  const int64_t totalOccupancy =
+    residential.occupancy + commercial.occupancy + industrial.occupancy + office.occupancy;
+  const int64_t commercialOccupancy = commercial.occupancy;
+  const int64_t industrialOccupancy = industrial.occupancy;
 
   // Supply chain / trade: industrial workers produce goods, commercial
   // workers consume them; the city trades the net difference with the
@@ -96,15 +111,23 @@ EconomyState EconomySystem::calculateEconomy(
   state.totalExpenses = state.totalMaintenance + state.importCost;
   state.balance = state.totalRevenue - state.totalExpenses;
 
-  size_t totalBuildings = residentialCount + commercialCount + industrialCount + officeCount;
+  const size_t totalBuildings = static_cast<size_t>(
+    residential.count + commercial.count + industrial.count + office.count);
   if (map != nullptr) {
     // Real, spatially-varying land value (see LandValueSystem) if the caller
-    // has a map to read it from.
-    state.averageLandValue = LandValueSystem::averageLandValue(*map);
+    // has a map to read it from. Optional bounds keep large empty maps cheap.
+    if (landValueBounds.useBounds) {
+      state.averageLandValue = LandValueSystem::averageLandValue(
+        *map,
+        landValueBounds.x0, landValueBounds.y0,
+        landValueBounds.x1, landValueBounds.y1);
+    } else {
+      state.averageLandValue = LandValueSystem::averageLandValue(*map);
+    }
   } else if (totalBuildings > 0) {
     // No map available (e.g. a district-scoped sub-economy): fall back to a
     // building-count-based placeholder.
-    state.averageLandValue = 100.0f + (totalBuildings * 2.0f);
+    state.averageLandValue = 100.0f + (static_cast<float>(totalBuildings) * 2.0f);
   }
 
   // Economic health based on balance and building count

@@ -32,23 +32,6 @@ uint64_t facilitySignature(const std::vector<ServiceFacility>& facilities) {
   return hash;
 }
 
-uint64_t buildingCoverageSignature(const EntityStore& store) {
-  // Combine per-building hashes commutatively because EntityStore iteration
-  // order is intentionally unspecified. Capacity, occupancy, and type do not
-  // affect whether a coordinate is covered.
-  uint64_t signature = static_cast<uint64_t>(store.getBuildingCount());
-  for (const auto& [id, building] : store.getBuildings()) {
-    uint64_t item = static_cast<uint64_t>(id) * 0x9e3779b97f4a7c15ULL;
-    item ^= static_cast<uint64_t>(static_cast<uint32_t>(building.position.x)) << 32;
-    item ^= static_cast<uint32_t>(building.position.y);
-    item ^= item >> 30;
-    item *= 0xbf58476d1ce4e5b9ULL;
-    item ^= item >> 27;
-    signature ^= item;
-  }
-  return signature;
-}
-
 int typeIndex(ServiceType type) {
   return static_cast<int>(type);
 }
@@ -61,19 +44,31 @@ std::string upper(const std::string& raw) {
 }
 
 
-std::unordered_map<Coord, int, Vec2Hash> buildDistanceField(
+// Multi-source BFS: every seed is a facility of the same type and same
+// maxTravelDistance. Covered tiles store min hops to the nearest seed.
+// Autonomous placement uses one radius for all facilities of a type, so this
+// collapses N single-source BFSes into one O(V+E) pass per (type, radius).
+std::unordered_map<Coord, int, Vec2Hash> buildMultiSourceDistanceField(
   const RoadNetwork& roads,
-  Coord start,
+  const std::vector<Coord>& sources,
   int maxDistance
 ) {
   std::unordered_map<Coord, int, Vec2Hash> distance;
-  if (maxDistance < 0) {
+  if (maxDistance < 0 || sources.empty()) {
     return distance;
   }
 
+  distance.reserve(static_cast<size_t>(std::max(16, maxDistance * maxDistance * 2))
+                   * std::max<size_t>(1, sources.size() / 2));
+
   std::queue<Coord> frontier;
-  frontier.push(start);
-  distance[start] = 0;
+  for (const Coord& start : sources) {
+    if (distance.find(start) != distance.end()) {
+      continue;
+    }
+    distance[start] = 0;
+    frontier.push(start);
+  }
 
   while (!frontier.empty()) {
     const Coord current = frontier.front();
@@ -237,6 +232,25 @@ void ServiceSystem::buildCache(
   cache.powerGenerationCapacityMW = 0.0f;
   cache.powerWeightedEmissions = 0.0f;
   cache.entries.reserve(facilities.size());
+
+  // Group road-anchored facilities by (type, maxTravelDistance). Equal-radius
+  // groups (the common autonomous-placement case) share one multi-source BFS.
+  struct GroupKey {
+    ServiceType type = ServiceType::Fire;
+    int maxTravelDistance = 0;
+    bool operator==(const GroupKey& o) const {
+      return type == o.type && maxTravelDistance == o.maxTravelDistance;
+    }
+  };
+  struct GroupKeyHash {
+    size_t operator()(const GroupKey& k) const {
+      return hashCombine(static_cast<size_t>(k.type), static_cast<size_t>(k.maxTravelDistance));
+    }
+  };
+
+  std::unordered_map<GroupKey, std::vector<Coord>, GroupKeyHash> groups;
+  groups.reserve(facilities.size());
+
   for (const ServiceFacility& facility : facilities) {
     // Generation exists independently of road-based distribution coverage.
     // A disconnected plant still contributes to the city's installed source
@@ -250,11 +264,16 @@ void ServiceSystem::buildCache(
     if (!roads.resolveRoadAnchor(facility.position, anchor)) {
       continue;
     }
-    auto distField = buildDistanceField(roads, anchor, facility.maxTravelDistance);
+    groups[{facility.type, facility.maxTravelDistance}].push_back(anchor);
+  }
+
+  for (auto& [key, sources] : groups) {
+    auto distField = buildMultiSourceDistanceField(roads, sources, key.maxTravelDistance);
     if (!distField.empty()) {
-      cache.entries.push_back({facility.type, std::move(distField)});
+      cache.entries.push_back({key.type, std::move(distField)});
     }
   }
+
   cache.builtForFacilityCount = facilities.size();
   cache.builtForFacilitySignature = facilitySignature(facilities);
   cache.builtForTopologyVersion = roads.getTopologyVersion();
@@ -279,12 +298,19 @@ void ServiceSystem::buildCache(
   cache.nearestAnyDistance.clear();
   cache.nearestPowerDistance.clear();
   cache.nearestWaterDistance.clear();
+  cache.coverageMask.clear();
   for (const ServiceCoverageCache::Entry& entry : cache.entries) {
     mergeInto(cache.nearestAnyDistance, entry.distanceField);
     if (entry.type == ServiceType::Power) {
       mergeInto(cache.nearestPowerDistance, entry.distanceField);
     } else if (entry.type == ServiceType::Water) {
       mergeInto(cache.nearestWaterDistance, entry.distanceField);
+    }
+    const ServiceCoverageMask bit =
+      static_cast<ServiceCoverageMask>(1u << typeIndex(entry.type));
+    for (const auto& [coord, dist] : entry.distanceField) {
+      (void)dist;
+      cache.coverageMask[coord] |= bit;
     }
   }
 }
@@ -303,8 +329,11 @@ bool ServiceSystem::isResultCacheValid(
   const EntityStore& store,
   const ServiceCoverageCache& cache
 ) {
-  return cache.cachedStoreMutationVersion == store.getMutationVersion()
-      && cache.cachedBuildingCoverageSignature == buildingCoverageSignature(store);
+  // O(1): EntityStore advances mutationVersion on every structural edit
+  // (create/remove/clear/upsert). A full building-position fingerprint was
+  // previously rehashed on every validity check and dominated large cities
+  // even on pure cache hits.
+  return cache.cachedStoreMutationVersion == store.getMutationVersion();
 }
 
 void ServiceSystem::storeCachedResult(
@@ -313,7 +342,6 @@ void ServiceSystem::storeCachedResult(
   ServiceCoverageCache& cache
 ) {
   cache.cachedStoreMutationVersion = store.getMutationVersion();
-  cache.cachedBuildingCoverageSignature = buildingCoverageSignature(store);
   cache.cachedResult = result;
 }
 
@@ -334,7 +362,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   ThreadPool* pool
 ) {
   ServiceCoverageSummary summary;
-  summary.totalBuildings = static_cast<uint32_t>(store.getBuildings().size());
+  summary.totalBuildings = static_cast<uint32_t>(store.getBuildingCount());
   summary.powerGenerationMW = cache.powerGenerationCapacityMW;
   summary.powerEmissionsKgPerMWh = summary.powerGenerationMW > 0.0f
     ? cache.powerWeightedEmissions / summary.powerGenerationMW
@@ -344,12 +372,19 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     return summary;
   }
 
-  // Collect building pointers once for indexed access.
+  // Collect building pointers from type indices (no full hash-map walk).
   std::vector<const Building*> buildings;
   buildings.reserve(summary.totalBuildings);
-  for (const auto& [id, b] : store.getBuildings()) {
-    (void)id;
-    buildings.push_back(&b);
+  static constexpr BuildingType kTypes[] = {
+    BuildingType::Residential, BuildingType::Commercial,
+    BuildingType::Industrial, BuildingType::Office
+  };
+  for (BuildingType type : kTypes) {
+    for (EntityId id : store.idsByBuildingType(type)) {
+      if (const Building* b = store.getBuilding(id)) {
+        buildings.push_back(b);
+      }
+    }
   }
 
   // "Serviced" (and the count feeding it) deliberately covers only the
@@ -358,37 +393,47 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   // so manually placing a utility facility (e.g. via --place-facility
   // POWER or SANITATION) can never change servicedBuildings/overallCoverage for a caller
   // who isn't otherwise using utilities.
+  // Civic types occupy the low 4 bits of ServiceCoverageMask (Fire..Education).
+  constexpr ServiceCoverageMask kCivicCoverageMask = 0x0Fu;
+
   struct Partial {
     uint32_t serviced = 0;
     std::array<uint32_t, kServiceTypeCount> byType{};
+    float powerDemandMW = 0.0f;
   };
 
-  // Evaluate a contiguous slice of the buildings vector.
+  // Evaluate a contiguous slice of the buildings vector. One coverageMask
+  // lookup per building replaces scanning every facility distance field.
   auto evalSlice = [&](size_t begin, size_t end) {
     Partial p;
     for (size_t i = begin; i < end; ++i) {
+      const Building* building = buildings[i];
+      const float occupants = static_cast<float>(std::max(0, building->occupancy));
+      p.powerDemandMW += occupants *
+        (building->type == BuildingType::Residential ? 0.002f : 0.004f);
+
       Coord anchor;
-      if (!roads.resolveRoadAnchor(buildings[i]->position, anchor)) continue;
-      std::array<bool, kServiceTypeCount> hit{};
-      bool any = false;
-      for (const ServiceCoverageCache::Entry& entry : cache.entries) {
-        if (entry.distanceField.count(anchor) == 0) continue;
-        const int t = typeIndex(entry.type);
-        hit[t] = true;
-        if (t < 4) any = true;
+      if (!roads.resolveRoadAnchor(building->position, anchor)) continue;
+      const auto maskIt = cache.coverageMask.find(anchor);
+      if (maskIt == cache.coverageMask.end()) continue;
+      const ServiceCoverageMask bits = maskIt->second;
+      if ((bits & kCivicCoverageMask) != 0) {
+        ++p.serviced;
       }
-      if (any) ++p.serviced;
-      for (size_t t = 0; t < kServiceTypeCount; ++t) { if (hit[t]) ++p.byType[t]; }
+      for (size_t t = 0; t < kServiceTypeCount; ++t) {
+        if ((bits & static_cast<ServiceCoverageMask>(1u << t)) != 0) {
+          ++p.byType[t];
+        }
+      }
     }
     return p;
   };
 
   const size_t n = buildings.size();
-  // Only fan out to threads when there is enough work to amortize task
-  // submission overhead (~4k lookup pairs ≈ buildings × facility entries).
-  const size_t totalPairs = n * cache.entries.size();
-  const size_t nChunks = (pool != nullptr && totalPairs >= 4096)
-    ? std::min(static_cast<size_t>(pool->threadCount()), (n + 63) / 64)
+  // Work is O(buildings) now (one mask lookup each); fan out once the set is
+  // large enough to amortize pool submission.
+  const size_t nChunks = (pool != nullptr && n >= 2048)
+    ? std::min(static_cast<size_t>(pool->threadCount()), (n + 255) / 256)
     : 1;
 
   std::array<uint32_t, kServiceTypeCount> coveredByType{};
@@ -397,6 +442,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     const Partial p = evalSlice(0, n);
     summary.servicedBuildings = p.serviced;
     coveredByType = p.byType;
+    summary.powerDemandMW = p.powerDemandMW;
   } else {
     std::vector<std::future<Partial>> futures;
     futures.reserve(nChunks);
@@ -410,6 +456,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     for (auto& f : futures) {
       const Partial p = f.get();
       summary.servicedBuildings += p.serviced;
+      summary.powerDemandMW += p.powerDemandMW;
       for (size_t t = 0; t < kServiceTypeCount; ++t) coveredByType[t] += p.byType[t];
     }
   }
@@ -426,12 +473,6 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   summary.recyclingCoverage  = coveredByType[typeIndex(ServiceType::Recycling)] / denom;
   summary.cemeteryCoverage   = coveredByType[typeIndex(ServiceType::Cemetery)] / denom;
   summary.crematoriumCoverage = coveredByType[typeIndex(ServiceType::Crematorium)] / denom;
-  for (const auto& [id, building] : store.getBuildings()) {
-    (void)id;
-    const float occupants = static_cast<float>(std::max(0, building.occupancy));
-    summary.powerDemandMW += occupants *
-      (building.type == BuildingType::Residential ? 0.002f : 0.004f);
-  }
   summary.powerSupplyRatio = summary.powerDemandMW > 0.0f
     ? std::min(1.0f, summary.powerGenerationMW / summary.powerDemandMW)
     : 1.0f;

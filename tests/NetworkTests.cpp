@@ -9,8 +9,9 @@ TEST(RoadNetworkTests, CreateNetwork) {
   RoadNetwork network(map);
   
   EXPECT_EQ(network.getRoadCount(), 0u);
-  EXPECT_TRUE(network.hasNode({0, 0}));
-  EXPECT_TRUE(network.hasNode({31, 31}));
+  // Nodes are created lazily when roads are built — empty network has none.
+  EXPECT_FALSE(network.hasNode({0, 0}));
+  EXPECT_FALSE(network.hasNode({31, 31}));
 }
 
 TEST(RoadNetworkTests, BuildSingleRoad) {
@@ -76,10 +77,10 @@ TEST(RoadNetworkTests, HasRoadAdjacencyOnlyTrueForTilesTouchingAnEdge) {
 
   EXPECT_TRUE(network.hasRoadAdjacency({10, 10}));
   EXPECT_TRUE(network.hasRoadAdjacency({10, 11}));
-  // hasNode() is true for every map tile (all pre-registered at
-  // construction), but hasRoadAdjacency() must not be - a tile one step
-  // away from the road has a node, just no edges.
-  EXPECT_TRUE(network.hasNode({10, 12}));
+  EXPECT_TRUE(network.hasNode({10, 10}));
+  EXPECT_TRUE(network.hasNode({10, 11}));
+  // Lazy nodes: a tile that never received a road edge has no node at all.
+  EXPECT_FALSE(network.hasNode({10, 12}));
   EXPECT_FALSE(network.hasRoadAdjacency({10, 12}));
 }
 
