@@ -27,6 +27,62 @@ bool validServiceType(int value) {
   return value >= static_cast<int>(ServiceType::Fire)
       && value <= static_cast<int>(ServiceType::Crematorium);
 }
+
+bool validTransitMode(int value) {
+  return value == static_cast<int>(TransitMode::Bus)
+      || value == static_cast<int>(TransitMode::Rail);
+}
+
+json serializeTransitRoutes(const std::vector<TransitRoute>& routes) {
+  json out = json::array();
+  for (const TransitRoute& route : routes) {
+    json stops = json::array();
+    for (const Coord& stop : route.stops) {
+      stops.push_back({{"x", stop.x}, {"y", stop.y}});
+    }
+    out.push_back({
+      {"id", route.id},
+      {"mode", static_cast<int>(route.mode)},
+      {"vehicleCount", route.vehicleCount},
+      {"capacityPerVehicle", route.capacityPerVehicle},
+      {"stopCoverageRadius", route.stopCoverageRadius},
+      {"stops", stops}
+    });
+  }
+  return out;
+}
+
+bool parseTransitRoutes(
+  const json& items,
+  const CityMap& map,
+  std::vector<TransitRoute>& out,
+  std::string* errorMessage
+) {
+  for (const json& item : items) {
+    TransitRoute route;
+    route.id = item.value("id", uint32_t{0});
+    const int mode = item.value("mode", 0);
+    if (!validTransitMode(mode)) {
+      return fail(errorMessage, "gameplay session contains an invalid transit mode");
+    }
+    route.mode = static_cast<TransitMode>(mode);
+    route.vehicleCount = item.value("vehicleCount", 2);
+    route.capacityPerVehicle = item.value("capacityPerVehicle", 30);
+    route.stopCoverageRadius = item.value("stopCoverageRadius", 4);
+    if (route.vehicleCount < 0 || route.capacityPerVehicle < 0 || route.stopCoverageRadius < 0) {
+      return fail(errorMessage, "gameplay session contains invalid transit parameters");
+    }
+    for (const json& stop : item.at("stops")) {
+      const Coord coord{stop.at("x").get<int>(), stop.at("y").get<int>()};
+      if (!map.isValid(coord)) {
+        return fail(errorMessage, "gameplay session contains an invalid transit stop");
+      }
+      route.stops.push_back(coord);
+    }
+    out.push_back(std::move(route));
+  }
+  return true;
+}
 } // namespace
 
 bool GameplaySessionSystem::readMapDimensions(
@@ -102,6 +158,8 @@ bool GameplaySessionSystem::save(
     {"awaitingDisposition", session.awaitingDisposition},
     {"autonomousGrowth", session.autonomousGrowth},
     {"autonomousExtent", session.autonomousExtent},
+    {"emptyZonedCount", session.emptyZonedCount},
+    {"transitRoutes", serializeTransitRoutes(session.transitRoutes)},
     {"demand", {
       {"residential", session.demand.residential},
       {"commercial", session.demand.commercial},
@@ -152,11 +210,12 @@ bool GameplaySessionSystem::load(
     loaded.awaitingDisposition = root.value("awaitingDisposition", uint32_t{0});
     loaded.autonomousGrowth = root.value("autonomousGrowth", false);
     loaded.autonomousExtent = root.value("autonomousExtent", 0);
+    loaded.emptyZonedCount = root.value("emptyZonedCount", int64_t{0});
     if (loaded.funds < 0 || loaded.tickIntervalMs < 16 || loaded.tickIntervalMs > 5000) {
       return fail(errorMessage, "gameplay session has invalid funds or speed");
     }
-    if (loaded.autonomousExtent < 0) {
-      return fail(errorMessage, "gameplay session has invalid autonomousExtent");
+    if (loaded.autonomousExtent < 0 || loaded.emptyZonedCount < 0) {
+      return fail(errorMessage, "gameplay session has invalid autonomousExtent or emptyZonedCount");
     }
     const json& demand = root.at("demand");
     loaded.demand = {
@@ -179,6 +238,12 @@ bool GameplaySessionSystem::load(
       facility.powerCapacityMW = item.value("powerCapacityMW", 100.0f);
       facility.emissionsKgPerMWh = item.value("emissionsKgPerMWh", 400.0f);
       loaded.facilities.push_back(facility);
+    }
+
+    if (root.contains("transitRoutes")) {
+      if (!parseTransitRoutes(root.at("transitRoutes"), map, loaded.transitRoutes, errorMessage)) {
+        return false;
+      }
     }
 
     const std::string cityPath = root.value("citySnapshot", cityPathFor(sessionPath));

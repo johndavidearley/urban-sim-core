@@ -122,6 +122,9 @@ int main(int argc, char* argv[]) {
       liveState.autonomousGrowth = session.autonomousGrowth;
       liveState.construction = city_sim::ConstructionState{};
       liveState.construction.extent = session.autonomousExtent;
+      liveState.construction.emptyZonedCount = session.emptyZonedCount;
+      liveState.transitRoutes = std::move(session.transitRoutes);
+      liveState.transitCache = TransitCoverageCache{};
       loadedAtStartup = true;
     }
   }
@@ -264,7 +267,9 @@ int main(int argc, char* argv[]) {
     session.awaitingDisposition = liveState.deathcareState.awaitingDisposition;
     session.autonomousGrowth = liveState.autonomousGrowth;
     session.autonomousExtent = liveState.construction.extent;
+    session.emptyZonedCount = liveState.construction.emptyZonedCount;
     session.facilities = facilities;
+    session.transitRoutes = liveState.transitRoutes;
     std::string error;
     if (GameplaySessionSystem::save(
           kSessionPath, map, roads, store, population, session, &error)) {
@@ -299,10 +304,9 @@ int main(int argc, char* argv[]) {
     liveState.autonomousGrowth = session.autonomousGrowth;
     liveState.construction = city_sim::ConstructionState{};
     liveState.construction.extent = session.autonomousExtent;
+    liveState.construction.emptyZonedCount = session.emptyZonedCount;
     liveState.lastTickMs = SDL_GetTicks();
-    // Transit routes are rebuilt from population on the next tick; clear stale
-    // cache so playableCityTick reconstructs coverage for the loaded map.
-    liveState.transitRoutes.clear();
+    liveState.transitRoutes = std::move(session.transitRoutes);
     liveState.transitCache = TransitCoverageCache{};
     liveState.transitSummary = TransitSummary{};
     liveState.serviceCache = ServiceCoverageCache{};

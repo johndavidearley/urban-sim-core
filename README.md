@@ -187,8 +187,9 @@ stops while confirmation is open, and closing the OS window uses the same flow.
 
 The default save slot is `urban_sim_session.json`, with the validated core city
 snapshot stored beside it as `urban_sim_session.json.city.json`. A session
-restores the map, roads, buildings, population, civic facilities, funds, tick,
-pause state, simulation speed, and current demand values.
+restores the map, roads, buildings, population, civic facilities, transit
+routes, funds, tick, pause state, simulation speed, G-mode extent, and current
+demand values.
 
 The launch screen can also be controlled with Enter/`N` for a new city, `L`
 to load, `T` to toggle terrain, and Escape to quit. Loading inspects the saved

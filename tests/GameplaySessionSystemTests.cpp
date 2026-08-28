@@ -3,6 +3,7 @@
 #include "gtest/gtest.h"
 
 #include "src/persistence/GameplaySessionSystem.hpp"
+#include "src/systems/TransitSystem.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/entities/EntityStore.hpp"
@@ -29,7 +30,16 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   saved.awaitingDisposition = 12;
   saved.autonomousGrowth = true;
   saved.autonomousExtent = 24;
+  saved.emptyZonedCount = 17;
   saved.facilities.push_back({ServiceType::Fire, {2, 2}, 16, 0.8f});
+  TransitRoute bus;
+  bus.id = 3;
+  bus.mode = TransitMode::Bus;
+  bus.stops = {{1, 1}, {2, 1}};
+  bus.vehicleCount = 4;
+  bus.capacityPerVehicle = 40;
+  bus.stopCoverageRadius = 6;
+  saved.transitRoutes.push_back(bus);
 
   const auto path = std::filesystem::temp_directory_path() / "urban_sim_gameplay_session.json";
   ASSERT_TRUE(GameplaySessionSystem::save(
@@ -60,7 +70,16 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   EXPECT_EQ(loaded.awaitingDisposition, 12u);
   EXPECT_TRUE(loaded.autonomousGrowth);
   EXPECT_EQ(loaded.autonomousExtent, 24);
+  EXPECT_EQ(loaded.emptyZonedCount, 17);
   ASSERT_EQ(loaded.facilities.size(), 1u);
+  ASSERT_EQ(loaded.transitRoutes.size(), 1u);
+  EXPECT_EQ(loaded.transitRoutes.front().id, 3u);
+  EXPECT_EQ(loaded.transitRoutes.front().mode, TransitMode::Bus);
+  EXPECT_EQ(loaded.transitRoutes.front().stops.size(), 2u);
+  EXPECT_EQ(loaded.transitRoutes.front().stops[1], Coord(2, 1));
+  EXPECT_EQ(loaded.transitRoutes.front().vehicleCount, 4);
+  EXPECT_EQ(loaded.transitRoutes.front().capacityPerVehicle, 40);
+  EXPECT_EQ(loaded.transitRoutes.front().stopCoverageRadius, 6);
   EXPECT_EQ(loaded.facilities.front().position, Coord(2, 2));
   EXPECT_EQ(map.zone({2, 2}), 1);
   EXPECT_EQ(roads.getRoadCount(), 1u);

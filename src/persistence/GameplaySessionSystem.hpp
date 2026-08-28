@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "src/systems/ServiceSystem.hpp"
+#include "src/systems/TransitSystem.hpp"
 #include "src/world/Zoning.hpp"
 
 class CityMap;
@@ -28,6 +29,8 @@ struct GameplaySessionState {
   // Visualizer G-mode: CitySimulator-style autonomous road/zone expansion.
   bool autonomousGrowth = false;
   int autonomousExtent = 0;
+  int64_t emptyZonedCount = 0;
+  std::vector<TransitRoute> transitRoutes;
 };
 
 class GameplaySessionSystem {

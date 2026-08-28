@@ -391,8 +391,9 @@ version is 1 (0→1 migration exists).
 **Gameplay session** (`GameplaySessionSystem`): visualizer default
 `urban_sim_session.json` plus sidecar `*.city.json`. Session JSON holds
 funds, tick, pause, speed, demand, treasury, population target, deathcare
-remainder, facilities, G-mode flag/extent. Transit routes are not
-persisted; the next tick rebuilds them.
+remainder, facilities, G-mode flag/extent/empty-zoned count, and transit
+routes. Coverage caches are rebuilt on load. Older sessions without
+transit/empty-zoned fields still load (routes empty, next tick can place).
 
 **Replay** (`ReplayVerifier`): run a **scripted** zone/road/growth/pop/
 commute/economy scenario twice and compare a snapshot checksum. This
