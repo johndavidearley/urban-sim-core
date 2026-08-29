@@ -14,6 +14,8 @@ cmake-build-*/
 # IDE
 .vscode/
 .idea/
+.vs/
+.claude/settings.local.json
 *.swp
 *.swo
 *~
@@ -23,6 +25,14 @@ cmake-build-*/
 CMakeCache.txt
 CMakeFiles/
 CMakeUserPresets.json
+CTestTestfile.cmake
+cmake_install.cmake
+_deps/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*_discovery.cmake
+*_include.cmake
 
 # Test outputs
 Testing/
