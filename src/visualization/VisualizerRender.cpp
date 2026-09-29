@@ -293,7 +293,6 @@ void drawIsometricTile(
       drawIsometricObject(renderer, top, width, height, buildingFacade(building->type),
                           std::max(10, height + typeFloors * height / 2
                             + static_cast<int>(occupancy * height * 1.5f)));
-      const ScreenPoint center = projection.tileCenter(coord);
       const int baseY = center.y;
       switch (building->type) {
         case BuildingType::Residential:
