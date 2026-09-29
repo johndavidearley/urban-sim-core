@@ -630,3 +630,13 @@ TEST_F(DistrictSystemTests, ParseArchetypeAcceptsKnownNamesCaseInsensitively) {
   EXPECT_EQ(archetype, DistrictArchetype::TechHub);
   EXPECT_FALSE(DistrictSystem::parseArchetype("spaceport", archetype));
 }
+
+TEST_F(DistrictSystemTests, ArchetypeToStringRoundTripsKnownNames) {
+  DistrictArchetype parsed = DistrictArchetype::General;
+  EXPECT_STREQ(DistrictSystem::archetypeToString(DistrictArchetype::General), "GENERAL");
+  EXPECT_STREQ(DistrictSystem::archetypeToString(DistrictArchetype::Industrial), "INDUSTRIAL");
+  EXPECT_STREQ(DistrictSystem::archetypeToString(DistrictArchetype::TechHub), "TECHHUB");
+  EXPECT_TRUE(DistrictSystem::parseArchetype(
+    DistrictSystem::archetypeToString(DistrictArchetype::TechHub), parsed));
+  EXPECT_EQ(parsed, DistrictArchetype::TechHub);
+}

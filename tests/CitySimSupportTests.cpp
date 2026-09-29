@@ -5,6 +5,7 @@
 #include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/CitySimSupport.hpp"
+#include "src/systems/DistrictSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/systems/TransitSystem.hpp"
 #include "src/world/CityMap.hpp"
@@ -120,6 +121,47 @@ TEST(CitySimSupportTests, GModeOptionsPlaceUtilities) {
   }
   EXPECT_TRUE(hasPower);
   EXPECT_TRUE(hasWater);
+}
+
+TEST(CitySimSupportTests, ExpandConstructionHonorsIndustrialOrdinance) {
+  CityMap map({32, 32});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  city_sim::ConstructionState state;
+  ThreadPool pool(1);
+
+  DistrictSystem districts;
+  const DistrictId id = districts.createDistrict("Factory", {0, 0}, {31, 31});
+  ASSERT_TRUE(districts.setDistrictArchetype(id, DistrictArchetype::Industrial));
+
+  ZoneDemand demand;
+  demand.residential = 1.0f;
+  city_sim::ConstructionOptions options;
+  options.gridSpacing = 4;
+  options.zoneBatchPerTick = 16;
+  options.districts = &districts;
+
+  for (int i = 0; i < 4; ++i) {
+    runOnce(map, roads, store, population, state, pool, demand, options);
+  }
+
+  int residential = 0;
+  int other = 0;
+  const glm::ivec2 dims = map.getDimensions();
+  for (int y = 0; y < dims.y; ++y) {
+    for (int x = 0; x < dims.x; ++x) {
+      const int zone = map.zone({x, y});
+      if (zone == static_cast<int>(ZoneType::Residential)
+          || zone == static_cast<int>(ZoneType::Office)) {
+        ++residential;
+      } else if (zone != 0) {
+        ++other;
+      }
+    }
+  }
+  EXPECT_EQ(residential, 0);
+  EXPECT_GT(other, 0);
 }
 
 TEST(CitySimSupportTests, ApplyEmptyZonedDeltaClampsAtZero) {

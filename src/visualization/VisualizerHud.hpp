@@ -6,12 +6,24 @@
 #include "src/gameplay/RoadTool.hpp"
 #include "src/gameplay/ZoneTool.hpp"
 #include "src/gameplay/ServiceTool.hpp"
+#include "src/gameplay/DistrictTool.hpp"
+#include "src/systems/DistrictSystem.hpp"
 #include "src/entities/PopulationStore.hpp"
 
 namespace visualizer {
 
 constexpr int kHudPanelWidth = 390;
 constexpr int kHudPanelHeight = 238;
+constexpr int kDistrictPanelX = 14;
+constexpr int kDistrictPanelY = 308;
+constexpr int kDistrictPanelWidth = 390;
+constexpr int kDistrictPanelHeight = 78;
+
+enum class DistrictPanelAction {
+  None,
+  CycleArchetype,
+  ToggleCap,
+};
 
 void drawToolPalette(
   SDL_Renderer* renderer,
@@ -21,6 +33,7 @@ void drawToolPalette(
   bool zoneActive,
   bool bulldozeActive,
   bool serviceActive,
+  bool districtActive,
   int mouseX,
   int mouseY
 );
@@ -77,13 +90,25 @@ void drawUiTooltip(
 
 void drawOnboarding(SDL_Renderer* renderer, int windowHeight, int step);
 
+SDL_Rect districtPanelRect();
+SDL_Rect districtPanelButtonRect(DistrictPanelAction action);
+DistrictPanelAction districtPanelHitTest(int mouseX, int mouseY);
+bool pointInDistrictPanel(int mouseX, int mouseY);
+void drawDistrictPanel(
+  SDL_Renderer* renderer,
+  const District& district,
+  int mouseX,
+  int mouseY
+);
+
 void drawTileInspector(
   SDL_Renderer* renderer,
   const CityMap& map,
   const RoadNetwork& roads,
   const EntityStore& store,
   const std::vector<ServiceFacility>& facilities,
-  Coord coord
+  Coord coord,
+  const DistrictSystem* districts = nullptr
 );
 
 SDL_Rect quitButtonRect(QuitAction action, int windowWidth, int windowHeight);
@@ -131,6 +156,9 @@ std::string makeHudTitle(
   bool serviceToolActive,
   ServiceType selectedService,
   const ServicePlan& servicePlan,
+  bool districtToolActive,
+  DistrictArchetype selectedArchetype,
+  const DistrictPlan& districtPlan,
   int64_t funds
 );
 

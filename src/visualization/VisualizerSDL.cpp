@@ -17,7 +17,9 @@
 #include "src/gameplay/BulldozeTool.hpp"
 #include "src/gameplay/RoadTool.hpp"
 #include "src/gameplay/ServiceTool.hpp"
+#include "src/gameplay/DistrictTool.hpp"
 #include "src/gameplay/ZoneTool.hpp"
+#include "src/systems/DistrictSystem.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/persistence/GameplaySessionSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
@@ -99,6 +101,7 @@ int main(int argc, char* argv[]) {
   EntityStore store;
   PopulationStore population;
   std::vector<ServiceFacility> facilities;
+  DistrictSystem districts;
   LiveSimulationState liveState;
   int64_t initialFunds = 50000;
   bool loadedAtStartup = false;
@@ -116,6 +119,8 @@ int main(int argc, char* argv[]) {
       liveState.treasuryRevenue = session.treasuryRevenue;
       liveState.treasuryExpenses = session.treasuryExpenses;
       liveState.treasuryNet = session.treasuryNet;
+      liveState.treasuryDebt = session.treasuryDebt;
+      liveState.treasuryInterestRemainder = session.treasuryInterestRemainder;
       liveState.populationTarget = session.populationTarget;
       liveState.deathcareState.fractionalDeaths = session.fractionalDeaths;
       liveState.deathcareState.awaitingDisposition = session.awaitingDisposition;
@@ -125,6 +130,7 @@ int main(int argc, char* argv[]) {
       liveState.construction.emptyZonedCount = session.emptyZonedCount;
       liveState.transitRoutes = std::move(session.transitRoutes);
       liveState.transitCache = TransitCoverageCache{};
+      applySessionDistricts(districts, session);
       loadedAtStartup = true;
     }
   }
@@ -156,15 +162,22 @@ int main(int argc, char* argv[]) {
   bool zoneToolActive = false;
   bool bulldozeToolActive = false;
   bool serviceToolActive = false;
+  bool districtToolActive = false;
   ServiceType selectedService = ServiceType::Fire;
   ZoneType selectedZone = ZoneType::Residential;
+  DistrictArchetype selectedArchetype = DistrictArchetype::General;
   bool toolDragging = false;
   Coord toolDragStart{0, 0};
   RoadPlan roadPlan;
   ZonePlan zonePlan;
   BulldozePlan bulldozePlan;
   ServicePlan servicePlan;
+  DistrictPlan districtPlan;
+  DistrictId selectedDistrictId = 0;
+  constexpr int64_t kStarvedDistrictBudgetCap = 1;
   int64_t funds = initialFunds;
+  liveState.lowFunds = funds > 0 && funds < 5000;
+  liveState.bankrupt = funds == 0 && liveState.treasuryDebt > 0;
   uint32_t lastHudRefreshMs = 0;
   int mouseX = 0;
   int mouseY = 0;
@@ -241,13 +254,19 @@ int main(int argc, char* argv[]) {
   auto executeSimulationTick = [&]() {
     const bool wasLow = liveState.lowFunds;
     const bool wasBankrupt = liveState.bankrupt;
-    runSimulationTick(map, roads, store, population, facilities, liveState, funds);
+    const bool wasInDebt = liveState.treasuryDebt > 0;
+    runSimulationTick(map, roads, store, population, facilities, districts, liveState, funds);
     sessionDirty = true;
-    if (liveState.bankrupt && !wasBankrupt) {
+    if (liveState.treasuryDebt > 0 && !wasInDebt) {
+      notify("CITY TOOK ON DEBT $" + std::to_string(liveState.treasuryDebt), false);
+    } else if (liveState.treasuryDebt == 0 && wasInDebt) {
+      notify("DEBT PAID OFF", true);
+    } else if (liveState.bankrupt && !wasBankrupt) {
       notify("BUDGET DEFICIT CANNOT BE PAID", false);
     } else if (liveState.lowFunds && !wasLow) {
       notify("LOW FUNDS - WATCH THE BUDGET", false);
-    } else if (!liveState.lowFunds && !liveState.bankrupt && (wasLow || wasBankrupt)) {
+    } else if (!liveState.lowFunds && !liveState.bankrupt && liveState.treasuryDebt == 0
+               && (wasLow || wasBankrupt)) {
       notify("TREASURY RECOVERED", true);
     }
   };
@@ -262,6 +281,8 @@ int main(int argc, char* argv[]) {
     session.treasuryRevenue = liveState.treasuryRevenue;
     session.treasuryExpenses = liveState.treasuryExpenses;
     session.treasuryNet = liveState.treasuryNet;
+    session.treasuryDebt = liveState.treasuryDebt;
+    session.treasuryInterestRemainder = liveState.treasuryInterestRemainder;
     session.populationTarget = liveState.populationTarget;
     session.fractionalDeaths = liveState.deathcareState.fractionalDeaths;
     session.awaitingDisposition = liveState.deathcareState.awaitingDisposition;
@@ -270,6 +291,7 @@ int main(int argc, char* argv[]) {
     session.emptyZonedCount = liveState.construction.emptyZonedCount;
     session.facilities = facilities;
     session.transitRoutes = liveState.transitRoutes;
+    captureSessionDistricts(districts, session);
     std::string error;
     if (GameplaySessionSystem::save(
           kSessionPath, map, roads, store, population, session, &error)) {
@@ -298,6 +320,14 @@ int main(int argc, char* argv[]) {
     liveState.treasuryRevenue = session.treasuryRevenue;
     liveState.treasuryExpenses = session.treasuryExpenses;
     liveState.treasuryNet = session.treasuryNet;
+    liveState.treasuryDebt = session.treasuryDebt;
+    liveState.treasuryInterestRemainder = session.treasuryInterestRemainder;
+    liveState.treasuryDebtIssued = 0;
+    liveState.treasuryDebtRepaid = 0;
+    liveState.treasuryInterestCharged = 0;
+    liveState.treasuryShortfall = 0;
+    liveState.lowFunds = funds > 0 && funds < 5000;
+    liveState.bankrupt = funds == 0 && liveState.treasuryDebt > 0;
     liveState.populationTarget = session.populationTarget;
     liveState.deathcareState.fractionalDeaths = session.fractionalDeaths;
     liveState.deathcareState.awaitingDisposition = session.awaitingDisposition;
@@ -311,6 +341,7 @@ int main(int argc, char* argv[]) {
     liveState.transitSummary = TransitSummary{};
     liveState.serviceCache = ServiceCoverageCache{};
     facilities = std::move(session.facilities);
+    applySessionDistricts(districts, session);
     refreshLiveDerivedState(
       map, roads, store, population, facilities, liveState, 3001u + (liveState.tick * 31u));
     refreshRouteHeat(store, population, roads, liveState, 3001u + (liveState.tick * 31u));
@@ -318,11 +349,14 @@ int main(int argc, char* argv[]) {
     zoneToolActive = false;
     bulldozeToolActive = false;
     serviceToolActive = false;
+    districtToolActive = false;
     toolDragging = false;
     roadPlan = {};
     zonePlan = {};
     bulldozePlan = {};
     servicePlan = {};
+    districtPlan = {};
+    selectedDistrictId = 0;
     onboardingStep = 6;
     showOnboarding = false;
     sessionDirty = false;
@@ -334,16 +368,20 @@ int main(int argc, char* argv[]) {
       selectedZone = nextPlayableZone(selectedZone);
     } else if (tool == PaletteTool::Service && serviceToolActive) {
       selectedService = nextPlayableService(selectedService);
+    } else if (tool == PaletteTool::District && districtToolActive) {
+      selectedArchetype = nextPlayableArchetype(selectedArchetype);
     }
     roadToolActive = tool == PaletteTool::Road;
     zoneToolActive = tool == PaletteTool::Zone;
     bulldozeToolActive = tool == PaletteTool::Bulldoze;
     serviceToolActive = tool == PaletteTool::Service;
+    districtToolActive = tool == PaletteTool::District;
     toolDragging = false;
     roadPlan = {};
     zonePlan = {};
     bulldozePlan = {};
     servicePlan = {};
+    districtPlan = {};
   };
 
   bool running = true;
@@ -386,16 +424,19 @@ int main(int argc, char* argv[]) {
       } else if (event.type == SDL_KEYDOWN) {
         switch (event.key.keysym.sym) {
           case SDLK_ESCAPE:
-            if (toolDragging || roadToolActive || zoneToolActive || bulldozeToolActive || serviceToolActive) {
+            if (toolDragging || roadToolActive || zoneToolActive || bulldozeToolActive
+                || serviceToolActive || districtToolActive) {
               toolDragging = false;
               roadToolActive = false;
               zoneToolActive = false;
               bulldozeToolActive = false;
               serviceToolActive = false;
+              districtToolActive = false;
               roadPlan = {};
               zonePlan = {};
               bulldozePlan = {};
               servicePlan = {};
+              districtPlan = {};
             } else {
               showQuitDialog = true;
             }
@@ -503,11 +544,13 @@ int main(int argc, char* argv[]) {
             zoneToolActive = false;
             bulldozeToolActive = false;
             serviceToolActive = false;
+            districtToolActive = false;
             toolDragging = false;
             roadPlan = {};
             zonePlan = {};
             bulldozePlan = {};
             servicePlan = {};
+            districtPlan = {};
             break;
           case SDLK_z:
             if (zoneToolActive) {
@@ -519,22 +562,26 @@ int main(int argc, char* argv[]) {
             roadToolActive = false;
             bulldozeToolActive = false;
             serviceToolActive = false;
+            districtToolActive = false;
             toolDragging = false;
             roadPlan = {};
             zonePlan = {};
             bulldozePlan = {};
             servicePlan = {};
+            districtPlan = {};
             break;
           case SDLK_b:
             bulldozeToolActive = !bulldozeToolActive;
             roadToolActive = false;
             zoneToolActive = false;
             serviceToolActive = false;
+            districtToolActive = false;
             toolDragging = false;
             roadPlan = {};
             zonePlan = {};
             bulldozePlan = {};
             servicePlan = {};
+            districtPlan = {};
             break;
           case SDLK_s:
             if (serviceToolActive) {
@@ -546,11 +593,31 @@ int main(int argc, char* argv[]) {
             roadToolActive = false;
             zoneToolActive = false;
             bulldozeToolActive = false;
+            districtToolActive = false;
             toolDragging = false;
             roadPlan = {};
             zonePlan = {};
             bulldozePlan = {};
             servicePlan = {};
+            districtPlan = {};
+            break;
+          case SDLK_p:
+            if (districtToolActive) {
+              selectedArchetype = nextPlayableArchetype(selectedArchetype);
+            } else {
+              districtToolActive = true;
+              selectedArchetype = DistrictArchetype::General;
+            }
+            roadToolActive = false;
+            zoneToolActive = false;
+            bulldozeToolActive = false;
+            serviceToolActive = false;
+            toolDragging = false;
+            roadPlan = {};
+            zonePlan = {};
+            bulldozePlan = {};
+            servicePlan = {};
+            districtPlan = {};
             break;
           case SDLK_o:
             cycleOriginFilter(liveState, store);
@@ -583,7 +650,10 @@ int main(int argc, char* argv[]) {
           && mouseY >= 12 && mouseY < 158;
         const bool overPalette = paletteHitTest(mouseX, mouseY, windowWidth, windowHeight)
           != PaletteTool::None;
-        if (!overHud && !overLegend && !overPalette && event.wheel.y != 0) {
+        const bool overDistrictPanel = !cleanUiMode && selectedDistrictId != 0
+          && districts.getDistrictConst(selectedDistrictId) != nullptr
+          && pointInDistrictPanel(mouseX, mouseY);
+        if (!overHud && !overLegend && !overPalette && !overDistrictPanel && event.wheel.y != 0) {
           const Coord anchor = tileAtScreen(mouseX, mouseY);
           const int direction = event.wheel.y > 0 ? 1 : -1;
           tilePixels = std::max(minimumTilePixels, std::min(48, tilePixels + direction * 2));
@@ -660,6 +730,34 @@ int main(int argc, char* argv[]) {
             break;
         }
       } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT
+                 && !cleanUiMode
+                 && selectedDistrictId != 0
+                 && districts.getDistrict(selectedDistrictId) != nullptr
+                 && districtPanelHitTest(event.button.x, event.button.y) != DistrictPanelAction::None) {
+        District* district = districts.getDistrict(selectedDistrictId);
+        switch (districtPanelHitTest(event.button.x, event.button.y)) {
+          case DistrictPanelAction::CycleArchetype: {
+            const DistrictArchetype next = nextPlayableArchetype(district->archetype);
+            if (districts.setDistrictArchetype(selectedDistrictId, next)) {
+              sessionDirty = true;
+              notify(std::string("DISTRICT ") + DistrictSystem::archetypeToString(next), true);
+            }
+            break;
+          }
+          case DistrictPanelAction::ToggleCap: {
+            const bool starve = district->serviceBudgetCap < 0;
+            if (districts.setDistrictServiceBudgetCap(
+                  selectedDistrictId, starve ? kStarvedDistrictBudgetCap : int64_t{-1})) {
+              sessionDirty = true;
+              notify(starve ? "DISTRICT GROWTH STARVED" : "DISTRICT GROWTH FUNDED", true);
+            }
+            break;
+          }
+          case DistrictPanelAction::None:
+          default:
+            break;
+        }
+      } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT
                  && paletteHitTest(event.button.x, event.button.y, windowWidth, windowHeight)
                     != PaletteTool::None) {
         activatePaletteTool(
@@ -698,12 +796,24 @@ int main(int argc, char* argv[]) {
           servicePlan = ServiceTool::plan(map, roads, facilities, selectedService, tile, funds);
         }
       } else if (event.type == SDL_MOUSEBUTTONDOWN
-                 && (roadToolActive || zoneToolActive || bulldozeToolActive)) {
+                 && (roadToolActive || zoneToolActive || bulldozeToolActive || districtToolActive)) {
         if (event.button.button == SDL_BUTTON_RIGHT) {
+          if (districtToolActive && !toolDragging) {
+            const Coord tile = tileAtScreen(event.button.x, event.button.y);
+            const DistrictId id = DistrictTool::districtAt(districts, tile);
+            if (id != 0 && districts.deleteDistrict(id)) {
+              if (selectedDistrictId == id) {
+                selectedDistrictId = 0;
+              }
+              sessionDirty = true;
+              notify("DISTRICT REMOVED", true);
+            }
+          }
           toolDragging = false;
           roadPlan = {};
           zonePlan = {};
           bulldozePlan = {};
+          districtPlan = {};
         } else if (event.button.button == SDL_BUTTON_LEFT) {
           const Coord tile = tileAtScreen(event.button.x, event.button.y);
           if (map.isValid(tile)) {
@@ -712,6 +822,7 @@ int main(int argc, char* argv[]) {
             roadPlan = {};
             zonePlan = {};
             bulldozePlan = {};
+            districtPlan = {};
           }
         }
       } else if (event.type == SDL_MOUSEMOTION && serviceToolActive) {
@@ -726,6 +837,8 @@ int main(int argc, char* argv[]) {
             zonePlan = ZoneTool::plan(map, toolDragStart, tile, selectedZone, funds);
           } else if (bulldozeToolActive) {
             bulldozePlan = BulldozeTool::plan(map, roads, facilities, toolDragStart, tile, funds);
+          } else if (districtToolActive) {
+            districtPlan = DistrictTool::plan(map, districts, toolDragStart, tile, selectedArchetype);
           }
         }
       } else if (event.type == SDL_MOUSEBUTTONUP && toolDragging
@@ -773,12 +886,39 @@ int main(int argc, char* argv[]) {
             } else {
               notify(bulldozePlan.error.empty() ? "DEMOLITION FAILED" : bulldozePlan.error, false);
             }
+          } else if (districtToolActive) {
+            const bool singleTile = toolDragStart.x == tile.x && toolDragStart.y == tile.y;
+            const DistrictId underCursor = DistrictTool::districtAt(districts, tile);
+            if (singleTile && underCursor != 0) {
+              selectedDistrictId = underCursor;
+              notify("DISTRICT SELECTED", true);
+            } else {
+              districtPlan = DistrictTool::plan(map, districts, toolDragStart, tile, selectedArchetype);
+              if (DistrictTool::apply(districts, map, districtPlan)) {
+                sessionDirty = true;
+                if (districtPlan.removeId != 0) {
+                  if (selectedDistrictId == districtPlan.removeId) {
+                    selectedDistrictId = 0;
+                  }
+                  notify("DISTRICT REMOVED", true);
+                } else {
+                  if (!districts.getDistricts().empty()) {
+                    selectedDistrictId = districts.getDistricts().back().id;
+                  }
+                  notify(std::string("DISTRICT ")
+                           + DistrictSystem::archetypeToString(selectedArchetype), true);
+                }
+              } else {
+                notify(districtPlan.error.empty() ? "DISTRICT FAILED" : districtPlan.error, false);
+              }
+            }
           }
         }
         toolDragging = false;
         roadPlan = {};
         zonePlan = {};
         bulldozePlan = {};
+        districtPlan = {};
       }
     }
 
@@ -863,6 +1003,15 @@ int main(int argc, char* argv[]) {
     }
     }
 
+    if (selectedDistrictId != 0 && districts.getDistrictConst(selectedDistrictId) == nullptr) {
+      selectedDistrictId = 0;
+    }
+    if (!districts.getDistricts().empty()) {
+      drawDistrictOutlines(
+        renderer, districts, isometricMode, isometricProjection(), viewX, viewY, tilePixels,
+        selectedDistrictId);
+    }
+
     const bool mouseOverHud = cleanUiMode
       ? (mouseX >= windowWidth - 342 && mouseY >= 12 && mouseY < 58)
       : (mouseX >= windowWidth - kHudPanelWidth - 12
@@ -871,11 +1020,14 @@ int main(int argc, char* argv[]) {
       && mouseY >= 12 && mouseY < 158;
     const bool mouseOverPalette = paletteHitTest(mouseX, mouseY, windowWidth, windowHeight)
       != PaletteTool::None;
+    const bool mouseOverDistrictPanel = !cleanUiMode && selectedDistrictId != 0
+      && districts.getDistrictConst(selectedDistrictId) != nullptr
+      && pointInDistrictPanel(mouseX, mouseY);
     const bool mouseOverGuide = !cleanUiMode && showOnboarding && mouseX >= 14 && mouseX < 364
       && mouseY >= windowHeight - 154 && mouseY < windowHeight - 62;
     const Coord hoveredTile = tileAtScreen(mouseX, mouseY);
     const bool inspectMap = !mouseOverHud && !mouseOverLegend && !mouseOverPalette
-      && !mouseOverGuide && map.isValid(hoveredTile);
+      && !mouseOverDistrictPanel && !mouseOverGuide && map.isValid(hoveredTile);
     if (inspectMap) {
       if (isometricMode) {
         const IsometricProjection projection = isometricProjection();
@@ -891,14 +1043,20 @@ int main(int argc, char* argv[]) {
     if (toolDragging) {
       const bool valid = roadToolActive
         ? roadPlan.valid
-        : (zoneToolActive ? zonePlan.valid : bulldozePlan.valid);
+        : (zoneToolActive ? zonePlan.valid
+           : (districtToolActive ? districtPlan.valid : bulldozePlan.valid));
       const std::vector<Coord>& previewTiles = roadToolActive
         ? roadPlan.tiles
-        : (zoneToolActive ? zonePlan.tiles : bulldozePlan.tiles);
+        : (zoneToolActive ? zonePlan.tiles
+           : (districtToolActive ? districtPlan.tiles : bulldozePlan.tiles));
       const RGB previewColor = valid
         ? (roadToolActive
             ? RGB{80, 220, 120}
-            : (zoneToolActive ? zoneColor(static_cast<int>(selectedZone)) : RGB{255, 155, 45}))
+            : (zoneToolActive ? zoneColor(static_cast<int>(selectedZone))
+               : (districtToolActive
+                    ? (districtPlan.removeId != 0 ? RGB{255, 155, 45}
+                       : districtArchetypeColor(selectedArchetype))
+                    : RGB{255, 155, 45})))
         : RGB{235, 75, 75};
       for (const Coord tile : previewTiles) {
         if (isometricMode) {
@@ -935,7 +1093,12 @@ int main(int argc, char* argv[]) {
       drawLegendPanel(renderer, overlayMode, windowWidth, windowHeight, mouseX, mouseY);
     }
     if (!cleanUiMode && inspectMap) {
-      drawTileInspector(renderer, map, roads, store, facilities, hoveredTile);
+      drawTileInspector(renderer, map, roads, store, facilities, hoveredTile, &districts);
+    }
+    if (!cleanUiMode) {
+      if (const District* selected = districts.getDistrictConst(selectedDistrictId)) {
+        drawDistrictPanel(renderer, *selected, mouseX, mouseY);
+      }
     }
 
     std::string activeToolLabel = "NONE";
@@ -947,6 +1110,8 @@ int main(int argc, char* argv[]) {
       activeToolLabel = "BULLDOZE";
     } else if (serviceToolActive) {
       activeToolLabel = ServiceSystem::serviceTypeToString(selectedService);
+    } else if (districtToolActive) {
+      activeToolLabel = DistrictSystem::archetypeToString(selectedArchetype);
     }
     if (cleanUiMode) {
       drawCompactGameplayHud(renderer, windowWidth, liveState.paused,
@@ -972,6 +1137,7 @@ int main(int argc, char* argv[]) {
       zoneToolActive,
       bulldozeToolActive,
       serviceToolActive,
+      districtToolActive,
       mouseX,
       mouseY
     );
@@ -996,6 +1162,10 @@ int main(int argc, char* argv[]) {
         uiHoverText = std::string("SERVICE ") + ServiceSystem::serviceTypeToString(selectedService)
           + ": CLICK BESIDE A ROAD - $"
           + std::to_string(ServiceTool::constructionCost(selectedService));
+        break;
+      case PaletteTool::District:
+        uiHoverText = std::string("DISTRICT ") + DistrictSystem::archetypeToString(selectedArchetype)
+          + ": DRAG TO PAINT - CLICK TO SELECT - RIGHT-CLICK TO DELETE";
         break;
       case PaletteTool::None:
       default:
@@ -1028,6 +1198,23 @@ int main(int argc, char* argv[]) {
       }
     }
 
+    if (uiHoverText.empty() && !cleanUiMode && selectedDistrictId != 0
+        && districts.getDistrictConst(selectedDistrictId) != nullptr) {
+      switch (districtPanelHitTest(mouseX, mouseY)) {
+        case DistrictPanelAction::CycleArchetype:
+          uiHoverText = "ARCH: CYCLE GENERAL INDUSTRIAL TECH HUB FOR THIS DISTRICT";
+          break;
+        case DistrictPanelAction::ToggleCap:
+          uiHoverText = districts.getDistrictConst(selectedDistrictId)->serviceBudgetCap < 0
+            ? "STARVE: CAP SERVICE BUDGET SO THIS DISTRICT GROWS SLOWER"
+            : "FUND: REMOVE THE SERVICE BUDGET CAP";
+          break;
+        case DistrictPanelAction::None:
+        default:
+          break;
+      }
+    }
+
     if (uiHoverText.empty() && showLegend) {
       OverlayMode hoveredOverlay = overlayMode;
       if (overlayHitTest(mouseX, mouseY, hoveredOverlay)) {
@@ -1054,6 +1241,8 @@ int main(int argc, char* argv[]) {
         placementWarning = zonePlan.error;
       } else if (bulldozeToolActive && !bulldozePlan.valid) {
         placementWarning = bulldozePlan.error;
+      } else if (districtToolActive && !districtPlan.valid) {
+        placementWarning = districtPlan.error;
       }
     } else if (uiHoverText.empty() && serviceToolActive && servicePlan.hasSite && !servicePlan.valid) {
       placementWarning = servicePlan.error;
@@ -1082,6 +1271,9 @@ int main(int argc, char* argv[]) {
         serviceToolActive,
         selectedService,
         servicePlan,
+        districtToolActive,
+        selectedArchetype,
+        districtPlan,
         funds
       );
       SDL_SetWindowTitle(window, hudTitle.c_str());

@@ -8,7 +8,9 @@
 #include "src/gameplay/TreasurySystem.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/DeathcareSystem.hpp"
+#include "src/systems/DistrictSystem.hpp"
 #include "src/systems/EconomySystem.hpp"
+#include "src/systems/GrowthSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/systems/TrafficSystem.hpp"
 #include "src/systems/TransitSystem.hpp"
@@ -38,6 +40,11 @@ struct PlayableCityTickState {
   int64_t treasuryExpenses = 0;
   int64_t treasuryNet = 0;
   int64_t treasuryShortfall = 0;
+  int64_t treasuryDebt = 0;
+  int64_t treasuryDebtIssued = 0;
+  int64_t treasuryDebtRepaid = 0;
+  int64_t treasuryInterestCharged = 0;
+  double treasuryInterestRemainder = 0.0;
   bool lowFunds = false;
   bool bankrupt = false;
   // Persist across ticks so auto-placed routes accumulate like CitySimulator.
@@ -47,12 +54,15 @@ struct PlayableCityTickState {
   // Last tick's growth deltas so G-mode can keep ConstructionState::emptyZonedCount in sync.
   int buildingsSpawned = 0;
   int buildingsDemolished = 0;
+  // One-tick-lag growth pressure from DistrictSystem, same as CitySimulator.
+  std::vector<GrowthChanceModifier> districtGrowthModifiers;
 };
 
 struct PlayableCityTickOptions {
   float growthChance = 0.18f;
   bool requireUtilities = true;
   double treasuryTickScale = 0.01;
+  double treasuryInterestRate = 0.001;
   // Base seed mixed with tick for deterministic subsystem RNGs.
   uint32_t baseSeed = 1000u;
   bool enableTransit = true;
@@ -62,6 +72,9 @@ struct PlayableCityTickOptions {
   // Same environment phases as CitySimulator; disable only for tests.
   bool refreshPollution = true;
   bool updateLandValues = true;
+  // When non-null, ordinances are host-owned (G-mode autoZone) and growth
+  // pressure is applied here. Null matches prior playable behavior.
+  const DistrictSystem* districts = nullptr;
 };
 
 struct DerivedCityRefreshOptions {

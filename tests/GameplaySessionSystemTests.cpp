@@ -1,4 +1,7 @@
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 
 #include "gtest/gtest.h"
 
@@ -25,6 +28,8 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   saved.treasuryRevenue = 800;
   saved.treasuryExpenses = 300;
   saved.treasuryNet = 500;
+  saved.treasuryDebt = 250;
+  saved.treasuryInterestRemainder = 0.4;
   saved.populationTarget = 900;
   saved.fractionalDeaths = 0.75;
   saved.awaitingDisposition = 12;
@@ -40,6 +45,15 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   bus.capacityPerVehicle = 40;
   bus.stopCoverageRadius = 6;
   saved.transitRoutes.push_back(bus);
+  GameplaySessionState::DistrictRecord district;
+  district.name = "FACTORY";
+  district.x1 = 1;
+  district.y1 = 1;
+  district.x2 = 4;
+  district.y2 = 5;
+  district.archetype = 1;
+  district.serviceBudgetCap = 1;
+  saved.districts.push_back(district);
 
   const auto path = std::filesystem::temp_directory_path() / "urban_sim_gameplay_session.json";
   ASSERT_TRUE(GameplaySessionSystem::save(
@@ -65,6 +79,8 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   EXPECT_EQ(loaded.treasuryRevenue, 800);
   EXPECT_EQ(loaded.treasuryExpenses, 300);
   EXPECT_EQ(loaded.treasuryNet, 500);
+  EXPECT_EQ(loaded.treasuryDebt, 250);
+  EXPECT_DOUBLE_EQ(loaded.treasuryInterestRemainder, 0.4);
   EXPECT_EQ(loaded.populationTarget, 900u);
   EXPECT_DOUBLE_EQ(loaded.fractionalDeaths, 0.75);
   EXPECT_EQ(loaded.awaitingDisposition, 12u);
@@ -78,11 +94,51 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   EXPECT_EQ(loaded.transitRoutes.front().stops.size(), 2u);
   EXPECT_EQ(loaded.transitRoutes.front().stops[1], Coord(2, 1));
   EXPECT_EQ(loaded.transitRoutes.front().vehicleCount, 4);
+  ASSERT_EQ(loaded.districts.size(), 1u);
+  EXPECT_EQ(loaded.districts.front().name, "FACTORY");
+  EXPECT_EQ(loaded.districts.front().x1, 1);
+  EXPECT_EQ(loaded.districts.front().y1, 1);
+  EXPECT_EQ(loaded.districts.front().x2, 4);
+  EXPECT_EQ(loaded.districts.front().y2, 5);
+  EXPECT_EQ(loaded.districts.front().archetype, 1);
+  EXPECT_EQ(loaded.districts.front().serviceBudgetCap, 1);
   EXPECT_EQ(loaded.transitRoutes.front().capacityPerVehicle, 40);
   EXPECT_EQ(loaded.transitRoutes.front().stopCoverageRadius, 6);
   EXPECT_EQ(loaded.facilities.front().position, Coord(2, 2));
   EXPECT_EQ(map.zone({2, 2}), 1);
   EXPECT_EQ(roads.getRoadCount(), 1u);
+
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
+}
+
+TEST(GameplaySessionSystemTests, RejectsNegativeTreasuryDebt) {
+  CityMap map({4, 4});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  GameplaySessionState saved;
+  const auto path = std::filesystem::temp_directory_path() / "urban_sim_negative_debt.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(
+    path.string(), map, roads, store, population, saved));
+
+  std::ifstream in(path);
+  std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  in.close();
+  const std::string needle = "\"treasuryDebt\": 0";
+  const auto pos = text.find(needle);
+  ASSERT_NE(pos, std::string::npos);
+  text.replace(pos, needle.size(), "\"treasuryDebt\": -1");
+  std::ofstream out(path);
+  out << text;
+  ASSERT_TRUE(out.good());
+  out.close();
+
+  GameplaySessionState loaded;
+  std::string error;
+  EXPECT_FALSE(GameplaySessionSystem::load(
+    path.string(), map, roads, store, population, loaded, &error));
+  EXPECT_NE(error.find("treasury debt"), std::string::npos);
 
   std::filesystem::remove(path);
   std::filesystem::remove(path.string() + ".city.json");

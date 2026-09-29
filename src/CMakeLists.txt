@@ -28,6 +28,7 @@ add_library(urban_sim_core
   gameplay/ZoneTool.cpp
   gameplay/BulldozeTool.cpp
   gameplay/ServiceTool.cpp
+  gameplay/DistrictTool.cpp
   gameplay/TreasurySystem.cpp
   world/CityMap.cpp
   world/Tile.cpp

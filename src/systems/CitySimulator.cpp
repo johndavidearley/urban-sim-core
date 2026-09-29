@@ -368,14 +368,18 @@ SimResult CitySimulator::run(
     // Health: a pure read-out, exactly like Crime above (no side effects on
     // the map or entity store). Housing crowding (population relative to
     // residential capacity) is a density/contagion proxy, combined with this
-    // tick's residential pollution and hospital coverage. Feeds desirability
-    // one tick lagged (via lastIllnessRate above), same pattern as crime.
+    // tick's residential pollution, hospital coverage, and sanitation
+    // coverage (uncovered sewage raises illness; it is not a construction
+    // gate). Feeds desirability one tick lagged (via lastIllnessRate above),
+    // same pattern as crime.
     HealthSummary health;
     {
       const auto t0 = Clock::now();
       const float housingDensity = tickCap.resCapacity > 0
         ? city_sim::clamp01(static_cast<float>(population.getTotalPopulation()) / static_cast<float>(tickCap.resCapacity)) : 0.0f;
-      health = HealthSystem::evaluate(housingDensity, tickResPollution, service.healthCoverage, options.healthParams);
+      health = HealthSystem::evaluate(
+        housingDensity, tickResPollution, service.healthCoverage,
+        service.sanitationCoverage, options.healthParams);
       lastIllnessRate = health.illnessRate;
       result.timings.healthMs += elapsedMs(t0, Clock::now());
     }

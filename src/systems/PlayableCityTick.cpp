@@ -30,6 +30,31 @@ void activeBounds(const CityMap& map, int& ax0, int& ay0, int& ax1, int& ay1) {
   ay1 = dims.y - 1;
 }
 
+void refreshDistrictGrowthModifiers(
+  const DistrictSystem* districts,
+  const CityMap& map,
+  const EntityStore& store,
+  const PopulationStore& population,
+  const RoadNetwork& roads,
+  const std::vector<ServiceFacility>& facilities,
+  PlayableCityTickState& state
+) {
+  state.districtGrowthModifiers.clear();
+  if (districts == nullptr || districts->getDistricts().empty()) {
+    return;
+  }
+  const std::vector<DistrictMetrics> metrics =
+    districts->evaluateAllDistricts(map, store, population, &roads, &facilities);
+  const std::vector<District>& allDistricts = districts->getDistricts();
+  state.districtGrowthModifiers.reserve(metrics.size());
+  for (size_t i = 0; i < metrics.size() && i < allDistricts.size(); ++i) {
+    const float multiplier =
+      DistrictSystem::computeGrowthPressureMultiplier(allDistricts[i], metrics[i]);
+    state.districtGrowthModifiers.push_back(
+      {allDistricts[i].minCorner, allDistricts[i].maxCorner, multiplier});
+  }
+}
+
 void evaluateHealthAndCrime(const CityMap& map, const EntityStore& store,
                             const PopulationStore& population, PlayableCityTickState& state) {
   const float tickResPollution = city_sim::averageResidentialPollution(map, store);
@@ -43,7 +68,8 @@ void evaluateHealthAndCrime(const CityMap& map, const EntityStore& store,
     ? city_sim::clamp01(static_cast<float>(pop - employed) / static_cast<float>(pop))
     : 0.0f;
   state.illnessRate = HealthSystem::evaluate(
-    housingDensity, tickResPollution, state.serviceSummary.healthCoverage).illnessRate;
+    housingDensity, tickResPollution, state.serviceSummary.healthCoverage,
+    state.serviceSummary.sanitationCoverage).illnessRate;
   state.crimeRate = CrimeSystem::evaluate(
     unemployment, state.serviceSummary.policeCoverage, state.economy.averageLandValue).overallRate;
 }
@@ -168,9 +194,11 @@ void playableCityTick(
   city_sim::updateUtilityConnectivity(
     map, roads, state.serviceCache, ax0, ay0, ax1, ay1, pool);
 
+  const std::vector<GrowthChanceModifier>* growthModifiers =
+    state.districtGrowthModifiers.empty() ? nullptr : &state.districtGrowthModifiers;
   const GrowthStats growth = GrowthSystem::runStep(
     map, store, state.demand, tickSeed + 1u, options.growthChance,
-    nullptr, {-1, -1}, {-1, -1}, nullptr, options.requireUtilities
+    growthModifiers, {-1, -1}, {-1, -1}, nullptr, options.requireUtilities
   );
   state.buildingsSpawned = growth.totalSpawned();
   state.buildingsDemolished = growth.totalDemolished();
@@ -206,19 +234,31 @@ void playableCityTick(
     );
   }
 
+  refreshDistrictGrowthModifiers(
+    options.districts, map, store, population, roads, facilities, state);
+
   int64_t serviceOperatingCosts = 0;
   for (const ServiceFacility& facility : facilities) {
     serviceOperatingCosts += ServiceTool::operatingCostPerTick(facility.type);
   }
+  TreasuryDebt debt;
+  debt.principal = state.treasuryDebt;
+  debt.interestRemainder = state.treasuryInterestRemainder;
   const TreasuryFlow flow = TreasurySystem::applyEconomy(
-    state.economy, funds, options.treasuryTickScale, serviceOperatingCosts
+    state.economy, funds, options.treasuryTickScale, serviceOperatingCosts,
+    &debt, options.treasuryInterestRate
   );
   state.treasuryRevenue = flow.revenue;
   state.treasuryExpenses = flow.expenses;
   state.treasuryNet = flow.net;
   state.treasuryShortfall = flow.shortfall;
+  state.treasuryDebt = debt.principal;
+  state.treasuryDebtIssued = flow.debtIssued;
+  state.treasuryDebtRepaid = flow.debtRepaid;
+  state.treasuryInterestCharged = flow.interestCharged;
+  state.treasuryInterestRemainder = debt.interestRemainder;
   state.lowFunds = funds > 0 && funds < 5000;
-  state.bankrupt = funds == 0 && flow.shortfall > 0;
+  state.bankrupt = funds == 0 && (flow.shortfall > 0 || state.treasuryDebt > 0);
 
   ++state.tick;
 }

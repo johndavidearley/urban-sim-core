@@ -1,6 +1,6 @@
 # Project Status
 
-Last verified: August 22, 2026
+Last verified: September 29, 2026
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -38,7 +38,10 @@ iteration rather than completion of a missing MVP subsystem.
   zoning, empty-zoned pacing, civic facilities) then the playable tick stack;
   session save/load persists the G-mode flag and developed extent.
 - HUD shows treasury cash (`$`) beside economy balance (`BAL $`, same metric as
-  CLI `budgetBalance`).
+  CLI `budgetBalance`). Unpaid playable-tick shortfall becomes municipal debt
+  (`DEBT $n`) with a small per-tick interest remainder; surplus cash repays it.
+  Session save/load persists principal and interest remainder (older saves load
+  as debt 0). `CitySimulator` still uses cash-only treasury accounting.
 
 ### Recent performance work (post-MVP)
 
@@ -55,7 +58,7 @@ A multi-batch hot-path pass landed on `main` development:
 
 ## Validation Baseline
 
-- 336 tests across the GoogleTest suites (authoritative: `ctest --test-dir build -N`).
+- 353 tests across the GoogleTest suites (authoritative: `ctest --test-dir build -N`).
 - Tests are discovered individually by CTest.
 - Regular and warnings-as-errors builds pass.
 - Full ASan/UBSan and ThreadSanitizer runs pass.

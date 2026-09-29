@@ -22,6 +22,8 @@ struct GameplaySessionState {
   int64_t treasuryRevenue = 0;
   int64_t treasuryExpenses = 0;
   int64_t treasuryNet = 0;
+  int64_t treasuryDebt = 0;
+  double treasuryInterestRemainder = 0.0;
   uint32_t populationTarget = 480;
   double fractionalDeaths = 0.0;
   uint32_t awaitingDisposition = 0;
@@ -31,6 +33,18 @@ struct GameplaySessionState {
   int autonomousExtent = 0;
   int64_t emptyZonedCount = 0;
   std::vector<TransitRoute> transitRoutes;
+  // Policy districts painted in the visualizer. Older sessions omit this
+  // array and load as an empty set.
+  struct DistrictRecord {
+    std::string name;
+    int x1 = 0;
+    int y1 = 0;
+    int x2 = 0;
+    int y2 = 0;
+    int archetype = 0;
+    int64_t serviceBudgetCap = -1;  // negative = uncapped
+  };
+  std::vector<DistrictRecord> districts;
 };
 
 class GameplaySessionSystem {

@@ -65,11 +65,17 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   tickState.treasuryExpenses = liveState.treasuryExpenses;
   tickState.treasuryNet = liveState.treasuryNet;
   tickState.treasuryShortfall = liveState.treasuryShortfall;
+  tickState.treasuryDebt = liveState.treasuryDebt;
+  tickState.treasuryDebtIssued = liveState.treasuryDebtIssued;
+  tickState.treasuryDebtRepaid = liveState.treasuryDebtRepaid;
+  tickState.treasuryInterestCharged = liveState.treasuryInterestCharged;
+  tickState.treasuryInterestRemainder = liveState.treasuryInterestRemainder;
   tickState.lowFunds = liveState.lowFunds;
   tickState.bankrupt = liveState.bankrupt;
   tickState.transitRoutes = std::move(liveState.transitRoutes);
   tickState.transitCache = std::move(liveState.transitCache);
   tickState.transitSummary = liveState.transitSummary;
+  tickState.districtGrowthModifiers = liveState.districtGrowthModifiers;
   return tickState;
 }
 
@@ -90,11 +96,17 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
   liveState.treasuryExpenses = tickState.treasuryExpenses;
   liveState.treasuryNet = tickState.treasuryNet;
   liveState.treasuryShortfall = tickState.treasuryShortfall;
+  liveState.treasuryDebt = tickState.treasuryDebt;
+  liveState.treasuryDebtIssued = tickState.treasuryDebtIssued;
+  liveState.treasuryDebtRepaid = tickState.treasuryDebtRepaid;
+  liveState.treasuryInterestCharged = tickState.treasuryInterestCharged;
+  liveState.treasuryInterestRemainder = tickState.treasuryInterestRemainder;
   liveState.lowFunds = tickState.lowFunds;
   liveState.bankrupt = tickState.bankrupt;
   liveState.transitRoutes = std::move(tickState.transitRoutes);
   liveState.transitCache = std::move(tickState.transitCache);
   liveState.transitSummary = tickState.transitSummary;
+  liveState.districtGrowthModifiers = std::move(tickState.districtGrowthModifiers);
 }
 
 void projectTreasuryHud(LiveSimulationState& liveState, const std::vector<ServiceFacility>& facilities) {
@@ -147,6 +159,7 @@ void runAutonomousGrowthStep(
   EntityStore& store,
   PopulationStore& population,
   std::vector<ServiceFacility>& facilities,
+  const DistrictSystem& districts,
   LiveSimulationState& liveState
 ) {
   liveState.demand = (store.getBuildingCount() > 0 || population.getTotalPopulation() > 0)
@@ -161,6 +174,7 @@ void runAutonomousGrowthStep(
   constructionOpts.placeFacilities = true;
   constructionOpts.includeUtilities = true;
   constructionOpts.includeWasteDeathcare = true;
+  constructionOpts.districts = &districts;
   // Transit is placed inside playableCityTick; skip a second placement here.
   city_sim::expandConstruction(
     map, roads, store, population, facilities, liveState.transitRoutes,
@@ -174,11 +188,12 @@ void runSimulationTick(
   EntityStore& store,
   PopulationStore& population,
   std::vector<ServiceFacility>& facilities,
+  DistrictSystem& districts,
   LiveSimulationState& liveState,
   int64_t& funds
 ) {
   if (liveState.autonomousGrowth) {
-    runAutonomousGrowthStep(map, roads, store, population, facilities, liveState);
+    runAutonomousGrowthStep(map, roads, store, population, facilities, districts, liveState);
   }
 
   PlayableCityTickState tickState = captureTickState(liveState);
@@ -191,6 +206,7 @@ void runSimulationTick(
   options.enableTransit = true;
   options.transitCapacityMultiplier = 1.0f;
   options.transitStopCoverageRadius = std::max(8, liveState.autonomousGridSpacing * 3);
+  options.districts = &districts;
 
   playableCityTick(map, roads, store, population, facilities, tickState, funds, options);
 
@@ -203,6 +219,40 @@ void runSimulationTick(
 
   restoreTickState(liveState, tickState);
   refreshRouteHeat(store, population, roads, liveState, 1000u + ((liveState.tick - 1) * 31u) + 3u);
+}
+
+void captureSessionDistricts(const DistrictSystem& districts, GameplaySessionState& session) {
+  session.districts.clear();
+  for (const District& district : districts.getDistricts()) {
+    GameplaySessionState::DistrictRecord record;
+    record.name = district.name;
+    record.x1 = district.minCorner.x;
+    record.y1 = district.minCorner.y;
+    record.x2 = district.maxCorner.x;
+    record.y2 = district.maxCorner.y;
+    record.archetype = static_cast<int>(district.archetype);
+    record.serviceBudgetCap = district.serviceBudgetCap;
+    session.districts.push_back(std::move(record));
+  }
+}
+
+void applySessionDistricts(DistrictSystem& districts, const GameplaySessionState& session) {
+  districts.clearDistricts();
+  for (const auto& record : session.districts) {
+    DistrictArchetype archetype = DistrictArchetype::General;
+    if (record.archetype == static_cast<int>(DistrictArchetype::Industrial)) {
+      archetype = DistrictArchetype::Industrial;
+    } else if (record.archetype == static_cast<int>(DistrictArchetype::TechHub)) {
+      archetype = DistrictArchetype::TechHub;
+    }
+    const std::string name = record.name.empty() ? "DISTRICT" : record.name;
+    const DistrictId id = districts.createDistrict(
+      name, {record.x1, record.y1}, {record.x2, record.y2});
+    if (id != 0) {
+      districts.setDistrictArchetype(id, archetype);
+      districts.setDistrictServiceBudgetCap(id, record.serviceBudgetCap);
+    }
+  }
 }
 
 [[maybe_unused]] bool seedScenario(CityMap& map, RoadNetwork& roads, EntityStore& store, PopulationStore& population) {

@@ -31,6 +31,7 @@ add_executable(test_core
   ZoneToolTests.cpp
   BulldozeToolTests.cpp
   ServiceToolTests.cpp
+  DistrictToolTests.cpp
   GameplaySessionSystemTests.cpp
   TreasurySystemTests.cpp
   WasteSystemTests.cpp

@@ -109,6 +109,24 @@ ZoneType nextPlayableZone(ZoneType zone) {
   }
 }
 
+DistrictArchetype nextPlayableArchetype(DistrictArchetype archetype) {
+  switch (archetype) {
+    case DistrictArchetype::General: return DistrictArchetype::Industrial;
+    case DistrictArchetype::Industrial: return DistrictArchetype::TechHub;
+    case DistrictArchetype::TechHub:
+    default: return DistrictArchetype::General;
+  }
+}
+
+RGB districtArchetypeColor(DistrictArchetype archetype) {
+  switch (archetype) {
+    case DistrictArchetype::Industrial: return {220, 140, 70};
+    case DistrictArchetype::TechHub: return {160, 120, 220};
+    case DistrictArchetype::General:
+    default: return {90, 190, 210};
+  }
+}
+
 ServiceType nextPlayableService(ServiceType type) {
   switch (type) {
     case ServiceType::Fire: return ServiceType::Police;

@@ -15,6 +15,7 @@
 #include "src/systems/CitySimSupport.hpp"
 #include "src/systems/DeathcareSystem.hpp"
 #include "src/systems/EconomySystem.hpp"
+#include "src/systems/GrowthSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/systems/TrafficSystem.hpp"
 #include "src/systems/TransitSystem.hpp"
@@ -50,6 +51,7 @@ enum class PaletteTool {
   Zone,
   Bulldoze,
   Service,
+  District,
 };
 
 enum class HudAction {
@@ -87,6 +89,11 @@ struct LiveSimulationState {
   int64_t treasuryExpenses = 0;
   int64_t treasuryNet = 0;
   int64_t treasuryShortfall = 0;
+  int64_t treasuryDebt = 0;
+  int64_t treasuryDebtIssued = 0;
+  int64_t treasuryDebtRepaid = 0;
+  int64_t treasuryInterestCharged = 0;
+  double treasuryInterestRemainder = 0.0;
   bool lowFunds = false;
   bool bankrupt = false;
   WasteSummary waste;
@@ -103,6 +110,7 @@ struct LiveSimulationState {
   bool autonomousGrowth = false;
   int autonomousGridSpacing = 4;
   city_sim::ConstructionState construction;  // extent 0 = not seeded yet
+  std::vector<GrowthChanceModifier> districtGrowthModifiers;
 };
 
 struct ToastNotification {
@@ -124,6 +132,8 @@ bool overlayHitTest(int mouseX, int mouseY, OverlayMode& outMode);
 
 ZoneType nextPlayableZone(ZoneType zone);
 ServiceType nextPlayableService(ServiceType type);
+DistrictArchetype nextPlayableArchetype(DistrictArchetype archetype);
+RGB districtArchetypeColor(DistrictArchetype archetype);
 
 RGB serviceFacilityColor(ServiceType type);
 uint8_t toByte(float normalized);

@@ -4,6 +4,8 @@
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
+#include "src/persistence/GameplaySessionSystem.hpp"
+#include "src/systems/DistrictSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/world/CityMap.hpp"
 
@@ -35,6 +37,7 @@ void runSimulationTick(
   EntityStore& store,
   PopulationStore& population,
   std::vector<ServiceFacility>& facilities,
+  DistrictSystem& districts,
   LiveSimulationState& liveState,
   int64_t& funds
 );
@@ -47,8 +50,12 @@ void runAutonomousGrowthStep(
   EntityStore& store,
   PopulationStore& population,
   std::vector<ServiceFacility>& facilities,
+  const DistrictSystem& districts,
   LiveSimulationState& liveState
 );
+
+void captureSessionDistricts(const DistrictSystem& districts, GameplaySessionState& session);
+void applySessionDistricts(DistrictSystem& districts, const GameplaySessionState& session);
 
 [[maybe_unused]] bool seedScenario(CityMap& map, RoadNetwork& roads, EntityStore& store, PopulationStore& population);
 StartScreenResult runStartScreen(SDL_Renderer* renderer, int windowWidth, int windowHeight);

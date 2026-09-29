@@ -4,6 +4,7 @@
 #include "src/entities/PopulationStore.hpp"
 #include "src/gameplay/ServiceTool.hpp"
 #include "src/networks/RoadNetwork.hpp"
+#include "src/systems/DistrictSystem.hpp"
 #include "src/systems/PlayableCityTick.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
@@ -98,6 +99,101 @@ TEST(PlayableCityTickTests, PlayableTickReportsCrimeAndIllnessRates) {
   EXPECT_GE(state.crimeRate, 0.0f);
   EXPECT_LE(state.crimeRate, 1.0f);
   EXPECT_GT(state.crimeRate, 0.0f);
+}
+
+TEST(PlayableCityTickTests, UnpaidDeficitBecomesTreasuryDebt) {
+  CityMap map({24, 24});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  laySpine(map, roads);
+
+  std::vector<ServiceFacility> facilities;
+  facilities.push_back({ServiceType::Fire, {11, 11}, 16, 1.0f});
+
+  PlayableCityTickState state;
+  state.populationTarget = 0;
+  int64_t funds = 5;
+  PlayableCityTickOptions options;
+  options.requireUtilities = false;
+  options.growthChance = 0.0f;
+  options.enableTransit = false;
+  options.treasuryInterestRate = 0.0;
+
+  playableCityTick(map, roads, store, population, facilities, state, funds, options);
+
+  EXPECT_EQ(funds, 0);
+  EXPECT_EQ(state.treasuryDebt, 20);
+  EXPECT_EQ(state.treasuryDebtIssued, 20);
+  EXPECT_TRUE(state.bankrupt);
+}
+
+TEST(PlayableCityTickTests, SanitationCoverageLowersIllnessRate) {
+  auto tickCity = [](bool placeSanitation) {
+    CityMap map({24, 24});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    laySpine(map, roads);
+
+    const Coord house{10, 11};
+    map.getTile(house).buildingId = store.createBuilding(BuildingType::Residential, house, 40);
+
+    std::vector<ServiceFacility> facilities;
+    int64_t funds = 50000;
+    if (placeSanitation) {
+      const ServicePlan plan = ServiceTool::plan(
+        map, roads, facilities, ServiceType::Sanitation, {11, 11}, funds);
+      EXPECT_TRUE(plan.valid) << plan.error;
+      EXPECT_TRUE(ServiceTool::build(map, roads, facilities, plan, funds));
+    }
+
+    PlayableCityTickState state;
+    state.populationTarget = 40;
+    PlayableCityTickOptions options;
+    options.requireUtilities = false;
+    options.growthChance = 0.0f;
+    options.enableTransit = false;
+    playableCityTick(map, roads, store, population, facilities, state, funds, options);
+    return state;
+  };
+
+  const PlayableCityTickState uncovered = tickCity(false);
+  const PlayableCityTickState covered = tickCity(true);
+
+  EXPECT_FLOAT_EQ(uncovered.serviceSummary.sanitationCoverage, 0.0f);
+  EXPECT_GT(covered.serviceSummary.sanitationCoverage, uncovered.serviceSummary.sanitationCoverage);
+  EXPECT_LT(covered.illnessRate, uncovered.illnessRate);
+}
+
+TEST(PlayableCityTickTests, DistrictsProduceLaggedGrowthModifiers) {
+  CityMap map({24, 24});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  laySpine(map, roads);
+
+  const Coord house{10, 11};
+  map.getTile(house).buildingId = store.createBuilding(BuildingType::Residential, house, 40);
+
+  DistrictSystem districts;
+  districts.createDistrict("Downtown", {8, 8}, {14, 14});
+
+  PlayableCityTickState state;
+  state.populationTarget = 40;
+  int64_t funds = 50000;
+  PlayableCityTickOptions options;
+  options.requireUtilities = false;
+  options.growthChance = 0.0f;
+  options.enableTransit = false;
+  options.districts = &districts;
+
+  playableCityTick(map, roads, store, population, {}, state, funds, options);
+
+  ASSERT_EQ(state.districtGrowthModifiers.size(), 1u);
+  EXPECT_EQ(state.districtGrowthModifiers[0].minCorner, Coord(8, 8));
+  EXPECT_EQ(state.districtGrowthModifiers[0].maxCorner, Coord(14, 14));
+  EXPECT_GT(state.districtGrowthModifiers[0].multiplier, 0.0f);
 }
 
 TEST(PlayableCityTickTests, RefreshDerivedStateUpdatesServicesWithoutAdvancingTick) {

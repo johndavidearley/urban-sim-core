@@ -3,6 +3,7 @@
 #include "src/visualization/VisualizerTypes.hpp"
 #include "src/visualization/IsometricProjection.hpp"
 #include "src/entities/EntityStore.hpp"
+#include "src/systems/DistrictSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 
 namespace visualizer {
@@ -53,5 +54,15 @@ void drawText(SDL_Renderer* renderer, int x, int y, const std::string& text, RGB
 int paletteWidth();
 SDL_Rect paletteButtonRect(int index, int windowWidth, int windowHeight);
 PaletteTool paletteHitTest(int mouseX, int mouseY, int windowWidth, int windowHeight);
+void drawDistrictOutlines(
+  SDL_Renderer* renderer,
+  const DistrictSystem& districts,
+  bool isometricMode,
+  const IsometricProjection& projection,
+  int viewX,
+  int viewY,
+  int tilePixels,
+  DistrictId selectedId = 0
+);
 
 }  // namespace visualizer

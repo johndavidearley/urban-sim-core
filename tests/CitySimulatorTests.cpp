@@ -137,13 +137,15 @@ TEST(CitySimulatorTests, PopulationMigratesGraduallyNotInstantFill) {
 }
 
 // The city should provision public services as it grows, giving real coverage.
+// Civic auto-placement waits until population 1000; uncovered sewage raises
+// illness and slows early migration, so this needs more than a short smoke run.
 TEST(CitySimulatorTests, ProvidesServicesAsItGrows) {
   CityMap map({64, 64});
   RoadNetwork roads(map);
   EntityStore store;
   PopulationStore population;
 
-  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 50, fastOptions());
+  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 80, fastOptions());
 
   ASSERT_FALSE(result.rows.empty());
   const SimTickMetrics& last = result.rows.back();
@@ -730,6 +732,29 @@ TEST(CitySimulatorTests, HarsherHealthParamsRaiseReportedIllnessRate) {
   const SimTickMetrics harshLast = runWithParams(harsh);
 
   EXPECT_GT(harshLast.illnessRate, mildLast.illnessRate);
+}
+
+// Default --simulate does not auto-place Sanitation (enableUtilities is off),
+// so sanitationCoverage stays 0. A heavier sewage weight must raise illness,
+// proving HealthParams::sanitationWeight and live sanitationCoverage both
+// reach HealthSystem inside the autonomous loop.
+TEST(CitySimulatorTests, HigherSanitationWeightRaisesIllnessWhenUncovered) {
+  auto runWithWeight = [](float sanitationWeight) {
+    CityMap map({64, 64});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    SimOptions options = fastOptions();
+    options.healthParams.sanitationWeight = sanitationWeight;
+    return CitySimulator::run(map, roads, store, population, 7, 60, options).rows.back();
+  };
+
+  const SimTickMetrics none = runWithWeight(0.0f);
+  const SimTickMetrics heavy = runWithWeight(0.8f);
+
+  EXPECT_FLOAT_EQ(none.sanitationCoverage, 0.0f);
+  EXPECT_FLOAT_EQ(heavy.sanitationCoverage, 0.0f);
+  EXPECT_GT(heavy.illnessRate, none.illnessRate);
 }
 
 // Natural disasters (earthquake/flood) are gated by the same enableDisasters

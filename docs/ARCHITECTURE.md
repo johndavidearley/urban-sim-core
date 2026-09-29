@@ -164,7 +164,7 @@ writes `Building::occupancy`. Totals are scanned, not cached.
 |-------|---------------|--------|
 | `std::vector<ServiceFacility>` | `CitySimulator::run` locals, or gameplay session | Civic buildings are not `EntityStore` entries |
 | `std::vector<TransitRoute>` + `TransitCoverageCache` | same | Routes only grow in current placement |
-| `int64_t funds` | visualizer session / `playableCityTick` | Construction treasury |
+| `int64_t funds` + `TreasuryDebt` | visualizer session / `playableCityTick` | Construction treasury; unpaid shortfall is municipal debt (playable only) |
 | `DistrictSystem` | CLI host | AABB policy; autonomous loop reads it |
 | `ZoningCandidateIndex`, `TrafficRouteCache`, `ServiceCoverageCache` | orchestrator locals | See Caching |
 
@@ -261,9 +261,12 @@ void playableCityTick(
 Order (a subset of the autonomous phase list): demand → pollution emitters
 → utility connectivity → growth → allocate `populationTarget` → transit +
 traffic → services → land value → economy → `HealthSystem` → waste →
-deathcare → `TreasurySystem`.
+deathcare → `TreasurySystem` (unpaid shortfall becomes municipal debt;
+surplus cash repays it; optional per-tick interest on the remainder).
 
-Playable does **not** run `CrimeSystem`, districts, or disasters.
+Playable does **not** run disasters. Districts are host-owned: G-mode
+construction reads ordinances, and `playableCityTick` applies growth
+pressure when a `DistrictSystem` is passed.
 Population is a session target, not migration desirability. Pollution
 emitters and land value default on (`PlayableCityTickOptions`) so overlays
 and economy see the same environment model as `--simulate`.
@@ -276,9 +279,10 @@ helper as `CitySimulator::run`) then `playableCityTick`. G-mode opts into
 facility placement (utilities + waste/deathcare) during construction;
 transit is left to `playableCityTick` so routes are not placed twice.
 Empty-zoned pacing and pollution-before-zone match the autonomous path.
-Districts are still CLI-only (`ConstructionOptions::districts` is null in
-the visualizer). Session save persists the G-mode flag and developed
-extent.
+G-mode passes the session `DistrictSystem` into `expandConstruction` so
+zoning ordinances apply; `playableCityTick` evaluates growth-pressure
+modifiers with a one-tick lag, same as `CitySimulator`. Session save
+persists districts, the G-mode flag, and developed extent.
 
 ---
 
@@ -303,9 +307,9 @@ Adding a system means editing both tick functions (and often G-mode).
 | `CrimeSystem` | none | every tick | yes |
 | `MetricsSystem` | none | after `CitySimulator::run`; CLI `--print-city-summary` | via `collectFromPlayable` |
 | `FireSystem` / `NaturalDisasterSystem` | map, store | `enableDisasters` | no |
-| `DistrictSystem` | none during tick (host-owned defs) | `districtInterval` | no |
+| `DistrictSystem` | none during tick (host-owned defs) | `districtInterval` | growth pressure when passed |
 | `TrafficMicroSim` | local vehicles | CLI `--micro-traffic` after a growth run | no |
-| `TreasurySystem` | `funds` | playable only | yes |
+| `TreasurySystem` | `funds` + optional `TreasuryDebt` | playable only | yes |
 
 `TrafficMicroSim` is a second traffic model (per-vehicle lanes, car-following,
 signals). It does not replace `TrafficSystem` and is not composed into either
@@ -330,6 +334,7 @@ and not a replay log.
 | `ZoneTool` | `ZonePlan` | visualizer; CLI `--zone-rect` (R/C/I/Office) |
 | `BulldozeTool` | `BulldozePlan` | visualizer |
 | `ServiceTool` | `ServicePlan` | visualizer; CLI `--add-service` / `--add-power-source`; `operatingCostPerTick` in `playableCityTick` |
+| `DistrictTool` | `DistrictPlan` | visualizer; paints or removes a policy rectangle (`removeId`) and applies a `DistrictArchetype` |
 
 `apply` / `build` re-runs `plan` and refuses if the world diverged. Funds
 are `int64_t&` owned by the session.
@@ -390,10 +395,12 @@ version is 1 (0→1 migration exists).
 
 **Gameplay session** (`GameplaySessionSystem`): visualizer default
 `urban_sim_session.json` plus sidecar `*.city.json`. Session JSON holds
-funds, tick, pause, speed, demand, treasury, population target, deathcare
-remainder, facilities, G-mode flag/extent/empty-zoned count, and transit
-routes. Coverage caches are rebuilt on load. Older sessions without
-transit/empty-zoned fields still load (routes empty, next tick can place).
+funds, tick, pause, speed, demand, treasury (outstanding debt and interest
+remainder), population target, deathcare remainder, facilities, G-mode
+flag/extent/empty-zoned count, transit routes, and painted districts (name,
+bounds, archetype, service budget cap). Coverage caches are rebuilt on load.
+Older sessions without transit/empty-zoned/district/debt fields still load
+(routes empty, no districts, debt 0; next tick can place).
 
 **Replay** (`ReplayVerifier`): run a **scripted** zone/road/growth/pop/
 commute/economy scenario twice and compare a snapshot checksum. This

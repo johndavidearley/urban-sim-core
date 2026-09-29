@@ -180,7 +180,7 @@ Note on default behavior: `districts` defaults to `nullptr`, matching prior beha
 ### Milestone 15: Disasters and Challenges - complete
 - [x] Crime simulation - a new `CrimeSystem` (`CrimeSystem::evaluate`) is a pure read-out, unlike `FireSystem`: no side effects on the map or entity store. It derives a single city-wide `CrimeSummary::overallRate` from unemployment, an average-land-value poverty proxy (below `CrimeParams::referenceLandValue` raises crime), and police coverage (`ServiceCoverageSummary::policeCoverage`, already computed by `ServiceSystem` every tick, mitigates it by up to `policeCoverageReduction`). Runs unconditionally every tick (default-on, like Transit/Office in M12/M13, not opt-in like the destructive systems below) and - one-tick lagged, the same pattern used for congestion/service satisfaction elsewhere in this loop - feeds the same migration-desirability formula: a high-crime city is less attractive to move into, exactly the way high pollution or bad traffic already are.
 - [x] Fire spread - a new `FireSystem` models fire as a per-tick stochastic process over the tile grid (not literal responding vehicles - `TrafficMicroSim`'s emergency-vehicle dispatch already covers that fidelity separately, as a standalone demo). Buildings can ignite each tick, weighted by type (industrial is far more fire-prone) and local pollution; an ignited building is destroyed immediately and its tile keeps burning for a few ticks, posing a spread risk to adjacent occupied tiles. Deterministic for a given seed (buildings/burning tiles processed in a fixed sorted order), matching every other subsystem in this codebase.
-- [x] Disease/health - a new `HealthSystem` (`HealthSystem::evaluate`) is a pure read-out, exactly like `CrimeSystem`: no side effects on the map or entity store. It derives a single city-wide `HealthSummary::illnessRate` from housing crowding (population relative to residential capacity, a density/contagion proxy), residential-weighted pollution, and hospital coverage (`ServiceCoverageSummary::healthCoverage`, already computed by `ServiceSystem` every tick), which mitigates it by up to `healthCoverageReduction`. Runs unconditionally every tick (default-on, same rationale as crime) and - one-tick lagged - feeds migration desirability: a sicker city is less attractive to move into. Deliberately does not kill residents directly (that fidelity, and the "sudden mass loss" flavor of an epidemic, belongs to the opt-in destructive systems below) - disease here is an ambient quality-of-life drag, the same category as crime or pollution.
+- [x] Disease/health - a new `HealthSystem` (`HealthSystem::evaluate`) is a pure read-out, exactly like `CrimeSystem`: no side effects on the map or entity store. It derives a single city-wide `HealthSummary::illnessRate` from housing crowding (population relative to residential capacity, a density/contagion proxy), residential-weighted pollution, uncovered sewage (`1 - ServiceCoverageSummary::sanitationCoverage`), and hospital coverage (`ServiceCoverageSummary::healthCoverage`, already computed by `ServiceSystem` every tick), which mitigates the combined rate by up to `healthCoverageReduction`. Runs unconditionally every tick (default-on, same rationale as crime) and - one-tick lagged - feeds migration desirability: a sicker city is less attractive to move into. Deliberately does not kill residents directly (that fidelity, and the "sudden mass loss" flavor of an epidemic, belongs to the opt-in destructive systems below) - disease here is an ambient quality-of-life drag, the same category as crime or pollution.
 - [x] Natural disasters (earthquakes, floods) - a new `NaturalDisasterSystem` (`NaturalDisasterSystem::step`) models one-off catastrophic events, unlike `FireSystem`'s persistent per-tile spread: each tick independently rolls a rare, uniform-risk earthquake (any building can be the epicenter) and a separate, water-restricted flood (only buildings within `floodProximity` of a water tile are eligible epicenters - a flood can't strike inland development). When one triggers, every building within its radius has a chance of being destroyed immediately that falls off linearly with distance from the epicenter - a single-tick blast radius, not a multi-tick spread. Unlike fire, neither event's chance or severity is mitigated by any service coverage (a fire department doesn't reduce whether the ground shakes or a river overflows) - `--simulate-earthquake-risk F` / `--simulate-flood-risk F` scale the two independently for tuning. Deterministic for a given seed (buildings processed in a fixed ID-sorted order).
 - [x] Emergency response (coverage-modulated) - fire station coverage (`ServiceCoverageSummary::fireCoverage`, already computed by `ServiceSystem` every tick `CitySimulator` runs) is read as a single city-wide fraction and reduces ignition chance, spread chance, and burn duration alike - a proxy for faster emergency response, not a per-building distance lookup (a deliberate fidelity tradeoff: `ServiceSystem` already pays the per-tile BFS cost for this aggregate number, so `FireSystem` reuses it rather than paying a second BFS pass). Literal per-vehicle emergency dispatch remains `TrafficMicroSim`'s separate, higher-fidelity demo (`--micro-traffic-incidents`) - the two model emergency response at different levels of detail and aren't merged. Earthquakes/floods are deliberately exempt from this mitigation (see above) - only fire has a "response speed" lever in this model.
 
@@ -460,17 +460,16 @@ worth its cost at the time the note was written:
     same seed, before plateauing at the initial facilities' coverage
     radius - expected, since only 2 of the 6 facility types exist until
     population reaches 1000).
-13. Add sewage coverage as a third utility leg alongside power/water -
-    **not started**. Raised as a natural follow-up to item 12: the coverage
-    plumbing (a third `ServiceType` variant, cache merge, connectivity
-    field) is nearly free to add given the existing infrastructure, but a
-    coverage stat with no mechanical hook would just be decorative like a
-    third copy of power/water's growth gate. The more interesting version
-    ties uncovered sewage into `HealthSystem`'s illness-rate calculation
-    (untreated sewage raising disease risk) instead of duplicating the
-    construction gate, giving it a distinct purpose from power/water. Scope
-    still to be decided: illness-rate modifier only, an additional
-    growth-gate leg, or both.
+13. ~~Add sewage coverage as a third utility leg alongside power/water~~ -
+    done as an illness-rate modifier, not a third construction gate.
+    `ServiceType::Sanitation` coverage already existed (placement, cache,
+    operating cost, HUD). `HealthSystem::evaluate` now takes
+    `sanitationCoverage` and adds `HealthParams::sanitationWeight *
+    (1 - coverage)` to the raw illness rate; hospital coverage still
+    mitigates the combined rate. Default `--simulate` does not auto-place
+    Sanitation (`enableUtilities` remains the placement opt-in), so
+    uncovered sewage is the baseline until a player or utilities pass
+    places it. Growth still requires only Power and Water.
 
 ---
 

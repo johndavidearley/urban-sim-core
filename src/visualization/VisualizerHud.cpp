@@ -48,11 +48,14 @@ void drawToolPalette(
   bool zoneActive,
   bool bulldozeActive,
   bool serviceActive,
+  bool districtActive,
   int mouseX,
   int mouseY
 ) {
-  const std::array<const char*, 4> labels = {"R ROAD", "Z ZONE", "B BULL", "S SERVICE"};
-  const std::array<bool, 4> active = {roadActive, zoneActive, bulldozeActive, serviceActive};
+  const std::array<const char*, 5> labels = {"R ROAD", "Z ZONE", "B BULL", "S SVC", "P DIST"};
+  const std::array<bool, 5> active = {
+    roadActive, zoneActive, bulldozeActive, serviceActive, districtActive
+  };
   for (size_t i = 0; i < labels.size(); ++i) {
     const SDL_Rect rect = paletteButtonRect(static_cast<int>(i), windowWidth, windowHeight);
     const bool hovered = mouseX >= rect.x && mouseX < rect.x + rect.w
@@ -143,7 +146,10 @@ void drawGameplayHud(
   drawText(renderer, x + 244, y + 108, "OUT $" + std::to_string(liveState.treasuryExpenses), {255, 145, 120}, 1);
   drawText(renderer, x + 244, y + 124, "NET $" + std::to_string(liveState.treasuryNet),
            liveState.treasuryNet >= 0 ? RGB{105, 230, 135} : RGB{255, 125, 110}, 1);
-  if (liveState.bankrupt) {
+  if (liveState.treasuryDebt > 0) {
+    drawText(renderer, x + 244, y + 142,
+             "DEBT $" + std::to_string(liveState.treasuryDebt), {255, 90, 80}, 1);
+  } else if (liveState.bankrupt) {
     drawText(renderer, x + 244, y + 142, "DEFICIT UNFUNDED", {255, 90, 80}, 1);
   } else if (liveState.lowFunds) {
     drawText(renderer, x + 244, y + 142, "LOW FUNDS", {255, 190, 70}, 1);
@@ -316,13 +322,88 @@ const char* buildingTypeLabel(BuildingType type) {
   }
 }
 
+SDL_Rect districtPanelRect() {
+  return {kDistrictPanelX, kDistrictPanelY, kDistrictPanelWidth, kDistrictPanelHeight};
+}
+
+SDL_Rect districtPanelButtonRect(DistrictPanelAction action) {
+  switch (action) {
+    case DistrictPanelAction::CycleArchetype:
+      return {kDistrictPanelX + 270, kDistrictPanelY + 24, 106, 22};
+    case DistrictPanelAction::ToggleCap:
+      return {kDistrictPanelX + 270, kDistrictPanelY + 50, 106, 22};
+    default:
+      return {0, 0, 0, 0};
+  }
+}
+
+DistrictPanelAction districtPanelHitTest(int mouseX, int mouseY) {
+  const std::array<DistrictPanelAction, 2> actions = {
+    DistrictPanelAction::CycleArchetype, DistrictPanelAction::ToggleCap
+  };
+  for (const DistrictPanelAction action : actions) {
+    const SDL_Rect rect = districtPanelButtonRect(action);
+    if (mouseX >= rect.x && mouseX < rect.x + rect.w
+        && mouseY >= rect.y && mouseY < rect.y + rect.h) {
+      return action;
+    }
+  }
+  return DistrictPanelAction::None;
+}
+
+bool pointInDistrictPanel(int mouseX, int mouseY) {
+  const SDL_Rect rect = districtPanelRect();
+  return mouseX >= rect.x && mouseX < rect.x + rect.w
+      && mouseY >= rect.y && mouseY < rect.y + rect.h;
+}
+
+void drawDistrictPanel(
+  SDL_Renderer* renderer,
+  const District& district,
+  int mouseX,
+  int mouseY
+) {
+  const SDL_Rect panel = districtPanelRect();
+  drawFilledRect(renderer, panel.x, panel.y, panel.w, panel.h, {14, 17, 22}, 200);
+  drawRectOutline(renderer, panel.x, panel.y, panel.w, panel.h,
+                  districtArchetypeColor(district.archetype), 240);
+  drawText(renderer, panel.x + 10, panel.y + 8, "DISTRICT " + district.name,
+           {120, 205, 255}, 2);
+  drawText(renderer, panel.x + 10, panel.y + 30,
+           DistrictSystem::archetypeToString(district.archetype),
+           districtArchetypeColor(district.archetype), 1);
+  const bool starved = district.serviceBudgetCap >= 0;
+  drawText(renderer, panel.x + 10, panel.y + 46,
+           starved ? "BUDGET STARVED" : "BUDGET FUNDED",
+           starved ? RGB{255, 150, 120} : RGB{105, 230, 135}, 1);
+  drawText(renderer, panel.x + 10, panel.y + 60,
+           starved ? "GROWTH SLOWED" : "GROWTH NORMAL",
+           {175, 185, 200}, 1);
+
+  const std::array<std::pair<DistrictPanelAction, const char*>, 2> buttons = {{
+    {DistrictPanelAction::CycleArchetype, "ARCH"},
+    {DistrictPanelAction::ToggleCap, starved ? "FUND" : "STARVE"},
+  }};
+  for (const auto& [action, label] : buttons) {
+    const SDL_Rect rect = districtPanelButtonRect(action);
+    const bool hovered = mouseX >= rect.x && mouseX < rect.x + rect.w
+      && mouseY >= rect.y && mouseY < rect.y + rect.h;
+    drawFilledRect(renderer, rect.x, rect.y, rect.w, rect.h,
+                   hovered ? RGB{55, 62, 75} : RGB{38, 42, 50}, 255);
+    drawRectOutline(renderer, rect.x, rect.y, rect.w, rect.h,
+                    hovered ? RGB{185, 205, 235} : RGB{125, 135, 150}, 255);
+    drawText(renderer, rect.x + 8, rect.y + 7, label, {235, 238, 242}, 1);
+  }
+}
+
 void drawTileInspector(
   SDL_Renderer* renderer,
   const CityMap& map,
   const RoadNetwork& roads,
   const EntityStore& store,
   const std::vector<ServiceFacility>& facilities,
-  Coord coord
+  Coord coord,
+  const DistrictSystem* districts
 ) {
   if (!map.isValid(coord)) {
     return;
@@ -339,9 +420,19 @@ void drawTileInspector(
   drawText(renderer, x + 10, y + 9,
            "TILE " + std::to_string(coord.x) + " " + std::to_string(coord.y),
            {120, 205, 255}, 2);
-  drawText(renderer, x + 10, y + 31,
-           std::string(terrain) + "  ZONE " + Zoning::zoneToString(map.zone(coord)),
-           {220, 225, 232}, 1);
+  std::string zoneLine = std::string(terrain) + "  ZONE " + Zoning::zoneToString(map.zone(coord));
+  if (districts != nullptr) {
+    const District* containing = nullptr;
+    for (const District& district : districts->getDistricts()) {
+      if (district.contains(coord)) {
+        containing = &district;
+      }
+    }
+    if (containing != nullptr) {
+      zoneLine += std::string("  DST ") + containing->name;
+    }
+  }
+  drawText(renderer, x + 10, y + 31, zoneLine, {220, 225, 232}, 1);
   drawText(renderer, x + 10, y + 47,
            "VALUE " + std::to_string(static_cast<int>(map.landValue(coord)))
              + "  POLL " + std::to_string(static_cast<int>(map.pollution(coord) * 100.0f)),
@@ -593,6 +684,9 @@ std::string makeHudTitle(
   bool serviceToolActive,
   ServiceType selectedService,
   const ServicePlan& servicePlan,
+  bool districtToolActive,
+  DistrictArchetype selectedArchetype,
+  const DistrictPlan& districtPlan,
   int64_t funds
 ) {
   const auto& buildings = store.getBuildings();
@@ -641,6 +735,8 @@ std::string makeHudTitle(
     oss << "BULLDOZE";
   } else if (serviceToolActive) {
     oss << "SERVICE-" << ServiceSystem::serviceTypeToString(selectedService);
+  } else if (districtToolActive) {
+    oss << "DISTRICT-" << DistrictSystem::archetypeToString(selectedArchetype);
   } else {
     oss << "NONE";
   }
@@ -652,8 +748,12 @@ std::string makeHudTitle(
     oss << " (" << (bulldozePlan.valid ? "$" + std::to_string(bulldozePlan.cost) : bulldozePlan.error) << ")";
   } else if (serviceToolActive && servicePlan.hasSite) {
     oss << " (" << (servicePlan.valid ? "$" + std::to_string(servicePlan.cost) : servicePlan.error) << ")";
+  } else if (!districtPlan.tiles.empty()) {
+    oss << " (" << (districtPlan.valid
+                      ? (districtPlan.removeId != 0 ? "remove" : "ok")
+                      : districtPlan.error) << ")";
   }
-  oss << " [R road | Z zone | B bulldoze | S service/cycle | click place]";
+  oss << " [R road | Z zone | B bulldoze | S service | P district]";
   return oss.str();
 }
 

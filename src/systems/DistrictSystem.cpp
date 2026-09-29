@@ -273,6 +273,15 @@ bool DistrictSystem::parseArchetype(const std::string& raw, DistrictArchetype& o
   return false;
 }
 
+const char* DistrictSystem::archetypeToString(DistrictArchetype archetype) {
+  switch (archetype) {
+    case DistrictArchetype::Industrial: return "INDUSTRIAL";
+    case DistrictArchetype::TechHub: return "TECHHUB";
+    case DistrictArchetype::General:
+    default: return "GENERAL";
+  }
+}
+
 bool DistrictSystem::assignFacilityToDistrict(DistrictId districtId, uint32_t facilityId) {
   District* district = getDistrict(districtId);
   if (district == nullptr) {

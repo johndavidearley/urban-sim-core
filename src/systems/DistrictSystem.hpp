@@ -149,6 +149,7 @@ public:
   // "TECH_HUB", "TECH-HUB"). Mirrors Zoning::parseZoneType/ServiceSystem::
   // parseServiceType's convention.
   static bool parseArchetype(const std::string& raw, DistrictArchetype& outArchetype);
+  static const char* archetypeToString(DistrictArchetype archetype);
 
   // Assign a service facility to a district
   bool assignFacilityToDistrict(DistrictId districtId, uint32_t facilityId);

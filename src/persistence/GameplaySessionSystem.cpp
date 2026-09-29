@@ -6,6 +6,7 @@
 #include <nlohmann/json.hpp>
 
 #include "src/persistence/SaveLoadSystem.hpp"
+#include "src/systems/DistrictSystem.hpp"
 
 using nlohmann::json;
 
@@ -31,6 +32,55 @@ bool validServiceType(int value) {
 bool validTransitMode(int value) {
   return value == static_cast<int>(TransitMode::Bus)
       || value == static_cast<int>(TransitMode::Rail);
+}
+
+bool validDistrictArchetype(int value) {
+  return value >= static_cast<int>(DistrictArchetype::General)
+      && value <= static_cast<int>(DistrictArchetype::TechHub);
+}
+
+json serializeDistricts(const std::vector<GameplaySessionState::DistrictRecord>& districts) {
+  json out = json::array();
+  for (const auto& district : districts) {
+    out.push_back({
+      {"name", district.name},
+      {"x1", district.x1},
+      {"y1", district.y1},
+      {"x2", district.x2},
+      {"y2", district.y2},
+      {"archetype", district.archetype},
+      {"serviceBudgetCap", district.serviceBudgetCap}
+    });
+  }
+  return out;
+}
+
+bool parseDistricts(
+  const json& items,
+  const CityMap& map,
+  std::vector<GameplaySessionState::DistrictRecord>& out,
+  std::string* errorMessage
+) {
+  for (const json& item : items) {
+    GameplaySessionState::DistrictRecord district;
+    district.name = item.value("name", std::string{});
+    district.x1 = item.at("x1").get<int>();
+    district.y1 = item.at("y1").get<int>();
+    district.x2 = item.at("x2").get<int>();
+    district.y2 = item.at("y2").get<int>();
+    district.archetype = item.value("archetype", 0);
+    district.serviceBudgetCap = item.value("serviceBudgetCap", int64_t{-1});
+    if (district.x1 > district.x2 || district.y1 > district.y2
+        || !map.isValid({district.x1, district.y1})
+        || !map.isValid({district.x2, district.y2})) {
+      return fail(errorMessage, "gameplay session contains an invalid district");
+    }
+    if (!validDistrictArchetype(district.archetype)) {
+      return fail(errorMessage, "gameplay session contains an invalid district archetype");
+    }
+    out.push_back(std::move(district));
+  }
+  return true;
 }
 
 json serializeTransitRoutes(const std::vector<TransitRoute>& routes) {
@@ -153,6 +203,8 @@ bool GameplaySessionSystem::save(
     {"treasuryRevenue", session.treasuryRevenue},
     {"treasuryExpenses", session.treasuryExpenses},
     {"treasuryNet", session.treasuryNet},
+    {"treasuryDebt", session.treasuryDebt},
+    {"treasuryInterestRemainder", session.treasuryInterestRemainder},
     {"populationTarget", session.populationTarget},
     {"fractionalDeaths", session.fractionalDeaths},
     {"awaitingDisposition", session.awaitingDisposition},
@@ -160,6 +212,7 @@ bool GameplaySessionSystem::save(
     {"autonomousExtent", session.autonomousExtent},
     {"emptyZonedCount", session.emptyZonedCount},
     {"transitRoutes", serializeTransitRoutes(session.transitRoutes)},
+    {"districts", serializeDistricts(session.districts)},
     {"demand", {
       {"residential", session.demand.residential},
       {"commercial", session.demand.commercial},
@@ -205,6 +258,8 @@ bool GameplaySessionSystem::load(
     loaded.treasuryRevenue = root.value("treasuryRevenue", int64_t{0});
     loaded.treasuryExpenses = root.value("treasuryExpenses", int64_t{0});
     loaded.treasuryNet = root.value("treasuryNet", int64_t{0});
+    loaded.treasuryDebt = root.value("treasuryDebt", int64_t{0});
+    loaded.treasuryInterestRemainder = root.value("treasuryInterestRemainder", 0.0);
     loaded.populationTarget = root.value("populationTarget", uint32_t{480});
     loaded.fractionalDeaths = root.value("fractionalDeaths", 0.0);
     loaded.awaitingDisposition = root.value("awaitingDisposition", uint32_t{0});
@@ -213,6 +268,9 @@ bool GameplaySessionSystem::load(
     loaded.emptyZonedCount = root.value("emptyZonedCount", int64_t{0});
     if (loaded.funds < 0 || loaded.tickIntervalMs < 16 || loaded.tickIntervalMs > 5000) {
       return fail(errorMessage, "gameplay session has invalid funds or speed");
+    }
+    if (loaded.treasuryDebt < 0 || loaded.treasuryInterestRemainder < 0.0) {
+      return fail(errorMessage, "gameplay session has invalid treasury debt");
     }
     if (loaded.autonomousExtent < 0 || loaded.emptyZonedCount < 0) {
       return fail(errorMessage, "gameplay session has invalid autonomousExtent or emptyZonedCount");
@@ -242,6 +300,12 @@ bool GameplaySessionSystem::load(
 
     if (root.contains("transitRoutes")) {
       if (!parseTransitRoutes(root.at("transitRoutes"), map, loaded.transitRoutes, errorMessage)) {
+        return false;
+      }
+    }
+
+    if (root.contains("districts")) {
+      if (!parseDistricts(root.at("districts"), map, loaded.districts, errorMessage)) {
         return false;
       }
     }

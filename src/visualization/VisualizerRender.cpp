@@ -457,7 +457,7 @@ constexpr int kPaletteGap = 8;
 constexpr int kPaletteBottomMargin = 14;
 
 int paletteWidth() {
-  return (4 * kPaletteButtonWidth) + (3 * kPaletteGap);
+  return (5 * kPaletteButtonWidth) + (4 * kPaletteGap);
 }
 
 SDL_Rect paletteButtonRect(int index, int windowWidth, int windowHeight) {
@@ -468,8 +468,9 @@ SDL_Rect paletteButtonRect(int index, int windowWidth, int windowHeight) {
 }
 
 PaletteTool paletteHitTest(int mouseX, int mouseY, int windowWidth, int windowHeight) {
-  const std::array<PaletteTool, 4> tools = {
-    PaletteTool::Road, PaletteTool::Zone, PaletteTool::Bulldoze, PaletteTool::Service
+  const std::array<PaletteTool, 5> tools = {
+    PaletteTool::Road, PaletteTool::Zone, PaletteTool::Bulldoze, PaletteTool::Service,
+    PaletteTool::District
   };
   for (size_t i = 0; i < tools.size(); ++i) {
     const SDL_Rect rect = paletteButtonRect(static_cast<int>(i), windowWidth, windowHeight);
@@ -481,5 +482,45 @@ PaletteTool paletteHitTest(int mouseX, int mouseY, int windowWidth, int windowHe
   return PaletteTool::None;
 }
 
+void drawDistrictOutlines(
+  SDL_Renderer* renderer,
+  const DistrictSystem& districts,
+  bool isometricMode,
+  const IsometricProjection& projection,
+  int viewX,
+  int viewY,
+  int tilePixels,
+  DistrictId selectedId
+) {
+  for (const District& district : districts.getDistricts()) {
+    const bool selected = district.id == selectedId;
+    const RGB color = selected ? RGB{255, 245, 150} : districtArchetypeColor(district.archetype);
+    const uint8_t isoAlpha = selected ? 170 : 90;
+    const uint8_t topAlpha = selected ? 255 : 200;
+    auto drawTile = [&](int x, int y) {
+      const Coord coord{x, y};
+      if (isometricMode) {
+        drawDiamond(renderer, projection.tileTop(coord), projection.tileWidth(),
+                    projection.tileHeight(), color, isoAlpha);
+      } else {
+        const int screenX = (x - viewX) * tilePixels;
+        const int screenY = (y - viewY) * tilePixels;
+        drawRectOutline(renderer, screenX, screenY, tilePixels, tilePixels, color, topAlpha);
+      }
+    };
+    for (int x = district.minCorner.x; x <= district.maxCorner.x; ++x) {
+      drawTile(x, district.minCorner.y);
+      if (district.maxCorner.y != district.minCorner.y) {
+        drawTile(x, district.maxCorner.y);
+      }
+    }
+    for (int y = district.minCorner.y + 1; y <= district.maxCorner.y - 1; ++y) {
+      drawTile(district.minCorner.x, y);
+      if (district.maxCorner.x != district.minCorner.x) {
+        drawTile(district.maxCorner.x, y);
+      }
+    }
+  }
+}
 
 }  // namespace visualizer

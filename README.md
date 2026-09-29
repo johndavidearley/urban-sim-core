@@ -58,8 +58,9 @@ Controls:
 - `F3`: toggle the isometric and top-down map views
 - `F4`: toggle detailed panels and the compact clean-gameplay HUD
 - `F`: center the isometric camera on the developed area
-- Click the bottom tool palette to select Roads, Zoning, Bulldoze, or Services;
-  clicking an active Zoning or Service button cycles its subtype
+- Click the bottom tool palette to select Roads, Zoning, Bulldoze, Services,
+  or Districts; clicking an active Zoning, Service, or District button cycles
+  its subtype
 - Click Play/Pause or `1X`/`2X`/`3X` in the HUD to control simulation time
 - Click Save/Load in the HUD, or press `F5`/`F9`, to persist the playable session
 - `R`: toggle the road construction tool
@@ -69,6 +70,14 @@ Controls:
 - `S`: activate the service tool; press repeatedly to cycle Fire, Police,
   Health, Education, Power, Water, Sanitation, Garbage, Recycling, Cemetery,
   and Crematorium
+- `P`: activate the district tool; press repeatedly to cycle General,
+  Industrial, and Tech Hub archetypes. Left-drag paints a policy rectangle
+  (free). Click an existing district to select it; ARCH cycles its archetype
+  and STARVE/FUND toggles a service-budget cap that slows G-mode growth.
+  Dragging the same multi-tile bounds again removes that district;
+  right-click a district to delete it. Industrial bans housing/office growth
+  under G-mode; Tech Hub bans industry. The selected district is highlighted;
+  the tile inspector shows the district name.
 - Left-drag: preview and build an x-then-y road while the road tool is active
 - Right-click: cancel the current road drag
 - Arrow keys: pan viewport
@@ -129,7 +138,8 @@ population target, and backlog persist in saved sessions.
 
 New buildings require both road-reachable power and water coverage. Sanitation
 adds sewage-service coverage and operating cost but is not a construction
-gate. The tile inspector reports current Power and Water connectivity, and the
+gate; uncovered sewage raises illness, which hospitals still mitigate. The
+tile inspector reports current Power and Water connectivity, and the
 new-city guide walks through placing both utilities before a civic service.
 
 The in-window HUD remains visible independently of the debug legend and shows
@@ -204,14 +214,15 @@ The construction fund is also the live city treasury. Each simulation tick
 applies one percent of the economy system's tax/export revenue and
 maintenance/import expenses to match the visualizer's short tick cadence.
 The HUD shows the latest scaled income, expenses, and net treasury change;
-these values are preserved by session saves.
+session saves keep those figures plus outstanding municipal debt.
 
 Each placed service also has a recurring per-tick operating cost: Fire $25,
 Police $22, Health $35, and Education $30. These costs join the HUD's `OUT`
 figure without the economy scaling step because they are already expressed in
-playable tick units. The HUD warns below $5,000 and reports an unfunded deficit
-when expenses would push an empty treasury below zero; recovery is announced
-when the balance becomes healthy again.
+playable tick units. The HUD warns below $5,000. An unpaid deficit becomes
+municipal debt (`DEBT $n`) instead of evaporating at $0; surplus cash repays
+principal and leftover debt accrues a small per-tick interest. Toasts announce
+taking on debt, paying it off, and treasury recovery.
 
 Bulldozer selections include civic facilities as first-class demolition
 targets. Removing one costs $100, clears its map marker and coverage, and

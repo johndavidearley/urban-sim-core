@@ -4,6 +4,7 @@ struct HealthParams {
   float baseIllnessRate = 0.06f;          // ambient rate with no aggravating/mitigating factors
   float densityWeight = 0.35f;            // housing crowding (population/residentialCapacity) raises illness
   float pollutionWeight = 0.5f;           // residential-weighted pollution raises illness
+  float sanitationWeight = 0.35f;         // uncovered sewage (1 - sanitationCoverage) raises illness
   float healthCoverageReduction = 0.8f;   // hospital coverage cuts illness by up to this fraction
 };
 
@@ -21,13 +22,16 @@ class HealthSystem {
 public:
   // housingDensity is population/residentialCapacity (0-1, crowding proxy);
   // averagePollution is the same residential-weighted pollution figure
-  // CitySimulator already computes for desirability; healthCoverage is
-  // ServiceCoverageSummary::healthCoverage, already computed by ServiceSystem
-  // every tick.
+  // CitySimulator already computes for desirability; healthCoverage and
+  // sanitationCoverage are ServiceCoverageSummary fields already computed
+  // by ServiceSystem every tick. Default sanitationCoverage is 1 (no sewage
+  // penalty) so isolated HealthSystem tests stay bit-identical unless they
+  // pass a live coverage fraction. Production callers pass the real value.
   static HealthSummary evaluate(
     float housingDensity,
     float averagePollution,
     float healthCoverage,
+    float sanitationCoverage = 1.0f,
     const HealthParams& params = {}
   );
 };
