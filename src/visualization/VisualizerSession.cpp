@@ -61,6 +61,7 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   tickState.economy = liveState.economy;
   tickState.illnessRate = liveState.illnessRate;
   tickState.crimeRate = liveState.crimeRate;
+  tickState.laggedEducationCoverage = liveState.laggedEducationCoverage;
   tickState.treasuryRevenue = liveState.treasuryRevenue;
   tickState.treasuryExpenses = liveState.treasuryExpenses;
   tickState.treasuryNet = liveState.treasuryNet;
@@ -92,6 +93,7 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
   liveState.economy = tickState.economy;
   liveState.illnessRate = tickState.illnessRate;
   liveState.crimeRate = tickState.crimeRate;
+  liveState.laggedEducationCoverage = tickState.laggedEducationCoverage;
   liveState.treasuryRevenue = tickState.treasuryRevenue;
   liveState.treasuryExpenses = tickState.treasuryExpenses;
   liveState.treasuryNet = tickState.treasuryNet;
@@ -123,9 +125,10 @@ void projectTreasuryHud(LiveSimulationState& liveState, const std::vector<Servic
 void updatePlayableUtilityConnectivity(
   CityMap& map,
   const RoadNetwork& roads,
+  const EntityStore& store,
   const std::vector<ServiceFacility>& facilities
 ) {
-  updateUtilityConnectivityFromFacilities(map, roads, facilities);
+  updateUtilityConnectivityFromFacilities(map, roads, store, facilities);
 }
 
 void refreshLiveDerivedState(

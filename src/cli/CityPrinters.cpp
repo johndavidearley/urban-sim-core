@@ -468,6 +468,11 @@ void printServiceSummary(const ServiceCoverageSummary& summary) {
   std::cout << "  Power Generation: " << summary.powerGenerationMW << " MW\n";
   std::cout << "  Power Supply Ratio: " << std::setprecision(1)
             << (summary.powerSupplyRatio * 100.0f) << "%\n";
+  std::cout << "  Water Demand: " << std::setprecision(2)
+            << summary.waterDemand << "\n";
+  std::cout << "  Water Supply: " << summary.waterSupply << "\n";
+  std::cout << "  Water Supply Ratio: " << std::setprecision(1)
+            << (summary.waterSupplyRatio * 100.0f) << "%\n";
   std::cout << "  Generation Emissions: " << std::setprecision(1)
             << summary.powerEmissionsKgPerMWh << " kg CO2e/MWh\n";
   std::cout << "  Overall Coverage: " << std::fixed << std::setprecision(1)

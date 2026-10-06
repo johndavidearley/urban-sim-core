@@ -106,9 +106,17 @@ float averageResidentialPollution(const CityMap& map, const EntityStore& store);
 // Add uncollected-waste pollution onto zoned tiles in [x0,y0]-[x1,y1].
 void applyWastePollution(CityMap& map, float penalty, int x0, int y0, int x1, int y1);
 
+// Graph reachability from the power/water BFS, then load shedding.
+// Buildings on the graph are kept closest-first. Farthest distance sheds
+// first, and a higher EntityId sheds first at the same distance, until
+// wired occupancy demand fits supply. Empty tiles at or beyond the first
+// shed distance go dark so growth stops there. Off-graph buildings stay
+// dark and do not consume supply. enableUtilities false never calls this,
+// so those tiles stay at the CityMap default (connected).
 void updateUtilityConnectivity(
   CityMap& map,
   const RoadNetwork& roads,
+  const EntityStore& store,
   const ServiceCoverageCache& cache,
   int x0, int y0, int x1, int y1,
   ThreadPool& pool

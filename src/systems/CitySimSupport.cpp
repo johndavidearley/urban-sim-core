@@ -6,10 +6,89 @@
 #include <cmath>
 #include <future>
 #include <limits>
+#include <unordered_set>
 #include <vector>
 
 #include "src/entities/BuildingPartitions.hpp"
 #include "src/networks/Pathfinding.hpp"
+
+namespace {
+
+// Wired buildings only. Demand off the road graph is reported on the
+// supply ratio but does not draw from a plant, so it cannot push a wired
+// building into the shed set.
+struct UtilityPlan {
+  int cutoff = std::numeric_limits<int>::max();
+  std::unordered_set<EntityId> servedBuildings;
+};
+
+UtilityPlan planUtilityService(
+  const EntityStore& store,
+  const RoadNetwork& roads,
+  const std::unordered_map<Coord, int, Vec2Hash>& nearest,
+  float supply
+) {
+  struct Candidate {
+    EntityId id = 0;
+    int distance = 0;
+    float demand = 0.0f;
+  };
+  std::vector<Candidate> loads;
+  static constexpr BuildingType kTypes[] = {
+    BuildingType::Residential, BuildingType::Commercial,
+    BuildingType::Industrial, BuildingType::Office
+  };
+  for (BuildingType type : kTypes) {
+    for (EntityId id : store.idsByBuildingType(type)) {
+      const Building* building = store.getBuilding(id);
+      if (building == nullptr) continue;
+      Coord anchor;
+      if (!roads.resolveRoadAnchor(building->position, anchor)) continue;
+      const auto it = nearest.find(anchor);
+      if (it == nearest.end()) continue;
+      loads.push_back({id, it->second, utilityDemandFor(*building)});
+    }
+  }
+  std::sort(loads.begin(), loads.end(), [](const Candidate& a, const Candidate& b) {
+    if (a.distance != b.distance) return a.distance > b.distance;
+    return a.id > b.id;
+  });
+
+  double remaining = 0.0;
+  for (const Candidate& candidate : loads) {
+    remaining += static_cast<double>(candidate.demand);
+  }
+  const double supplyLimit = static_cast<double>(std::max(0.0f, supply));
+
+  UtilityPlan plan;
+  for (const Candidate& candidate : loads) {
+    if (candidate.demand > 0.0f && remaining > supplyLimit + 1e-4) {
+      remaining -= static_cast<double>(candidate.demand);
+      plan.cutoff = std::min(plan.cutoff, candidate.distance);
+      continue;
+    }
+    plan.servedBuildings.insert(candidate.id);
+  }
+  return plan;
+}
+
+bool tileKeepsUtility(
+  const Tile& tile,
+  bool anchored,
+  const std::unordered_map<Coord, int, Vec2Hash>& nearest,
+  Coord anchor,
+  const UtilityPlan& plan
+) {
+  if (!anchored) return false;
+  const auto it = nearest.find(anchor);
+  if (it == nearest.end()) return false;
+  if (EntityIdUtils::isValid(tile.buildingId)) {
+    return plan.servedBuildings.count(tile.buildingId) != 0;
+  }
+  return it->second < plan.cutoff;
+}
+
+}  // namespace
 
 namespace city_sim {
 CapacitySummary summarize(const EntityStore& store) {
@@ -442,19 +521,26 @@ std::vector<Coord> sampleRouteStops(const Pathfinding::Path& path, int stopSpaci
 }
 
 // Updates Tile::connectedToPower/connectedToWater for every tile in the
-// active region from the coverage cache's type-restricted merges (see
-// ServiceCoverageCache::nearestPowerDistance/nearestWaterDistance) - only
-// called when options.enableUtilities is set, so a caller that never opts
-// in leaves both at their CityMap-constructor default (true, the M7
-// utility stub) forever. Parallelized across row chunks like
-// updatePollution above - each tile's result is independent.
+// active region. Reachability still comes from the coverage cache's
+// type-restricted BFS. Load shedding then turns off the farthest wired
+// buildings until their occupancy demand fits plant supply. Only called
+// when utilities are on (CitySimulator's enableUtilities, or the playable
+// tick, which always requires them). A caller that never opts in leaves
+// both flags at the CityMap default (true). Parallelized across row chunks
+// like updatePollution. The shed plan is built first so workers only read it.
 void updateUtilityConnectivity(
   CityMap& map,
   const RoadNetwork& roads,
+  const EntityStore& store,
   const ServiceCoverageCache& cache,
   int x0, int y0, int x1, int y1,
   ThreadPool& pool
 ) {
+  const UtilityPlan powerPlan = planUtilityService(
+    store, roads, cache.nearestPowerDistance, cache.powerGenerationCapacityMW);
+  const UtilityPlan waterPlan = planUtilityService(
+    store, roads, cache.nearestWaterDistance, cache.waterSupplyUnits);
+
   const int nRows = y1 - y0 + 1;
   const int minRowsPerChunk = 16;
   const int nChunks = (nRows >= minRowsPerChunk * 2)
@@ -468,15 +554,17 @@ void updateUtilityConnectivity(
     const int ry0 = y0 + c * rowsPerChunk;
     const int ry1 = std::min(y0 + (c + 1) * rowsPerChunk - 1, y1);
     if (ry0 > ry1) break;
-    futs.push_back(pool.submit([&map, &roads, &cache, x0, x1, ry0, ry1]() {
+    futs.push_back(pool.submit([&map, &roads, &cache, &powerPlan, &waterPlan, x0, x1, ry0, ry1]() {
       for (int y = ry0; y <= ry1; ++y) {
         for (int x = x0; x <= x1; ++x) {
           Tile& tile = map.getTile({x, y});
           if (tile.type == 2) continue;  // water tiles have no utility concept
           Coord anchor;
           const bool anchored = roads.resolveRoadAnchor({x, y}, anchor);
-          tile.connectedToPower = anchored && cache.nearestPowerDistance.count(anchor) != 0;
-          tile.connectedToWater = anchored && cache.nearestWaterDistance.count(anchor) != 0;
+          tile.connectedToPower = tileKeepsUtility(
+            tile, anchored, cache.nearestPowerDistance, anchor, powerPlan);
+          tile.connectedToWater = tileKeepsUtility(
+            tile, anchored, cache.nearestWaterDistance, anchor, waterPlan);
         }
       }
     }));

@@ -14,6 +14,7 @@ namespace visualizer {
 void updatePlayableUtilityConnectivity(
   CityMap& map,
   const RoadNetwork& roads,
+  const EntityStore& store,
   const std::vector<ServiceFacility>& facilities
 );
 

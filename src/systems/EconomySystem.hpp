@@ -94,6 +94,13 @@ public:
   // building-count-based placeholder, preserving prior behavior for callers
   // that have no map available (e.g. district-scoped sub-economies).
   //
+  // When `map` is set, commercial and industrial occupancy on a tile that
+  // lacks power or water drops out of goods production. Tax, maintenance,
+  // and the utilization ratio still count those workers. A null map, or a
+  // tile left at the default connected flags, keeps the full occupancy.
+  // Residential and office goods are unchanged (office is outside the
+  // goods model). Callers that never enable utilities leave the flags true.
+  //
   // `inflationMultiplier` (default 1.0 = no inflation, preserving prior
   // behavior for every existing caller) scales maintenance costs and trade
   // prices - both represent real-world costs (labor, materials, world-market

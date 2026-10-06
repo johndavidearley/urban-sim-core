@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -43,7 +44,19 @@ struct ServiceFacility {
   PowerSourceType powerSource = PowerSourceType::Generic;
   float powerCapacityMW = 100.0f;
   float emissionsKgPerMWh = 400.0f;
+  // Water facilities only. A default plant covers the same small city as a
+  // default 100 MW power plant (see utilityDemandFor).
+  float waterSupplyUnits = 100.0f;
 };
+
+// Occupancy load shared by power (MW) and water (units). Residential draws
+// half as much as every other building type. A default 100 MW / 100-unit
+// plant covers 50,000 residents before shedding starts.
+inline float utilityDemandFor(const Building& building) {
+  const float perOccupant =
+    building.type == BuildingType::Residential ? 0.002f : 0.004f;
+  return static_cast<float>(std::max(0, building.occupancy)) * perOccupant;
+}
 
 struct ServiceCoverageSummary {
   uint32_t totalBuildings = 0;
@@ -71,6 +84,12 @@ struct ServiceCoverageSummary {
   float powerGenerationMW = 0.0f;
   float powerSupplyRatio = 1.0f;
   float powerEmissionsKgPerMWh = 0.0f;
+  float waterDemand = 0.0f;
+  float waterSupply = 0.0f;
+  // 1 when demand is 0. Below 1 is a shortage the HUD and simulate summary
+  // show; shedding (updateUtilityConnectivity) is what actually disconnects
+  // buildings. The ratio stays demand/supply so a shed city still reads short.
+  float waterSupplyRatio = 1.0f;
 
   float overallCoverage = 0.0f;
   float satisfaction = 0.5f;
@@ -96,6 +115,7 @@ struct ServiceCoverageCache {
   uint64_t builtForTopologyVersion = static_cast<uint64_t>(-1);
   float powerGenerationCapacityMW = 0.0f;
   float powerWeightedEmissions = 0.0f;
+  float waterSupplyUnits = 0.0f;
 
   // Nearest distance to *any* facility of *any* type, merged (min) across all
   // entries' distance fields once here in buildCache() rather than re-derived

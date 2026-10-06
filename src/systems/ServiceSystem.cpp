@@ -28,6 +28,7 @@ uint64_t facilitySignature(const std::vector<ServiceFacility>& facilities) {
     mix(static_cast<uint32_t>(facility.powerSource));
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.powerCapacityMW)));
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.emissionsKgPerMWh)));
+    mix(static_cast<uint32_t>(std::hash<float>{}(facility.waterSupplyUnits)));
   }
   return hash;
 }
@@ -231,6 +232,7 @@ void ServiceSystem::buildCache(
   cache.entries.clear();
   cache.powerGenerationCapacityMW = 0.0f;
   cache.powerWeightedEmissions = 0.0f;
+  cache.waterSupplyUnits = 0.0f;
   cache.entries.reserve(facilities.size());
 
   // Group road-anchored facilities by (type, maxTravelDistance). Equal-radius
@@ -259,6 +261,8 @@ void ServiceSystem::buildCache(
       const float capacity = std::max(0.0f, facility.powerCapacityMW);
       cache.powerGenerationCapacityMW += capacity;
       cache.powerWeightedEmissions += capacity * std::max(0.0f, facility.emissionsKgPerMWh);
+    } else if (facility.type == ServiceType::Water) {
+      cache.waterSupplyUnits += std::max(0.0f, facility.waterSupplyUnits);
     }
     Coord anchor;
     if (!roads.resolveRoadAnchor(facility.position, anchor)) {
@@ -400,6 +404,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     uint32_t serviced = 0;
     std::array<uint32_t, kServiceTypeCount> byType{};
     float powerDemandMW = 0.0f;
+    float waterDemand = 0.0f;
   };
 
   // Evaluate a contiguous slice of the buildings vector. One coverageMask
@@ -408,9 +413,9 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     Partial p;
     for (size_t i = begin; i < end; ++i) {
       const Building* building = buildings[i];
-      const float occupants = static_cast<float>(std::max(0, building->occupancy));
-      p.powerDemandMW += occupants *
-        (building->type == BuildingType::Residential ? 0.002f : 0.004f);
+      const float demand = utilityDemandFor(*building);
+      p.powerDemandMW += demand;
+      p.waterDemand += demand;
 
       Coord anchor;
       if (!roads.resolveRoadAnchor(building->position, anchor)) continue;
@@ -443,6 +448,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     summary.servicedBuildings = p.serviced;
     coveredByType = p.byType;
     summary.powerDemandMW = p.powerDemandMW;
+    summary.waterDemand = p.waterDemand;
   } else {
     std::vector<std::future<Partial>> futures;
     futures.reserve(nChunks);
@@ -457,6 +463,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
       const Partial p = f.get();
       summary.servicedBuildings += p.serviced;
       summary.powerDemandMW += p.powerDemandMW;
+      summary.waterDemand += p.waterDemand;
       for (size_t t = 0; t < kServiceTypeCount; ++t) coveredByType[t] += p.byType[t];
     }
   }
@@ -475,6 +482,10 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   summary.crematoriumCoverage = coveredByType[typeIndex(ServiceType::Crematorium)] / denom;
   summary.powerSupplyRatio = summary.powerDemandMW > 0.0f
     ? std::min(1.0f, summary.powerGenerationMW / summary.powerDemandMW)
+    : 1.0f;
+  summary.waterSupply = cache.waterSupplyUnits;
+  summary.waterSupplyRatio = summary.waterDemand > 0.0f
+    ? std::min(1.0f, summary.waterSupply / summary.waterDemand)
     : 1.0f;
   // Deliberately unchanged: only the original four types feed
   // overallCoverage/satisfaction (see the Partial/hit comment above).

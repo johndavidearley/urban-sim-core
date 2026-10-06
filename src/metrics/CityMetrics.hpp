@@ -17,6 +17,9 @@ struct CityMetrics {
   float trafficCongestion = 0.0f;
   float serviceCoverage = 0.0f;
   float serviceSatisfaction = 0.5f;
-  
+  uint32_t lowIncomePopulation = 0;
+  uint32_t middleIncomePopulation = 0;
+  uint32_t highIncomePopulation = 0;
+
   std::string toString() const;
 };

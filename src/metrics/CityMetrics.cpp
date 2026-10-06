@@ -18,5 +18,8 @@ std::string CityMetrics::toString() const {
   ss << "Traffic Congestion: " << (trafficCongestion * 100.0f) << "%\n";
   ss << "Service Coverage: " << (serviceCoverage * 100.0f) << "%\n";
   ss << "Service Satisfaction: " << (serviceSatisfaction * 100.0f) << "%\n";
+  ss << "Income Bands: Low=" << lowIncomePopulation
+     << " Middle=" << middleIncomePopulation
+     << " High=" << highIncomePopulation << "\n";
   return ss.str();
 }

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <vector>
 
 namespace {
@@ -102,14 +103,33 @@ std::array<uint32_t, 3> splitByWeights(uint32_t total, const std::array<uint32_t
   return split;
 }
 
+// Integer lerp for the education weight tables. Endpoints are exact so
+// coverage 0 and coverage 1 do not round.
+uint32_t lerpU(uint32_t from, uint32_t to, float t) {
+  if (t <= 0.0f) {
+    return from;
+  }
+  if (t >= 1.0f) {
+    return to;
+  }
+  const double mixed =
+    (1.0 - static_cast<double>(t)) * static_cast<double>(from)
+    + static_cast<double>(t) * static_cast<double>(to);
+  return static_cast<uint32_t>(std::lround(mixed));
+}
+
 // Splits one income band's employed count across job types {commercial,
 // industrial, office} by preference weight, then spills any shortfall (a
 // preferred type running out of capacity) into whichever types still have
 // room, in a fixed order for determinism.
+// officeOverflowBudget, when non-null, caps how many of those spilled
+// workers may take an office seat. Null means unlimited (coverage 0).
+// Preference assignments do not draw from the budget.
 std::array<uint32_t, 3> allocateBandToJobTypes(
   uint32_t employed,
   const std::array<uint32_t, 3>& preferenceWeights,
-  std::array<uint32_t, 3>& remainingByType
+  std::array<uint32_t, 3>& remainingByType,
+  uint32_t* officeOverflowBudget
 ) {
   std::array<uint32_t, 3> assigned{0u, 0u, 0u};
   if (employed == 0) {
@@ -129,9 +149,16 @@ std::array<uint32_t, 3> allocateBandToJobTypes(
     static constexpr size_t kOverflowOrder[3] = {1, 0, 2};
     for (size_t oi = 0; oi < 3 && remainingNeed > 0; ++oi) {
       const size_t i = kOverflowOrder[oi];
-      const uint32_t extra = std::min(remainingNeed, remainingByType[i] - assigned[i]);
+      uint32_t room = remainingByType[i] - assigned[i];
+      if (i == 2 && officeOverflowBudget != nullptr) {
+        room = std::min(room, *officeOverflowBudget);
+      }
+      const uint32_t extra = std::min(remainingNeed, room);
       assigned[i] += extra;
       remainingNeed -= extra;
+      if (i == 2 && officeOverflowBudget != nullptr) {
+        *officeOverflowBudget -= extra;
+      }
     }
   }
 
@@ -146,7 +173,8 @@ PopulationSummary PopulationSystem::allocate(
   EntityStore& store,
   PopulationStore& population,
   uint32_t requestedPopulation,
-  uint32_t seed
+  uint32_t seed,
+  float educationCoverage
 ) {
   resetAllOccupancy(store);
 
@@ -162,65 +190,106 @@ PopulationSummary PopulationSystem::allocate(
   const uint32_t jobCapacity = commercialCapacity + industrialCapacity + officeCapacity;
 
   const uint32_t housed = std::min(requestedPopulation, housingCapacity);
-  const uint32_t employed = std::min(housed, jobCapacity);
-  const uint32_t unemployed = housed - employed;
+  const uint32_t employable = std::min(housed, jobCapacity);
 
   assignOccupancy(store, residential, housed, seed + 17u);
 
-  // Composition model: low/middle/high income split with deterministic band employment shares.
-  const std::array<uint32_t, 3> housedByBand = splitByWeights(housed, {50u, 35u, 15u});
-  const std::array<uint32_t, 3> employedByBand = splitByWeights(employed, {30u, 40u, 30u});
+  // Uneducated baseline (coverage <= 0). These literals are the historical
+  // split; coverage 0 must keep them bit-for-bit.
+  // Full coverage targets, also summing to 100:
+  //   housed {30, 40, 30}, employed {20, 40, 40}
+  //   jobs {commercial, industrial, office}:
+  //     low {30, 70, 0} (unchanged; low income never prefers office)
+  //     middle {25, 30, 45}, high {20, 5, 75}
+  // Between the endpoints the weights lerp. There is no cliff at 100%.
+  // Office overflow (workers a band could not place by preference) scales
+  // from the full office capacity down to zero, so spare office seats stay
+  // empty instead of being given to the low band. Industrial, then
+  // commercial, absorb the workers office cannot take.
+  const bool educated = educationCoverage > 0.0f;
+  const float coverage = educated ? std::min(educationCoverage, 1.0f) : 0.0f;
 
-  // Job matching preferences by income band: {commercial, industrial, office}.
-  // Low income skews industrial with little office access; middle income is
-  // balanced with a modest office share; high income is office-and-commercial
-  // heavy with little industrial - a rough proxy for blue-collar vs.
-  // white-collar employment following income.
+  std::array<uint32_t, 3> housedWeights{50u, 35u, 15u};
+  std::array<uint32_t, 3> employedWeights{30u, 40u, 30u};
+  const std::array<uint32_t, 3> lowJobs{30u, 70u, 0u};
+  std::array<uint32_t, 3> middleJobs{45u, 40u, 15u};
+  std::array<uint32_t, 3> highJobs{35u, 10u, 55u};
+  uint32_t officeOverflowBudget = 0;
+  uint32_t* officeOverflow = nullptr;
+  if (educated) {
+    housedWeights = std::array<uint32_t, 3>{
+      lerpU(50u, 30u, coverage), lerpU(35u, 40u, coverage), lerpU(15u, 30u, coverage)};
+    employedWeights = std::array<uint32_t, 3>{
+      lerpU(30u, 20u, coverage), lerpU(40u, 40u, coverage), lerpU(30u, 40u, coverage)};
+    middleJobs = std::array<uint32_t, 3>{
+      lerpU(45u, 25u, coverage), lerpU(40u, 30u, coverage), lerpU(15u, 45u, coverage)};
+    highJobs = std::array<uint32_t, 3>{
+      lerpU(35u, 20u, coverage), lerpU(10u, 5u, coverage), lerpU(55u, 75u, coverage)};
+    officeOverflowBudget = static_cast<uint32_t>(std::lround(
+      (1.0 - static_cast<double>(coverage)) * static_cast<double>(officeCapacity)));
+    officeOverflow = &officeOverflowBudget;
+  }
+
+  const std::array<uint32_t, 3> housedByBand = splitByWeights(housed, housedWeights);
+  const std::array<uint32_t, 3> employedByBand = splitByWeights(employable, employedWeights);
+
   std::array<uint32_t, 3> remainingByType{commercialCapacity, industrialCapacity, officeCapacity};
   std::array<uint32_t, 3> assignedByType{0u, 0u, 0u};
+  std::array<uint32_t, 3> placedByBand{0u, 0u, 0u};
 
-  const auto addBand = [&](uint32_t bandEmployed, const std::array<uint32_t, 3>& weights) {
-    const std::array<uint32_t, 3> a = allocateBandToJobTypes(bandEmployed, weights, remainingByType);
+  const auto addBand = [&](size_t band, uint32_t bandEmployed, const std::array<uint32_t, 3>& weights) {
+    const std::array<uint32_t, 3> a =
+      allocateBandToJobTypes(bandEmployed, weights, remainingByType, officeOverflow);
+    placedByBand[band] = a[0] + a[1] + a[2];
     for (size_t i = 0; i < 3; ++i) {
       assignedByType[i] += a[i];
     }
   };
-  addBand(employedByBand[0], {30u, 70u, 0u});
-  addBand(employedByBand[1], {45u, 40u, 15u});
-  addBand(employedByBand[2], {35u, 10u, 55u});
+  // Low, then middle, then high. Coverage 0 must keep this order: the low
+  // band reaches office only through overflow, and later bands see what is left.
+  addBand(0, employedByBand[0], lowJobs);
+  addBand(1, employedByBand[1], middleJobs);
+  addBand(2, employedByBand[2], highJobs);
 
   assignOccupancy(store, commercial, assignedByType[0], seed + 29u);
   assignOccupancy(store, industrial, assignedByType[1], seed + 43u);
   assignOccupancy(store, office, assignedByType[2], seed + 53u);
 
+  const auto storedEmployed = [&](size_t band) {
+    return std::min(housedByBand[band], placedByBand[band]);
+  };
+
   population.clear();
   if (housedByBand[0] > 0) {
-    population.createGroup(IncomeBand::Low, housedByBand[0], std::min(housedByBand[0], employedByBand[0]));
+    population.createGroup(IncomeBand::Low, housedByBand[0], storedEmployed(0));
   }
   if (housedByBand[1] > 0) {
-    population.createGroup(IncomeBand::Middle, housedByBand[1], std::min(housedByBand[1], employedByBand[1]));
+    population.createGroup(IncomeBand::Middle, housedByBand[1], storedEmployed(1));
   }
   if (housedByBand[2] > 0) {
-    population.createGroup(IncomeBand::High, housedByBand[2], std::min(housedByBand[2], employedByBand[2]));
+    population.createGroup(IncomeBand::High, housedByBand[2], storedEmployed(2));
   }
+
+  const uint32_t assignedJobs = assignedByType[0] + assignedByType[1] + assignedByType[2];
 
   PopulationSummary summary;
   summary.requestedPopulation = requestedPopulation;
   summary.housedPopulation = housed;
-  summary.employedPopulation = employed;
-  summary.unemployedPopulation = unemployed;
+  summary.employedPopulation = assignedJobs;
+  summary.unemployedPopulation = housed - assignedJobs;
   summary.availableHousing = housingCapacity - housed;
-  summary.availableJobs = jobCapacity - employed;
+  summary.availableJobs = jobCapacity - assignedJobs;
   if (housed > 0) {
-    summary.unemploymentRate = static_cast<float>(unemployed) / static_cast<float>(housed);
+    summary.unemploymentRate =
+      static_cast<float>(summary.unemployedPopulation) / static_cast<float>(housed);
   }
 
   summary.lowIncomePopulation = housedByBand[0];
   summary.middleIncomePopulation = housedByBand[1];
   summary.highIncomePopulation = housedByBand[2];
-  summary.lowIncomeEmployed = std::min(housedByBand[0], employedByBand[0]);
-  summary.middleIncomeEmployed = std::min(housedByBand[1], employedByBand[1]);
-  summary.highIncomeEmployed = std::min(housedByBand[2], employedByBand[2]);
+  summary.lowIncomeEmployed = storedEmployed(0);
+  summary.middleIncomeEmployed = storedEmployed(1);
+  summary.highIncomeEmployed = storedEmployed(2);
 
   return summary;
 }
@@ -275,4 +344,7 @@ void PopulationSystem::applyToMetrics(const PopulationSummary& summary, CityMetr
   metrics.availableHousing = summary.availableHousing;
   metrics.availableJobs = summary.availableJobs;
   metrics.unemployment = summary.unemploymentRate;
+  metrics.lowIncomePopulation = summary.lowIncomePopulation;
+  metrics.middleIncomePopulation = summary.middleIncomePopulation;
+  metrics.highIncomePopulation = summary.highIncomePopulation;
 }

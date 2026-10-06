@@ -26,11 +26,16 @@ struct PopulationSummary {
 
 class PopulationSystem {
 public:
+  // educationCoverage is the previous tick's school coverage, in [0, 1].
+  // Zero (the default) keeps the uneducated weight tables bit-for-bit.
+  // Full coverage moves the housed mix toward high income and fills office
+  // seats only from the educated preference share.
   static PopulationSummary allocate(
     EntityStore& store,
     PopulationStore& population,
     uint32_t requestedPopulation,
-    uint32_t seed = 0
+    uint32_t seed = 0,
+    float educationCoverage = 0.0f
   );
 
   // Read-only snapshot of current groups and building capacities (no reallocation).

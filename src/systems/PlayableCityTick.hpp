@@ -36,6 +36,11 @@ struct PlayableCityTickState {
   EconomyState economy;
   float illnessRate = 0.0f;
   float crimeRate = 0.0f;
+  // Previous tick's education coverage. allocate reads it; the playable tick
+  // writes serviceSummary.educationCoverage here after services run. A tool
+  // refresh updates the service summary and leaves this lag alone. Starts
+  // at 0, so the first tick is the uneducated labor split.
+  float laggedEducationCoverage = 0.0f;
   int64_t treasuryRevenue = 0;
   int64_t treasuryExpenses = 0;
   int64_t treasuryNet = 0;
@@ -92,6 +97,7 @@ struct DerivedCityRefreshOptions {
 void updateUtilityConnectivityFromFacilities(
   CityMap& map,
   const RoadNetwork& roads,
+  const EntityStore& store,
   const std::vector<ServiceFacility>& facilities
 );
 

@@ -118,6 +118,7 @@ void drawGameplayHud(
   int64_t funds,
   const std::string& toolLabel,
   const LiveSimulationState& liveState,
+  const PopulationStore& populationStore,
   int mouseX,
   int mouseY
 ) {
@@ -166,6 +167,31 @@ void drawGameplayHud(
   drawText(renderer, x + 244, y + 206,
            "CRIME " + std::to_string(static_cast<int>(liveState.crimeRate * 100.0f)) + "%",
            liveState.crimeRate <= 0.15f ? RGB{160, 175, 165} : RGB{255, 150, 120}, 1);
+  const bool utilityShort =
+    liveState.serviceSummary.powerSupplyRatio < 0.999f
+    || liveState.serviceSummary.waterSupplyRatio < 0.999f;
+  drawText(renderer, x + 12, y + 222,
+           "PWR " + std::to_string(static_cast<int>(liveState.serviceSummary.powerSupplyRatio * 100.0f))
+             + "%  WTR " + std::to_string(static_cast<int>(liveState.serviceSummary.waterSupplyRatio * 100.0f)) + "%",
+           utilityShort ? RGB{255, 150, 120} : RGB{105, 230, 135}, 1);
+  uint32_t lowIncome = 0;
+  uint32_t middleIncome = 0;
+  uint32_t highIncome = 0;
+  for (const auto& [id, group] : populationStore.getGroups()) {
+    (void)id;
+    if (group.band == IncomeBand::Low) {
+      lowIncome += group.size;
+    } else if (group.band == IncomeBand::Middle) {
+      middleIncome += group.size;
+    } else {
+      highIncome += group.size;
+    }
+  }
+  drawText(renderer, x + 12, y + 238,
+           "LOW " + std::to_string(lowIncome)
+             + "  MID " + std::to_string(middleIncome)
+             + "  HIGH " + std::to_string(highIncome),
+           {225, 228, 235}, 1);
 
   const std::array<std::pair<HudAction, const char*>, 6> controls = {{
     {HudAction::TogglePause, paused ? "PLAY" : "PAUSE"},

@@ -31,7 +31,8 @@ static const char* kCSVHeader =
   "active_fires,buildings_lost_to_fire,crime_rate,illness_rate,"
   "earthquake_occurred,flood_occurred,buildings_lost_to_disaster,"
   "waste_collection_rate,waste_uncollected,waste_pollution_penalty,"
-  "deaths_this_tick,deathcare_backlog,deathcare_happiness_penalty\n";
+  "deaths_this_tick,deathcare_backlog,deathcare_happiness_penalty,"
+  "power_supply_ratio,water_supply_ratio\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -70,7 +71,8 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.activeFires << "," << row.buildingsLostToFire << "," << row.crimeRate << "," << row.illnessRate << ","
       << (row.earthquakeOccurred ? 1 : 0) << "," << (row.floodOccurred ? 1 : 0) << "," << row.buildingsLostToDisaster << ","
       << row.wasteCollectionRate << "," << row.wasteUncollected << "," << row.wastePollutionPenalty << ","
-      << row.deathsThisTick << "," << row.deathcareBacklog << "," << row.deathcareHappinessPenalty << "\n";
+      << row.deathsThisTick << "," << row.deathcareBacklog << "," << row.deathcareHappinessPenalty << ","
+      << row.powerSupplyRatio << "," << row.waterSupplyRatio << "\n";
 }
 
 bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
@@ -293,7 +295,9 @@ int runCitySimulation(
                 << " buildingsLostToFire=" << last.buildingsLostToFire
                 << " crimeRate=" << std::setprecision(1) << (last.crimeRate * 100.0f) << "%"
                 << " illnessRate=" << (last.illnessRate * 100.0f) << "%"
-                << " buildingsLostToDisaster=" << last.buildingsLostToDisaster << "\n";
+                << " buildingsLostToDisaster=" << last.buildingsLostToDisaster
+                << " powerSupply=" << std::setprecision(0) << (last.powerSupplyRatio * 100.0f) << "%"
+                << " waterSupply=" << (last.waterSupplyRatio * 100.0f) << "%\n";
       std::cout << "\n" << MetricsSystem::createCitySummaryReport(result.finalMetrics);
     }
 

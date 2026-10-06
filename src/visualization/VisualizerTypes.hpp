@@ -85,6 +85,8 @@ struct LiveSimulationState {
   EconomyState economy;
   float illnessRate = 0.0f;
   float crimeRate = 0.0f;
+  // Copied with the playable tick. allocate reads the previous tick's value.
+  float laggedEducationCoverage = 0.0f;
   int64_t treasuryRevenue = 0;
   int64_t treasuryExpenses = 0;
   int64_t treasuryNet = 0;

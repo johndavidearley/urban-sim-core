@@ -14,6 +14,9 @@ TEST(MetricsSystemTests, CollectCityMetricsCombinesSubsystemResults) {
   population.availableHousing = 15;
   population.availableJobs = 10;
   population.unemploymentRate = 0.10f;
+  population.lowIncomePopulation = 60;
+  population.middleIncomePopulation = 40;
+  population.highIncomePopulation = 20;
 
   TrafficSummary traffic;
   traffic.averageCommuteTime = 8.0f;
@@ -33,6 +36,9 @@ TEST(MetricsSystemTests, CollectCityMetricsCombinesSubsystemResults) {
   EXPECT_EQ(metrics.availableHousing, 15u);
   EXPECT_EQ(metrics.availableJobs, 10u);
   EXPECT_FLOAT_EQ(metrics.unemployment, 0.10f);
+  EXPECT_EQ(metrics.lowIncomePopulation, 60u);
+  EXPECT_EQ(metrics.middleIncomePopulation, 40u);
+  EXPECT_EQ(metrics.highIncomePopulation, 20u);
   EXPECT_EQ(metrics.cityRevenue, 250000);
   EXPECT_EQ(metrics.cityExpenses, 180000);
   EXPECT_FLOAT_EQ(metrics.landValueAverage, 132.0f);
@@ -45,11 +51,15 @@ TEST(MetricsSystemTests, SummaryReportIncludesBudgetFields) {
   metrics.population = 80;
   metrics.cityRevenue = 90000;
   metrics.cityExpenses = 100000;
+  metrics.lowIncomePopulation = 40;
+  metrics.middleIncomePopulation = 25;
+  metrics.highIncomePopulation = 15;
 
   const std::string report = MetricsSystem::createCitySummaryReport(metrics);
 
   EXPECT_NE(report.find("City Summary:"), std::string::npos);
   EXPECT_NE(report.find("Population: 80"), std::string::npos);
+  EXPECT_NE(report.find("Income Bands: Low=40 Middle=25 High=15"), std::string::npos);
   EXPECT_NE(report.find("Budget Balance: $-10000"), std::string::npos);
   EXPECT_NE(report.find("Budget Status: Deficit"), std::string::npos);
 }

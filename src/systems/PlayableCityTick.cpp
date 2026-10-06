@@ -79,13 +79,15 @@ void evaluateHealthAndCrime(const CityMap& map, const EntityStore& store,
 void updateUtilityConnectivityFromFacilities(
   CityMap& map,
   const RoadNetwork& roads,
+  const EntityStore& store,
   const std::vector<ServiceFacility>& facilities
 ) {
   ServiceCoverageCache cache;
   ServiceSystem::buildCache(roads, facilities, cache);
   int ax0 = 0, ay0 = 0, ax1 = 0, ay1 = 0;
   activeBounds(map, ax0, ay0, ax1, ay1);
-  city_sim::updateUtilityConnectivity(map, roads, cache, ax0, ay0, ax1, ay1, playablePool());
+  city_sim::updateUtilityConnectivity(
+    map, roads, store, cache, ax0, ay0, ax1, ay1, playablePool());
 }
 
 void refreshDerivedCityState(
@@ -105,11 +107,12 @@ void refreshDerivedCityState(
     ServiceSystem::buildCache(roads, facilities, state.serviceCache);
   }
   city_sim::updateUtilityConnectivity(
-    map, roads, state.serviceCache, ax0, ay0, ax1, ay1, pool);
+    map, roads, store, state.serviceCache, ax0, ay0, ax1, ay1, pool);
 
   if (options.reallocPopulation) {
     PopulationSystem::allocate(
-      store, population, population.getTotalPopulation(), options.seed);
+      store, population, population.getTotalPopulation(), options.seed,
+      state.laggedEducationCoverage);
   }
 
   if (options.runTraffic) {
@@ -174,6 +177,7 @@ void playableCityTick(
   const PlayableCityTickOptions& options
 ) {
   const uint32_t tickSeed = options.baseSeed + (state.tick * 31u);
+  const float educationNow = state.laggedEducationCoverage;
   int ax0 = 0, ay0 = 0, ax1 = 0, ay1 = 0;
   activeBounds(map, ax0, ay0, ax1, ay1);
   ThreadPool& pool = playablePool();
@@ -192,7 +196,7 @@ void playableCityTick(
     ServiceSystem::buildCache(roads, facilities, state.serviceCache);
   }
   city_sim::updateUtilityConnectivity(
-    map, roads, state.serviceCache, ax0, ay0, ax1, ay1, pool);
+    map, roads, store, state.serviceCache, ax0, ay0, ax1, ay1, pool);
 
   const std::vector<GrowthChanceModifier>* growthModifiers =
     state.districtGrowthModifiers.empty() ? nullptr : &state.districtGrowthModifiers;
@@ -203,7 +207,8 @@ void playableCityTick(
   state.buildingsSpawned = growth.totalSpawned();
   state.buildingsDemolished = growth.totalDemolished();
 
-  PopulationSystem::allocate(store, population, state.populationTarget, tickSeed + 2u);
+  PopulationSystem::allocate(
+    store, population, state.populationTarget, tickSeed + 2u, educationNow);
 
   DerivedCityRefreshOptions refresh;
   refresh.runTraffic = true;
@@ -230,7 +235,7 @@ void playableCityTick(
     state.populationTarget = state.populationTarget > state.deathcare.deaths
       ? state.populationTarget - state.deathcare.deaths : 0;
     PopulationSystem::allocate(
-      store, population, population.getTotalPopulation(), tickSeed + 5u
+      store, population, population.getTotalPopulation(), tickSeed + 5u, educationNow
     );
   }
 
@@ -259,6 +264,7 @@ void playableCityTick(
   state.treasuryInterestRemainder = debt.interestRemainder;
   state.lowFunds = funds > 0 && funds < 5000;
   state.bankrupt = funds == 0 && (flow.shortfall > 0 || state.treasuryDebt > 0);
+  state.laggedEducationCoverage = state.serviceSummary.educationCoverage;
 
   ++state.tick;
 }

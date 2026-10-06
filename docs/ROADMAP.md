@@ -4,7 +4,7 @@ For the authoritative current validation baseline and active priorities, see
 [STATUS.md](STATUS.md). This document retains detailed milestone history and
 future ideas.
 
-Last updated: July 5, 2026
+Last updated: October 6, 2026
 
 ## Current Status Snapshot
 
@@ -18,8 +18,10 @@ Last updated: July 5, 2026
 - Phase 5, Milestone 14 (Districts and Policies): complete - district-level management, zoning ordinances, growth incentives, service budgets by district, and special districts (industrial/tech hub archetypes) all wired into the autonomous simulation loop
 - Phase 5, Milestone 15 (Disasters and Challenges): complete - fire spread, earthquakes, and floods (opt-in via --simulate-disasters, coverage-modulated emergency response for fire), and crime/disease simulation (always-on, feed migration desirability)
 - Phase 5, Milestone 16 (City Optimization): complete - incremental spatial index for zoning candidates, cross-tick traffic route cache, and (the big one) a default Release build type that was previously missing entirely; 500×500 map now sustains 127k population at 5.75 ms/tick, well under the 60 FPS budget
-- Automated validation: 294 tests passing; regular, strict, ASan/UBSan, and
-  TSan configurations verified
+- Automated validation at the M16 close-out: 294 tests passing; regular,
+  strict, ASan/UBSan, and TSan configurations verified. Live counts are in
+  STATUS.md.
+- Phase 6 (M17–M22): M18 complete. M19 is next.
 
 ---
 
@@ -197,6 +199,195 @@ Note on default behavior: unlike the additive M12/M13/M14 systems, fire and natu
 
 ---
 
+## Phase 6: A City With Consequences (M17–M22)
+
+Defined October 6, 2026. M17 and M18 are complete. Implement the rest in order. Each milestone
+keeps the suite deterministic and names whether a default `--simulate` run
+changes. The struck-through list under "Next Targets" is finished work.
+
+These stay as they are through the whole phase:
+
+- Player mutations stay the gameplay tools. A command/query façade waits
+  for a second interactive frontend.
+- Tick scheduling stays the interval fields on `SimOptions`. `SimulationTime`
+  can label a HUD clock. It does not become a day/week/month scheduler.
+- Citizens stay `PopulationGroup` aggregates. Power and water stay
+  `ServiceSystem` coverage over the road graph, plus a load check.
+- Freight stays in `TrafficSystem`'s commute-batch model. `TrafficMicroSim`
+  stays the separate higher-fidelity demo.
+- Sanitation stays an illness modifier, not a third construction gate.
+
+### Milestone 17: Utility shortage — complete
+
+Power already reports load. `ServiceCoverageSummary` has `powerDemandMW`
+(occupancy × 0.002 residential, × 0.004 otherwise), `powerGenerationMW`
+(sum of `ServiceFacility::powerCapacityMW`), and `powerSupplyRatio`. Nothing
+reads the ratio. `Tile::connectedToPower` is still "a plant's BFS reached
+this road anchor." Water has coverage and no demand. A fully wired city
+can be short of power and keep growing.
+
+- [x] When `enableUtilities` is on, a supply ratio below 1 sheds load.
+      Deterministic: buildings ordered by stable id, farthest from the
+      nearest plant first, lose power until remaining demand fits
+      generation. Shed buildings read as not connected for the growth
+      gate, the tile inspector, and a production penalty on commercial
+      and industrial occupancy.
+- [x] Water gets the same shape. Each Water facility has a fixed supply
+      (a capacity field, defaulting so today's single starter plant still
+      covers a small city). Demand is occupancy-based. Shortage sheds the
+      farthest watered buildings.
+- [x] `powerSupplyRatio` and a new water supply ratio show on the
+      `--simulate` summary and the visualizer HUD. A shortage is visible
+      without reading the console.
+- [x] Coverage BFS is unchanged. A building outside the graph is
+      uncovered; a building inside the graph can still be shed.
+- [x] `enableUtilities` stays off by default, so a normal `--simulate` run
+      is unchanged. With the flag on, growth can stall when plants are
+      too small, which is the milestone.
+
+**Deliverable:** A utilities run that outgrows its plants stops connecting
+new buildings until another plant is placed. Tests lock full supply, a
+forced shortfall, and shed order.
+
+### Milestone 18: Schools and the labor market — complete
+
+`educationCoverage` feeds the four-service average and district budget
+weights. It does not change who lives in the city. `PopulationSystem`
+splits housed population `{50, 35, 15}` low/middle/high and employed
+population `{30, 40, 30}`, then matches bands to jobs with a fixed weight
+table (low income cannot take office work). Schools are auto-placed, so
+the coverage number is real and unused.
+
+- [x] Zero education coverage keeps today's weights bit-for-bit. That is
+      the uneducated baseline.
+- [x] Lagged `educationCoverage` (one tick, same pattern as crime) moves
+      the housed mix toward high income and opens office work to the
+      middle band. Full coverage targets housed `{30, 40, 30}`, employed
+      `{20, 40, 40}`, and job weights `{commercial, industrial, office}`
+      of low `{30, 70, 0}`, middle `{25, 30, 45}`, high `{20, 5, 75}`.
+      Weights lerp. There is no cliff at 100%.
+- [x] Office buildings fill only to the educated share. Spare office
+      capacity stays empty instead of being silently given to the low
+      band. Industrial work absorbs the workers office cannot take.
+- [x] The shift runs in `CitySimulator` and `playableCityTick`. The HUD
+      and city summary show the three band counts, which already exist
+      on `PopulationSummary`.
+- [x] Default `--simulate` changes once schools exist, same category as
+      office demand in M12. A test freezes coverage at 0 and checks the
+      old split.
+
+**Deliverable:** A city with schools employs a higher office share than
+the same seed with education facilities removed. Unemployment and band
+counts explain the difference.
+
+### Milestone 19: Density follows land value
+
+`GrowthSystem` already redevelops. On a saturated zone with demand, an
+occupied building is removed and recreated at 2× capacity, capped at 64×
+`defaultCapacity`. The chance ignores land value, services, and
+congestion, and the map draws a doubled building like the original.
+
+- [ ] Redevelopment chance scales with normalized land value and local
+      civic coverage, and falls as the tile's road congestion rises.
+      A fringe tile in a saturated zone stays low. A high-value, served,
+      uncongested tile is the one that doubles.
+- [ ] The cap and the doubling step stay. This milestone changes where
+      densification happens, not the capacity ladder.
+- [ ] The visualizer draws capacity tier (height or footprint) so a 2×
+      and a 16× building read differently in isometric and top-down.
+- [ ] Both hosts use the same `GrowthSystem` rule. Playable construction
+      funds charge more for a redevelopment than for a new low building.
+- [ ] Default growth changes. Determinism stays a same-seed comparison.
+      Building counts can match an older run while capacities differ, so
+      tests assert capacity, not only spawn counts.
+
+**Deliverable:** On one seed, the highest-capacity buildings sit on the
+highest land value, and the map shows that.
+
+### Milestone 20: Neighborhood crime and illness
+
+`CrimeSystem` and `HealthSystem` each return one city-wide float from
+city-wide unemployment, average land value, pollution, and coverage.
+A precinct does not make its side of the city safer than the other side.
+Deathcare already handles mortality. These two stay pure read-outs.
+
+- [ ] Each residential building gets a local crime rate and a local
+      illness rate. Local police distance lowers crime. Local hospital
+      and sanitation distance lower illness. Local pollution raises
+      illness. The city rate becomes the population-weighted mean and
+      remains the migration-desirability input.
+- [ ] Reuse `ServiceCoverageCache` distance fields. No second BFS.
+- [ ] `LandValueSystem` subtracts the local rates, so a covered
+      neighborhood is worth more than an uncovered one with the same
+      jobs and pollution.
+- [ ] The happiness overlay and the tile inspector show the local
+      values. The HUD keeps the city mean.
+- [ ] Default-on, both hosts. A city with no police and no hospital
+      matches today's city-wide formula, because every local rate
+      collapses to that formula.
+
+**Deliverable:** Two neighborhoods in one city, one policed and one not,
+show different crime, land value, and inspector text. The city mean still
+moves migration.
+
+### Milestone 21: Freight and road class
+
+`EconomySystem` turns industrial and commercial occupancy into
+`goodsProduced`, `goodsConsumed`, and `tradeBalance`, then into export
+revenue or import cost. No truck moves. `TrafficSystem` load is commuters
+only. Every `RoadNetwork::Edge` is built with capacity 10.
+
+- [ ] Industrial occupancy generates freight batches to commercial
+      buildings, weighted by capacity and distance the way job matching
+      already is. Net exports and net imports add batches between
+      industrial buildings and one deterministic map-edge gate.
+- [ ] Freight adds to `Edge::currentLoad` beside commuters and is reported
+      separately on `TrafficSummary` and `SimTickMetrics`.
+- [ ] A road class on the edge: local stays capacity 10, arterial is
+      higher. The autonomous grid lays local roads, so this milestone
+      does not quietly raise capacity. The road tool can upgrade a
+      dragged segment to arterial for a higher construction cost.
+- [ ] Freight is default-on in both hosts, with `--simulate-no-freight`
+      for comparison. Arterials are player-built, so an untouched
+      `--simulate` run changes only by the added truck load.
+- [ ] `TrafficMicroSim` is left alone.
+
+**Deliverable:** An industrial city with no commercial base shows import
+cost and freight congestion at the gate. Upgrading one corridor to
+arterial lowers congestion on that corridor in the overlay.
+
+### Milestone 22: Parks and one city on both hosts
+
+`ZoneType::Park` exists. `GrowthSystem` skips it. `ZoneTool` rejects it
+as an unsupported zone. Nothing places a park, and land value does not
+see one. Two host gaps are left after M17–M21: disasters run only inside
+`CitySimulator`, and municipal debt exists only on the playable treasury.
+`CitySimulator` is still cash-only.
+
+- [ ] The zone tool accepts Park on empty, non-road, non-water tiles.
+      Zoning a park removes no buildings; occupied tiles still require
+      the bulldozer first. Parks have a small per-tile upkeep.
+- [ ] A park raises land value and the happiness overlay in a short
+      radius. Growth still never builds on a park tile. The autonomous
+      loop does not auto-zone parks.
+- [ ] `playableCityTick` can run `FireSystem` and `NaturalDisasterSystem`
+      under the same `enableDisasters` default-off switch as
+      `CitySimulator`. Burning tiles and disaster losses show on the HUD.
+- [ ] `CitySimulator` adopts `TreasurySystem`'s debt: unpaid shortfall
+      becomes principal, interest accrues, surplus cash repays it.
+      Session fields already persist this for the playable path. The
+      autonomous report prints `DEBT` the way the HUD does. Default tax
+      and spending can still clear, so a balanced run stays at debt 0.
+- [ ] The visualizer draws the transit routes `playableCityTick` already
+      keeps on `PlayableCityTickState::transitRoutes`.
+
+**Deliverable:** A player can zone a park and see the land around it
+rise, can turn disasters on in the visualizer, and can load a city whose
+debt is the same number in the HUD and in `--simulate` after the same
+shortfall.
+
+---
+
 ## Timeline
 
 | Phase | Milestones | Est. Duration |
@@ -206,12 +397,17 @@ Note on default behavior: unlike the additive M12/M13/M14 systems, fire and natu
 | 3 | M7–M8 | 3–4 weeks |
 | 4 | M9–M10 | 4–6 weeks |
 | 5 | M11+ | 12+ weeks |
+| 6 | M17–M22 | not started |
 
-**MVP Baseline (headless through save/load scaffold):** complete
+**MVP Baseline (headless through save/load scaffold):** complete.
+**Phase 6** is the active queue.
 
 ---
 
 ## Next Targets (Post-Backlog)
+
+Finished. The active queue is Phase 6 (M17–M22) above. This list is the
+record of work that landed after M16.
 
 1. ~~District-level service policies and budget controls~~ - already done,
    this entry predates and was never pruned after M14: `DistrictSystem`

@@ -252,3 +252,108 @@ TEST(PlayableCityTickTests, DisablingEnvironmentPhasesLeavesFieldsUntouched) {
   EXPECT_FLOAT_EQ(map.pollution(site), pollutionBefore);
   EXPECT_FLOAT_EQ(map.landValue(site), landBefore);
 }
+
+namespace {
+
+uint32_t occupancyOf(const EntityStore& store, BuildingType type) {
+  uint32_t total = 0;
+  for (const auto& [id, building] : store.getBuildings()) {
+    (void)id;
+    if (building.type == type) {
+      total += static_cast<uint32_t>(building.occupancy);
+    }
+  }
+  return total;
+}
+
+uint32_t bandSize(const PopulationStore& population, IncomeBand band) {
+  uint32_t total = 0;
+  for (const auto& [id, group] : population.getGroups()) {
+    (void)id;
+    if (group.band == band) {
+      total += group.size;
+    }
+  }
+  return total;
+}
+
+void placeLaborBuildings(CityMap& map, EntityStore& store) {
+  const Coord sites[] = {{6, 11}, {9, 11}, {12, 11}, {15, 11}};
+  const BuildingType types[] = {
+    BuildingType::Residential, BuildingType::Commercial,
+    BuildingType::Industrial, BuildingType::Office
+  };
+  for (size_t i = 0; i < 4; ++i) {
+    map.getTile(sites[i]).buildingId = store.createBuilding(types[i], sites[i], 200);
+  }
+}
+
+}  // namespace
+
+// A school does not change this tick's labor split. The next tick, lagged
+// coverage moves office employment up. The same seed with the school removed
+// stays on the uneducated split. A tool refresh can change the live coverage
+// number without advancing that lag.
+TEST(PlayableCityTickTests, SchoolsRaiseOfficeShareOnTheNextTick) {
+  CityMap schooledMap({24, 24});
+  RoadNetwork schooledRoads(schooledMap);
+  EntityStore schooledStore;
+  PopulationStore schooledPeople;
+  laySpine(schooledMap, schooledRoads);
+  placeLaborBuildings(schooledMap, schooledStore);
+
+  std::vector<ServiceFacility> schools;
+  schools.push_back({ServiceType::Education, {12, 12}, 16, 1.0f});
+
+  PlayableCityTickState schooled;
+  schooled.populationTarget = 200;
+  int64_t schooledFunds = 50000;
+  PlayableCityTickOptions options;
+  options.requireUtilities = false;
+  options.growthChance = 0.0f;
+  options.enableTransit = false;
+  options.refreshPollution = false;
+  options.updateLandValues = false;
+
+  playableCityTick(schooledMap, schooledRoads, schooledStore, schooledPeople, schools, schooled, schooledFunds, options);
+
+  EXPECT_EQ(schooled.deathcare.deaths, 0u);
+  EXPECT_FLOAT_EQ(schooled.serviceSummary.educationCoverage, 1.0f);
+  EXPECT_FLOAT_EQ(schooled.laggedEducationCoverage, 1.0f);
+  EXPECT_EQ(occupancyOf(schooledStore, BuildingType::Office), 45u);
+  EXPECT_EQ(bandSize(schooledPeople, IncomeBand::High), 30u);
+
+  DerivedCityRefreshOptions toolRefresh;
+  toolRefresh.runTraffic = false;
+  toolRefresh.enableTransit = false;
+  toolRefresh.updateLandValues = false;
+  refreshDerivedCityState(
+    schooledMap, schooledRoads, schooledStore, schooledPeople, {}, schooled, toolRefresh);
+  EXPECT_FLOAT_EQ(schooled.serviceSummary.educationCoverage, 0.0f);
+  EXPECT_FLOAT_EQ(schooled.laggedEducationCoverage, 1.0f);
+
+  playableCityTick(schooledMap, schooledRoads, schooledStore, schooledPeople, schools, schooled, schooledFunds, options);
+
+  EXPECT_EQ(schooled.deathcare.deaths, 0u);
+  EXPECT_EQ(occupancyOf(schooledStore, BuildingType::Office), 96u);
+  EXPECT_EQ(bandSize(schooledPeople, IncomeBand::High), 60u);
+  EXPECT_FLOAT_EQ(schooled.laggedEducationCoverage, 1.0f);
+
+  CityMap plainMap({24, 24});
+  RoadNetwork plainRoads(plainMap);
+  EntityStore plainStore;
+  PopulationStore plainPeople;
+  laySpine(plainMap, plainRoads);
+  placeLaborBuildings(plainMap, plainStore);
+  PlayableCityTickState plain;
+  plain.populationTarget = 200;
+  int64_t plainFunds = 50000;
+  playableCityTick(plainMap, plainRoads, plainStore, plainPeople, {}, plain, plainFunds, options);
+  playableCityTick(plainMap, plainRoads, plainStore, plainPeople, {}, plain, plainFunds, options);
+
+  EXPECT_FLOAT_EQ(plain.serviceSummary.educationCoverage, 0.0f);
+  EXPECT_FLOAT_EQ(plain.laggedEducationCoverage, 0.0f);
+  EXPECT_EQ(occupancyOf(plainStore, BuildingType::Office), 45u);
+  EXPECT_EQ(bandSize(plainPeople, IncomeBand::High), 30u);
+  EXPECT_GT(occupancyOf(schooledStore, BuildingType::Office), occupancyOf(plainStore, BuildingType::Office));
+}

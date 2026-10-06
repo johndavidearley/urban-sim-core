@@ -2,6 +2,9 @@
 
 Last verified: September 29, 2026
 
+Priorities updated October 6, 2026. The work queue is Phase 6 (M17–M22)
+in `ROADMAP.md`. The validation baseline below is unchanged.
+
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
 ideas; `IMPLEMENTATION_STATUS.md` and `NEXT_STEPS.md` are retained as historical
@@ -18,8 +21,9 @@ replay verification, micro-traffic, metrics, CLI reporting, PPM rendering, and
 the optional SDL2 visualizer.
 
 Phase 1 through Phase 5 milestone work recorded in the roadmap is complete.
-New work is post-backlog hardening, maintainability, profiling, and model
-iteration rather than completion of a missing MVP subsystem.
+Phase 6 (M17–M22) is the active queue. M17 (utility shortage) and M18
+(schools and the labor market) are implemented. Lagged education coverage
+shifts income bands and office hiring. Next is M19, density and land value.
 
 ### Shared full-sim path (CLI + visualizer)
 
@@ -81,19 +85,37 @@ Quick performance smoke (headless):
 
 ## Current Priorities
 
-1. Do not add a command/query façade until a second interactive frontend
-   exists. Construction, playable-as-subset, and CLI-through-tools work
-   from `ARCHITECTURE.md` is done.
-2. Keep benchmarking large maps (`--benchmark-phase5`, multi-trial) after hot-path
-   changes; guard regressions with release builds.
-3. Further compile isolation of large CLI reporters (`GrowthPressureReport`,
-   `CityPrinters`) only if build times become painful. Core orchestration is
-   already split: `CitySimSupport`, visualizer modules, and CLI
-   Options/Parse/EarlyDispatch/CityWorkflow + thin `main`/`CliApp`.
-4. MSVC-first-class release packaging if Windows shipping is required (CI already
-   builds Windows).
-5. Model calibration and visualization polish driven by product goals, not the
-   obsolete backlog slice order.
+Phase 6 in `ROADMAP.md` is the queue. Implement in order.
+
+1. **M17 Utility shortage.** Done. `powerSupplyRatio` and `waterSupplyRatio`
+   shed the farthest wired buildings when `enableUtilities` is on (the
+   playable tick always sheds). Default `--simulate` is unchanged.
+2. **M18 Schools and the labor market.** Done. Lagged `educationCoverage`
+   moves the housed mix toward high income and fills office seats from
+   the educated share. Zero coverage keeps today's `{50, 35, 15}` split.
+   Default `--simulate` changes once schools exist.
+3. **M19 Density follows land value.** Redevelopment already doubles
+   capacity. Land value, services, and congestion decide where, and the
+   map draws the tier.
+4. **M20 Neighborhood crime and illness.** Both systems return one city
+   float. Local rates reuse the service distance fields; the city mean
+   stays the migration input.
+5. **M21 Freight and road class.** Goods are an accounting line. Freight
+   loads the road graph. Arterials are a player upgrade; the autonomous
+   grid stays capacity 10.
+6. **M22 Parks and one city on both hosts.** `ZoneType::Park` is
+   rejected by the zone tool. Disasters run only in `CitySimulator`.
+   Debt exists only on the playable treasury.
+
+Still constraints, not milestones:
+
+- No command/query façade until a second interactive frontend exists.
+- Benchmark large maps after hot-path changes (`--benchmark-phase5`,
+  multi-trial, release builds).
+- Split `GrowthPressureReport` and `CityPrinters` only if build times
+  hurt.
+- MSVC release packaging only if Windows shipping is required. CI already
+  builds Windows.
 
 ## Document Roles
 

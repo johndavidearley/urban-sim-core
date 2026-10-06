@@ -60,6 +60,8 @@ struct SimTickMetrics {
   uint32_t deathsThisTick = 0;
   uint32_t deathcareBacklog = 0;           // awaiting disposition after processing capacity
   float deathcareHappinessPenalty = 0.0f;
+  float powerSupplyRatio = 1.0f;   // 1 when utilities are off or demand is 0
+  float waterSupplyRatio = 1.0f;
 };
 
 struct SimPhaseTimings {

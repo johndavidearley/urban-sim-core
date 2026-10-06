@@ -10,24 +10,40 @@ struct TypeTaxResult {
   int count = 0;
   int64_t taxRevenue = 0;
   int64_t occupancy = 0;
+  // Commercial and industrial occupancy that still has power and water.
+  // Goods use this. Tax and the utilization ratio keep full occupancy.
+  int64_t poweredOccupancy = 0;
 };
+
+bool utilityConnected(const CityMap* map, const Building& building) {
+  if (map == nullptr || !map->isValid(building.position)) return true;
+  const Tile& tile = map->getTile(building.position);
+  return tile.connectedToPower && tile.connectedToWater;
+}
 
 // Walk one type's ID index: tax from capacity, optional occupancy sum.
 TypeTaxResult accumulateType(
   const EntityStore& store,
   BuildingType type,
-  float taxRate
+  float taxRate,
+  const CityMap* map
 ) {
   TypeTaxResult result;
   const std::vector<EntityId>& ids = store.idsByBuildingType(type);
   result.count = static_cast<int>(ids.size());
+  const bool penalizeShortage =
+    type == BuildingType::Commercial || type == BuildingType::Industrial;
   for (EntityId id : ids) {
     const Building* building = store.getBuilding(id);
     if (building == nullptr) continue;
     const int64_t buildingValue =
       EconomySystem::estimateBuildingValue(building->type, building->capacity);
     result.taxRevenue += static_cast<int64_t>(static_cast<double>(buildingValue) * taxRate);
-    result.occupancy += std::max(0, building->occupancy);
+    const int64_t occupancy = std::max(0, building->occupancy);
+    result.occupancy += occupancy;
+    if (!penalizeShortage || utilityConnected(map, *building)) {
+      result.poweredOccupancy += occupancy;
+    }
   }
   return result;
 }
@@ -49,10 +65,10 @@ EconomyState EconomySystem::calculateEconomy(
   // Per-type ID indices: one pass per type (no hash-map iteration).
   // Currency math runs in double: float's 24-bit mantissa loses integer
   // precision above ~16.7M, which city-scale values exceed.
-  const TypeTaxResult residential = accumulateType(store, BuildingType::Residential, rates.residentialRate);
-  const TypeTaxResult commercial = accumulateType(store, BuildingType::Commercial, rates.commercialRate);
-  const TypeTaxResult industrial = accumulateType(store, BuildingType::Industrial, rates.industrialRate);
-  const TypeTaxResult office = accumulateType(store, BuildingType::Office, rates.officeRate);
+  const TypeTaxResult residential = accumulateType(store, BuildingType::Residential, rates.residentialRate, map);
+  const TypeTaxResult commercial = accumulateType(store, BuildingType::Commercial, rates.commercialRate, map);
+  const TypeTaxResult industrial = accumulateType(store, BuildingType::Industrial, rates.industrialRate, map);
+  const TypeTaxResult office = accumulateType(store, BuildingType::Office, rates.officeRate, map);
 
   state.residentialTaxRevenue = residential.taxRevenue;
   state.commercialTaxRevenue = commercial.taxRevenue;
@@ -76,8 +92,8 @@ EconomyState EconomySystem::calculateEconomy(
     static_cast<int64_t>(store.capacityOfType(BuildingType::Office));
   const int64_t totalOccupancy =
     residential.occupancy + commercial.occupancy + industrial.occupancy + office.occupancy;
-  const int64_t commercialOccupancy = commercial.occupancy;
-  const int64_t industrialOccupancy = industrial.occupancy;
+  const int64_t commercialOccupancy = commercial.poweredOccupancy;
+  const int64_t industrialOccupancy = industrial.poweredOccupancy;
 
   // Supply chain / trade: industrial workers produce goods, commercial
   // workers consume them; the city trades the net difference with the

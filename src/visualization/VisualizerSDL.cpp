@@ -1125,6 +1125,7 @@ int main(int argc, char* argv[]) {
         funds,
         activeToolLabel,
         liveState,
+        population,
         mouseX,
         mouseY
       );

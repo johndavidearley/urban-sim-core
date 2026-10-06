@@ -100,6 +100,7 @@ SimResult CitySimulator::run(
   float lastServiceSatisfaction = 0.5f; // previous tick's service satisfaction, feeds desirability
   float lastCrimeRate = 0.0f;           // previous tick's crime rate, feeds desirability
   float lastIllnessRate = 0.0f;         // previous tick's illness rate, feeds desirability
+  float lastEducationCoverage = 0.0f;   // previous tick's school coverage, feeds labor allocation
   std::vector<ServiceFacility> facilities;
   ServiceCoverageCache coverageCache;
   std::vector<TransitRoute> transitRoutes;
@@ -130,6 +131,7 @@ SimResult CitySimulator::run(
 
   for (int tick = 0; infinite || tick < ticks; ++tick) {
     const uint32_t tickSeed = seed + static_cast<uint32_t>(tick);
+    const float educationNow = lastEducationCoverage;
 
     const ZoneDemand demand = evaluateDemand(store, population);
 
@@ -206,7 +208,7 @@ SimResult CitySimulator::run(
         std::max(0.0f, std::min(static_cast<float>(tickCap.resCapacity), requested)));
 
       if (tick % std::max(1, options.populationInterval) == 0) {
-        PopulationSystem::allocate(store, population, requestedPop, tickSeed + 1u);
+        PopulationSystem::allocate(store, population, requestedPop, tickSeed + 1u, educationNow);
       }
       result.timings.populationMs += elapsedMs(t0, Clock::now());
     }
@@ -227,7 +229,8 @@ SimResult CitySimulator::run(
         ServiceSystem::buildCache(roads, facilities, coverageCache);
       }
       if (options.enableUtilities) {
-        city_sim::updateUtilityConnectivity(map, roads, coverageCache, ax0, ay0, ax1, ay1, pool);
+        city_sim::updateUtilityConnectivity(
+          map, roads, store, coverageCache, ax0, ay0, ax1, ay1, pool);
       }
       result.timings.serviceMs += elapsedMs(t0, Clock::now());
     }
@@ -287,6 +290,10 @@ SimResult CitySimulator::run(
       service = coverageCache.cachedResult;
       lastServiceSatisfaction = service.satisfaction;
     }
+    // Labor allocation already ran on last tick's coverage. This tick's
+    // schools feed the next allocate, including a deathcare re-allocate
+    // later in this same tick (that one still uses educationNow).
+    lastEducationCoverage = service.educationCoverage;
 
     // Disasters: fire ignition/spread, gated off by default (destructive,
     // unlike the additive M12/M13 systems). Reuses service.fireCoverage -
@@ -409,7 +416,7 @@ SimResult CitySimulator::run(
       // to the new total so the next allocate/growth pass sees consistent stock.
       if (deathcare.deaths > 0) {
         PopulationSystem::allocate(
-          store, population, population.getTotalPopulation(), tickSeed + 7u
+          store, population, population.getTotalPopulation(), tickSeed + 7u, educationNow
         );
         tickCap = city_sim::summarize(store);
       }
@@ -480,6 +487,8 @@ SimResult CitySimulator::run(
     row.deathsThisTick = deathcare.deaths;
     row.deathcareBacklog = deathcare.awaitingDisposition;
     row.deathcareHappinessPenalty = deathcare.happinessPenalty;
+    row.powerSupplyRatio = service.powerSupplyRatio;
+    row.waterSupplyRatio = service.waterSupplyRatio;
     if (!infinite) {
       result.rows.push_back(row);
     }

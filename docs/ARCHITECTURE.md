@@ -84,7 +84,7 @@ struct Tile {
   bool hasRoad = false;
   bool connectedToRoad = false;
   bool connectedToPower = true;   // live when utilities are enabled
-  bool connectedToWater = true;
+  bool connectedToWater = true;   // BFS reachability, then load shedding
   uint32_t buildingId = 0;        // 0 = empty; spatial index into EntityStore
 };
 ```
@@ -92,6 +92,12 @@ struct Tile {
 `landValue` and `pollution` are parallel `std::vector<float>` on `CityMap`,
 not fields on `Tile`. Hot per-tick numeric loops go through
 `CityMap::pollution` / `CityMap::landValue`.
+
+When utilities are on, `updateUtilityConnectivity` sets the power and water
+flags from the service BFS, then sheds load. Closest wired buildings keep
+service. Farthest ones, and empty tiles at that distance, go dark until
+another plant covers the demand. Commercial and industrial occupancy on a
+dark tile drops out of goods production.
 
 `Tile::buildingId` is the only position → building index. Growth, fire,
 disasters, and `BulldozeTool` must keep it in sync with `EntityStore`.
@@ -157,6 +163,12 @@ struct PopulationGroup {
 Groups are not bound to a home tile or district. `PopulationSystem::allocate`
 writes `Building::occupancy`. Totals are scanned, not cached.
 `applyDeaths` sorts IDs then reduces proportionally (determinism).
+
+`allocate` takes the previous tick's education coverage in `[0, 1]`. Zero
+keeps the uneducated weights (`{50, 35, 15}` housed). Full coverage moves
+housed population to `{30, 40, 30}` and lets the middle band take office
+work. Office seats past that educated share stay empty. Coverage between
+the endpoints lerps the weight tables.
 
 ### Caller-owned extras (not in the four stores)
 
@@ -227,7 +239,7 @@ evaluateDemand(store, population)
 
 One-tick lag is intentional: this tick's growth and migration see last
 tick's congestion, service satisfaction, crime, illness, and district
-pressure.
+pressure. Population allocation sees last tick's education coverage.
 
 `SimOptions` interval fields (`trafficInterval`, `serviceInterval`,
 `populationInterval`, `landValueInterval`, `districtInterval`) skip
@@ -259,10 +271,13 @@ void playableCityTick(
 ```
 
 Order (a subset of the autonomous phase list): demand → pollution emitters
-→ utility connectivity → growth → allocate `populationTarget` → transit +
-traffic → services → land value → economy → `HealthSystem` → waste →
-deathcare → `TreasurySystem` (unpaid shortfall becomes municipal debt;
-surplus cash repays it; optional per-tick interest on the remainder).
+→ utility connectivity → growth → allocate `populationTarget` (lagged
+education coverage) → transit + traffic → services → land value → economy
+→ `HealthSystem` → waste → deathcare → `TreasurySystem` (unpaid shortfall
+becomes municipal debt; surplus cash repays it; optional per-tick interest
+on the remainder). The tick then stores this tick's education coverage
+for the next allocate. A tool-only refresh updates services and does not
+advance that lag.
 
 Playable does **not** run disasters. Districts are host-owned: G-mode
 construction reads ordinances, and `playableCityTick` applies growth

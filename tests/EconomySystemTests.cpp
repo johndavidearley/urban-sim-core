@@ -271,6 +271,38 @@ TEST_F(EconomySystemTests, GoodsScaleWithOccupancyNotCapacity) {
   EXPECT_FLOAT_EQ(static_cast<float>(state.goodsConsumed), 10.0f * tradeRates.goodsPerCommercialWorker);
 }
 
+// A tile missing power or water drops that commercial/industrial occupancy
+// out of goods. Tax still sees the building. A null map ignores the flags.
+TEST_F(EconomySystemTests, UnpoweredCommerceAndIndustryDropOutOfGoods) {
+  CityMap map({4, 4});
+  const EntityId poweredId = store->createBuilding(BuildingType::Industrial, {1, 1}, 50);
+  store->getBuilding(poweredId)->occupancy = 10;
+  map.getTile({1, 1}).connectedToPower = true;
+  map.getTile({1, 1}).connectedToWater = true;
+  const EntityId darkId = store->createBuilding(BuildingType::Industrial, {2, 1}, 50);
+  store->getBuilding(darkId)->occupancy = 30;
+  map.getTile({2, 1}).connectedToPower = false;
+  map.getTile({2, 1}).connectedToWater = true;
+  const EntityId shopId = store->createBuilding(BuildingType::Commercial, {1, 2}, 40);
+  store->getBuilding(shopId)->occupancy = 8;
+  map.getTile({1, 2}).connectedToPower = true;
+  map.getTile({1, 2}).connectedToWater = false;
+
+  const TradeRates rates = EconomySystem::getDefaultTradeRates();
+  const EconomyState penalized =
+    EconomySystem::calculateEconomy(*store, *population, TaxRates{}, &map, rates);
+  const EconomyState ignored =
+    EconomySystem::calculateEconomy(*store, *population, TaxRates{}, nullptr, rates);
+
+  EXPECT_EQ(penalized.goodsProduced,
+            static_cast<int64_t>(10.0 * rates.goodsPerIndustrialWorker));
+  EXPECT_EQ(penalized.goodsConsumed, 0);
+  EXPECT_GT(ignored.goodsProduced, penalized.goodsProduced);
+  EXPECT_GT(ignored.goodsConsumed, penalized.goodsConsumed);
+  EXPECT_EQ(penalized.industrialTaxRevenue, ignored.industrialTaxRevenue);
+  EXPECT_EQ(penalized.commercialTaxRevenue, ignored.commercialTaxRevenue);
+}
+
 // Test: industrial surplus (more goods produced than consumed) generates
 // export revenue and no import cost, and that revenue reaches totalRevenue.
 TEST_F(EconomySystemTests, IndustrialSurplusGeneratesExportRevenue) {

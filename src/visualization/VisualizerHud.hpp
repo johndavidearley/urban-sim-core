@@ -13,7 +13,7 @@
 namespace visualizer {
 
 constexpr int kHudPanelWidth = 390;
-constexpr int kHudPanelHeight = 238;
+constexpr int kHudPanelHeight = 254;
 constexpr int kDistrictPanelX = 14;
 constexpr int kDistrictPanelY = 308;
 constexpr int kDistrictPanelWidth = 390;
@@ -50,6 +50,7 @@ void drawGameplayHud(
   int64_t funds,
   const std::string& toolLabel,
   const LiveSimulationState& liveState,
+  const PopulationStore& populationStore,
   int mouseX,
   int mouseY
 );

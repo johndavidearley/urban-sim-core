@@ -189,7 +189,8 @@ bool GameplaySessionSystem::save(
       {"quality", facility.quality},
       {"powerSource", static_cast<int>(facility.powerSource)},
       {"powerCapacityMW", facility.powerCapacityMW},
-      {"emissionsKgPerMWh", facility.emissionsKgPerMWh}
+      {"emissionsKgPerMWh", facility.emissionsKgPerMWh},
+      {"waterSupplyUnits", facility.waterSupplyUnits}
     });
   }
 
@@ -295,6 +296,7 @@ bool GameplaySessionSystem::load(
       facility.powerSource = static_cast<PowerSourceType>(item.value("powerSource", 0));
       facility.powerCapacityMW = item.value("powerCapacityMW", 100.0f);
       facility.emissionsKgPerMWh = item.value("emissionsKgPerMWh", 400.0f);
+      facility.waterSupplyUnits = item.value("waterSupplyUnits", 100.0f);
       loaded.facilities.push_back(facility);
     }
 

@@ -201,6 +201,30 @@ TEST(ServiceSystemTests, PowerSupplyTracksCapacityDemandAndGenerationEmissions) 
   EXPECT_NEAR(summary.powerGenerationMW, 0.03f, 0.0001f);
   EXPECT_NEAR(summary.powerSupplyRatio, 0.5f, 0.0001f);
   EXPECT_FLOAT_EQ(summary.powerEmissionsKgPerMWh, 1000.0f);
+  // No water plant. The same occupancy is water demand, so the ratio is 0.
+  EXPECT_NEAR(summary.waterDemand, 0.06f, 0.0001f);
+  EXPECT_FLOAT_EQ(summary.waterSupply, 0.0f);
+  EXPECT_FLOAT_EQ(summary.waterSupplyRatio, 0.0f);
+}
+
+TEST(ServiceSystemTests, WaterSupplyTracksPlantCapacity) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+  const EntityId homeId = store.createBuilding(BuildingType::Residential, {2, 2}, 20);
+  store.getBuilding(homeId)->occupancy = 10;
+  roads.buildRoad({2, 2}, {3, 2});
+
+  ServiceFacility water;
+  water.type = ServiceType::Water;
+  water.position = {3, 2};
+  water.maxTravelDistance = 6;
+  water.waterSupplyUnits = 0.01f;
+
+  const ServiceCoverageSummary summary = ServiceSystem::evaluateCoverage(store, roads, {water});
+  EXPECT_NEAR(summary.waterDemand, 0.02f, 0.0001f);
+  EXPECT_NEAR(summary.waterSupply, 0.01f, 0.0001f);
+  EXPECT_NEAR(summary.waterSupplyRatio, 0.5f, 0.0001f);
 }
 
 // nearestPowerDistance/nearestWaterDistance must only merge entries of

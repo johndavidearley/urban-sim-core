@@ -242,6 +242,9 @@ TEST(PopulationSystemTests, SummaryAppliesToCityMetrics) {
   summary.availableHousing = 5;
   summary.availableJobs = 3;
   summary.unemploymentRate = 0.2f;
+  summary.lowIncomePopulation = 10;
+  summary.middleIncomePopulation = 7;
+  summary.highIncomePopulation = 3;
 
   PopulationSystem::applyToMetrics(summary, metrics);
 
@@ -249,4 +252,115 @@ TEST(PopulationSystemTests, SummaryAppliesToCityMetrics) {
   EXPECT_EQ(metrics.availableHousing, 5u);
   EXPECT_EQ(metrics.availableJobs, 3u);
   EXPECT_FLOAT_EQ(metrics.unemployment, 0.2f);
+  EXPECT_EQ(metrics.lowIncomePopulation, 10u);
+  EXPECT_EQ(metrics.middleIncomePopulation, 7u);
+  EXPECT_EQ(metrics.highIncomePopulation, 3u);
+}
+
+namespace {
+
+struct LaborAllocation {
+  PopulationSummary summary;
+  uint32_t commercial = 0;
+  uint32_t industrial = 0;
+  uint32_t office = 0;
+};
+
+void addLaborCity(EntityStore& buildings, uint32_t residential, uint32_t commercial,
+                  uint32_t industrial, uint32_t office) {
+  buildings.createBuilding(BuildingType::Residential, {1, 1}, static_cast<int>(residential));
+  buildings.createBuilding(BuildingType::Commercial, {2, 1}, static_cast<int>(commercial));
+  buildings.createBuilding(BuildingType::Industrial, {3, 1}, static_cast<int>(industrial));
+  buildings.createBuilding(BuildingType::Office, {4, 1}, static_cast<int>(office));
+}
+
+LaborAllocation allocateLaborCity(uint32_t residential, uint32_t commercial, uint32_t industrial,
+                                  uint32_t office, uint32_t requested, uint32_t seed, float coverage) {
+  EntityStore buildings;
+  PopulationStore people;
+  addLaborCity(buildings, residential, commercial, industrial, office);
+  LaborAllocation result;
+  result.summary = PopulationSystem::allocate(buildings, people, requested, seed, coverage);
+  result.commercial = occupancyByType(buildings, BuildingType::Commercial);
+  result.industrial = occupancyByType(buildings, BuildingType::Industrial);
+  result.office = occupancyByType(buildings, BuildingType::Office);
+  return result;
+}
+
+}  // namespace
+
+// Coverage 0 is the historical split. Default allocate() and an explicit 0
+// must agree, including office occupancy filled by low-band overflow.
+TEST(PopulationSystemTests, ZeroEducationCoverageKeepsUneducatedSplit) {
+  EntityStore baselineBuildings;
+  EntityStore explicitBuildings;
+  PopulationStore baselinePeople;
+  PopulationStore explicitPeople;
+  addLaborCity(baselineBuildings, 200, 200, 200, 200);
+  addLaborCity(explicitBuildings, 200, 200, 200, 200);
+
+  const PopulationSummary baseline = PopulationSystem::allocate(baselineBuildings, baselinePeople, 200, 17);
+  const PopulationSummary explicitZero =
+    PopulationSystem::allocate(explicitBuildings, explicitPeople, 200, 17, 0.0f);
+
+  EXPECT_EQ(baseline.housedPopulation, 200u);
+  EXPECT_EQ(baseline.employedPopulation, 200u);
+  EXPECT_EQ(baseline.unemployedPopulation, 0u);
+  EXPECT_EQ(baseline.lowIncomePopulation, 100u);
+  EXPECT_EQ(baseline.middleIncomePopulation, 70u);
+  EXPECT_EQ(baseline.highIncomePopulation, 30u);
+  EXPECT_EQ(occupancyByType(baselineBuildings, BuildingType::Commercial), 75u);
+  EXPECT_EQ(occupancyByType(baselineBuildings, BuildingType::Industrial), 80u);
+  EXPECT_EQ(occupancyByType(baselineBuildings, BuildingType::Office), 45u);
+
+  EXPECT_EQ(explicitZero.lowIncomePopulation, baseline.lowIncomePopulation);
+  EXPECT_EQ(explicitZero.middleIncomePopulation, baseline.middleIncomePopulation);
+  EXPECT_EQ(explicitZero.highIncomePopulation, baseline.highIncomePopulation);
+  EXPECT_EQ(explicitZero.employedPopulation, baseline.employedPopulation);
+  EXPECT_EQ(occupancyByType(explicitBuildings, BuildingType::Office), 45u);
+  EXPECT_EQ(occupancyByType(explicitBuildings, BuildingType::Industrial), 80u);
+  EXPECT_EQ(occupancyByType(explicitBuildings, BuildingType::Commercial), 75u);
+}
+
+// Ample jobs: full coverage raises the office share and the high-income band.
+// Half coverage lands between the two, so the shift is not a cliff at 100%.
+TEST(PopulationSystemTests, FullEducationCoverageRaisesOfficeShare) {
+  const LaborAllocation uneducated = allocateLaborCity(200, 200, 200, 200, 200, 17, 0.0f);
+  const LaborAllocation halfway = allocateLaborCity(200, 200, 200, 200, 200, 17, 0.5f);
+  const LaborAllocation educated = allocateLaborCity(200, 200, 200, 200, 200, 17, 1.0f);
+
+  EXPECT_EQ(uneducated.office, 45u);
+  EXPECT_EQ(halfway.office, 69u);
+  EXPECT_EQ(educated.office, 96u);
+  EXPECT_GT(halfway.office, uneducated.office);
+  EXPECT_LT(halfway.office, educated.office);
+  EXPECT_EQ(educated.industrial, 56u);
+  EXPECT_EQ(educated.commercial, 48u);
+  EXPECT_EQ(educated.summary.highIncomePopulation, 60u);
+  EXPECT_EQ(educated.summary.middleIncomePopulation, 80u);
+  EXPECT_EQ(educated.summary.lowIncomePopulation, 60u);
+  EXPECT_EQ(educated.summary.employedPopulation, 200u);
+  EXPECT_EQ(educated.summary.unemployedPopulation, 0u);
+}
+
+// Office seats past the educated preference share stay empty. The low band
+// takes the industrial work instead of overflowing into office, and the
+// workers who still cannot be placed show up as unemployment.
+TEST(PopulationSystemTests, EducatedOfficeSpareStaysEmpty) {
+  const LaborAllocation uneducated = allocateLaborCity(100, 0, 20, 100, 100, 3, 0.0f);
+  const LaborAllocation educated = allocateLaborCity(100, 0, 20, 100, 100, 3, 1.0f);
+
+  EXPECT_EQ(uneducated.summary.unemployedPopulation, 0u);
+  EXPECT_EQ(uneducated.summary.employedPopulation, 100u);
+  EXPECT_EQ(uneducated.office, 80u);
+  EXPECT_EQ(uneducated.industrial, 20u);
+
+  EXPECT_EQ(educated.office, 48u);
+  EXPECT_EQ(educated.industrial, 20u);
+  EXPECT_LT(educated.office, 100u);
+  EXPECT_EQ(educated.summary.employedPopulation, 68u);
+  EXPECT_EQ(educated.summary.unemployedPopulation, 32u);
+  EXPECT_EQ(educated.summary.availableJobs, 52u);
+  EXPECT_EQ(educated.summary.highIncomePopulation, 30u);
+  EXPECT_GT(educated.summary.unemploymentRate, 0.0f);
 }
