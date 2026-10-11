@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <SDL.h>
+#include "src/visualization/DrawList.hpp"
 
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
@@ -41,7 +41,7 @@
 namespace visualizer {
 
 void drawToolPalette(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int windowWidth,
   int windowHeight,
   bool roadActive,
@@ -57,7 +57,7 @@ void drawToolPalette(
     roadActive, zoneActive, bulldozeActive, serviceActive, districtActive
   };
   for (size_t i = 0; i < labels.size(); ++i) {
-    const SDL_Rect rect = paletteButtonRect(static_cast<int>(i), windowWidth, windowHeight);
+    const Rect rect = paletteButtonRect(static_cast<int>(i), windowWidth, windowHeight);
     const bool hovered = mouseX >= rect.x && mouseX < rect.x + rect.w
       && mouseY >= rect.y && mouseY < rect.y + rect.h;
     drawFilledRect(renderer, rect.x, rect.y, rect.w, rect.h,
@@ -71,7 +71,7 @@ void drawToolPalette(
 
 
 
-SDL_Rect hudControlRect(HudAction action, int windowWidth) {
+Rect hudControlRect(HudAction action, int windowWidth) {
   const int panelX = windowWidth - kHudPanelWidth - 12;
   constexpr int y = 158;
   switch (action) {
@@ -91,7 +91,7 @@ HudAction hudHitTest(int mouseX, int mouseY, int windowWidth) {
     HudAction::Save, HudAction::Load
   };
   for (const HudAction action : actions) {
-    const SDL_Rect rect = hudControlRect(action, windowWidth);
+    const Rect rect = hudControlRect(action, windowWidth);
     if (mouseX >= rect.x && mouseX < rect.x + rect.w
         && mouseY >= rect.y && mouseY < rect.y + rect.h) {
       return action;
@@ -100,7 +100,7 @@ HudAction hudHitTest(int mouseX, int mouseY, int windowWidth) {
   return HudAction::None;
 }
 
-void drawDemandBar(SDL_Renderer* renderer, int x, int y, float demand, RGB color, const char* label) {
+void drawDemandBar(DrawList* renderer, int x, int y, float demand, RGB color, const char* label) {
   constexpr int width = 180;
   constexpr int height = 10;
   drawText(renderer, x, y + 1, label, {225, 228, 235}, 1);
@@ -111,7 +111,7 @@ void drawDemandBar(SDL_Renderer* renderer, int x, int y, float demand, RGB color
 }
 
 void drawGameplayHud(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int windowWidth,
   uint32_t population,
   size_t buildings,
@@ -202,7 +202,7 @@ void drawGameplayHud(
     {HudAction::Load, "F9 LOAD"},
   }};
   for (const auto& [action, label] : controls) {
-    const SDL_Rect rect = hudControlRect(action, windowWidth);
+    const Rect rect = hudControlRect(action, windowWidth);
     const bool hovered = mouseX >= rect.x && mouseX < rect.x + rect.w
       && mouseY >= rect.y && mouseY < rect.y + rect.h;
     const bool active = (action == HudAction::Slow && tickIntervalMs == 700)
@@ -218,7 +218,7 @@ void drawGameplayHud(
 }
 
 void drawCompactGameplayHud(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int windowWidth,
   bool paused,
   uint32_t population,
@@ -240,7 +240,7 @@ void drawCompactGameplayHud(
 
 
 void drawToast(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int windowWidth,
   const ToastNotification& toast,
   uint32_t nowMs
@@ -257,7 +257,7 @@ void drawToast(
 }
 
 void drawPlacementWarning(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int mouseX,
   int mouseY,
   int windowWidth,
@@ -276,7 +276,7 @@ void drawPlacementWarning(
 }
 
 void drawUiTooltip(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int mouseX,
   int mouseY,
   int windowWidth,
@@ -296,7 +296,7 @@ void drawUiTooltip(
   drawText(renderer, x + 8, y + 9, message, {220, 232, 248}, 1);
 }
 
-void drawOnboarding(SDL_Renderer* renderer, int windowHeight, int step) {
+void drawOnboarding(DrawList* renderer, int windowHeight, int step) {
   if (step < 0 || step > 5) {
     return;
   }
@@ -348,11 +348,11 @@ const char* buildingTypeLabel(BuildingType type) {
   }
 }
 
-SDL_Rect districtPanelRect() {
+Rect districtPanelRect() {
   return {kDistrictPanelX, kDistrictPanelY, kDistrictPanelWidth, kDistrictPanelHeight};
 }
 
-SDL_Rect districtPanelButtonRect(DistrictPanelAction action) {
+Rect districtPanelButtonRect(DistrictPanelAction action) {
   switch (action) {
     case DistrictPanelAction::CycleArchetype:
       return {kDistrictPanelX + 270, kDistrictPanelY + 24, 106, 22};
@@ -368,7 +368,7 @@ DistrictPanelAction districtPanelHitTest(int mouseX, int mouseY) {
     DistrictPanelAction::CycleArchetype, DistrictPanelAction::ToggleCap
   };
   for (const DistrictPanelAction action : actions) {
-    const SDL_Rect rect = districtPanelButtonRect(action);
+    const Rect rect = districtPanelButtonRect(action);
     if (mouseX >= rect.x && mouseX < rect.x + rect.w
         && mouseY >= rect.y && mouseY < rect.y + rect.h) {
       return action;
@@ -378,18 +378,18 @@ DistrictPanelAction districtPanelHitTest(int mouseX, int mouseY) {
 }
 
 bool pointInDistrictPanel(int mouseX, int mouseY) {
-  const SDL_Rect rect = districtPanelRect();
+  const Rect rect = districtPanelRect();
   return mouseX >= rect.x && mouseX < rect.x + rect.w
       && mouseY >= rect.y && mouseY < rect.y + rect.h;
 }
 
 void drawDistrictPanel(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   const District& district,
   int mouseX,
   int mouseY
 ) {
-  const SDL_Rect panel = districtPanelRect();
+  const Rect panel = districtPanelRect();
   drawFilledRect(renderer, panel.x, panel.y, panel.w, panel.h, {14, 17, 22}, 200);
   drawRectOutline(renderer, panel.x, panel.y, panel.w, panel.h,
                   districtArchetypeColor(district.archetype), 240);
@@ -411,7 +411,7 @@ void drawDistrictPanel(
     {DistrictPanelAction::ToggleCap, starved ? "FUND" : "STARVE"},
   }};
   for (const auto& [action, label] : buttons) {
-    const SDL_Rect rect = districtPanelButtonRect(action);
+    const Rect rect = districtPanelButtonRect(action);
     const bool hovered = mouseX >= rect.x && mouseX < rect.x + rect.w
       && mouseY >= rect.y && mouseY < rect.y + rect.h;
     drawFilledRect(renderer, rect.x, rect.y, rect.w, rect.h,
@@ -423,7 +423,7 @@ void drawDistrictPanel(
 }
 
 void drawTileInspector(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   const CityMap& map,
   const RoadNetwork& roads,
   const EntityStore& store,
@@ -494,7 +494,7 @@ void drawTileInspector(
 }
 
 
-SDL_Rect quitButtonRect(QuitAction action, int windowWidth, int windowHeight) {
+Rect quitButtonRect(QuitAction action, int windowWidth, int windowHeight) {
   const int y = windowHeight / 2 + 46;
   switch (action) {
     case QuitAction::SaveAndQuit: return {windowWidth / 2 - 255, y, 160, 42};
@@ -509,7 +509,7 @@ QuitAction quitHitTest(int mouseX, int mouseY, int windowWidth, int windowHeight
     QuitAction::SaveAndQuit, QuitAction::QuitWithoutSaving, QuitAction::Cancel
   };
   for (const QuitAction action : actions) {
-    const SDL_Rect rect = quitButtonRect(action, windowWidth, windowHeight);
+    const Rect rect = quitButtonRect(action, windowWidth, windowHeight);
     if (mouseX >= rect.x && mouseX < rect.x + rect.w
         && mouseY >= rect.y && mouseY < rect.y + rect.h) {
       return action;
@@ -519,7 +519,7 @@ QuitAction quitHitTest(int mouseX, int mouseY, int windowWidth, int windowHeight
 }
 
 void drawQuitDialog(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int windowWidth,
   int windowHeight,
   int mouseX,
@@ -542,7 +542,7 @@ void drawQuitDialog(
     {QuitAction::Cancel, "CANCEL"},
   }};
   for (const auto& [action, label] : buttons) {
-    const SDL_Rect rect = quitButtonRect(action, windowWidth, windowHeight);
+    const Rect rect = quitButtonRect(action, windowWidth, windowHeight);
     const bool hovered = mouseX >= rect.x && mouseX < rect.x + rect.w
       && mouseY >= rect.y && mouseY < rect.y + rect.h;
     drawFilledRect(renderer, rect.x, rect.y, rect.w, rect.h,
@@ -553,12 +553,12 @@ void drawQuitDialog(
   }
 }
 
-void drawSwatch(SDL_Renderer* renderer, int x, int y, RGB color, bool active) {
+void drawSwatch(DrawList* renderer, int x, int y, RGB color, bool active) {
   drawFilledRect(renderer, x, y, 18, 12, color, 255);
   drawRectOutline(renderer, x, y, 18, 12, active ? RGB{255, 230, 120} : RGB{220, 220, 220}, 255);
 }
 
-void drawZoneLegend(SDL_Renderer* renderer, int x, int y) {
+void drawZoneLegend(DrawList* renderer, int x, int y) {
   // Categories shown in zone overlay rendering path.
   drawText(renderer, x, y - 12, "ZONE", {230, 230, 230}, 2);
   drawSwatch(renderer, x + 0, y, zoneColor(1));       // Residential
@@ -584,7 +584,7 @@ void drawZoneLegend(SDL_Renderer* renderer, int x, int y) {
   drawText(renderer, x + 358, y + 16, "O", {205, 220, 205}, 1);
 }
 
-void drawSteppedLegend(SDL_Renderer* renderer, int x, int y, OverlayMode mode) {
+void drawSteppedLegend(DrawList* renderer, int x, int y, OverlayMode mode) {
   drawText(renderer, x, y - 12, overlayModeName(mode), {230, 230, 230}, 2);
 
   // Five-step discrete scale for numeric overlays.
@@ -605,7 +605,7 @@ void drawSteppedLegend(SDL_Renderer* renderer, int x, int y, OverlayMode mode) {
 }
 
 void drawLegendPanel(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   OverlayMode overlayMode,
   int windowWidth,
   int windowHeight,

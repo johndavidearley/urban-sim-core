@@ -73,26 +73,68 @@ add_executable(UrbanSimCore-cli
 
 target_link_libraries(UrbanSimCore-cli PRIVATE urban_sim_core)
 
-# Optional live visualizer (SDL2)
+# CPU-side visualizer geometry remains usable without a window or graphics SDK.
+add_library(urban_sim_visualizer_drawing STATIC
+  visualization/VisualizerTypes.cpp
+  visualization/VisualizerOverlay.cpp
+  visualization/VisualizerRender.cpp
+  visualization/VisualizerHud.cpp
+)
+target_link_libraries(urban_sim_visualizer_drawing PUBLIC urban_sim_core)
+
+# Optional live visualizer: simulation targets have no graphics dependency.
 if(URBAN_SIM_BUILD_VISUALIZER)
-  add_executable(UrbanSimCore-visualizer WIN32
-    visualization/VisualizerTypes.cpp
-    visualization/VisualizerOverlay.cpp
-    visualization/VisualizerRender.cpp
-    visualization/VisualizerHud.cpp
+  set(URBAN_SIM_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+  file(MAKE_DIRECTORY "${URBAN_SIM_SHADER_DIR}")
+  set(URBAN_SIM_SHADER_HEADERS)
+  foreach(stage vert frag)
+    set(shader "${CMAKE_CURRENT_SOURCE_DIR}/visualization/shaders/colored.${stage}")
+    set(binary "${URBAN_SIM_SHADER_DIR}/colored_${stage}.spv")
+    set(header "${URBAN_SIM_SHADER_DIR}/colored_${stage}.hpp")
+    add_custom_command(OUTPUT "${header}"
+      COMMAND "${URBAN_SIM_GLSLC}" --target-env=vulkan1.0 "${shader}" -o "${binary}"
+      COMMAND "${CMAKE_COMMAND}" "-DINPUT=${binary}" "-DOUTPUT=${header}" "-DSYMBOL=colored_${stage}"
+        -P "${CMAKE_SOURCE_DIR}/cmake/EmbedShader.cmake"
+      DEPENDS "${shader}" "${CMAKE_SOURCE_DIR}/cmake/EmbedShader.cmake"
+      VERBATIM)
+    list(APPEND URBAN_SIM_SHADER_HEADERS "${header}")
+  endforeach()
+  add_library(urban_sim_visualizer STATIC
     visualization/VisualizerSession.cpp
-    visualization/VisualizerSDL.cpp
+    visualization/WindowHost.cpp
+    visualization/VulkanRenderer.cpp
+    visualization/GraphicsSmoke.cpp
+    ${URBAN_SIM_SHADER_HEADERS}
   )
-  target_link_libraries(UrbanSimCore-visualizer PRIVATE urban_sim_core)
-  if(TARGET SDL2::SDL2main)
-    target_link_libraries(UrbanSimCore-visualizer PRIVATE SDL2::SDL2main)
+  target_include_directories(urban_sim_visualizer PRIVATE "${URBAN_SIM_SHADER_DIR}")
+  target_link_libraries(urban_sim_visualizer PUBLIC urban_sim_visualizer_drawing PRIVATE glfw Vulkan::Vulkan)
+  add_executable(UrbanSimCore-visualizer WIN32 visualization/VisualizerGLFW.cpp)
+  target_link_libraries(UrbanSimCore-visualizer PRIVATE urban_sim_visualizer)
+  get_target_property(URBAN_SIM_GLFW_TYPE glfw TYPE)
+  if(WIN32 AND URBAN_SIM_GLFW_TYPE STREQUAL "SHARED_LIBRARY")
+    add_custom_command(TARGET UrbanSimCore-visualizer POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:glfw>" "$<TARGET_FILE_DIR:UrbanSimCore-visualizer>"
+      VERBATIM)
+    install(FILES "$<TARGET_FILE:glfw>" DESTINATION bin)
   endif()
-  target_link_libraries(UrbanSimCore-visualizer PRIVATE SDL2::SDL2)
-  target_compile_definitions(UrbanSimCore-visualizer PRIVATE URBAN_SIM_HAS_SDL2=1)
-  install(TARGETS UrbanSimCore-visualizer DESTINATION bin)
-  message(STATUS "SDL2 found: building UrbanSimCore-visualizer")
-else()
-  message(STATUS "SDL2 visualizer disabled")
+  if(APPLE)
+    find_library(URBAN_SIM_MOLTENVK MoltenVK
+      HINTS "$ENV{VULKAN_SDK}/lib" /usr/local/lib /opt/homebrew/lib)
+    if(NOT URBAN_SIM_MOLTENVK)
+      message(FATAL_ERROR "MoltenVK is required for the macOS visualizer (Vulkan SDK or brew install molten-vk).")
+    endif()
+    set_target_properties(UrbanSimCore-visualizer PROPERTIES INSTALL_RPATH "@executable_path/../lib/urban-sim")
+    set(URBAN_SIM_GLFW_LIBRARY "$<TARGET_FILE:glfw>")
+    configure_file("${CMAKE_SOURCE_DIR}/cmake/InstallVulkanMac.cmake.in"
+      "${CMAKE_CURRENT_BINARY_DIR}/InstallVulkanMac.cmake.in" @ONLY)
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/InstallVulkanMac-$<CONFIG>.cmake"
+      INPUT "${CMAKE_CURRENT_BINARY_DIR}/InstallVulkanMac.cmake.in")
+  endif()
+  install(TARGETS UrbanSimCore-visualizer RUNTIME DESTINATION bin)
+  if(APPLE)
+    install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/InstallVulkanMac-$<CONFIG>.cmake")
+  endif()
+  message(STATUS "Building GLFW/Vulkan UrbanSimCore-visualizer")
 endif()
 
 # Install

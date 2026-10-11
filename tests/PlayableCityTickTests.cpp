@@ -357,3 +357,68 @@ TEST(PlayableCityTickTests, SchoolsRaiseOfficeShareOnTheNextTick) {
   EXPECT_EQ(bandSize(plainPeople, IncomeBand::High), 30u);
   EXPECT_GT(occupancyOf(schooledStore, BuildingType::Office), occupancyOf(plainStore, BuildingType::Office));
 }
+
+TEST(PlayableCityTickTests, RedevelopmentBillsMoreThanANewLowBuilding) {
+  PlayableCityTickOptions options;
+  options.requireUtilities = false;
+  options.growthChance = 1.0f;
+  options.enableTransit = false;
+  options.refreshPollution = false;
+  options.updateLandValues = false;
+  options.treasuryInterestRate = 0.0;
+
+  CityMap spawnMap({16, 12});
+  RoadNetwork spawnRoads(spawnMap);
+  EntityStore spawnStore;
+  PopulationStore spawnPeople;
+  laySpine(spawnMap, spawnRoads);
+  const int midY = spawnMap.getDimensions().y / 2;
+  const Coord empty{4, midY - 1};
+  Zoning::applyZoneRect(spawnMap, empty, empty, ZoneType::Residential);
+
+  PlayableCityTickState spawnState;
+  spawnState.populationTarget = 0;
+  int64_t spawnFunds = 80000;
+  for (int step = 0; step < 8 && spawnState.buildingsSpawned == 0; ++step) {
+    playableCityTick(
+      spawnMap, spawnRoads, spawnStore, spawnPeople, {}, spawnState, spawnFunds, options);
+  }
+  ASSERT_EQ(spawnState.buildingsSpawned, 1);
+  EXPECT_EQ(spawnState.constructionSpend, kLowBuildingConstructionCost);
+  EXPECT_GE(spawnState.treasuryExpenses, spawnState.constructionSpend);
+
+  CityMap map({16, 12});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  laySpine(map, roads);
+  const Coord site{8, midY - 1};
+  Zoning::applyZoneRect(map, site, site, ZoneType::Residential);
+  map.getTile(site).buildingId = store.createBuilding(BuildingType::Residential, site, 8);
+  map.landValue(site) = kRedevelopmentLandValueCeiling;
+
+  std::vector<ServiceFacility> facilities;
+  for (ServiceType type : {ServiceType::Fire, ServiceType::Police, ServiceType::Health, ServiceType::Education}) {
+    facilities.push_back(ServiceFacility{type, {8, midY}, 12, 1.0f});
+  }
+
+  PlayableCityTickState state;
+  state.populationTarget = 0;
+  int64_t funds = 80000;
+  int64_t redevelopSpend = 0;
+  int newCapacity = 8;
+  for (int step = 0; step < 400 && newCapacity == 8; ++step) {
+    playableCityTick(map, roads, store, population, facilities, state, funds, options);
+    const Building* building = store.getBuilding(map.getTile(site).buildingId);
+    ASSERT_NE(building, nullptr);
+    if (building->capacity > 8) {
+      newCapacity = building->capacity;
+      redevelopSpend = state.constructionSpend;
+    }
+  }
+
+  EXPECT_GT(newCapacity, 8);
+  EXPECT_EQ(redevelopSpend, buildingConstructionCost(BuildingType::Residential, newCapacity));
+  EXPECT_GT(redevelopSpend, spawnState.constructionSpend);
+  EXPECT_GE(state.treasuryExpenses, redevelopSpend);
+}

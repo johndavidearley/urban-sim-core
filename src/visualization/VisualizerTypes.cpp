@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <SDL.h>
+#include "src/visualization/DrawList.hpp"
 
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
@@ -84,7 +84,7 @@ const std::array<OverlayMode, 8>& overlayModes() {
 bool overlayHitTest(int mouseX, int mouseY, OverlayMode& outMode) {
   const auto& modes = overlayModes();
   for (size_t i = 0; i < modes.size(); ++i) {
-    const SDL_Rect rect{
+    const Rect rect{
       kOverlayKeyStartX + static_cast<int>(i) * (kOverlayKeyWidth + kOverlayKeyGap),
       kOverlayKeyY,
       kOverlayKeyWidth,

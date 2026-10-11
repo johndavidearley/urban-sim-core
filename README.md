@@ -17,6 +17,10 @@ capacity and lifecycle emissions:
 
 ### Build
 
+The default build includes the visualizer. Install the
+[graphics prerequisites](#live-visualizer-glfw--vulkan) first, or configure with
+`-DURBAN_SIM_BUILD_VISUALIZER=OFF` to build only the CLI and CPU tests.
+
 ```bash
 git clone --recursive <repo-url>
 # or, if already cloned without --recursive:
@@ -37,18 +41,46 @@ fetched automatically at configure time if not installed locally.
 ./build/bin/UrbanSimCore-cli --help
 ```
 
-### Live Visualizer (SDL2)
+### Live Visualizer (GLFW + Vulkan)
 
-The default build adds an `UrbanSimCore-visualizer` executable. CMake uses an
-installed SDL2 package when available and otherwise fetches a pinned SDL2
-release automatically. Pass `-DURBAN_SIM_BUILD_VISUALIZER=OFF` to omit it.
+The default build adds `UrbanSimCore-visualizer`. It uses an installed GLFW
+3.4+ package or fetches GLFW 3.4. Vulkan headers, the loader, and `glslc`
+(Vulkan SDK or shaderc) are required to build it; shaders are embedded, so
+players do not need a shader compiler. Use
+`-DURBAN_SIM_BUILD_VISUALIZER=OFF` for a graphics-independent headless build.
+
+Install prerequisites:
+
+- **Windows:** install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home)
+  and a GPU driver with Vulkan support. Open a new terminal after SDK installation.
+- **macOS:** install the Vulkan SDK or run
+  `brew install glfw vulkan-headers vulkan-loader molten-vk shaderc`.
+  For a Homebrew development build, set
+  `VK_DRIVER_FILES="$(brew --prefix molten-vk)/etc/vulkan/icd.d/MoltenVK_icd.json"`.
+  MoltenVK runs Vulkan over Metal.
+- **Ubuntu/Debian:** install `libvulkan-dev glslc mesa-vulkan-drivers xorg-dev
+  libwayland-dev libxkbcommon-dev wayland-protocols`. GLFW builds with X11 and
+  Wayland support; use a recent packaged GLFW (3.4+) or the automatic fetch.
 
 ```bash
-cd build
-cmake ..
-cmake --build . --config Release
-./bin/UrbanSimCore-visualizer
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+./build/bin/UrbanSimCore-visualizer
+cmake --install build --config Release --prefix ./install
 ```
+
+Windows executables are in `build/bin/Release` with multi-configuration
+builds. Windows/Linux use the system Vulkan loader and GPU drivers. macOS
+installation bundles the loader, MoltenVK, GLFW when shared, and the driver
+manifest beside the executable; keep the installed `bin` and `lib` directories
+together. No SDK is required to run that installed macOS build.
+
+The renderer batches existing city and HUD geometry in painter's order.
+Logical window coordinates drive both layout and picking, including high-DPI
+screens. Resize, minimize/restore, and focus loss are handled by the host.
+
+See [graphics validation and troubleshooting](docs/GRAPHICS.md) for smoke
+captures, validation layers, runtime requirements, and the platform checklist.
 
 Controls:
 - On launch, choose a 32, 64, or 96 tile map, toggle procedural terrain,
@@ -518,7 +550,7 @@ Create districts with `--create-district NAME X1 Y1 X2 Y2` (rectangular bounds).
 - **src/metrics/** — CityMetrics, GrowthMetrics
 - **src/persistence/** — City snapshot, gameplay session, replay checksum
 - **src/cli/** — Flag CLI (not part of `urban_sim_core`)
-- **src/visualization/** — Headless PPM/iso in the library; SDL visualizer sources in the optional exe
+- **src/visualization/** — Headless PPM/iso in the library; GLFW/Vulkan visualizer sources in the optional exe
 - **tests/** — GoogleTest suites
 - **docs/** — Architecture, status, roadmap, historical logs
 
@@ -534,7 +566,7 @@ for the live implementation, test, and priority baseline, and
 - **Build:** CMake 3.16+
 - **Testing:** Google Test
 - **Serialization:** nlohmann/json
-- **Optional:** SDL2 live visualizer (`UrbanSimCore-visualizer`)
+- **Optional:** GLFW/Vulkan live visualizer (`UrbanSimCore-visualizer`)
 
 ## Vision
 

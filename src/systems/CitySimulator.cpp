@@ -160,9 +160,10 @@ SimResult CitySimulator::run(
     // service-budget/density evaluation below.
     {
       const auto t0 = Clock::now();
-      const GrowthStats growth = GrowthSystem::runStep(map, store, demand, tickSeed, options.buildChance,
-                            &districtGrowthModifiers, {ax0, ay0}, {ax1, ay1}, &pool,
-                            options.enableUtilities);
+      const GrowthStats growth = GrowthSystem::runStep(
+        map, store, demand, tickSeed, options.buildChance,
+        &districtGrowthModifiers, {ax0, ay0}, {ax1, ay1}, &pool,
+        options.enableUtilities, &roads, &coverageCache);
       // Spawn fills empty zoned tiles; demolition frees them. Redevelopment
       // is excluded from both counters inside GrowthSystem.
       city_sim::applyEmptyZonedDelta(

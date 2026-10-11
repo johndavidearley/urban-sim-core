@@ -10,6 +10,8 @@
 #include "src/world/CityMap.hpp"
 
 namespace visualizer {
+class WindowHost;
+class VulkanRenderer;
 
 void updatePlayableUtilityConnectivity(
   CityMap& map,
@@ -59,7 +61,7 @@ void captureSessionDistricts(const DistrictSystem& districts, GameplaySessionSta
 void applySessionDistricts(DistrictSystem& districts, const GameplaySessionState& session);
 
 [[maybe_unused]] bool seedScenario(CityMap& map, RoadNetwork& roads, EntityStore& store, PopulationStore& population);
-StartScreenResult runStartScreen(SDL_Renderer* renderer, int windowWidth, int windowHeight);
-bool pointInRect(int x, int y, const SDL_Rect& rect);
+StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList* renderer, int windowWidth, int windowHeight);
+bool pointInRect(int x, int y, const Rect& rect);
 
 }  // namespace visualizer

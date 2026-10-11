@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <SDL.h>
+#include "src/visualization/DrawList.hpp"
 
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
@@ -34,50 +34,23 @@
 #include "src/visualization/VisualizerHud.hpp"
 #include "src/visualization/VisualizerSession.hpp"
 
+#include "src/visualization/WindowHost.hpp"
+#include "src/visualization/VulkanRenderer.hpp"
+#include "src/visualization/GraphicsSmoke.hpp"
 using namespace visualizer;
 
-int main(int argc, char* argv[]) {
-  (void)argc;
-  (void)argv;
-
-  if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-    std::cerr << "SDL init failed: " << SDL_GetError() << "\n";
-    return 1;
+int runVisualizer(int argc, char* argv[]) {
+  WindowHost host(1280, 800);
+  VulkanRenderer gpu(host.window());
+  DrawList drawList;
+  DrawList* renderer = &drawList;
+  int windowWidth = 1280, windowHeight = 800;
+  if (argc > 1 && (std::string(argv[1]) == "--graphics-smoke" || std::string(argv[1]) == "--graphics-benchmark")) {
+    return runGraphicsSmoke(host, gpu, argc > 2 ? argv[2] : "graphics-smoke", std::string(argv[1]) == "--graphics-benchmark");
   }
-
-  constexpr int windowWidth = 1280;
-  constexpr int windowHeight = 800;
-  SDL_Window* window = SDL_CreateWindow(
-    "UrbanSimCore Visualizer (SDL2)",
-    SDL_WINDOWPOS_CENTERED,
-    SDL_WINDOWPOS_CENTERED,
-    windowWidth,
-    windowHeight,
-    SDL_WINDOW_SHOWN
-  );
-  if (window == nullptr) {
-    std::cerr << "Window creation failed: " << SDL_GetError() << "\n";
-    SDL_Quit();
-    return 1;
-  }
-
-  SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-  if (renderer == nullptr) {
-    std::cerr << "Renderer creation failed: " << SDL_GetError() << "\n";
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-    return 1;
-  }
-  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-
   constexpr const char* kSessionPath = "urban_sim_session.json";
-  const StartScreenResult start = runStartScreen(renderer, windowWidth, windowHeight);
-  if (start.quit) {
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-    return 0;
-  }
+  const StartScreenResult start = runStartScreen(host, gpu, renderer, windowWidth, windowHeight);
+  if (start.quit) return 0;
 
   int mapSize = start.mapSize;
   std::string startupError;
@@ -243,7 +216,7 @@ int main(int argc, char* argv[]) {
   auto notify = [&](const std::string& message, bool success) {
     toast.message = message;
     toast.color = success ? RGB{105, 230, 135} : RGB{255, 125, 110};
-    toast.expiresAtMs = SDL_GetTicks() + 2400u;
+    toast.expiresAtMs = host.timeMs() + 2400u;
   };
   if (!startupError.empty()) {
     notify("LOAD FAILED - NEW CITY STARTED", false);
@@ -335,7 +308,7 @@ int main(int argc, char* argv[]) {
     liveState.construction = city_sim::ConstructionState{};
     liveState.construction.extent = session.autonomousExtent;
     liveState.construction.emptyZonedCount = session.emptyZonedCount;
-    liveState.lastTickMs = SDL_GetTicks();
+    liveState.lastTickMs = host.timeMs();
     liveState.transitRoutes = std::move(session.transitRoutes);
     liveState.transitCache = TransitCoverageCache{};
     liveState.transitSummary = TransitSummary{};
@@ -385,20 +358,30 @@ int main(int argc, char* argv[]) {
   };
 
   bool running = true;
+  bool suspended = false;
   while (running) {
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-      if (event.type == SDL_MOUSEMOTION) {
+    host.dimensions(windowWidth, windowHeight);
+    renderer->frameTimeMs = host.timeMs();
+    InputEvent event;
+    while (host.pollEvent(event)) {
+      host.dimensions(windowWidth, windowHeight);
+      if (event.type == EventType::FocusLost) {
+        toolDragging = false;
+        cameraPanning = false;
+        roadPlan = {}; zonePlan = {}; bulldozePlan = {}; servicePlan = {}; districtPlan = {};
+        continue;
+      }
+      if (event.type == EventType::MouseMotion) {
         mouseX = event.motion.x;
         mouseY = event.motion.y;
-      } else if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP) {
+      } else if (event.type == EventType::MouseDown || event.type == EventType::MouseUp) {
         mouseX = event.button.x;
         mouseY = event.button.y;
       }
       if (showQuitDialog) {
-        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
+        if (event.type == EventType::KeyDown && event.key.sym == Key::Escape) {
           showQuitDialog = false;
-        } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
+        } else if (event.type == EventType::MouseDown && event.button.button == MouseButton::Left) {
           switch (quitHitTest(event.button.x, event.button.y, windowWidth, windowHeight)) {
             case QuitAction::SaveAndQuit:
               if (saveSession()) {
@@ -419,11 +402,11 @@ int main(int argc, char* argv[]) {
         continue;
       }
       OverlayMode clickedOverlay = overlayMode;
-      if (event.type == SDL_QUIT) {
+      if (event.type == EventType::Quit) {
         showQuitDialog = true;
-      } else if (event.type == SDL_KEYDOWN) {
-        switch (event.key.keysym.sym) {
-          case SDLK_ESCAPE:
+      } else if (event.type == EventType::KeyDown) {
+        switch (event.key.sym) {
+          case Key::Escape:
             if (toolDragging || roadToolActive || zoneToolActive || bulldozeToolActive
                 || serviceToolActive || districtToolActive) {
               toolDragging = false;
@@ -441,70 +424,70 @@ int main(int argc, char* argv[]) {
               showQuitDialog = true;
             }
             break;
-          case SDLK_EQUALS:
-          case SDLK_PLUS:
+          case Key::Equal:
+          case Key::Plus:
             tilePixels = std::min(48, tilePixels + 1);
             break;
-          case SDLK_MINUS:
+          case Key::Minus:
             tilePixels = std::max(minimumTilePixels, tilePixels - 1);
             break;
-          case SDLK_LEFT:
+          case Key::Left:
             if (isometricMode) isometricCameraX += 18;
             else viewX = std::max(0, viewX - 1);
             break;
-          case SDLK_RIGHT:
+          case Key::Right:
             if (isometricMode) isometricCameraX -= 18;
             else viewX = std::min(mapSize - 1, viewX + 1);
             break;
-          case SDLK_UP:
+          case Key::Up:
             if (isometricMode) isometricCameraY += 18;
             else viewY = std::max(0, viewY - 1);
             break;
-          case SDLK_DOWN:
+          case Key::Down:
             if (isometricMode) isometricCameraY -= 18;
             else viewY = std::min(mapSize - 1, viewY + 1);
             break;
-          case SDLK_1:
+          case Key::Num1:
             overlayMode = OverlayMode::Zone;
             break;
-          case SDLK_2:
+          case Key::Num2:
             overlayMode = OverlayMode::LandValue;
             break;
-          case SDLK_3:
+          case Key::Num3:
             overlayMode = OverlayMode::Pollution;
             break;
-          case SDLK_4:
+          case Key::Num4:
             overlayMode = OverlayMode::ServiceCoverage;
             break;
-          case SDLK_5:
+          case Key::Num5:
             overlayMode = OverlayMode::TrafficCongestion;
             break;
-          case SDLK_6:
+          case Key::Num6:
             overlayMode = OverlayMode::Demand;
             break;
-          case SDLK_7:
+          case Key::Num7:
             overlayMode = OverlayMode::Happiness;
             break;
-          case SDLK_8:
+          case Key::Num8:
             overlayMode = OverlayMode::RouteHeatmap;
             break;
-          case SDLK_SPACE:
+          case Key::Space:
             liveState.paused = !liveState.paused;
             sessionDirty = true;
             break;
-          case SDLK_PERIOD:
-          case SDLK_n:
+          case Key::Period:
+          case Key::N:
             if (liveState.paused) {
               executeSimulationTick();
             }
             break;
-          case SDLK_h:
+          case Key::H:
             showLegend = !showLegend;
             break;
-          case SDLK_F1:
+          case Key::F1:
             showOnboarding = !showOnboarding;
             break;
-          case SDLK_F3:
+          case Key::F3:
             isometricMode = !isometricMode;
             toolDragging = false;
             roadPlan = {};
@@ -512,34 +495,34 @@ int main(int argc, char* argv[]) {
             bulldozePlan = {};
             notify(isometricMode ? "ISOMETRIC VIEW" : "TOP DOWN VIEW", true);
             break;
-          case SDLK_F4:
+          case Key::F4:
             cleanUiMode = !cleanUiMode;
             notify(cleanUiMode ? "CLEAN UI" : "DETAIL UI", true);
             break;
-          case SDLK_f:
+          case Key::F:
             if (isometricMode) {
               focusDevelopedArea();
               notify("CAMERA FOCUSED", true);
             }
             break;
-          case SDLK_F2:
+          case Key::F2:
             gReadableUiText = !gReadableUiText;
             notify(gReadableUiText ? "LARGE TEXT ON" : "COMPACT TEXT ON", true);
             break;
-          case SDLK_g:
+          case Key::G:
             liveState.autonomousGrowth = !liveState.autonomousGrowth;
             notify(liveState.autonomousGrowth
                      ? "AUTONOMOUS GROWTH ON (CITYSIM ROADS/ZONES/SERVICES)"
                      : "AUTONOMOUS GROWTH OFF (PLAYER BUILD ONLY)",
                    true);
             break;
-          case SDLK_F5:
+          case Key::F5:
             saveSession();
             break;
-          case SDLK_F9:
+          case Key::F9:
             loadSession();
             break;
-          case SDLK_r:
+          case Key::R:
             roadToolActive = !roadToolActive;
             zoneToolActive = false;
             bulldozeToolActive = false;
@@ -552,7 +535,7 @@ int main(int argc, char* argv[]) {
             servicePlan = {};
             districtPlan = {};
             break;
-          case SDLK_z:
+          case Key::Z:
             if (zoneToolActive) {
               selectedZone = nextPlayableZone(selectedZone);
             } else {
@@ -570,7 +553,7 @@ int main(int argc, char* argv[]) {
             servicePlan = {};
             districtPlan = {};
             break;
-          case SDLK_b:
+          case Key::B:
             bulldozeToolActive = !bulldozeToolActive;
             roadToolActive = false;
             zoneToolActive = false;
@@ -583,7 +566,7 @@ int main(int argc, char* argv[]) {
             servicePlan = {};
             districtPlan = {};
             break;
-          case SDLK_s:
+          case Key::S:
             if (serviceToolActive) {
               selectedService = nextPlayableService(selectedService);
             } else {
@@ -601,7 +584,7 @@ int main(int argc, char* argv[]) {
             servicePlan = {};
             districtPlan = {};
             break;
-          case SDLK_p:
+          case Key::P:
             if (districtToolActive) {
               selectedArchetype = nextPlayableArchetype(selectedArchetype);
             } else {
@@ -619,31 +602,31 @@ int main(int argc, char* argv[]) {
             servicePlan = {};
             districtPlan = {};
             break;
-          case SDLK_o:
+          case Key::O:
             cycleOriginFilter(liveState, store);
             refreshRouteHeat(store, population, roads, liveState, 1003u + (liveState.tick * 31u));
             break;
-          case SDLK_d:
+          case Key::D:
             cycleDestinationFilter(liveState, store);
             refreshRouteHeat(store, population, roads, liveState, 1003u + (liveState.tick * 31u));
             break;
-          case SDLK_c:
+          case Key::C:
             clearRouteFilters(liveState);
             refreshRouteHeat(store, population, roads, liveState, 1003u + (liveState.tick * 31u));
             break;
           default:
             break;
         }
-      } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_MIDDLE) {
+      } else if (event.type == EventType::MouseDown && event.button.button == MouseButton::Middle) {
         cameraPanning = true;
         cameraLastX = event.button.x;
         cameraLastY = event.button.y;
         cameraPanRemainderX = 0;
         cameraPanRemainderY = 0;
-      } else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_MIDDLE) {
+      } else if (event.type == EventType::MouseUp && event.button.button == MouseButton::Middle) {
         cameraPanning = false;
-      } else if (event.type == SDL_MOUSEWHEEL) {
-        SDL_GetMouseState(&mouseX, &mouseY);
+      } else if (event.type == EventType::Scroll) {
+        host.mousePosition(&mouseX, &mouseY);
         const bool overHud = mouseX >= windowWidth - kHudPanelWidth - 12
           && mouseY >= 12 && mouseY < 12 + kHudPanelHeight;
         const bool overLegend = showLegend && mouseX >= 12 && mouseX < 532
@@ -666,7 +649,7 @@ int main(int argc, char* argv[]) {
             viewY = anchor.y - mouseY / tilePixels;
           }
         }
-      } else if (event.type == SDL_MOUSEMOTION && cameraPanning) {
+      } else if (event.type == EventType::MouseMotion && cameraPanning) {
         if (isometricMode) {
           isometricCameraX += event.motion.x - cameraLastX;
           isometricCameraY += event.motion.y - cameraLastY;
@@ -694,11 +677,11 @@ int main(int argc, char* argv[]) {
           ++viewY;
           cameraPanRemainderY += tilePixels;
         }
-      } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT
+      } else if (event.type == EventType::MouseDown && event.button.button == MouseButton::Left
                  && showLegend
                  && overlayHitTest(event.button.x, event.button.y, clickedOverlay)) {
         overlayMode = clickedOverlay;
-      } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT
+      } else if (event.type == EventType::MouseDown && event.button.button == MouseButton::Left
                  && !cleanUiMode
                  && hudHitTest(event.button.x, event.button.y, windowWidth) != HudAction::None) {
         const HudAction action = hudHitTest(event.button.x, event.button.y, windowWidth);
@@ -729,7 +712,7 @@ int main(int argc, char* argv[]) {
           default:
             break;
         }
-      } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT
+      } else if (event.type == EventType::MouseDown && event.button.button == MouseButton::Left
                  && !cleanUiMode
                  && selectedDistrictId != 0
                  && districts.getDistrict(selectedDistrictId) != nullptr
@@ -757,16 +740,16 @@ int main(int argc, char* argv[]) {
           default:
             break;
         }
-      } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT
+      } else if (event.type == EventType::MouseDown && event.button.button == MouseButton::Left
                  && paletteHitTest(event.button.x, event.button.y, windowWidth, windowHeight)
                     != PaletteTool::None) {
         activatePaletteTool(
           paletteHitTest(event.button.x, event.button.y, windowWidth, windowHeight)
         );
-      } else if (event.type == SDL_MOUSEBUTTONDOWN && serviceToolActive) {
-        if (event.button.button == SDL_BUTTON_RIGHT) {
+      } else if (event.type == EventType::MouseDown && serviceToolActive) {
+        if (event.button.button == MouseButton::Right) {
           servicePlan = {};
-        } else if (event.button.button == SDL_BUTTON_LEFT) {
+        } else if (event.button.button == MouseButton::Left) {
           const Coord tile = tileAtScreen(event.button.x, event.button.y);
           servicePlan = ServiceTool::plan(map, roads, facilities, selectedService, tile, funds);
           const int64_t cost = servicePlan.cost;
@@ -795,9 +778,9 @@ int main(int argc, char* argv[]) {
           }
           servicePlan = ServiceTool::plan(map, roads, facilities, selectedService, tile, funds);
         }
-      } else if (event.type == SDL_MOUSEBUTTONDOWN
+      } else if (event.type == EventType::MouseDown
                  && (roadToolActive || zoneToolActive || bulldozeToolActive || districtToolActive)) {
-        if (event.button.button == SDL_BUTTON_RIGHT) {
+        if (event.button.button == MouseButton::Right) {
           if (districtToolActive && !toolDragging) {
             const Coord tile = tileAtScreen(event.button.x, event.button.y);
             const DistrictId id = DistrictTool::districtAt(districts, tile);
@@ -814,7 +797,7 @@ int main(int argc, char* argv[]) {
           zonePlan = {};
           bulldozePlan = {};
           districtPlan = {};
-        } else if (event.button.button == SDL_BUTTON_LEFT) {
+        } else if (event.button.button == MouseButton::Left) {
           const Coord tile = tileAtScreen(event.button.x, event.button.y);
           if (map.isValid(tile)) {
             toolDragging = true;
@@ -825,10 +808,10 @@ int main(int argc, char* argv[]) {
             districtPlan = {};
           }
         }
-      } else if (event.type == SDL_MOUSEMOTION && serviceToolActive) {
+      } else if (event.type == EventType::MouseMotion && serviceToolActive) {
         const Coord tile = tileAtScreen(event.motion.x, event.motion.y);
         servicePlan = ServiceTool::plan(map, roads, facilities, selectedService, tile, funds);
-      } else if (event.type == SDL_MOUSEMOTION && toolDragging) {
+      } else if (event.type == EventType::MouseMotion && toolDragging) {
         const Coord tile = tileAtScreen(event.motion.x, event.motion.y);
         if (map.isValid(tile)) {
           if (roadToolActive) {
@@ -841,8 +824,8 @@ int main(int argc, char* argv[]) {
             districtPlan = DistrictTool::plan(map, districts, toolDragStart, tile, selectedArchetype);
           }
         }
-      } else if (event.type == SDL_MOUSEBUTTONUP && toolDragging
-                 && event.button.button == SDL_BUTTON_LEFT) {
+      } else if (event.type == EventType::MouseUp && toolDragging
+                 && event.button.button == MouseButton::Left) {
         const Coord tile = tileAtScreen(event.button.x, event.button.y);
         if (map.isValid(tile)) {
           if (roadToolActive) {
@@ -926,6 +909,14 @@ int main(int argc, char* argv[]) {
       onboardingStep = 3;
     }
 
+    if (!running) break;
+    host.dimensions(windowWidth, windowHeight);
+    if (!host.drawable()) {
+      suspended = true;
+      if (running) host.waitEvents();
+      continue;
+    }
+    if (suspended) { liveState.lastTickMs = host.timeMs(); suspended = false; }
     const int visibleTilesX = std::max(1, windowWidth / tilePixels);
     const int visibleTilesY = std::max(1, windowHeight / tilePixels);
     const int maxViewX = std::max(0, mapSize - visibleTilesX);
@@ -935,15 +926,16 @@ int main(int argc, char* argv[]) {
     viewX = std::max(0, viewX);
     viewY = std::max(0, viewY);
 
-    const uint32_t nowMs = SDL_GetTicks();
+    const uint32_t nowMs = host.timeMs();
+    renderer->frameTimeMs = nowMs;
     if (!showQuitDialog && !liveState.paused
         && (nowMs - liveState.lastTickMs) >= liveState.tickIntervalMs) {
       executeSimulationTick();
       liveState.lastTickMs = nowMs;
     }
 
-    SDL_SetRenderDrawColor(renderer, 91, 108, 91, 255);
-    SDL_RenderClear(renderer);
+    setDrawColor(renderer, 91, 108, 91, 255);
+    clearFrame(renderer);
 
     if (isometricMode) {
       const IsometricProjection projection = isometricProjection();
@@ -962,13 +954,13 @@ int main(int argc, char* argv[]) {
             const int halfWidth = projection.tileWidth() / 2;
             const int bottomY = top.y + projection.tileHeight();
             for (int drop = 1; drop <= 5; ++drop) {
-              SDL_SetRenderDrawColor(renderer, wall.r, wall.g, wall.b, 220);
+              setDrawColor(renderer, wall.r, wall.g, wall.b, 220);
               if (x == mapSize - 1) {
-                SDL_RenderDrawLine(renderer, top.x, bottomY + drop,
+                drawLine(renderer, top.x, bottomY + drop,
                                    top.x - halfWidth, top.y + projection.tileHeight() / 2 + drop);
               }
               if (y == mapSize - 1) {
-                SDL_RenderDrawLine(renderer, top.x, bottomY + drop,
+                drawLine(renderer, top.x, bottomY + drop,
                                    top.x + halfWidth, top.y + projection.tileHeight() / 2 + drop);
               }
             }
@@ -988,10 +980,10 @@ int main(int argc, char* argv[]) {
           liveState.routeHeatByTile,
           liveState.waste.happinessPenalty + liveState.deathcare.happinessPenalty
         );
-        SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, 255);
+        setDrawColor(renderer, color.r, color.g, color.b, 255);
 
-        SDL_Rect rect{tx * tilePixels, ty * tilePixels, tilePixels, tilePixels};
-        SDL_RenderFillRect(renderer, &rect);
+        visualizer::Rect rect{tx * tilePixels, ty * tilePixels, tilePixels, tilePixels};
+        fillRect(renderer, &rect);
 
         if (overlayMode == OverlayMode::Zone) {
           drawNormalTileDetail(
@@ -1277,7 +1269,7 @@ int main(int argc, char* argv[]) {
         districtPlan,
         funds
       );
-      SDL_SetWindowTitle(window, hudTitle.c_str());
+      host.title(hudTitle);
       lastHudRefreshMs = nowMs;
     }
 
@@ -1285,12 +1277,29 @@ int main(int argc, char* argv[]) {
       drawQuitDialog(renderer, windowWidth, windowHeight, mouseX, mouseY, sessionDirty);
     }
 
-    SDL_RenderPresent(renderer);
+    gpu.present(*renderer);
   }
 
-  SDL_DestroyRenderer(renderer);
-  SDL_DestroyWindow(window);
-  SDL_Quit();
   return 0;
 }
 
+int main(int argc, char* argv[]) {
+  try { return runVisualizer(argc, argv); }
+  catch (const std::exception& error) { std::cerr << "Visualizer: " << error.what() << '\n'; return 1; }
+}
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <cstdlib>
+
+// Retain the previous Windows GUI subsystem without SDL's main wrapper.
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+  try { return runVisualizer(__argc, __argv); }
+  catch (const std::exception& error) {
+    MessageBoxA(nullptr, error.what(), "UrbanSimCore Visualizer", MB_OK | MB_ICONERROR);
+    return 1;
+  }
+}
+#endif

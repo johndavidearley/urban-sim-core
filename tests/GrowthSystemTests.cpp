@@ -3,6 +3,7 @@
 #include "src/entities/EntityStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/GrowthSystem.hpp"
+#include "src/systems/ServiceSystem.hpp"
 #include "src/world/Zoning.hpp"
 
 TEST(GrowthSystemTests, SpawnsWhenZonedAndRoadAccessible) {
@@ -433,4 +434,90 @@ TEST(GrowthSystemTests, RequireUtilitiesDefaultsFalseAndDoesNotGateGrowth) {
 
   EXPECT_EQ(stats.spawnedOffice, 1);
   EXPECT_EQ(stats.totalSpawned(), 1);
+}
+
+TEST(GrowthSystemTests, RedevelopmentLocationFactorTracksValueCoverageAndCongestion) {
+  EXPECT_FLOAT_EQ(redevelopmentLocationFactor(kRedevelopmentLandValueFloor, 1.0f, 0.0f), 0.0f);
+  EXPECT_FLOAT_EQ(redevelopmentLocationFactor(kRedevelopmentLandValueCeiling, 1.0f, 0.0f), 1.0f);
+  EXPECT_FLOAT_EQ(redevelopmentLocationFactor(kRedevelopmentLandValueCeiling, 0.0f, 0.0f), 0.25f);
+  EXPECT_FLOAT_EQ(redevelopmentLocationFactor(kRedevelopmentLandValueCeiling, 1.0f, 1.0f), 0.0f);
+  EXPECT_FLOAT_EQ(redevelopmentLocationFactor(kRedevelopmentLandValueCeiling, 1.0f, 0.5f), 0.5f);
+
+  const float mid = (kRedevelopmentLandValueFloor + kRedevelopmentLandValueCeiling) * 0.5f;
+  EXPECT_FLOAT_EQ(redevelopmentLocationFactor(mid, 1.0f, 0.0f), 0.5f);
+}
+
+TEST(GrowthSystemTests, DensityTierAndConstructionCostSeparateLowAndRedevelopedBuildings) {
+  EXPECT_EQ(buildingDensityTier(BuildingType::Residential, 8), 0);
+  EXPECT_EQ(buildingDensityTier(BuildingType::Residential, 16), 1);
+  EXPECT_EQ(buildingDensityTier(BuildingType::Residential, 128), 4);
+  EXPECT_EQ(buildingDensityTier(BuildingType::Residential, 512), 6);
+  EXPECT_EQ(buildingDensityTier(BuildingType::Residential, 4096), 6);
+  EXPECT_EQ(defaultBuildingCapacity(BuildingType::Commercial), 20);
+  EXPECT_EQ(buildingDensityTier(BuildingType::Commercial, 40), 1);
+
+  const int64_t low = buildingConstructionCost(BuildingType::Residential, 8);
+  const int64_t doubled = buildingConstructionCost(BuildingType::Residential, 16);
+  const int64_t sixteen = buildingConstructionCost(BuildingType::Residential, 128);
+  EXPECT_EQ(low, kLowBuildingConstructionCost);
+  EXPECT_GT(doubled, low);
+  EXPECT_GT(sixteen, doubled);
+  EXPECT_EQ(doubled, low * 2);
+  EXPECT_EQ(sixteen, low * 16);
+}
+
+// A saturated zone still densifies on the valuable, served, clear tile.
+// The fringe tile and the jammed high-value tile stay at the low capacity.
+TEST(GrowthSystemTests, HighestCapacityFollowsLandValueNotTheSaturatedFringe) {
+  CityMap map({12, 6});
+  RoadNetwork roads(map);
+  EntityStore store;
+
+  for (int x = 1; x < 9; ++x) {
+    roads.buildRoad({x, 2}, {x + 1, 2});
+  }
+
+  const Coord fringe{2, 2};
+  const Coord jammed{4, 2};
+  const Coord prime{7, 2};
+  const Coord sites[] = {fringe, jammed, prime};
+  for (const Coord site : sites) {
+    map.getTile(site).zone = static_cast<int>(ZoneType::Residential);
+    map.getTile(site).buildingId = store.createBuilding(BuildingType::Residential, site, 8);
+  }
+  map.landValue(fringe) = kRedevelopmentLandValueFloor;
+  map.landValue(jammed) = kRedevelopmentLandValueCeiling;
+  map.landValue(prime) = kRedevelopmentLandValueCeiling;
+  roads.updateCongestion({3, 2}, {4, 2}, 10.0f);
+  roads.updateCongestion({4, 2}, {5, 2}, 10.0f);
+
+  std::vector<ServiceFacility> facilities;
+  for (ServiceType type : {ServiceType::Fire, ServiceType::Police, ServiceType::Health, ServiceType::Education}) {
+    ServiceFacility facility;
+    facility.type = type;
+    facility.position = prime;
+    facility.maxTravelDistance = 20;
+    facilities.push_back(facility);
+  }
+  ServiceCoverageCache cache;
+  ServiceSystem::buildCache(roads, facilities, cache);
+
+  ZoneDemand demand;
+  demand.residential = 1.0f;
+
+  for (int step = 0; step < 300; ++step) {
+    GrowthSystem::runStep(
+      map, store, demand, static_cast<uint32_t>(40 + step), 0.0f,
+      nullptr, {-1, -1}, {-1, -1}, nullptr, false, &roads, &cache);
+  }
+
+  const Building* fringeBuilding = store.getBuilding(map.getTile(fringe).buildingId);
+  const Building* jammedBuilding = store.getBuilding(map.getTile(jammed).buildingId);
+  const Building* primeBuilding = store.getBuilding(map.getTile(prime).buildingId);
+  ASSERT_NE(fringeBuilding, nullptr);
+  ASSERT_NE(jammedBuilding, nullptr);
+  ASSERT_NE(primeBuilding, nullptr);
+  EXPECT_EQ(fringeBuilding->capacity, 8);
+  EXPECT_EQ(jammedBuilding->capacity, 8);
+  EXPECT_GT(primeBuilding->capacity, jammedBuilding->capacity);
 }

@@ -26,7 +26,7 @@ enum class DistrictPanelAction {
 };
 
 void drawToolPalette(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int windowWidth,
   int windowHeight,
   bool roadActive,
@@ -38,12 +38,12 @@ void drawToolPalette(
   int mouseY
 );
 
-SDL_Rect hudControlRect(HudAction action, int windowWidth);
+Rect hudControlRect(HudAction action, int windowWidth);
 HudAction hudHitTest(int mouseX, int mouseY, int windowWidth);
-void drawDemandBar(SDL_Renderer* renderer, int x, int y, float demand, RGB color, const char* label);
+void drawDemandBar(DrawList* renderer, int x, int y, float demand, RGB color, const char* label);
 
 void drawGameplayHud(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int windowWidth,
   uint32_t population,
   size_t buildings,
@@ -56,7 +56,7 @@ void drawGameplayHud(
 );
 
 void drawCompactGameplayHud(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int windowWidth,
   bool paused,
   uint32_t population,
@@ -65,14 +65,14 @@ void drawCompactGameplayHud(
 );
 
 void drawToast(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int windowWidth,
   const ToastNotification& toast,
   uint32_t nowMs
 );
 
 void drawPlacementWarning(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int mouseX,
   int mouseY,
   int windowWidth,
@@ -81,7 +81,7 @@ void drawPlacementWarning(
 );
 
 void drawUiTooltip(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int mouseX,
   int mouseY,
   int windowWidth,
@@ -89,21 +89,21 @@ void drawUiTooltip(
   const std::string& message
 );
 
-void drawOnboarding(SDL_Renderer* renderer, int windowHeight, int step);
+void drawOnboarding(DrawList* renderer, int windowHeight, int step);
 
-SDL_Rect districtPanelRect();
-SDL_Rect districtPanelButtonRect(DistrictPanelAction action);
+Rect districtPanelRect();
+Rect districtPanelButtonRect(DistrictPanelAction action);
 DistrictPanelAction districtPanelHitTest(int mouseX, int mouseY);
 bool pointInDistrictPanel(int mouseX, int mouseY);
 void drawDistrictPanel(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   const District& district,
   int mouseX,
   int mouseY
 );
 
 void drawTileInspector(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   const CityMap& map,
   const RoadNetwork& roads,
   const EntityStore& store,
@@ -112,11 +112,11 @@ void drawTileInspector(
   const DistrictSystem* districts = nullptr
 );
 
-SDL_Rect quitButtonRect(QuitAction action, int windowWidth, int windowHeight);
+Rect quitButtonRect(QuitAction action, int windowWidth, int windowHeight);
 QuitAction quitHitTest(int mouseX, int mouseY, int windowWidth, int windowHeight);
 
 void drawQuitDialog(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   int windowWidth,
   int windowHeight,
   int mouseX,
@@ -124,12 +124,12 @@ void drawQuitDialog(
   bool dirty
 );
 
-void drawSwatch(SDL_Renderer* renderer, int x, int y, RGB color, bool active = false);
-void drawZoneLegend(SDL_Renderer* renderer, int x, int y);
-void drawSteppedLegend(SDL_Renderer* renderer, int x, int y, OverlayMode mode);
+void drawSwatch(DrawList* renderer, int x, int y, RGB color, bool active = false);
+void drawZoneLegend(DrawList* renderer, int x, int y);
+void drawSteppedLegend(DrawList* renderer, int x, int y, OverlayMode mode);
 
 void drawLegendPanel(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   OverlayMode overlayMode,
   int windowWidth,
   int windowHeight,

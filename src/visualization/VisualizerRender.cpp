@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <SDL.h>
+#include "src/visualization/DrawList.hpp"
 
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
@@ -39,16 +39,16 @@
 
 namespace visualizer {
 
-void drawFilledRect(SDL_Renderer* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha) {
-  SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, alpha);
-  SDL_Rect rect{x, y, w, h};
-  SDL_RenderFillRect(renderer, &rect);
+void drawFilledRect(DrawList* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha) {
+  setDrawColor(renderer, color.r, color.g, color.b, alpha);
+  Rect rect{x, y, w, h};
+  fillRect(renderer, &rect);
 }
 
-void drawRectOutline(SDL_Renderer* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha) {
-  SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, alpha);
-  SDL_Rect rect{x, y, w, h};
-  SDL_RenderDrawRect(renderer, &rect);
+void drawRectOutline(DrawList* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha) {
+  setDrawColor(renderer, color.r, color.g, color.b, alpha);
+  Rect rect{x, y, w, h};
+  outlineRect(renderer, &rect);
 }
 
 uint32_t visualHash(Coord coord) {
@@ -74,7 +74,7 @@ RGB buildingFacade(BuildingType type) {
 }
 
 void drawNormalTileDetail(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   const CityMap& map,
   const EntityStore& store,
   const std::vector<ServiceFacility>& facilities,
@@ -88,7 +88,7 @@ void drawNormalTileDetail(
 
   if (tile.type == 2) {
     if (size >= 6) {
-      const int bandY = y + 2 + static_cast<int>((variation + SDL_GetTicks() / 180u) % std::max(2, size - 3));
+      const int bandY = y + 2 + static_cast<int>((variation + renderer->frameTimeMs / 180u) % std::max(2, size - 3));
       drawFilledRect(renderer, x + 1, bandY, std::max(1, size - 2), 1, {145, 190, 250}, 120);
     }
     return;
@@ -154,7 +154,8 @@ void drawNormalTileDetail(
       const float occupancy = building->capacity > 0
         ? std::clamp(static_cast<float>(building->occupancy) / static_cast<float>(building->capacity), 0.0f, 1.0f)
         : 0.0f;
-      const int margin = std::max(2, size / 7);
+      const int tier = buildingDensityTier(building->type, building->capacity);
+      const int margin = std::max(1, std::max(2, size / 7) - std::min(tier, 3));
       const int lift = size >= 18 ? 2 + static_cast<int>(occupancy * 3.0f) : 1;
       const int width = std::max(3, size - margin * 2);
       const int height = std::max(3, size - margin * 2 - lift);
@@ -166,6 +167,20 @@ void drawNormalTileDetail(
         static_cast<uint8_t>(std::min(255, facade.g + 28)),
         static_cast<uint8_t>(std::min(255, facade.b + 28))
       });
+      // One stripe per capacity doubling, so a 2× building and a 16×
+      // building are different heights in the top-down view.
+      const int stripe = std::max(1, size / 8);
+      const int towerW = std::max(2, width * 2 / 3);
+      const int towerX = x + margin + (width - towerW) / 2;
+      const RGB tower{
+        static_cast<uint8_t>(std::min(255, facade.r + 36)),
+        static_cast<uint8_t>(std::min(255, facade.g + 36)),
+        static_cast<uint8_t>(std::min(255, facade.b + 36))
+      };
+      for (int floor = 0; floor < tier; ++floor) {
+        drawFilledRect(
+          renderer, towerX, y + margin + lift - (floor + 1) * stripe, towerW, stripe, tower);
+      }
       if (size >= 16) {
         const RGB window{205, 229, 225};
         for (int wx = x + margin + 2; wx < x + margin + width - 1; wx += 4) {
@@ -193,7 +208,7 @@ void drawNormalTileDetail(
   }
 }
 
-void drawDiamond(SDL_Renderer* renderer, ScreenPoint top, int width, int height, RGB color, uint8_t alpha) {
+void drawDiamond(DrawList* renderer, ScreenPoint top, int width, int height, RGB color, uint8_t alpha) {
   const int halfWidth = width / 2;
   const int halfHeight = std::max(1, height / 2);
   for (int row = 0; row < height; ++row) {
@@ -204,7 +219,7 @@ void drawDiamond(SDL_Renderer* renderer, ScreenPoint top, int width, int height,
 }
 
 void drawIsometricObject(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   ScreenPoint top,
   int tileWidth,
   int tileHeight,
@@ -236,7 +251,7 @@ void drawIsometricObject(
 }
 
 void drawIsometricTile(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   const CityMap& map,
   const RoadNetwork& roads,
   const EntityStore& store,
@@ -255,12 +270,12 @@ void drawIsometricTile(
     map, roads, store, coord, overlayMode, facilities, routeHeatByTile, happinessPenalty
   );
   drawDiamond(renderer, top, width, height, base);
-  SDL_SetRenderDrawColor(renderer, 55, 70, 62, 80);
-  const SDL_Point outline[5] = {
+  setDrawColor(renderer, 55, 70, 62, 80);
+  const Point outline[5] = {
     {top.x, top.y}, {top.x + width / 2, top.y + height / 2},
     {top.x, top.y + height}, {top.x - width / 2, top.y + height / 2}, {top.x, top.y}
   };
-  SDL_RenderDrawLines(renderer, outline, 5);
+  drawLines(renderer, outline, 5);
 
   if (overlayMode != OverlayMode::Zone) return;
   const ScreenPoint center = projection.tileCenter(coord);
@@ -273,10 +288,10 @@ void drawIsometricTile(
     for (const Coord neighbor : neighbors) {
       if (!hasRoadAt(map, neighbor)) continue;
       const ScreenPoint target = projection.tileCenter(neighbor);
-      SDL_SetRenderDrawColor(renderer, asphalt.r, asphalt.g, asphalt.b, 255);
+      setDrawColor(renderer, asphalt.r, asphalt.g, asphalt.b, 255);
       const int slope = ((target.x - center.x) * (target.y - center.y) >= 0) ? 1 : -1;
       for (int offset = -thickness / 2; offset <= thickness / 2; ++offset) {
-        SDL_RenderDrawLine(renderer, center.x + offset, center.y - slope * offset,
+        drawLine(renderer, center.x + offset, center.y - slope * offset,
                           target.x + offset, target.y - slope * offset);
       }
     }
@@ -288,18 +303,19 @@ void drawIsometricTile(
       const float occupancy = building->capacity > 0
         ? std::clamp(static_cast<float>(building->occupancy) / static_cast<float>(building->capacity), 0.0f, 1.0f)
         : 0.0f;
+      const int tier = buildingDensityTier(building->type, building->capacity);
       const int typeFloors = building->type == BuildingType::Office
         ? 2 : (building->type == BuildingType::Commercial ? 1 : 0);
       drawIsometricObject(renderer, top, width, height, buildingFacade(building->type),
-                          std::max(10, height + typeFloors * height / 2
+                          std::max(10, height + (typeFloors + tier) * height / 2
                             + static_cast<int>(occupancy * height * 1.5f)));
       const int baseY = center.y;
       switch (building->type) {
         case BuildingType::Residential:
-          SDL_SetRenderDrawColor(renderer, 116, 72, 55, 255);
-          SDL_RenderDrawLine(renderer, center.x - width / 4, baseY - height - 2,
+          setDrawColor(renderer, 116, 72, 55, 255);
+          drawLine(renderer, center.x - width / 4, baseY - height - 2,
                             center.x, baseY - height - 7);
-          SDL_RenderDrawLine(renderer, center.x, baseY - height - 7,
+          drawLine(renderer, center.x, baseY - height - 7,
                             center.x + width / 4, baseY - height - 2);
           break;
         case BuildingType::Commercial:
@@ -313,18 +329,18 @@ void drawIsometricTile(
                          std::max(3, width / 8 + 2), 2, {145, 145, 135});
           break;
         case BuildingType::Office:
-          SDL_SetRenderDrawColor(renderer, 190, 210, 220, 230);
-          SDL_RenderDrawLine(renderer, center.x, baseY - height * 2 - 5,
+          setDrawColor(renderer, 190, 210, 220, 230);
+          drawLine(renderer, center.x, baseY - height * 2 - 5,
                             center.x, baseY - height * 2 + 2);
           break;
       }
       if (occupancy < 0.15f) {
-        SDL_SetRenderDrawColor(renderer, 232, 172, 65, 230);
-        SDL_RenderDrawLine(renderer, center.x - width / 3, baseY - 2,
+        setDrawColor(renderer, 232, 172, 65, 230);
+        drawLine(renderer, center.x - width / 3, baseY - 2,
                           center.x - width / 3, baseY - height);
-        SDL_RenderDrawLine(renderer, center.x + width / 3, baseY - 2,
+        drawLine(renderer, center.x + width / 3, baseY - 2,
                           center.x + width / 3, baseY - height);
-        SDL_RenderDrawLine(renderer, center.x - width / 3, baseY - height / 2,
+        drawLine(renderer, center.x - width / 3, baseY - height / 2,
                           center.x + width / 3, baseY - height / 2);
       }
     }
@@ -354,13 +370,13 @@ void drawIsometricTile(
     for (const Coord neighbor : neighbors) {
       if (!map.isValid(neighbor) || map.getTile(neighbor).type != 2) continue;
       const ScreenPoint edge = projection.tileCenter(neighbor);
-      SDL_SetRenderDrawColor(renderer, shore.r, shore.g, shore.b, 210);
-      SDL_RenderDrawLine(renderer, center.x, center.y, (center.x + edge.x) / 2, (center.y + edge.y) / 2);
+      setDrawColor(renderer, shore.r, shore.g, shore.b, 210);
+      drawLine(renderer, center.x, center.y, (center.x + edge.x) / 2, (center.y + edge.y) / 2);
     }
   }
 }
 
-void drawGradientBar(SDL_Renderer* renderer, int x, int y, int w, int h, OverlayMode mode) {
+void drawGradientBar(DrawList* renderer, int x, int y, int w, int h, OverlayMode mode) {
   for (int i = 0; i < w; ++i) {
     const float t = (w > 1) ? static_cast<float>(i) / static_cast<float>(w - 1) : 0.0f;
     const RGB c = overlaySampleColor(mode, t);
@@ -414,7 +430,7 @@ std::array<uint8_t, 5> glyphRows(char c) {
   }
 }
 
-void drawGlyph(SDL_Renderer* renderer, int x, int y, char raw, RGB color, int scale) {
+void drawGlyph(DrawList* renderer, int x, int y, char raw, RGB color, int scale) {
   char c = raw;
   if (c >= 'a' && c <= 'z') {
     c = static_cast<char>(c - 'a' + 'A');
@@ -432,7 +448,7 @@ void drawGlyph(SDL_Renderer* renderer, int x, int y, char raw, RGB color, int sc
   }
 }
 
-void drawText(SDL_Renderer* renderer, int x, int y, const std::string& text, RGB color, int scale) {
+void drawText(DrawList* renderer, int x, int y, const std::string& text, RGB color, int scale) {
   // The original 1x 3-by-5 glyphs are only five physical pixels tall and are
   // effectively unreadable on Retina/high-density displays. Promote only
   // compact labels to 2x by default; headings already passed 2x-4x explicitly
@@ -459,7 +475,7 @@ int paletteWidth() {
   return (5 * kPaletteButtonWidth) + (4 * kPaletteGap);
 }
 
-SDL_Rect paletteButtonRect(int index, int windowWidth, int windowHeight) {
+Rect paletteButtonRect(int index, int windowWidth, int windowHeight) {
   const int startX = (windowWidth - paletteWidth()) / 2;
   const int y = windowHeight - kPaletteBottomMargin - kPaletteButtonHeight;
   return {startX + index * (kPaletteButtonWidth + kPaletteGap), y,
@@ -472,7 +488,7 @@ PaletteTool paletteHitTest(int mouseX, int mouseY, int windowWidth, int windowHe
     PaletteTool::District
   };
   for (size_t i = 0; i < tools.size(); ++i) {
-    const SDL_Rect rect = paletteButtonRect(static_cast<int>(i), windowWidth, windowHeight);
+    const Rect rect = paletteButtonRect(static_cast<int>(i), windowWidth, windowHeight);
     if (mouseX >= rect.x && mouseX < rect.x + rect.w
         && mouseY >= rect.y && mouseY < rect.y + rect.h) {
       return tools[i];
@@ -482,7 +498,7 @@ PaletteTool paletteHitTest(int mouseX, int mouseY, int windowWidth, int windowHe
 }
 
 void drawDistrictOutlines(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   const DistrictSystem& districts,
   bool isometricMode,
   const IsometricProjection& projection,

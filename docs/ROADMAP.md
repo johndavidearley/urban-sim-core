@@ -4,7 +4,7 @@ For the authoritative current validation baseline and active priorities, see
 [STATUS.md](STATUS.md). This document retains detailed milestone history and
 future ideas.
 
-Last updated: October 6, 2026
+Last updated: October 10, 2026
 
 ## Current Status Snapshot
 
@@ -21,7 +21,7 @@ Last updated: October 6, 2026
 - Automated validation at the M16 close-out: 294 tests passing; regular,
   strict, ASan/UBSan, and TSan configurations verified. Live counts are in
   STATUS.md.
-- Phase 6 (M17–M22): M18 complete. M19 is next.
+- Phase 6 (M17–M22): M19 complete. M20 is next.
 
 ---
 
@@ -110,7 +110,7 @@ Last updated: October 6, 2026
 ## Phase 4: Visualization (M9–M10)
 
 ### Milestone 9: 2D Map Visualization
-- [x] Integration path for SDL2 (optional CMake target `UrbanSimCore-visualizer`)
+- [x] Integration path for GLFW/Vulkan (optional CMake target `UrbanSimCore-visualizer`)
 - [x] Isometric or top-down renderer (PPM top-down export scaffold)
 - [x] Tile, road, building, zone rendering
 - [x] Zoom and pan controls (tile scale + viewport render window)
@@ -149,7 +149,7 @@ Update: both gaps called out above are now addressed, in a way deliberately scop
 ### Milestone 12: Advanced Economy — complete
 - [x] Commercial and industrial supply chains / imports-exports - `EconomyState` gains `goodsProduced` (industrial occupancy × `TradeRates::goodsPerIndustrialWorker`), `goodsConsumed` (commercial occupancy × `goodsPerCommercialWorker`), and `tradeBalance` (the difference). A surplus earns `exportRevenue`; a shortfall costs `importCost` at a strictly higher per-unit rate than exporting earns (importing is a genuine economic penalty, not a wash) - both flow into `totalRevenue`/`totalExpenses`/`balance`, so a city with plentiful jobs but no local industry visibly pays for it. No new call-site wiring needed (computed entirely from data `calculateEconomy` already receives); `TradeRates` defaults apply automatically everywhere.
 - [x] Land value dynamics (distance to jobs, services, pollution) - `LandValueSystem` recomputes `Tile::landValue` per tick from a zone base plus three factors: a multi-source BFS from all commercial/industrial buildings (distance-capped at `jobAccessRadius`) for job proximity, the existing service-coverage BFS cache for facility proximity, and the existing per-tile pollution field. `EconomySystem::calculateEconomy` takes an optional `CityMap*` and reports the real mean over zoned tiles when provided (falls back to the old building-count placeholder otherwise, so district-scoped sub-economies and other map-less callers are unaffected). Interval-gated like services/traffic (`--simulate-land-value-interval`, default 1) since the job-access BFS is the costliest pass in the tick at city scale.
-- [x] Office demand - a genuine 4th RCI-like category, distinct from Commercial. `BuildingType::Office` and `ZoneType::Office` (symbol `O`) join the existing three; `ZoneDemand` gains an `office` field computed in `CitySimulator::evaluateDemand` from population and how established the city's commercial base already is (office space follows retail/downtown formation rather than leading it - an empty or purely-residential city generates zero office demand). Autonomous zoning (`autoZone`) splits new tiles four ways by demand, assigning office space to clean land alongside residential (it commands the highest base land value: 150 vs. commercial's 140). `GrowthSystem` builds/demolishes/redevelops real `BuildingType::Office` buildings under the same rules as the other three types. Offices are a genuine third job type in `PopulationSystem`'s income-band job matching (high income skews office-and-commercial heavy, low income skews industrial, roughly proxying blue- vs. white-collar employment) and count toward job-access land value, commute traffic, and district metrics. Economically, offices pay their own tax rate (9%, the highest - premium commercial-grade property) and maintenance, but sit outside the industrial/commercial goods-trade model entirely (white-collar work doesn't produce or consume physical goods). Persistence, save/load validation, CLI zoning (`--zone-rect ... OFFICE`), CSV/summary reporting, and the SDL visualizer/PPM renderer all recognize the new type; old snapshots remain valid (the enum value is purely additive).
+- [x] Office demand - a genuine 4th RCI-like category, distinct from Commercial. `BuildingType::Office` and `ZoneType::Office` (symbol `O`) join the existing three; `ZoneDemand` gains an `office` field computed in `CitySimulator::evaluateDemand` from population and how established the city's commercial base already is (office space follows retail/downtown formation rather than leading it - an empty or purely-residential city generates zero office demand). Autonomous zoning (`autoZone`) splits new tiles four ways by demand, assigning office space to clean land alongside residential (it commands the highest base land value: 150 vs. commercial's 140). `GrowthSystem` builds/demolishes/redevelops real `BuildingType::Office` buildings under the same rules as the other three types. Offices are a genuine third job type in `PopulationSystem`'s income-band job matching (high income skews office-and-commercial heavy, low income skews industrial, roughly proxying blue- vs. white-collar employment) and count toward job-access land value, commute traffic, and district metrics. Economically, offices pay their own tax rate (9%, the highest - premium commercial-grade property) and maintenance, but sit outside the industrial/commercial goods-trade model entirely (white-collar work doesn't produce or consume physical goods). Persistence, save/load validation, CLI zoning (`--zone-rect ... OFFICE`), CSV/summary reporting, and the GLFW/Vulkan visualizer/PPM renderer all recognize the new type; old snapshots remain valid (the enum value is purely additive).
 - [x] Inflation - `EconomyState`/`calculateEconomy` gain an `inflationMultiplier` (default 1.0, matching prior behavior for every existing caller) applied to maintenance costs and trade prices (export revenue/import cost) but deliberately NOT to tax revenue: a percentage of the city's own building stock, which only grows when the city actually builds more. The asymmetry creates real budget erosion for a stagnant city - the same pressure a real municipality that stops growing faces - without netting to zero in `economicHealth`'s ratio-based scoring the way a uniform scale-up-both-sides model would. `CitySimulator` computes a compounding per-tick multiplier from `SimOptions::inflationRatePerTick` (default 0 = no inflation, so existing runs/tests/replays are bit-for-bit unaffected unless a caller opts in via `--simulate-inflation-rate`).
 
 Note on Office demand: unlike the other three M12 slices, this one is not behavior-neutral by default - `evaluateDemand` computing a nonzero `office` field changes the RCI zoning mix (and therefore building counts/population trajectory) for every `--simulate` run, since it's a genuine new growth-competing category rather than a pure read-out. Existing tests only assert qualitative bounds (population growth, R/C/I all nonzero, determinism-by-comparison), never exact counts, so none needed updating - but this is a deliberate exception to the "zero default behavior change" pattern used elsewhere in Phase 5, made because the milestone's whole point is diversifying what the city builds.
@@ -201,7 +201,7 @@ Note on default behavior: unlike the additive M12/M13/M14 systems, fire and natu
 
 ## Phase 6: A City With Consequences (M17–M22)
 
-Defined October 6, 2026. M17 and M18 are complete. Implement the rest in order. Each milestone
+Defined October 6, 2026. M17, M18, and M19 are complete. Implement the rest in order. Each milestone
 keeps the suite deterministic and names whether a default `--simulate` run
 changes. The struck-through list under "Next Targets" is finished work.
 
@@ -280,24 +280,24 @@ the coverage number is real and unused.
 the same seed with education facilities removed. Unemployment and band
 counts explain the difference.
 
-### Milestone 19: Density follows land value
+### Milestone 19: Density follows land value — complete
 
 `GrowthSystem` already redevelops. On a saturated zone with demand, an
 occupied building is removed and recreated at 2× capacity, capped at 64×
-`defaultCapacity`. The chance ignores land value, services, and
-congestion, and the map draws a doubled building like the original.
+`defaultCapacity`. The chance now follows land value, civic coverage,
+and road congestion. The map draws capacity tier.
 
-- [ ] Redevelopment chance scales with normalized land value and local
+- [x] Redevelopment chance scales with normalized land value and local
       civic coverage, and falls as the tile's road congestion rises.
       A fringe tile in a saturated zone stays low. A high-value, served,
       uncongested tile is the one that doubles.
-- [ ] The cap and the doubling step stay. This milestone changes where
+- [x] The cap and the doubling step stay. This milestone changes where
       densification happens, not the capacity ladder.
-- [ ] The visualizer draws capacity tier (height or footprint) so a 2×
+- [x] The visualizer draws capacity tier (height or footprint) so a 2×
       and a 16× building read differently in isometric and top-down.
-- [ ] Both hosts use the same `GrowthSystem` rule. Playable construction
+- [x] Both hosts use the same `GrowthSystem` rule. Playable construction
       funds charge more for a redevelopment than for a new low building.
-- [ ] Default growth changes. Determinism stays a same-seed comparison.
+- [x] Default growth changes. Determinism stays a same-seed comparison.
       Building counts can match an older run while capacities differ, so
       tests assert capacity, not only spawn counts.
 
@@ -520,7 +520,7 @@ worth its cost at the time the note was written:
       outside `CityMap.cpp` itself now goes through the Phase 1 accessors:
       `Zoning`, `GrowthMetrics`, `DistrictSystem`, `FireSystem`,
       `GrowthSystem`, `LandValueSystem`, `CitySimulator`, `MapRenderer`,
-      `VisualizerSDL`, and `CityPrinters`' `printZones` - migrated file by
+      `VisualizerGLFW`, and `CityPrinters`' `printZones` - migrated file by
       file, full suite green after each. Verified behavior-preserving both
       by the test suite (272 tests, unchanged) and a direct before/after
       `--simulate` comparison (500x500/1000 ticks: identical final
@@ -584,7 +584,7 @@ worth its cost at the time the note was written:
       active region - 250,000 tiles/tick at 500x500. Fixed there and five
       similar spots (`CitySimulator`'s `isZoningCandidate`/
       `emptyZonedTiles`, `GrowthMetrics::collect`, `GrowthSystem` x3,
-      `MapRenderer`/`VisualizerSDL`'s tile-color helpers). Measured with
+      `MapRenderer`/`VisualizerGLFW`'s tile-color helpers). Measured with
       the new benchmark tool: Economy phase (which is where
       `averageLandValue`'s cost was attributed) dropped from ~2543ms to
       ~1881ms median (5 trials, 500x500/1000 ticks) - a ~26% reduction.

@@ -8,6 +8,8 @@
 #include "src/networks/RoadNetwork.hpp"
 #include "src/world/Zoning.hpp"
 
+struct ServiceCoverageCache;
+
 struct GrowthStats {
   int evaluatedTiles = 0;
   int spawnedResidential = 0;
@@ -22,6 +24,9 @@ struct GrowthStats {
   int redevelopedCommercial = 0;
   int redevelopedIndustrial = 0;
   int redevelopedOffice = 0;
+  // Sum of buildingConstructionCost for buildings spawned or redeveloped
+  // this step. CitySimulator ignores it. The playable tick bills it.
+  int64_t constructionSpend = 0;
 
   int totalSpawned() const {
     return spawnedResidential + spawnedCommercial + spawnedIndustrial + spawnedOffice;
@@ -47,6 +52,33 @@ struct GrowthChanceModifier {
   }
 };
 
+// Capacity of a building placed on an empty zoned tile. Redevelopment
+// doubles it, capped at 64× inside GrowthSystem::runStep.
+int defaultBuildingCapacity(BuildingType type);
+
+// How many times `capacity` has doubled past defaultBuildingCapacity.
+// 0 is a new low building, 1 is 2×, 4 is 16×, and 6 is the 64× cap.
+// The visualizer uses this as the height and footprint tier.
+int buildingDensityTier(BuildingType type, int capacity);
+
+// Playable treasury. A new low building bills kLowBuildingConstructionCost.
+// A redevelopment bills that amount times (new capacity / default), so it
+// is always a larger charge than a new low building of the same type.
+constexpr int64_t kLowBuildingConstructionCost = 80;
+int64_t buildingConstructionCost(BuildingType type, int capacity);
+
+// Land-value normalization for redevelopment. Matches LandValueSystem's
+// default clamp: the floor has no densification pressure, the ceiling is
+// fully valued.
+constexpr float kRedevelopmentLandValueFloor = 10.0f;
+constexpr float kRedevelopmentLandValueCeiling = 300.0f;
+
+// Location weight in [0, 1]. Rises with normalized land value and the share
+// of fire/police/health/education covering the tile. Falls to 0 as road
+// congestion reaches 1. An unserved tile keeps a quarter of its land-value
+// weight so a valuable downtown can still densify slowly.
+float redevelopmentLocationFactor(float landValue, float civicCoverage, float roadCongestion);
+
 class GrowthSystem {
 public:
   // activeMin/activeMax optionally clamp the tile scan to the city's current
@@ -60,6 +92,9 @@ public:
   // CitySimulator when SimOptions::enableUtilities is on, so this parameter
   // defaulting to false matches prior behavior exactly for every existing
   // caller.
+  // `roads` and `services` feed the redevelopment location weight. A null
+  // road network contributes no congestion. A null service cache contributes
+  // no civic coverage. Land value always comes from the map.
   static GrowthStats runStep(
     CityMap& map,
     EntityStore& store,
@@ -70,6 +105,8 @@ public:
     Coord activeMin = {-1, -1},
     Coord activeMax = {-1, -1},
     ThreadPool* pool = nullptr,
-    bool requireUtilities = false
+    bool requireUtilities = false,
+    const RoadNetwork* roads = nullptr,
+    const ServiceCoverageCache* services = nullptr
   );
 };

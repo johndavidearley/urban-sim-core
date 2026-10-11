@@ -35,7 +35,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "URBAN_SIM_WARNINGS_AS_ERRORS": "ON",
-        "URBAN_SIM_ENABLE_ASAN_UBSAN": "ON"
+        "URBAN_SIM_ENABLE_ASAN_UBSAN": "ON",
+        "URBAN_SIM_BUILD_VISUALIZER": "OFF"
       }
     },
     {
@@ -45,7 +46,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "URBAN_SIM_WARNINGS_AS_ERRORS": "ON",
-        "URBAN_SIM_ENABLE_TSAN": "ON"
+        "URBAN_SIM_ENABLE_TSAN": "ON",
+        "URBAN_SIM_BUILD_VISUALIZER": "OFF"
       }
     }
   ],

@@ -12,7 +12,7 @@ change. Do not leave intended-but-unbuilt designs in this file.
 
 ## Design Principles
 
-1. **Simulation-first.** `urban_sim_core` compiles and runs without SDL. CLI,
+1. **Simulation-first.** `urban_sim_core` compiles and runs without GLFW/Vulkan. CLI,
    tests, and the optional visualizer are hosts of the same library.
 2. **Deterministic ticks.** Integer tick counters and seeded RNG. Same seed +
    same mutations → same snapshot checksum.
@@ -26,7 +26,7 @@ change. Do not leave intended-but-unbuilt designs in this file.
 5. **Inspectable.** Metrics, overlays, PPM export, and CLI printers read the
    same stores the tick mutates.
 
-The engine **does not depend on SDL**. Headless PPM rendering
+The engine **does not depend on GLFW/Vulkan**. Headless PPM rendering
 (`MapRenderer`) and isometric math (`IsometricProjection`) live in the
 library so CLI and tests can render without a window. The live visualizer
 is a separate executable that calls systems and gameplay tools directly;
@@ -50,7 +50,7 @@ there is no command/query façade yet.
 └───────────────┬─────────────────────────────┬───────────────┘
                 │                             │
      UrbanSimCore-cli              UrbanSimCore-visualizer
-     parse → dispatch →            SDL loop → tools +
+     parse → dispatch →            GLFW/Vulkan loop → tools +
      CitySimulator or inspect      playableCityTick
 ```
 
@@ -60,10 +60,14 @@ CMake (`src/CMakeLists.txt`):
 |--------|------|------|
 | `urban_sim_core` | static lib | World, systems, tools, persistence, metrics, PPM/iso |
 | `UrbanSimCore-cli` | executable | Flag-driven host (`src/main.cpp` + `src/cli/`) |
-| `UrbanSimCore-visualizer` | optional executable | SDL2 live builder (`URBAN_SIM_BUILD_VISUALIZER`) |
+| `urban_sim_visualizer_drawing` | static lib | CPU geometry, map styling, and HUD; no graphics SDK |
+| `urban_sim_visualizer` | optional static lib | GLFW window/input, Vulkan rendering, and live session host |
+| `UrbanSimCore-visualizer` | optional executable | GLFW/Vulkan live builder (`URBAN_SIM_BUILD_VISUALIZER`) |
 
-Visualizer sources are **not** in `urban_sim_core`. SDL is linked only to the
-visualizer target.
+Visualizer sources are **not** in `urban_sim_core`. GLFW/Vulkan dependencies
+attach to the optional visualizer backend and its consumers, including input
+tests when enabled. The simulation library, CLI, and CPU drawing helpers remain
+independent of graphics SDKs.
 
 ---
 
@@ -223,7 +227,7 @@ evaluateDemand(store, population)
   → expand road grid if demand high and empty zoned land is scarce
   → updatePollution (active AABB)
   → extendZoningCandidates → partial_sort nearest batch → autoZone
-  → GrowthSystem::runStep          [district modifiers from previous tick]
+  → GrowthSystem::runStep          [district modifiers, land value, civic coverage, and road congestion from the previous tick]
   → desirability (jobs, lagged congestion/services/crime/illness, pollution)
   → PopulationSystem::allocate     [if populationInterval]
   → placeFacilitiesIfNeeded + ServiceSystem cache
@@ -239,7 +243,9 @@ evaluateDemand(store, population)
 
 One-tick lag is intentional: this tick's growth and migration see last
 tick's congestion, service satisfaction, crime, illness, and district
-pressure. Population allocation sees last tick's education coverage.
+pressure. Redevelopment chance also reads last tick's land value, civic
+coverage, and road congestion. Population allocation sees last tick's
+education coverage.
 
 `SimOptions` interval fields (`trafficInterval`, `serviceInterval`,
 `populationInterval`, `landValueInterval`, `districtInterval`) skip
@@ -254,7 +260,7 @@ empty-map fallback.
 
 ### Playable — `playableCityTick`
 
-Host: SDL visualizer (and any host that places roads/zones itself).
+Host: GLFW/Vulkan visualizer (and any host that places roads/zones itself).
 Construction stays with the host. Same subsystem names, narrower pipeline,
 no thread pool, no interval gating.
 
@@ -275,9 +281,10 @@ Order (a subset of the autonomous phase list): demand → pollution emitters
 education coverage) → transit + traffic → services → land value → economy
 → `HealthSystem` → waste → deathcare → `TreasurySystem` (unpaid shortfall
 becomes municipal debt; surplus cash repays it; optional per-tick interest
-on the remainder). The tick then stores this tick's education coverage
-for the next allocate. A tool-only refresh updates services and does not
-advance that lag.
+on the remainder). New buildings and redevelopments are extra expenses
+this tick, and a redevelopment costs more than a new low building. The
+tick then stores this tick's education coverage for the next allocate.
+A tool-only refresh updates services and does not advance that lag.
 
 Playable does **not** run disasters. Districts are host-owned: G-mode
 construction reads ordinances, and `playableCityTick` applies growth
@@ -389,7 +396,7 @@ land value matches the playable/autonomous model.
 ### Visualizer
 
 File split, not a façade: `VisualizerTypes`, `Overlay`, `Render`, `Hud`,
-`Session`, and `VisualizerSDL.cpp` (`main`, event loop, tool dispatch).
+`Session`, and `VisualizerGLFW.cpp` (`main`, event loop, tool dispatch).
 After a tool apply or session load the visualizer calls
 `refreshLiveDerivedState` → `refreshDerivedCityState` (utilities, services,
 land value, economy, health, crime, optional occupancy/traffic) instead of
@@ -518,7 +525,7 @@ sample count is the next lever) and sequential `autoZone` mutation.
 | `src/metrics/` | `CityMetrics`, `GrowthMetrics` |
 | `src/persistence/` | Snapshot, session, replay checksum |
 | `src/cli/` | Parse, dispatch, workflow, printers, sweeps (CLI exe only) |
-| `src/visualization/` | `MapRenderer` + iso in the lib; `Visualizer*` in the SDL exe |
+| `src/visualization/` | `MapRenderer` + iso in the lib; `Visualizer*` in the GLFW/Vulkan exe |
 
 Districts live in `DistrictSystem`, not `src/world/`.
 
@@ -571,5 +578,5 @@ Keep the four stores and static systems. Close the host fork:
    directly.
 
 Compile isolation of large reporters (`CityPrinters`,
-`GrowthPressureReport`, `VisualizerSDL.cpp`) is a build-time concern, not
+`GrowthPressureReport`, `VisualizerGLFW.cpp`) is a build-time concern, not
 an architecture change. See `STATUS.md` for current priorities.

@@ -8,12 +8,12 @@
 
 namespace visualizer {
 
-void drawFilledRect(SDL_Renderer* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha = 255);
-void drawRectOutline(SDL_Renderer* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha = 255);
+void drawFilledRect(DrawList* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha = 255);
+void drawRectOutline(DrawList* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha = 255);
 bool hasRoadAt(const CityMap& map, Coord coord);
 
 void drawNormalTileDetail(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   const CityMap& map,
   const EntityStore& store,
   const std::vector<ServiceFacility>& facilities,
@@ -23,10 +23,10 @@ void drawNormalTileDetail(
   int size
 );
 
-void drawDiamond(SDL_Renderer* renderer, ScreenPoint top, int width, int height, RGB color, uint8_t alpha = 255);
+void drawDiamond(DrawList* renderer, ScreenPoint top, int width, int height, RGB color, uint8_t alpha = 255);
 
 void drawIsometricObject(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   ScreenPoint top,
   int tileWidth,
   int tileHeight,
@@ -35,7 +35,7 @@ void drawIsometricObject(
 );
 
 void drawIsometricTile(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   const CityMap& map,
   const RoadNetwork& roads,
   const EntityStore& store,
@@ -47,15 +47,15 @@ void drawIsometricTile(
   Coord coord
 );
 
-void drawGradientBar(SDL_Renderer* renderer, int x, int y, int w, int h, OverlayMode mode);
-void drawGlyph(SDL_Renderer* renderer, int x, int y, char raw, RGB color, int scale);
-void drawText(SDL_Renderer* renderer, int x, int y, const std::string& text, RGB color, int scale = 2);
+void drawGradientBar(DrawList* renderer, int x, int y, int w, int h, OverlayMode mode);
+void drawGlyph(DrawList* renderer, int x, int y, char raw, RGB color, int scale);
+void drawText(DrawList* renderer, int x, int y, const std::string& text, RGB color, int scale = 2);
 
 int paletteWidth();
-SDL_Rect paletteButtonRect(int index, int windowWidth, int windowHeight);
+Rect paletteButtonRect(int index, int windowWidth, int windowHeight);
 PaletteTool paletteHitTest(int mouseX, int mouseY, int windowWidth, int windowHeight);
 void drawDistrictOutlines(
-  SDL_Renderer* renderer,
+  DrawList* renderer,
   const DistrictSystem& districts,
   bool isometricMode,
   const IsometricProjection& projection,

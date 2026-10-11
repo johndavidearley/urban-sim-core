@@ -202,10 +202,12 @@ void playableCityTick(
     state.districtGrowthModifiers.empty() ? nullptr : &state.districtGrowthModifiers;
   const GrowthStats growth = GrowthSystem::runStep(
     map, store, state.demand, tickSeed + 1u, options.growthChance,
-    growthModifiers, {-1, -1}, {-1, -1}, nullptr, options.requireUtilities
+    growthModifiers, {-1, -1}, {-1, -1}, nullptr, options.requireUtilities,
+    &roads, &state.serviceCache
   );
   state.buildingsSpawned = growth.totalSpawned();
   state.buildingsDemolished = growth.totalDemolished();
+  state.constructionSpend = growth.constructionSpend;
 
   PopulationSystem::allocate(
     store, population, state.populationTarget, tickSeed + 2u, educationNow);
@@ -246,6 +248,7 @@ void playableCityTick(
   for (const ServiceFacility& facility : facilities) {
     serviceOperatingCosts += ServiceTool::operatingCostPerTick(facility.type);
   }
+  serviceOperatingCosts += growth.constructionSpend;
   TreasuryDebt debt;
   debt.principal = state.treasuryDebt;
   debt.interestRemainder = state.treasuryInterestRemainder;

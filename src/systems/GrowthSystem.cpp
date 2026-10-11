@@ -4,6 +4,59 @@
 #include <future>
 
 #include "src/core/Random.hpp"
+#include "src/systems/ServiceSystem.hpp"
+
+int defaultBuildingCapacity(BuildingType type) {
+  switch (type) {
+    case BuildingType::Residential:
+      return 8;
+    case BuildingType::Commercial:
+      return 20;
+    case BuildingType::Industrial:
+      return 24;
+    case BuildingType::Office:
+      return 18;
+    default:
+      return 0;
+  }
+}
+
+int buildingDensityTier(BuildingType type, int capacity) {
+  const int base = defaultBuildingCapacity(type);
+  if (base <= 0 || capacity <= base) {
+    return 0;
+  }
+
+  int tier = 0;
+  int scaled = base;
+  while (tier < 6 && scaled < capacity) {
+    if (scaled > 1000000000 / 2) {
+      break;
+    }
+    scaled *= 2;
+    ++tier;
+  }
+  return tier;
+}
+
+int64_t buildingConstructionCost(BuildingType type, int capacity) {
+  const int base = defaultBuildingCapacity(type);
+  if (base <= 0 || capacity <= 0) {
+    return 0;
+  }
+  const int ratio = std::max(1, capacity / base);
+  return kLowBuildingConstructionCost * static_cast<int64_t>(ratio);
+}
+
+float redevelopmentLocationFactor(float landValue, float civicCoverage, float roadCongestion) {
+  const float span = kRedevelopmentLandValueCeiling - kRedevelopmentLandValueFloor;
+  const float landNorm = span > 0.0f
+    ? std::clamp((landValue - kRedevelopmentLandValueFloor) / span, 0.0f, 1.0f)
+    : 0.0f;
+  const float civic = std::clamp(civicCoverage, 0.0f, 1.0f);
+  const float clearRoad = 1.0f - std::clamp(roadCongestion, 0.0f, 1.0f);
+  return landNorm * (0.25f + 0.75f * civic) * clearRoad;
+}
 
 namespace {
 struct ZoneBalance {
@@ -82,13 +135,10 @@ BuildingType toBuildingType(ZoneType zone) {
 int defaultCapacity(ZoneType zone) {
   switch (zone) {
     case ZoneType::Residential:
-      return 8;
     case ZoneType::Commercial:
-      return 20;
     case ZoneType::Industrial:
-      return 24;
     case ZoneType::Office:
-      return 18;
+      return defaultBuildingCapacity(toBuildingType(zone));
     case ZoneType::None:
     case ZoneType::Park:
     default:
@@ -318,6 +368,51 @@ float chanceModifierForCoord(Coord coord, const std::vector<GrowthChanceModifier
 
   return std::clamp(combined, 0.0f, 2.0f);
 }
+
+// Share of the four civic types whose coverage reaches the tile's road
+// anchor. Utilities are not civic. No cache and no anchor both read as 0.
+float civicCoverageAt(const RoadNetwork* roads, const ServiceCoverageCache* services, Coord pos) {
+  if (roads == nullptr || services == nullptr) {
+    return 0.0f;
+  }
+  Coord anchor;
+  if (!roads->resolveRoadAnchor(pos, anchor)) {
+    return 0.0f;
+  }
+  const auto mask = services->coverageMask.find(anchor);
+  if (mask == services->coverageMask.end()) {
+    return 0.0f;
+  }
+  int covered = 0;
+  for (int bit = 0; bit < 4; ++bit) {
+    if ((mask->second & static_cast<ServiceCoverageMask>(1u << bit)) != 0) {
+      ++covered;
+    }
+  }
+  return static_cast<float>(covered) / 4.0f;
+}
+
+// Peak congestion on the edges that touch the tile's road anchor.
+float roadCongestionAt(const RoadNetwork* roads, Coord pos) {
+  if (roads == nullptr) {
+    return 0.0f;
+  }
+  Coord anchor;
+  if (!roads->resolveRoadAnchor(pos, anchor)) {
+    return 0.0f;
+  }
+  float peak = 0.0f;
+  const Coord neighbors[4] = {
+    {anchor.x + 1, anchor.y},
+    {anchor.x - 1, anchor.y},
+    {anchor.x, anchor.y + 1},
+    {anchor.x, anchor.y - 1}
+  };
+  for (const Coord& neighbor : neighbors) {
+    peak = std::max(peak, roads->getCongestion(anchor, neighbor));
+  }
+  return peak;
+}
 } // namespace
 
 GrowthStats GrowthSystem::runStep(
@@ -330,7 +425,9 @@ GrowthStats GrowthSystem::runStep(
   Coord activeMin,
   Coord activeMax,
   ThreadPool* pool,
-  bool requireUtilities
+  bool requireUtilities,
+  const RoadNetwork* roads,
+  const ServiceCoverageCache* services
 ) {
   GrowthStats stats;
   DeterministicRandom rng(seed);
@@ -432,6 +529,8 @@ GrowthStats GrowthSystem::runStep(
         if (!demolished) {
           // Redevelopment: when demand is sustained and the zone is saturated,
           // replace at 2× capacity. Capped at 64× default (6 doublings).
+          // Where it happens follows land value, civic coverage, and the
+          // tile's road congestion. The capacity ladder is unchanged.
           const Building* existing = store.getBuilding(tile.buildingId);
           if (existing != nullptr) {
             const float demandWeight = demandForZone(zone, demand);
@@ -442,11 +541,18 @@ GrowthStats GrowthSystem::runStep(
                 const int   built      = builtCountForZone(balance, zone);
                 const float saturation = zoned > 0
                   ? static_cast<float>(built) / static_cast<float>(zoned) : 1.0f;
-                if (rng.chance(rebuildBaseChance * demandWeight * saturation)) {
+                const float location = redevelopmentLocationFactor(
+                  map.landValue({x, y}),
+                  civicCoverageAt(roads, services, {x, y}),
+                  roadCongestionAt(roads, {x, y})
+                );
+                if (rng.chance(rebuildBaseChance * demandWeight * saturation * location)) {
                   const int newCapacity = std::min(maxCap, existing->capacity * 2);
+                  const BuildingType rebuilt = toBuildingType(zone);
                   if (store.removeBuilding(tile.buildingId)) {
-                    tile.buildingId = store.createBuilding(toBuildingType(zone), {x, y}, newCapacity);
+                    tile.buildingId = store.createBuilding(rebuilt, {x, y}, newCapacity);
                     incrementRedevelopedCount(stats, zone);
+                    stats.constructionSpend += buildingConstructionCost(rebuilt, newCapacity);
                   }
                 }
               }
@@ -476,7 +582,10 @@ GrowthStats GrowthSystem::runStep(
         );
         if (!rng.chance(chance)) continue;
 
-        tile.buildingId = store.createBuilding(toBuildingType(zone), {x, y}, defaultCapacity(zone));
+        const BuildingType built = toBuildingType(zone);
+        const int spawnedCapacity = defaultCapacity(zone);
+        tile.buildingId = store.createBuilding(built, {x, y}, spawnedCapacity);
+        stats.constructionSpend += buildingConstructionCost(built, spawnedCapacity);
         incrementBuiltCount(balance, zone);
 
         if (zone == ZoneType::Residential)     ++stats.spawnedResidential;

@@ -2,8 +2,9 @@
 
 Last verified: September 29, 2026
 
-Priorities updated October 6, 2026. The work queue is Phase 6 (M17–M22)
-in `ROADMAP.md`. The validation baseline below is unchanged.
+Priorities updated October 10, 2026. The work queue is Phase 6 (M17–M22)
+in `ROADMAP.md`. Strict `ctest` was re-run that day. Sanitizer jobs were
+not.
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -18,12 +19,14 @@ traffic and commute routing, economy and trade, services and utilities
 (including power generation capacity/source mix, water, and sanitation coverage),
 district policy, public transit, disasters, crime and health, persistence,
 replay verification, micro-traffic, metrics, CLI reporting, PPM rendering, and
-the optional SDL2 visualizer.
+the optional GLFW/Vulkan visualizer.
 
 Phase 1 through Phase 5 milestone work recorded in the roadmap is complete.
-Phase 6 (M17–M22) is the active queue. M17 (utility shortage) and M18
-(schools and the labor market) are implemented. Lagged education coverage
-shifts income bands and office hiring. Next is M19, density and land value.
+Phase 6 (M17–M22) is the active queue. M17 (utility shortage), M18
+(schools and the labor market), and M19 (density and land value) are
+implemented. Redevelopment chance follows land value, civic coverage,
+and road congestion. The map draws capacity tier. Next is M20,
+neighborhood crime and illness.
 
 ### Shared full-sim path (CLI + visualizer)
 
@@ -32,7 +35,7 @@ shifts income bands and office hiring. Next is M19, density and land value.
   clock loop.
 - Playable (player-built) cities use `PlayableCityTick` in `urban_sim_core`
   (growth, population, traffic + transit offload, services, pollution, land
-  value, health, crime, waste, deathcare, economy, treasury); the SDL
+  value, health, crime, waste, deathcare, economy, treasury); the GLFW/Vulkan
   visualizer calls this shared step each live tick.
 - `CitySimulator` also runs waste + deathcare each tick, auto-places Garbage/
   Cemetery with civic facilities, and records waste/deathcare on
@@ -62,7 +65,7 @@ A multi-batch hot-path pass landed on `main` development:
 
 ## Validation Baseline
 
-- 353 tests across the GoogleTest suites (authoritative: `ctest --test-dir build -N`).
+- 367 tests across the GoogleTest suites. Strict `ctest --test-dir build-strict` passed on October 10, 2026.
 - Tests are discovered individually by CTest.
 - Regular and warnings-as-errors builds pass.
 - Full ASan/UBSan and ThreadSanitizer runs pass.
@@ -94,9 +97,11 @@ Phase 6 in `ROADMAP.md` is the queue. Implement in order.
    moves the housed mix toward high income and fills office seats from
    the educated share. Zero coverage keeps today's `{50, 35, 15}` split.
    Default `--simulate` changes once schools exist.
-3. **M19 Density follows land value.** Redevelopment already doubles
-   capacity. Land value, services, and congestion decide where, and the
-   map draws the tier.
+3. **M19 Density follows land value.** Done. Redevelopment chance scales
+   with normalized land value and local civic coverage, and falls with
+   road congestion. The 2× step and 64× cap are unchanged. Isometric and
+   top-down views draw the capacity tier. Playable treasury bills a
+   redevelopment more than a new low building.
 4. **M20 Neighborhood crime and illness.** Both systems return one city
    float. Local rates reuse the service distance fields; the city mean
    stays the migration input.

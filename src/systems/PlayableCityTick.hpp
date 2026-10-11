@@ -18,7 +18,7 @@
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
 
-// Shared one-tick step for player-driven cities (SDL visualizer and any host
+// Shared one-tick step for player-driven cities (live visualizer and any host
 // that builds roads/zones itself). This is a subset of the autonomous
 // CitySimulator phase list: same systems, host-owned construction, plus
 // treasury. Optional phases (pollution emitters, land value) default on so a
@@ -59,6 +59,9 @@ struct PlayableCityTickState {
   // Last tick's growth deltas so G-mode can keep ConstructionState::emptyZonedCount in sync.
   int buildingsSpawned = 0;
   int buildingsDemolished = 0;
+  // Billed this tick on top of service operating costs. A redevelopment
+  // costs more than a new low building. See buildingConstructionCost.
+  int64_t constructionSpend = 0;
   // One-tick-lag growth pressure from DistrictSystem, same as CitySimulator.
   std::vector<GrowthChanceModifier> districtGrowthModifiers;
 };

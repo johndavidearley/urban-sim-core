@@ -5,6 +5,8 @@
 #include <fstream>
 #include <vector>
 
+#include "src/systems/GrowthSystem.hpp"
+
 namespace {
 struct RGB {
   uint8_t r = 0;
@@ -83,23 +85,29 @@ bool MapRenderer::renderToPPM(
         color = {64, 64, 64};
       }
 
+      RGB buildingColor = color;
+      int inset = 0;
       if (tile.buildingId != 0) {
         const Building* building = store.getBuilding(tile.buildingId);
         if (building != nullptr) {
           switch (building->type) {
             case BuildingType::Residential:
-              color = {44, 132, 70};
+              buildingColor = {44, 132, 70};
               break;
             case BuildingType::Commercial:
-              color = {31, 84, 163};
+              buildingColor = {31, 84, 163};
               break;
             case BuildingType::Industrial:
-              color = {179, 93, 29};
+              buildingColor = {179, 93, 29};
               break;
             case BuildingType::Office:
-              color = {147, 112, 219};
+              buildingColor = {147, 112, 219};
               break;
           }
+          // Higher capacity tiers fill more of the tile. A 16× building
+          // has a larger footprint than a 2× building of the same type.
+          const int tier = buildingDensityTier(building->type, building->capacity);
+          inset = std::max(0, (tilePixels / 5) - tier);
         }
       }
 
@@ -107,7 +115,9 @@ bool MapRenderer::renderToPPM(
       const int py0 = ty * tilePixels;
       for (int py = 0; py < tilePixels; ++py) {
         for (int px = 0; px < tilePixels; ++px) {
-          setPixel(pixels, imageWidth, px0 + px, py0 + py, color);
+          const bool core = px >= inset && py >= inset
+            && px < tilePixels - inset && py < tilePixels - inset;
+          setPixel(pixels, imageWidth, px0 + px, py0 + py, core ? buildingColor : color);
         }
       }
     }

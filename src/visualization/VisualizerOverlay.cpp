@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <SDL.h>
+#include "src/visualization/DrawList.hpp"
 
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"

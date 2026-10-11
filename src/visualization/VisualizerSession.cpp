@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <SDL.h>
+#include "src/visualization/DrawList.hpp"
 
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
@@ -42,6 +42,9 @@
 #include "src/visualization/VisualizerOverlay.hpp"
 #include "src/visualization/VisualizerRender.hpp"
 #include "src/visualization/VisualizerHud.hpp"
+
+#include "src/visualization/WindowHost.hpp"
+#include "src/visualization/VulkanRenderer.hpp"
 
 namespace visualizer {
 
@@ -349,45 +352,50 @@ void applySessionDistricts(DistrictSystem& districts, const GameplaySessionState
   return facilities;
 }
 
-bool pointInRect(int x, int y, const SDL_Rect& rect) {
+bool pointInRect(int x, int y, const Rect& rect) {
   return x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
 }
 
-StartScreenResult runStartScreen(SDL_Renderer* renderer, int windowWidth, int windowHeight) {
+StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList* renderer, int windowWidth, int windowHeight) {
   (void)windowHeight;
   StartScreenResult result;
-  const SDL_Rect newButton{windowWidth / 2 - 220, 500, 200, 54};
-  const SDL_Rect loadButton{windowWidth / 2 + 20, 500, 200, 54};
   const std::array<int, 3> sizes = {32, 64, 96};
   int mouseX = 0;
   int mouseY = 0;
   bool choosing = true;
   while (choosing) {
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-      if (event.type == SDL_MOUSEMOTION) {
+    host.dimensions(windowWidth, windowHeight);
+    renderer->frameTimeMs = host.timeMs();
+    Rect newButton{windowWidth / 2 - 220, 500, 200, 54};
+    Rect loadButton{windowWidth / 2 + 20, 500, 200, 54};
+    InputEvent event;
+    while (host.pollEvent(event)) {
+      host.dimensions(windowWidth, windowHeight);
+      newButton = {windowWidth / 2 - 220, 500, 200, 54};
+      loadButton = {windowWidth / 2 + 20, 500, 200, 54};
+      if (event.type == EventType::MouseMotion) {
         mouseX = event.motion.x;
         mouseY = event.motion.y;
-      } else if (event.type == SDL_MOUSEBUTTONDOWN) {
+      } else if (event.type == EventType::MouseDown) {
         mouseX = event.button.x;
         mouseY = event.button.y;
       }
-      if (event.type == SDL_QUIT) {
+      if (event.type == EventType::Quit) {
         result.quit = true;
         choosing = false;
-      } else if (event.type == SDL_KEYDOWN) {
-        if (event.key.keysym.sym == SDLK_ESCAPE) {
+      } else if (event.type == EventType::KeyDown) {
+        if (event.key.sym == Key::Escape) {
           result.quit = true;
           choosing = false;
-        } else if (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_n) {
+        } else if (event.key.sym == Key::Enter || event.key.sym == Key::N) {
           choosing = false;
-        } else if (event.key.keysym.sym == SDLK_l) {
+        } else if (event.key.sym == Key::L) {
           result.loadSession = true;
           choosing = false;
-        } else if (event.key.keysym.sym == SDLK_t) {
+        } else if (event.key.sym == Key::T) {
           result.generateTerrain = !result.generateTerrain;
         }
-      } else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
+      } else if (event.type == EventType::MouseDown && event.button.button == MouseButton::Left) {
         if (pointInRect(event.button.x, event.button.y, newButton)) {
           choosing = false;
         } else if (pointInRect(event.button.x, event.button.y, loadButton)) {
@@ -395,26 +403,33 @@ StartScreenResult runStartScreen(SDL_Renderer* renderer, int windowWidth, int wi
           choosing = false;
         }
         for (size_t i = 0; i < sizes.size(); ++i) {
-          const SDL_Rect rect{windowWidth / 2 - 190 + static_cast<int>(i) * 130, 380, 110, 44};
+          const Rect rect{windowWidth / 2 - 190 + static_cast<int>(i) * 130, 380, 110, 44};
           if (pointInRect(event.button.x, event.button.y, rect)) {
             result.mapSize = sizes[i];
           }
         }
-        const SDL_Rect terrainButton{windowWidth / 2 - 130, 444, 260, 38};
+        const Rect terrainButton{windowWidth / 2 - 130, 444, 260, 38};
         if (pointInRect(event.button.x, event.button.y, terrainButton)) {
           result.generateTerrain = !result.generateTerrain;
         }
       }
+      // Leave later queued input for gameplay once a start action is selected.
+      if (!choosing) break;
     }
 
-    SDL_SetRenderDrawColor(renderer, 20, 23, 29, 255);
-    SDL_RenderClear(renderer);
+    host.dimensions(windowWidth, windowHeight);
+    newButton = {windowWidth / 2 - 220, 500, 200, 54};
+    loadButton = {windowWidth / 2 + 20, 500, 200, 54};
+    if (!choosing) break;
+    if (!host.drawable()) { host.waitEvents(); continue; }
+    setDrawColor(renderer, 20, 23, 29, 255);
+    clearFrame(renderer);
     drawText(renderer, windowWidth / 2 - 205, 130, "URBAN SIM CORE", {120, 205, 255}, 4);
     drawText(renderer, windowWidth / 2 - 155, 185, "CITY BUILDER", {235, 238, 242}, 3);
     drawText(renderer, windowWidth / 2 - 105, 330, "MAP SIZE", {205, 212, 225}, 2);
 
     for (size_t i = 0; i < sizes.size(); ++i) {
-      const SDL_Rect rect{windowWidth / 2 - 190 + static_cast<int>(i) * 130, 380, 110, 44};
+      const Rect rect{windowWidth / 2 - 190 + static_cast<int>(i) * 130, 380, 110, 44};
       const bool active = result.mapSize == sizes[i];
       const bool hovered = pointInRect(mouseX, mouseY, rect);
       drawFilledRect(renderer, rect.x, rect.y, rect.w, rect.h,
@@ -425,7 +440,7 @@ StartScreenResult runStartScreen(SDL_Renderer* renderer, int windowWidth, int wi
       drawText(renderer, rect.x + 34, rect.y + 15, std::to_string(sizes[i]), {235, 238, 242}, 2);
     }
 
-    const SDL_Rect terrainButton{windowWidth / 2 - 130, 444, 260, 38};
+    const Rect terrainButton{windowWidth / 2 - 130, 444, 260, 38};
     const bool terrainHovered = pointInRect(mouseX, mouseY, terrainButton);
     drawFilledRect(renderer, terrainButton.x, terrainButton.y, terrainButton.w, terrainButton.h,
                    result.generateTerrain ? RGB{55, 90, 70}
@@ -449,8 +464,8 @@ StartScreenResult runStartScreen(SDL_Renderer* renderer, int windowWidth, int wi
                     loadHovered ? RGB{205, 225, 255} : RGB{145, 190, 245}, 255);
     drawText(renderer, loadButton.x + 24, loadButton.y + 20, "LOAD SESSION", {235, 240, 250}, 2);
     drawText(renderer, windowWidth / 2 - 170, 585, "ENTER NEW   L LOAD   T TERRAIN", {150, 160, 175}, 1);
-    SDL_RenderPresent(renderer);
-    SDL_Delay(16);
+    gpu.present(*renderer);
+
   }
   return result;
 }
