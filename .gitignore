@@ -45,3 +45,9 @@ sweep_out*/
 
 # Save files (if placed here during testing)
 *.save
+
+# Local MCP playtest evidence and Python packaging
+playtest-artifacts/
+__pycache__/
+*.egg-info/
+.venv/

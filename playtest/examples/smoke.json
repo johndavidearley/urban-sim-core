@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "configuration": {"terrain_seed": 42, "simulation_seed": 98765, "mode": "deterministic"},
+  "steps": [
+    {"command": "city", "args": {"action": "new", "size": 64, "terrain": false}, "source": "semantic"},
+    {"command": "view", "args": {"action": "projection", "projection": "top_down"}, "source": "semantic"},
+    {"command": "view", "args": {"action": "toggle", "name": "compact_ui", "enabled": true}, "source": "semantic"},
+    {"command": "input", "args": {"events": [{"type": "key", "key": "R"}, {"type": "down", "x": 126, "y": 350}, {"type": "move", "x": 294, "y": 350}, {"type": "up", "x": 294, "y": 350}]}, "source": "ui"},
+    {"assert": {"field": "state.road_tiles", "op": "eq", "expected": 7}},
+    {"command": "tool", "args": {"action": "apply", "name": "zone", "zone": "residential", "x1": 4, "y1": 11, "x2": 10, "y2": 11}, "source": "semantic"},
+    {"command": "time", "args": {"action": "step", "ticks": 2}, "source": "semantic"},
+    {"assert": {"field": "state.tick", "op": "eq", "expected": 2}},
+    {"command": "screenshot", "args": {"name": "smoke"}},
+    {"assert": {"field": "state.validation_errors", "op": "eq", "expected": 0}}
+  ]
+}

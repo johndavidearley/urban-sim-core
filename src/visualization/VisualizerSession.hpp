@@ -11,6 +11,7 @@
 
 namespace visualizer {
 class WindowHost;
+class PlaytestBridge;
 class VulkanRenderer;
 
 void updatePlayableUtilityConnectivity(
@@ -61,7 +62,7 @@ void captureSessionDistricts(const DistrictSystem& districts, GameplaySessionSta
 void applySessionDistricts(DistrictSystem& districts, const GameplaySessionState& session);
 
 [[maybe_unused]] bool seedScenario(CityMap& map, RoadNetwork& roads, EntityStore& store, PopulationStore& population);
-StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList* renderer, int windowWidth, int windowHeight);
+StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList* renderer, int windowWidth, int windowHeight, PlaytestBridge* bridge = nullptr);
 bool pointInRect(int x, int y, const Rect& rect);
 
 }  // namespace visualizer

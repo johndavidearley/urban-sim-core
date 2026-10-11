@@ -104,14 +104,23 @@ if(URBAN_SIM_BUILD_VISUALIZER)
     visualization/WindowHost.cpp
     visualization/VulkanRenderer.cpp
     visualization/GraphicsSmoke.cpp
+    visualization/VisualizerApp.cpp
+    playtest/PlaytestBridge.cpp
     ${URBAN_SIM_SHADER_HEADERS}
   )
   target_include_directories(urban_sim_visualizer PRIVATE "${URBAN_SIM_SHADER_DIR}")
   target_link_libraries(urban_sim_visualizer PUBLIC urban_sim_visualizer_drawing PRIVATE glfw Vulkan::Vulkan)
   add_executable(UrbanSimCore-visualizer WIN32 visualization/VisualizerGLFW.cpp)
   target_link_libraries(UrbanSimCore-visualizer PRIVATE urban_sim_visualizer)
+  add_executable(UrbanSimCore-playtest playtest/PlaytestMain.cpp)
+  target_link_libraries(UrbanSimCore-playtest PRIVATE urban_sim_visualizer)
+  install(TARGETS UrbanSimCore-playtest RUNTIME DESTINATION bin)
+  install(DIRECTORY "${CMAKE_SOURCE_DIR}/playtest/" DESTINATION share/urban-sim/playtest
+    PATTERN "__pycache__" EXCLUDE PATTERN "*.egg-info" EXCLUDE PATTERN "tests" EXCLUDE)
   get_target_property(URBAN_SIM_GLFW_TYPE glfw TYPE)
   if(WIN32 AND URBAN_SIM_GLFW_TYPE STREQUAL "SHARED_LIBRARY")
+    add_custom_command(TARGET UrbanSimCore-playtest POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:glfw>" "$<TARGET_FILE_DIR:UrbanSimCore-playtest>" VERBATIM)
     add_custom_command(TARGET UrbanSimCore-visualizer POST_BUILD
       COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:glfw>" "$<TARGET_FILE_DIR:UrbanSimCore-visualizer>"
       VERBATIM)
@@ -123,7 +132,7 @@ if(URBAN_SIM_BUILD_VISUALIZER)
     if(NOT URBAN_SIM_MOLTENVK)
       message(FATAL_ERROR "MoltenVK is required for the macOS visualizer (Vulkan SDK or brew install molten-vk).")
     endif()
-    set_target_properties(UrbanSimCore-visualizer PROPERTIES INSTALL_RPATH "@executable_path/../lib/urban-sim")
+    set_target_properties(UrbanSimCore-visualizer UrbanSimCore-playtest PROPERTIES INSTALL_RPATH "@executable_path/../lib/urban-sim")
     set(URBAN_SIM_GLFW_LIBRARY "$<TARGET_FILE:glfw>")
     configure_file("${CMAKE_SOURCE_DIR}/cmake/InstallVulkanMac.cmake.in"
       "${CMAKE_CURRENT_BINARY_DIR}/InstallVulkanMac.cmake.in" @ONLY)

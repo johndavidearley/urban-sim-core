@@ -118,7 +118,18 @@ blending. Compare those surfaces separately when reviewing visual parity.
   median CPU drawing preparation at approximately 1.1 ms for Vulkan versus
   6.1 ms for SDL. Both presented at approximately 16.7 ms/frame with vsync.
   This is a single-scene measurement, not a general performance guarantee.
-- Windows build/packaging and CI setup are implemented. Windows CI execution
-  and hardware validation remain pending; all-platform hardware acceptance is
+- Windows/NVIDIA GeForce GTX 1660 Ti: strict MSVC Debug build with Vulkan SDK
+  1.4.313.0; 373/374 unit tests passed. The same rail-route simulation test
+  documented above failed with zero rail routes. The 20-frame graphics smoke
+  and all 16 capture color/order checks passed, with Khronos validation and
+  synchronization validation enabled and no validation errors.
+- The Windows SDK uses a copy-only installation with user-level SDK/PATH
+  settings; validation layers are discovered through `VK_ADD_LAYER_PATH` (or
+  process-local `VK_LAYER_PATH`). The clean Windows smoke used an empty
+  process-local `VK_IMPLICIT_LAYER_PATH` to bypass stale TikTok/Epic overlay
+  manifests; the unmodified environment reports loader errors for those
+  missing files. No overlay registry entries were changed.
+- Windows CI execution, installed-package launch, and the full interactive
+  hardware checklist remain pending; all-platform hardware acceptance is
   still a release gate. Local macOS validation-layer compilation was limited
-  by disk space, so validation-layer checks were performed on Linux.
+  by disk space, so validation-layer checks were performed on Linux and Windows.

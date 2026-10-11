@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "urban-sim-mcp"
+version = "0.1.0"
+description = "Local MCP tools for Vulkan/GLFW UrbanSimCore playtesting"
+requires-python = ">=3.10"
+dependencies = ["mcp==1.26.0", "Pillow==11.3.0"]
+
+[project.optional-dependencies]
+dev = ["black==25.1.0", "clang-format==18.1.8"]
+
+[project.scripts]
+urban-sim-mcp = "urban_sim_mcp.server:main"
+urban-sim-playtest = "urban_sim_mcp.scenarios:main"
+
+[tool.setuptools.packages.find]
+include = ["urban_sim_mcp*"]

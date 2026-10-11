@@ -39,6 +39,7 @@
 #include "src/world/Zoning.hpp"
 
 #include "src/visualization/VisualizerSession.hpp"
+#include "src/playtest/PlaytestBridge.hpp"
 #include "src/visualization/VisualizerOverlay.hpp"
 #include "src/visualization/VisualizerRender.hpp"
 #include "src/visualization/VisualizerHud.hpp"
@@ -152,7 +153,7 @@ void refreshLiveDerivedState(
   options.enableTransit = true;
   options.placeTransit = false;
   options.updateLandValues = true;
-  options.seed = seed;
+  options.seed = seed + liveState.simulationSeed - 98765u;
   options.transitStopCoverageRadius = std::max(8, liveState.autonomousGridSpacing * 3);
   refreshDerivedCityState(map, roads, store, population, facilities, tickState, options);
   restoreTickState(liveState, tickState);
@@ -208,7 +209,7 @@ void runSimulationTick(
   options.growthChance = 0.18f;
   options.requireUtilities = true;
   options.treasuryTickScale = 0.01;
-  options.baseSeed = 1000u;
+  options.baseSeed = 1000u + liveState.simulationSeed - 98765u;
   options.enableTransit = true;
   options.transitCapacityMultiplier = 1.0f;
   options.transitStopCoverageRadius = std::max(8, liveState.autonomousGridSpacing * 3);
@@ -356,7 +357,7 @@ bool pointInRect(int x, int y, const Rect& rect) {
   return x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
 }
 
-StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList* renderer, int windowWidth, int windowHeight) {
+StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList* renderer, int windowWidth, int windowHeight, PlaytestBridge* bridge) {
   (void)windowHeight;
   StartScreenResult result;
   const std::array<int, 3> sizes = {32, 64, 96};
@@ -364,8 +365,31 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
   int mouseY = 0;
   bool choosing = true;
   while (choosing) {
+    if (bridge) {
+      if (bridge->disconnected()) { result.quit=true; break; }
+      bridge->begin(host, [&](const std::string& command, const Json& args) -> Json {
+        if (command == "status" || command == "diagnostics") return {{"capabilities",playtestCapabilities()}};
+        if (command == "inspect") {
+          const auto section=args.value("section","summary");
+          if(section!="summary" && section!="ui") throw std::runtime_error("City inspection requires gameplay");
+          Json controls=Json::array();
+          auto rect=[&](const std::string& name,int x,int y,int w,int h) {controls.push_back({{"name",name},{"x",x},{"y",y},{"width",w},{"height",h}});};
+          rect("new",windowWidth/2-220,500,200,54);rect("load",windowWidth/2+20,500,200,54);
+          rect("terrain",windowWidth/2-130,444,260,38);
+          for(int i=0;i<3;++i) rect("size_"+std::to_string(sizes[static_cast<size_t>(i)]),windowWidth/2-190+i*130,380,110,44);
+          return {{"controls",controls},{"selected_map_size",result.mapSize},{"terrain",result.generateTerrain}};
+        }
+        if (command == "stop") { result.quit=true; choosing=false; return Json::object(); }
+        if (command == "city" && (args.at("action") == "new" || args.at("action") == "load")) {
+          const int size=args.value("size",64);
+          if(size!=32 && size!=64 && size!=96) throw std::runtime_error("Map size must be 32, 64, or 96");
+          result.mapSize=size; result.generateTerrain=args.value("terrain",false); result.loadSession=args.at("action")=="load"; choosing=false; return Json::object();
+        }
+        throw std::runtime_error("Command requires gameplay; use city new/load or start-screen input");
+      });
+    }
     host.dimensions(windowWidth, windowHeight);
-    renderer->frameTimeMs = host.timeMs();
+    renderer->frameTimeMs = bridge && bridge->deterministic ? bridge->animationTime() : host.timeMs();
     Rect newButton{windowWidth / 2 - 220, 500, 200, 54};
     Rect loadButton{windowWidth / 2 + 20, 500, 200, 54};
     InputEvent event;
@@ -421,7 +445,7 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
     newButton = {windowWidth / 2 - 220, 500, 200, 54};
     loadButton = {windowWidth / 2 + 20, 500, 200, 54};
     if (!choosing) break;
-    if (!host.drawable()) { host.waitEvents(); continue; }
+    if (!host.drawable()) { if(bridge) bridge->complete(bridge->metadata(host,gpu,"start_screen",0)); host.waitEvents(); continue; }
     setDrawColor(renderer, 20, 23, 29, 255);
     clearFrame(renderer);
     drawText(renderer, windowWidth / 2 - 205, 130, "URBAN SIM CORE", {120, 205, 255}, 4);
@@ -464,9 +488,11 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
                     loadHovered ? RGB{205, 225, 255} : RGB{145, 190, 245}, 255);
     drawText(renderer, loadButton.x + 24, loadButton.y + 20, "LOAD SESSION", {235, 240, 250}, 2);
     drawText(renderer, windowWidth / 2 - 170, 585, "ENTER NEW   L LOAD   T TERRAIN", {150, 160, 175}, 1);
-    gpu.present(*renderer);
+    const bool presented = gpu.present(*renderer, bridge ? bridge->capturePath : "");
+    if(bridge && presented) { ++bridge->frame; bridge->complete(bridge->metadata(host,gpu,"start_screen",0)); }
 
   }
+  if(bridge && result.quit) bridge->complete(bridge->metadata(host,gpu,"stopped",0));
   return result;
 }
 

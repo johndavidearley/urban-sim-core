@@ -198,6 +198,8 @@ bool WindowHost::pollEvent(InputEvent &event) {
   }
   event = events_.front();
   events_.pop_front();
+  if (playtestInput && event.type == EventType::MouseMotion) { injectedPointer_=true; injectedX_=event.motion.x; injectedY_=event.motion.y; }
+  else if (playtestInput && (event.type == EventType::MouseDown || event.type == EventType::MouseUp)) { injectedPointer_=true; injectedX_=event.button.x; injectedY_=event.button.y; }
   return true;
 }
 void WindowHost::dimensions(int &width, int &height) const {
@@ -210,6 +212,7 @@ bool WindowHost::drawable() const {
 }
 void WindowHost::waitEvents() { glfwWaitEventsTimeout(0.05); }
 void WindowHost::mousePosition(int *x, int *y) const {
+  if (injectedPointer_) { if(x) *x=injectedX_; if(y) *y=injectedY_; return; }
   double px, py;
   glfwGetCursorPos(window_, &px, &py);
   *x = static_cast<int>(std::floor(px));
@@ -222,6 +225,7 @@ void WindowHost::resize(int width, int height) {
   glfwSetWindowSize(window_, width, height);
 }
 uint32_t WindowHost::timeMs() const {
+  if (playtestClock) return playtestClock();
   return static_cast<uint32_t>((glfwGetTime() - epoch_) * 1000.0);
 }
 } // namespace visualizer

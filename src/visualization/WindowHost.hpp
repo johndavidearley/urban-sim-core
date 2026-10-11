@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <string>
 struct GLFWwindow;
 namespace visualizer {
@@ -86,6 +87,8 @@ public:
   bool drawable() const;
   void waitEvents();
   void mousePosition(int *x, int *y) const;
+  bool playtestInput = false;
+  std::function<uint32_t()> playtestClock;
   void title(const std::string &text);
   void resize(int width, int height);
   uint32_t timeMs() const;
@@ -96,5 +99,7 @@ private:
   std::deque<InputEvent> events_;
   bool polling_ = false;
   double epoch_ = 0;
+  bool injectedPointer_ = false;
+  int injectedX_ = 0, injectedY_ = 0;
 };
 } // namespace visualizer

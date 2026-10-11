@@ -72,6 +72,7 @@ enum class QuitAction {
 };
 
 struct LiveSimulationState {
+  uint32_t simulationSeed = 98765;
   uint32_t tick = 0;
   bool paused = false;
   uint32_t tickIntervalMs = 350;

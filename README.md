@@ -79,6 +79,9 @@ The renderer batches existing city and HUD geometry in painter's order.
 Logical window coordinates drive both layout and picking, including high-DPI
 screens. Resize, minimize/restore, and focus loss are handled by the host.
 
+See [MCP desktop playtesting](docs/PLAYTESTING.md) to control the rendered game,
+inspect state, capture PNG screenshots, and record/replay isolated scenarios.
+
 See [graphics validation and troubleshooting](docs/GRAPHICS.md) for smoke
 captures, validation layers, runtime requirements, and the platform checklist.
 
