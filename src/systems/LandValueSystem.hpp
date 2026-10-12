@@ -16,6 +16,8 @@ struct LandValueParams {
   float serviceAccessRadius = 15.0f;  // road-hops within which service proximity raises value
   float maxServiceBonus = 25.0f;
   float maxPollutionPenalty = 60.0f;  // applied in full at pollution == 1.0
+  float maxCrimePenalty = 30.0f;
+  float maxIllnessPenalty = 30.0f;
   float minLandValue = 10.0f;
   float maxLandValue = 300.0f;
 };

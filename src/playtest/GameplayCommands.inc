@@ -78,6 +78,11 @@ if (command == "inspect") {
                          {"road_access", t.connectedToRoad},
                          {"pollution", map.pollution({tx, ty})},
                          {"land_value", map.landValue({tx, ty})}});
+        const auto* building = store.getBuilding(t.buildingId);
+        if (building && building->type == BuildingType::Residential) {
+          items.back()["crime_rate"] = building->crimeRate;
+          items.back()["illness_rate"] = building->illnessRate;
+        }
       }
     return {{"items", items}, {"total", w * h}};
   }
@@ -93,15 +98,25 @@ if (command == "inspect") {
                        {"x", b.position.x},
                        {"y", b.position.y},
                        {"capacity", b.capacity},
-                       {"occupancy", b.occupancy}});
+                       {"occupancy", b.occupancy},
+                       {"crime_rate", b.crimeRate},
+                       {"illness_rate", b.illnessRate}});
     }
   } else if (section == "facilities") {
-    for (const auto &f : facilities)
+    for (const auto &f : facilities) {
       items.push_back({{"type", ServiceSystem::serviceTypeToString(f.type)},
                        {"x", f.position.x},
                        {"y", f.position.y},
                        {"quality", f.quality},
                        {"distance", f.maxTravelDistance}});
+      if (f.type == ServiceType::Power) {
+        items.back()["power_source"] = ServiceSystem::powerSourceTypeToString(f.powerSource);
+        items.back()["power_capacity_mw"] = f.powerCapacityMW;
+        items.back()["emissions_kg_per_mwh"] = f.emissionsKgPerMWh;
+      } else if (f.type == ServiceType::Water) {
+        items.back()["water_supply"] = f.waterSupplyUnits;
+      }
+    }
   } else if (section == "districts") {
     for (const auto &d : districts.getDistricts())
       items.push_back(

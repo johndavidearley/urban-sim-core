@@ -21,7 +21,7 @@ Last updated: October 10, 2026
 - Automated validation at the M16 close-out: 294 tests passing; regular,
   strict, ASan/UBSan, and TSan configurations verified. Live counts are in
   STATUS.md.
-- Phase 6 (M17–M22): M19 complete. M20 is next.
+- Phase 6 (M17–M22): M20 complete. M21 is next.
 
 ---
 
@@ -201,7 +201,7 @@ Note on default behavior: unlike the additive M12/M13/M14 systems, fire and natu
 
 ## Phase 6: A City With Consequences (M17–M22)
 
-Defined October 6, 2026. M17, M18, and M19 are complete. Implement the rest in order. Each milestone
+Defined October 6, 2026. M17, M18, M19, and M20 are complete. Implement the rest in order. Each milestone
 keeps the suite deterministic and names whether a default `--simulate` run
 changes. The struck-through list under "Next Targets" is finished work.
 
@@ -306,25 +306,24 @@ highest land value, and the map shows that.
 
 ### Milestone 20: Neighborhood crime and illness
 
-`CrimeSystem` and `HealthSystem` each return one city-wide float from
-city-wide unemployment, average land value, pollution, and coverage.
-A precinct does not make its side of the city safer than the other side.
-Deathcare already handles mortality. These two stay pure read-outs.
+Completed October 12, 2026. `NeighborhoodSystem` reuses the scalar crime
+and illness formulas with cached local service distances. Deathcare still
+handles mortality; neighborhood rates are cached read-outs.
 
-- [ ] Each residential building gets a local crime rate and a local
+- [x] Each residential building gets a local crime rate and a local
       illness rate. Local police distance lowers crime. Local hospital
       and sanitation distance lower illness. Local pollution raises
       illness. The city rate becomes the population-weighted mean and
       remains the migration-desirability input.
-- [ ] Reuse `ServiceCoverageCache` distance fields. No second BFS.
-- [ ] `LandValueSystem` subtracts the local rates, so a covered
+- [x] Reuse `ServiceCoverageCache` distance fields. No second BFS.
+- [x] `LandValueSystem` subtracts the previous completed local rates, so a covered
       neighborhood is worth more than an uncovered one with the same
       jobs and pollution.
-- [ ] The happiness overlay and the tile inspector show the local
+- [x] The happiness overlay and the tile inspector show the local
       values. The HUD keeps the city mean.
-- [ ] Default-on, both hosts. A city with no police and no hospital
-      matches today's city-wide formula, because every local rate
-      collapses to that formula.
+- [x] Default-on, both hosts. A city with no police and no hospital
+      retains the no-services formula when sewage facilities are also absent;
+      pollution uses its legacy city input in that case.
 
 **Deliverable:** Two neighborhoods in one city, one policed and one not,
 show different crime, land value, and inspector text. The city mean still
@@ -411,7 +410,7 @@ with the autonomous simulator. Population responds to housing, jobs, services,
 utilities and quality of life instead of a fixed target that shrinks after
 mortality. Last-tick arrivals/departures/deaths/net are visible in the HUD and
 MCP. Session inputs survive save/load, and a rendered regression grows an
-ordinary zoned city above 1,200 residents and unlocks bus transit. M20 remains
+ordinary zoned city above 1,200 residents and unlocks bus transit. M20 is now complete; M21 remains
 next; economy balancing and player road upgrades remain future work.
 
 ## Next Targets (Post-Backlog)

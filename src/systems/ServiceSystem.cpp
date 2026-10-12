@@ -274,7 +274,8 @@ void ServiceSystem::buildCache(
   for (auto& [key, sources] : groups) {
     auto distField = buildMultiSourceDistanceField(roads, sources, key.maxTravelDistance);
     if (!distField.empty()) {
-      cache.entries.push_back({key.type, std::move(distField)});
+      cache.entries.push_back(
+          {key.type, std::move(distField), key.maxTravelDistance});
     }
   }
 

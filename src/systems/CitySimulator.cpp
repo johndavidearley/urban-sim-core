@@ -16,6 +16,7 @@
 #include "src/systems/LandValueSystem.hpp"
 #include "src/systems/MetricsSystem.hpp"
 #include "src/systems/MigrationSystem.hpp"
+#include "src/systems/NeighborhoodSystem.hpp"
 #include "src/systems/PopulationSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/systems/TrafficSystem.hpp"
@@ -309,6 +310,7 @@ SimResult CitySimulator::run(
           static_cast<int64_t>(fire.buildingsDestroyed)
             + static_cast<int64_t>(disaster.buildingsDestroyed));
         tickCap = city_sim::summarize(store);
+
         tickResPollution = city_sim::averageResidentialPollution(map, store);
       }
     }
@@ -343,20 +345,27 @@ SimResult CitySimulator::run(
       result.timings.economyMs += elapsedMs(t0, Clock::now());
     }
 
-    // Crime: a pure read-out (no side effects on the map or entity store,
-    // unlike FireSystem), so unlike congestion/service satisfaction it's
-    // computed unconditionally every tick from this tick's own unemployment,
-    // police coverage, and average land value (a poverty proxy). It still
-    // feeds desirability one tick lagged (via lastCrimeRate above), the same
-    // pattern used for congestion/service satisfaction elsewhere in this loop.
+    // Cache residential read-outs from local service distances, then use
+    // resident-weighted city means for the next tick's migration inputs.
+    // Occupancy and topology are unchanged; deathcare handles mortality.
     CrimeSummary crime;
+    NeighborhoodSummary neighborhood;
     {
       const auto t0 = Clock::now();
       const uint32_t popNow = population.getTotalPopulation();
       const uint32_t employedNow = population.getTotalEmployed();
       const float unemploymentNow = popNow > 0
         ? city_sim::clamp01(static_cast<float>(popNow - employedNow) / static_cast<float>(popNow)) : 0.0f;
-      crime = CrimeSystem::evaluate(unemploymentNow, service.policeCoverage, economy.averageLandValue, options.crimeParams);
+      const float housingDensity =
+          tickCap.resCapacity > 0
+              ? city_sim::clamp01(static_cast<float>(popNow) /
+                                  tickCap.resCapacity)
+              : 0.0f;
+      neighborhood = NeighborhoodSystem::evaluate(
+          map, roads, store, coverageCache, unemploymentNow, housingDensity,
+          economy.averageLandValue, tickResPollution, options.crimeParams,
+          options.healthParams);
+      crime.overallRate = neighborhood.crimeRate;
       lastCrimeRate = crime.overallRate;
       result.timings.crimeMs += elapsedMs(t0, Clock::now());
     }
@@ -371,11 +380,7 @@ SimResult CitySimulator::run(
     HealthSummary health;
     {
       const auto t0 = Clock::now();
-      const float housingDensity = tickCap.resCapacity > 0
-        ? city_sim::clamp01(static_cast<float>(population.getTotalPopulation()) / static_cast<float>(tickCap.resCapacity)) : 0.0f;
-      health = HealthSystem::evaluate(
-        housingDensity, tickResPollution, service.healthCoverage,
-        service.sanitationCoverage, options.healthParams);
+      health.illnessRate = neighborhood.illnessRate;
       lastIllnessRate = health.illnessRate;
       result.timings.healthMs += elapsedMs(t0, Clock::now());
     }
@@ -408,6 +413,9 @@ SimResult CitySimulator::run(
           store, population, population.getTotalPopulation(), tickSeed + 7u, educationNow
         );
         tickCap = city_sim::summarize(store);
+        neighborhood = NeighborhoodSystem::summarize(store);
+        crime.overallRate = lastCrimeRate = neighborhood.crimeRate;
+        health.illnessRate = lastIllnessRate = neighborhood.illnessRate;
       }
       result.timings.deathcareMs += elapsedMs(t0, Clock::now());
     }

@@ -27,8 +27,9 @@ Phase 6 (M17–M22) is the active queue. M17 (utility shortage), M18
 implemented. Redevelopment chance follows land value, civic coverage,
 and road congestion. The map draws capacity tier. Playable migration now
 uses the same desirability calculation as the autonomous simulator, removing
-the shrinking fixed population target found during the hour-long playtest. Next is M20,
-neighborhood crime and illness.
+the shrinking fixed population target found during the hour-long playtest.
+M20 (neighborhood crime and illness) is implemented. Next is M21, freight
+and player road upgrades.
 
 ### Shared full-sim path (CLI + visualizer)
 
@@ -68,6 +69,46 @@ neighborhood crime and illness.
   This can change equally short commute routes in existing CLI scenarios;
   the extracted CLI migration formula itself is unchanged.
 
+### Neighborhood read-outs (M20, October 12, 2026)
+
+`NeighborhoodSystem` reuses cached, radius-bounded service distance fields;
+strength falls with road distance. Residential crime uses city unemployment
+and poverty plus local police strength. Illness uses city housing crowding,
+local hospital/sewage strength and local pollution. Without health or sewage
+facilities, pollution retains its legacy city input, preserving the old
+no-services formula. Empty buildings get local read-outs but do not weight
+the city mean; an empty city reports zero.
+
+Cached rates are saved on buildings (old snapshots default to zero), included
+in replay checksums and consumed on the next land-value refresh. The happiness
+overlay and tile inspector expose the rates; MCP tile/entity inspection uses
+`crime_rate` and `illness_rate`. No new mortality mechanism is added.
+
+### MCP inspection update (October 12, 2026)
+
+MCP package 0.2.0 adds `urban-sim://inspection` with field units and timing,
+`status.server_version`, and executable inspection version 2 capability flags.
+Migration flow, local neighborhood rates, service/utility totals and power/water
+facility details are available through inspection. The bridge protocol remains
+version 1. The local `.venv` installation is editable; existing client
+connections need a restart to load updated server code. SDK smoke tests pass
+against rebuilt Debug and Release executables on macOS, including real field
+reads, invalid-section rejection, PNG responses and disconnect cleanup.
+
+### CI transit fixture correction (October 12, 2026)
+
+Run `38261093054` failed the same rail-placement assertion in Linux strict,
+Windows strict, ASan/UBSan and TSan; macOS passed. The old fixture assumed
+seed 7 would grow past rail eligibility in 180 default ticks. The integration
+fixture now starts with 4,800 housed residents and connected jobs, tests both
+modes immediately, and checks route totals over ten ticks. A separate case
+asserts no rail at 3,999 residents and one rail at 4,000. The rail threshold
+and production simulation are unchanged by this correction.
+
+All 391 individually discovered macOS CTest cases passed. Linux local checks
+could not finish because exhausted host disk space left Docker storage
+read-only; Linux/Windows and sanitizer hosted checks need a run of the fix.
+
 ### Recent performance work (post-MVP)
 
 A multi-batch hot-path pass landed on `main` development:
@@ -83,8 +124,10 @@ A multi-batch hot-path pass landed on `main` development:
 
 ## Validation Baseline
 
-- 385 GoogleTest cases pass in the strict macOS Debug build on October 12, 2026.
+- 391 GoogleTest cases pass in the strict macOS Debug build on October 12, 2026.
   Five rendered MCP acceptance tests and seven Python unit tests pass locally.
+  Headless Release passes 388 tests with Vulkan/GLFW discovery disabled;
+  repeated 100-tick CLI reports match byte-for-byte.
 - Tests are discovered individually by CTest.
 - Regular and warnings-as-errors builds pass.
 - Full ASan/UBSan and ThreadSanitizer runs pass.
@@ -121,9 +164,11 @@ Phase 6 in `ROADMAP.md` is the queue. Implement in order.
    road congestion. The 2× step and 64× cap are unchanged. Isometric and
    top-down views draw the capacity tier. Playable treasury bills a
    redevelopment more than a new low building.
-4. **M20 Neighborhood crime and illness.** Both systems return one city
-   float. Local rates reuse the service distance fields; the city mean
-   stays the migration input.
+4. **M20 Neighborhood crime and illness.** Done. Residential rates reuse
+   service distance fields; nearer police, hospitals and sewage coverage
+   improve the neighborhood. Resident-weighted means feed migration and
+   the HUD. Lagged local rates lower land value; happiness and tile
+   inspection show the local effects.
 5. **M21 Freight and road class.** Goods are an accounting line. Freight
    loads the road graph. Arterials are a player upgrade; the autonomous
    grid stays capacity 10.

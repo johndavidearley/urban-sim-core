@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult, ImageContent, TextContent, ToolAnnotations
 from .session import PlaytestError, Session
-from . import scenarios
+from . import scenarios, __version__
 
 UInt32 = Annotated[int, Field(ge=0, le=4294967295)]
 Coordinate = Annotated[int, Field(ge=0, le=16384)]
@@ -55,6 +55,83 @@ def compact(**values):
     return {key: value for key, value in values.items() if value is not None}
 
 
+INSPECTION_REFERENCE = {
+    "inspection_version": 2,
+    "sections": [
+        "summary",
+        "ui",
+        "tiles",
+        "entities",
+        "facilities",
+        "districts",
+        "routes",
+    ],
+    "summary": {
+        "path": "state",
+        "population_change": {
+            "fields": ["arrivals", "departures", "deaths", "net", "desirability"],
+            "units": "residents, except desirability (0..1)",
+            "period": "last completed tick, not the sum of a multi-tick step",
+            "identity": "net = arrivals - departures - deaths",
+            "lag": "migration uses previous completed tick conditions",
+        },
+        "metrics": {
+            "path": "state.metrics",
+            "city_rates": ["crime_rate", "illness_rate"],
+            "city_rate_weighting": "occupied residential population; empty city reports zero",
+            "coverage": [
+                "fire_coverage",
+                "police_coverage",
+                "health_coverage",
+                "education_coverage",
+                "power_coverage",
+                "water_coverage",
+                "sanitation_coverage",
+                "garbage_coverage",
+                "recycling_coverage",
+                "cemetery_coverage",
+                "crematorium_coverage",
+            ],
+            "utility_supply": [
+                "power_demand_mw",
+                "power_supply_mw",
+                "power_supply_ratio",
+                "water_demand",
+                "water_supply",
+                "water_supply_ratio",
+            ],
+            "deathcare_backlog": "residents awaiting disposition",
+            "fraction_units": "coverage, supply ratios and rates are 0..1",
+        },
+    },
+    "facilities": {
+        "common": ["type", "x", "y", "quality", "distance"],
+        "power_only": ["power_source", "power_capacity_mw", "emissions_kg_per_mwh"],
+        "water_only": ["water_supply"],
+    },
+    "local_rates": {
+        "fields": ["crime_rate", "illness_rate"],
+        "units": "fractions 0..1",
+        "tiles": "present only on residential building tiles",
+        "entities": "residential read-outs; other building types default to zero",
+        "timing": "cached completed read-outs; update on ticks, land value uses lagged rates",
+        "effects": "police road distance lowers crime; hospital/sewage road distance and pollution affect illness",
+    },
+    "examples": [
+        {"tool": "inspect", "arguments": {"section": "summary"}},
+        {"tool": "inspect", "arguments": {"section": "entities", "limit": 512}},
+        {
+            "tool": "assert_state",
+            "arguments": {
+                "field": "state.population_change.net",
+                "op": "ge",
+                "expected": 0,
+            },
+        },
+    ],
+}
+
+
 def create_server(session: Session) -> FastMCP:
     @asynccontextmanager
     async def lifespan(_server):
@@ -70,7 +147,8 @@ def create_server(session: Session) -> FastMCP:
         lifespan=lifespan,
         instructions="Launch an isolated session, inspect state and controls, then play. "
         "Coordinates are logical window pixels. Use explicit ticks for deterministic tests. "
-        "UI and semantic gameplay actions are labeled separately in retained traces.",
+        "UI and semantic gameplay actions are labeled separately in retained traces. "
+        "Read urban-sim://inspection for population flow, utility/service metrics and neighborhood rates.",
     )
     readonly = ToolAnnotations(
         readOnlyHint=True, destructiveHint=False, openWorldHint=False
@@ -98,12 +176,14 @@ def create_server(session: Session) -> FastMCP:
         ):
             return {
                 "running": False,
+                "server_version": __version__,
                 "broken": session.broken,
                 "run_directory": str(session.run_dir) if session.run_dir else None,
             }
         return {
             **await session.request("status"),
             "running": True,
+            "server_version": __version__,
             "pid": session.process.pid,
             "run_directory": str(session.run_dir),
         }
@@ -241,7 +321,7 @@ def create_server(session: Session) -> FastMCP:
         width: Annotated[int, Field(ge=1, le=96)] = 1,
         height: Annotated[int, Field(ge=1, le=96)] = 1,
     ) -> dict[str, Any]:
-        """Read state, visible control bounds, bounded tile regions (<=512), or paginated city collections."""
+        """Read summary state (including last-tick population_change and city metrics), UI bounds, <=512 tiles or paginated collections. Residential tiles/entities expose crime_rate and illness_rate. See urban-sim://inspection for units, weighting and timing."""
         return await session.request(
             "inspect",
             dict(
@@ -321,6 +401,11 @@ def create_server(session: Session) -> FastMCP:
             session, field, op, expected, section, query
         )
 
+    @server.resource("urban-sim://inspection")
+    def inspection_reference() -> str:
+        """Inspection fields, units, timing, weighting and assertion examples."""
+        return json.dumps(INSPECTION_REFERENCE)
+
     @server.resource("urban-sim://controls")
     def controls() -> str:
         return json.dumps(
@@ -395,7 +480,7 @@ def create_server(session: Session) -> FastMCP:
 
     @server.prompt()
     def exploratory_playtest(goal: str = "Find gameplay and visual issues") -> str:
-        return f"{goal}. Launch an isolated game, read urban-sim://controls, inspect visible control bounds, play through input, and take screenshots. Use state inspection to verify effects. Label semantic setup separately from UI coverage. Retain the run directory and report reproducible steps and evidence."
+        return f"{goal}. Launch an isolated game, read urban-sim://controls and urban-sim://inspection, inspect visible control bounds, play through input, and take screenshots. Use state inspection to verify effects. Label semantic setup separately from UI coverage. Retain the run directory and report reproducible steps and evidence."
 
     @server.prompt()
     def regression_investigation(symptom: str) -> str:

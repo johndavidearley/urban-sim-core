@@ -21,6 +21,8 @@ TEST(SaveLoadSystemTests, SaveAndLoadRoundTripPreservesCoreState) {
   Building* building = store.getBuilding(buildingId);
   ASSERT_NE(building, nullptr);
   building->occupancy = 30;
+  building->crimeRate = 0.12f;
+  building->illnessRate = 0.23f;
   map.getTile({2, 2}).buildingId = static_cast<uint32_t>(buildingId);
 
   population.createGroup(IncomeBand::Middle, 20, 15);
@@ -70,6 +72,8 @@ TEST(SaveLoadSystemTests, SaveAndLoadRoundTripPreservesCoreState) {
   const Building* loadedBuilding = loadedStore.getBuilding(buildingId);
   ASSERT_NE(loadedBuilding, nullptr);
   EXPECT_EQ(loadedBuilding->occupancy, 30);
+  EXPECT_FLOAT_EQ(loadedBuilding->crimeRate, 0.12f);
+  EXPECT_FLOAT_EQ(loadedBuilding->illnessRate, 0.23f);
 
   EXPECT_GT(loadedRoads.getCongestion({1, 1}, {2, 1}), 0.0f);
 
@@ -343,4 +347,45 @@ TEST(SaveLoadSystemTests, ApplySnapshotReportsDimensionMismatchWithoutMutatingSt
   EXPECT_FALSE(SaveLoadSystem::applySnapshot(snapshot, map, roads, store, population, &error));
   EXPECT_TRUE(error == "snapshot dimensions do not match the destination map");
   EXPECT_TRUE(roads.hasRoad({0, 0}, {1, 0}));
+}
+
+TEST(SaveLoadSystemTests,
+     LegacyBuildingRatesDefaultToZeroAndInvalidRatesRejectLoad) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  store.createBuilding(BuildingType::Residential, {2, 2}, 40);
+  const auto path =
+      std::filesystem::temp_directory_path() / "urban_neighborhood_legacy.json";
+  ASSERT_TRUE(
+      SaveLoadSystem::saveToFile(path.string(), map, roads, store, population));
+  json root;
+  {
+    std::ifstream input(path);
+    input >> root;
+  }
+  root["buildings"][0].erase("crimeRate");
+  root["buildings"][0].erase("illnessRate");
+  {
+    std::ofstream output(path);
+    output << root;
+  }
+  CitySnapshot snapshot;
+  SnapshotLoadDiagnostics diagnostics;
+  ASSERT_TRUE(SaveLoadSystem::loadSnapshotFromFile(path.string(), snapshot,
+                                                   &diagnostics));
+  ASSERT_EQ(snapshot.buildings.size(), 1u);
+  EXPECT_FLOAT_EQ(snapshot.buildings[0].crimeRate, 0.0f);
+  EXPECT_FLOAT_EQ(snapshot.buildings[0].illnessRate, 0.0f);
+  root["buildings"][0]["crimeRate"] = 1.5f;
+  {
+    std::ofstream output(path);
+    output << root;
+  }
+  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(path.string(), snapshot,
+                                                    &diagnostics));
+  EXPECT_EQ(diagnostics.errorMessage,
+            "building neighborhood rates are invalid");
+  std::filesystem::remove(path);
 }

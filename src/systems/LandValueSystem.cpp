@@ -189,11 +189,16 @@ void LandValueSystem::updateLandValues(
 
       const float pollutionPenalty = params.maxPollutionPenalty * std::clamp(map.pollution({x, y}), 0.0f, 1.0f);
 
-      map.landValue({x, y}) = std::clamp(
-        base + jobBonus + serviceBonus - pollutionPenalty,
-        params.minLandValue,
-        params.maxLandValue
-      );
+      const Building *building = store.getBuilding(tile.buildingId);
+      const float neighborhoodPenalty =
+          building && building->type == BuildingType::Residential
+              ? params.maxCrimePenalty * building->crimeRate +
+                    params.maxIllnessPenalty * building->illnessRate
+              : 0.0f;
+      map.landValue({x, y}) =
+          std::clamp(base + jobBonus + serviceBonus - pollutionPenalty -
+                         neighborhoodPenalty,
+                     params.minLandValue, params.maxLandValue);
     }
   }
 }

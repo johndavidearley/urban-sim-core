@@ -489,6 +489,17 @@ void drawTileInspector(
                std::string("BLDG ") + buildingTypeLabel(building->type) + " "
                  + std::to_string(building->occupancy) + "/" + std::to_string(building->capacity),
                {210, 225, 210}, 1);
+      if (building->type == BuildingType::Residential) {
+        drawText(
+            renderer, x + 10, y + 111,
+            "CRIME " +
+                std::to_string(static_cast<int>(building->crimeRate * 100.0f)) +
+                "%  ILL " +
+                std::to_string(
+                    static_cast<int>(building->illnessRate * 100.0f)) +
+                "%",
+            {235, 180, 145}, 1);
+      }
     }
   }
   for (const ServiceFacility& facility : facilities) {

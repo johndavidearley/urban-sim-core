@@ -80,7 +80,22 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
                 },
             )
             self.assertEqual(len(await server.list_prompts()), 2)
-            self.assertEqual(len(await server.list_resources()), 4)
+            self.assertEqual(len(await server.list_resources()), 5)
+            inspection = await server.read_resource("urban-sim://inspection")
+            reference = json.loads(list(inspection)[0].content)
+            self.assertEqual(reference["inspection_version"], 2)
+            self.assertIn("summary", reference["sections"])
+            self.assertNotIn("state", reference["sections"])
+            self.assertEqual(
+                reference["summary"]["population_change"]["identity"],
+                "net = arrivals - departures - deaths",
+            )
+            self.assertIn("illness_rate", reference["local_rates"]["fields"])
+            inspect_tool = next(t for t in tools if t.name == "inspect")
+            self.assertEqual(
+                inspect_tool.inputSchema["properties"]["section"]["enum"],
+                reference["sections"],
+            )
             result = await server.call_tool("status", {})
             self.assertIsNotNone(result)
 

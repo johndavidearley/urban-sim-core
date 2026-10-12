@@ -451,6 +451,26 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                 break
         self.assertGreater(s.last_state["population"], 1200)
         self.assertGreater(s.last_state["routes"], 0)
+        entities = await s.request("inspect", {"section": "entities", "limit": 512})
+        homes = [b for b in entities["items"] if b["type"] == 1 and b["occupancy"] > 0]
+        self.assertGreater(len(homes), 1)
+        population = sum(b["occupancy"] for b in homes)
+        self.assertEqual(population, s.last_state["population"])
+        for field in ("crime_rate", "illness_rate"):
+            weighted = sum(b[field] * b["occupancy"] for b in homes) / population
+            self.assertAlmostEqual(weighted, s.last_state["metrics"][field], places=6)
+        self.assertGreater(
+            max(b["crime_rate"] for b in homes), min(b["crime_rate"] for b in homes)
+        )
+        self.assertGreater(
+            max(b["illness_rate"] for b in homes), min(b["illness_rate"] for b in homes)
+        )
+        first = homes[0]
+        tiles = await s.request(
+            "inspect", {"section": "tiles", "x": first["x"], "y": first["y"]}
+        )
+        self.assertEqual(tiles["items"][0]["crime_rate"], first["crime_rate"])
+        self.assertEqual(tiles["items"][0]["illness_rate"], first["illness_rate"])
         await s.city("save")
         await s.request("time", {"action": "step", "ticks": 10})
         expected = s.last_state.copy()
@@ -473,6 +493,29 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             "view", {"action": "toggle", "name": "compact_ui", "enabled": True}
         )
         await s.screenshot("migration-compact-hud")
+        await s.request(
+            "view", {"action": "toggle", "name": "compact_ui", "enabled": False}
+        )
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "overlay", "overlay": 6})
+        await s.request(
+            "view",
+            {
+                "action": "camera",
+                "tile_pixels": 28,
+                "view_x": max(0, first["x"] - 20),
+                "view_y": max(0, first["y"] - 12),
+            },
+        )
+        position = await s.request(
+            "coordinates",
+            {"direction": "tile_to_screen", "x": first["x"], "y": first["y"]},
+        )
+        await s.request(
+            "input",
+            {"events": [{"type": "move", "x": position["x"], "y": position["y"]}]},
+        )
+        await s.screenshot("neighborhood-happiness-inspector")
 
     async def test_sdk_client_and_disconnect_cleanup(self):
         # Stop the fixture game so this test owns only the game launched through MCP.
@@ -495,12 +538,106 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                 await client.initialize()
                 self.assertEqual(len((await client.list_tools()).tools), 16)
                 self.assertEqual(len((await client.list_prompts()).prompts), 2)
-                self.assertEqual(len((await client.list_resources()).resources), 4)
+                self.assertEqual(len((await client.list_resources()).resources), 5)
                 launch = await client.call_tool("launch", {})
                 self.assertFalse(launch.isError)
                 data = launch.structuredContent
                 pid = data["pid"]
+                self.assertEqual(data["capabilities"]["inspection_version"], 2)
+                self.assertTrue(data["capabilities"]["features"]["neighborhood_rates"])
+                status = await client.call_tool("status", {})
+                self.assertEqual(status.structuredContent["server_version"], "0.2.0")
+                reference = await client.read_resource("urban-sim://inspection")
+                self.assertEqual(
+                    json.loads(reference.contents[0].text)["inspection_version"], 2
+                )
+
                 await client.call_tool("city", {"action": "new", "size": 32})
+                summary = await client.call_tool("inspect", {"section": "summary"})
+                self.assertFalse(summary.isError)
+                self.assertEqual(
+                    summary.structuredContent["state"]["population_change"]["net"], 0
+                )
+                self.assertIn(
+                    "sanitation_coverage", summary.structuredContent["state"]["metrics"]
+                )
+                self.assertIn(
+                    "deathcare_backlog", summary.structuredContent["state"]["metrics"]
+                )
+                road = await client.call_tool(
+                    "tool",
+                    {
+                        "action": "apply",
+                        "name": "road",
+                        "x1": 6,
+                        "y1": 12,
+                        "x2": 10,
+                        "y2": 12,
+                    },
+                )
+                self.assertFalse(road.isError)
+                for service, y in (("power", 11), ("water", 13)):
+                    plant = await client.call_tool(
+                        "tool",
+                        {
+                            "action": "apply",
+                            "name": "service",
+                            "service": service,
+                            "x1": 7,
+                            "y1": y,
+                        },
+                    )
+                    self.assertFalse(plant.isError)
+                plants = await client.call_tool("inspect", {"section": "facilities"})
+                self.assertFalse(plants.isError)
+                by_type = {
+                    plant["type"].lower(): plant
+                    for plant in plants.structuredContent["items"]
+                }
+                self.assertGreater(by_type["power"]["power_capacity_mw"], 0)
+                self.assertIn("power_source", by_type["power"])
+                self.assertIn("emissions_kg_per_mwh", by_type["power"])
+                self.assertGreater(by_type["water"]["water_supply"], 0)
+                for zone, y in (("residential", 11), ("commercial", 13)):
+                    zoned = await client.call_tool(
+                        "tool",
+                        {
+                            "action": "apply",
+                            "name": "zone",
+                            "zone": zone,
+                            "x1": 8,
+                            "y1": y,
+                            "x2": 10,
+                            "y2": y,
+                        },
+                    )
+                    self.assertFalse(zoned.isError)
+                stepped = await client.call_tool(
+                    "time", {"action": "step", "ticks": 40}
+                )
+                self.assertFalse(stepped.isError)
+                entities = await client.call_tool("inspect", {"section": "entities"})
+                homes = [
+                    b for b in entities.structuredContent["items"] if b["type"] == 1
+                ]
+                self.assertTrue(homes)
+                for home in homes:
+                    self.assertGreaterEqual(home["crime_rate"], 0)
+                    self.assertLessEqual(home["illness_rate"], 1)
+                tile = await client.call_tool(
+                    "inspect",
+                    {"section": "tiles", "x": homes[0]["x"], "y": homes[0]["y"]},
+                )
+                self.assertEqual(
+                    tile.structuredContent["items"][0]["crime_rate"],
+                    homes[0]["crime_rate"],
+                )
+                self.assertEqual(
+                    tile.structuredContent["items"][0]["illness_rate"],
+                    homes[0]["illness_rate"],
+                )
+                wrong_section = await client.call_tool("inspect", {"section": "state"})
+                self.assertTrue(wrong_section.isError)
                 screenshot = await client.call_tool("screenshot", {"name": "sdk"})
                 self.assertFalse(screenshot.isError)
                 image = next(

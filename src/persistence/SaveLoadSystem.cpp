@@ -1,5 +1,6 @@
 #include "SaveLoadSystem.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
@@ -153,6 +154,12 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
     if (building.capacity < 0 || building.occupancy < 0 || building.occupancy > building.capacity) {
       return fail("building occupancy or capacity is invalid");
     }
+    if (!std::isfinite(building.crimeRate) ||
+        !std::isfinite(building.illnessRate) || building.crimeRate < 0.0f ||
+        building.crimeRate > 1.0f || building.illnessRate < 0.0f ||
+        building.illnessRate > 1.0f) {
+      return fail("building neighborhood rates are invalid");
+    }
     buildingIds.insert(static_cast<uint32_t>(building.id));
   }
 
@@ -212,13 +219,13 @@ glm::ivec2 coordFromJson(const json& j) {
 }
 
 json buildingToJson(const Building& building) {
-  return json{
-    {"id", building.id},
-    {"type", static_cast<int>(building.type)},
-    {"position", coordToJson(building.position)},
-    {"capacity", building.capacity},
-    {"occupancy", building.occupancy}
-  };
+  return json{{"id", building.id},
+              {"type", static_cast<int>(building.type)},
+              {"position", coordToJson(building.position)},
+              {"capacity", building.capacity},
+              {"occupancy", building.occupancy},
+              {"crimeRate", building.crimeRate},
+              {"illnessRate", building.illnessRate}};
 }
 
 Building buildingFromJson(const json& j) {
@@ -228,6 +235,8 @@ Building buildingFromJson(const json& j) {
   building.position = coordFromJson(j.at("position"));
   building.capacity = j.at("capacity").get<int>();
   building.occupancy = j.at("occupancy").get<int>();
+  building.crimeRate = j.value("crimeRate", 0.0f);
+  building.illnessRate = j.value("illnessRate", 0.0f);
   return building;
 }
 

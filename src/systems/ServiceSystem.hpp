@@ -108,6 +108,7 @@ struct ServiceCoverageCache {
   struct Entry {
     ServiceType type = ServiceType::Fire;
     std::unordered_map<Coord, int, Vec2Hash> distanceField;
+    int maxTravelDistance = 10;
   };
   std::vector<Entry> entries;
   size_t builtForFacilityCount = 0;

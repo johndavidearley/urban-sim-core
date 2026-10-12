@@ -4,6 +4,7 @@
 #include <limits>
 
 #include "src/systems/CitySimulator.hpp"
+#include "src/systems/PopulationSystem.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/TerrainGenerator.hpp"
 #include "src/world/Zoning.hpp"
@@ -459,24 +460,37 @@ TEST(CitySimulatorTests, TransitDisabledMeansNoRoutesEverPlaced) {
   }
 }
 
-// A city grown large enough (population past the rail threshold) should get
-// at least one rail line alongside its bus routes - a genuine second transit
-// mode, not just relabeled buses. bus + rail route counts must always sum to
-// the total, on every row that has any routes at all.
+// Start above the rail threshold with connected housing and jobs. Default
+// autonomous growth is not guaranteed to reach 4,000 residents in 180 ticks
+// across standard-library RNG implementations or evolving migration rules.
 TEST(CitySimulatorTests, RailLinesAppearAlongsideBusesInALargeCity) {
   CityMap map({64, 64});
   RoadNetwork roads(map);
   EntityStore store;
   PopulationStore population;
-
-  const SimResult result = CitySimulator::run(map, roads, store, population, 7, 180, SimOptions{});
+  for (int x = 8; x < 48; ++x)
+    roads.buildRoad({x, 32}, {x + 1, 32});
+  const auto add = [&](BuildingType type, ZoneType zone, Coord position) {
+    const EntityId id = store.createBuilding(type, position, 3000);
+    map.getTile(position).buildingId = id;
+    map.setZone(position, static_cast<int>(zone));
+  };
+  add(BuildingType::Residential, ZoneType::Residential, {8, 31});
+  add(BuildingType::Residential, ZoneType::Residential, {16, 31});
+  add(BuildingType::Commercial, ZoneType::Commercial, {40, 31});
+  add(BuildingType::Industrial, ZoneType::Industrial, {48, 31});
+  PopulationSystem::allocate(store, population, 4800, 7);
+  ASSERT_EQ(population.getTotalPopulation(), 4800u);
+  SimOptions options;
+  options.buildChance = 0.0f; // isolate transit from redevelopment/spawning
+  options.zoneBatchPerTick = 0;
+  const SimResult result =
+      CitySimulator::run(map, roads, store, population, 7, 10, options);
 
   ASSERT_FALSE(result.rows.empty());
-  const SimTickMetrics& last = result.rows.back();
-  EXPECT_GT(last.transitBusRoutes, 0u);
-  EXPECT_GT(last.transitRailRoutes, 0u);
-
-  for (const SimTickMetrics& row : result.rows) {
+  EXPECT_GT(result.rows.front().transitBusRoutes, 0u);
+  EXPECT_GT(result.rows.front().transitRailRoutes, 0u);
+  for (const SimTickMetrics &row : result.rows) {
     EXPECT_EQ(row.transitBusRoutes + row.transitRailRoutes, row.transitRoutes);
   }
 }

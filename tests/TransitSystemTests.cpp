@@ -1,8 +1,11 @@
 #include "gtest/gtest.h"
 
+#include <algorithm>
+
 #include "src/entities/EntityStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/TransitSystem.hpp"
+#include "src/systems/CitySimSupport.hpp"
 #include "src/world/CityMap.hpp"
 
 namespace {
@@ -193,4 +196,28 @@ TEST(TransitSystemTests, NoRoutesMeansNoCoverageAndZeroSummary) {
   EXPECT_EQ(summary.totalRoutes, 0u);
   EXPECT_EQ(summary.ridership, 0u);
   EXPECT_FLOAT_EQ(summary.modalShare, 0.0f);
+}
+
+TEST(TransitSystemTests, RailPlacementStartsAtPopulationThreshold) {
+  CityMap map({24, 3});
+  RoadNetwork roads(map);
+  buildStraightRoad(roads, 20);
+  EntityStore store;
+  const auto home =
+      store.createBuilding(BuildingType::Residential, {2, 1}, 5000);
+  store.createBuilding(BuildingType::Commercial, {17, 1}, 5000);
+  store.getBuilding(home)->occupancy = 3999;
+  std::vector<TransitRoute> routes;
+  const auto railCount = [&] {
+    return std::count_if(routes.begin(), routes.end(),
+                         [](const TransitRoute &route) {
+                           return route.mode == TransitMode::Rail;
+                         });
+  };
+  city_sim::placeTransitRoutesIfNeeded(roads, store, routes, 3999, 4, 1.0f);
+  EXPECT_EQ(railCount(), 0);
+  ASSERT_FALSE(routes.empty()); // bus service already qualifies below rail
+  store.getBuilding(home)->occupancy = 4000;
+  city_sim::placeTransitRoutesIfNeeded(roads, store, routes, 4000, 4, 1.0f);
+  EXPECT_EQ(railCount(), 1);
 }

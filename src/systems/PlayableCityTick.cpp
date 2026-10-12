@@ -11,6 +11,7 @@
 #include "src/systems/GrowthSystem.hpp"
 #include "src/systems/HealthSystem.hpp"
 #include "src/systems/LandValueSystem.hpp"
+#include "src/systems/NeighborhoodSystem.hpp"
 #include "src/systems/PopulationSystem.hpp"
 #include "src/world/Zoning.hpp"
 
@@ -55,8 +56,10 @@ void refreshDistrictGrowthModifiers(
   }
 }
 
-void evaluateHealthAndCrime(const CityMap& map, const EntityStore& store,
-                            const PopulationStore& population, PlayableCityTickState& state) {
+void evaluateHealthAndCrime(const CityMap &map, const RoadNetwork &roads,
+                            EntityStore &store,
+                            const PopulationStore &population,
+                            PlayableCityTickState &state) {
   const float tickResPollution = city_sim::averageResidentialPollution(map, store);
   const city_sim::CapacitySummary cap = city_sim::summarize(store);
   const uint32_t pop = population.getTotalPopulation();
@@ -67,11 +70,11 @@ void evaluateHealthAndCrime(const CityMap& map, const EntityStore& store,
   const float unemployment = pop > 0
     ? city_sim::clamp01(static_cast<float>(pop - employed) / static_cast<float>(pop))
     : 0.0f;
-  state.illnessRate = HealthSystem::evaluate(
-    housingDensity, tickResPollution, state.serviceSummary.healthCoverage,
-    state.serviceSummary.sanitationCoverage).illnessRate;
-  state.crimeRate = CrimeSystem::evaluate(
-    unemployment, state.serviceSummary.policeCoverage, state.economy.averageLandValue).overallRate;
+  const auto local = NeighborhoodSystem::evaluate(
+      map, roads, store, state.serviceCache, unemployment, housingDensity,
+      state.economy.averageLandValue, tickResPollution);
+  state.illnessRate = local.illnessRate;
+  state.crimeRate = local.crimeRate;
 }
 
 }  // namespace
@@ -173,7 +176,13 @@ void refreshDerivedCityState(
   state.economy = EconomySystem::calculateEconomy(
     store, population, TaxRates{}, &map, TradeRates{}, 1.0f, lvBounds);
 
-  evaluateHealthAndCrime(map, store, population, state);
+  if (options.preserveCheckpoint) {
+    const auto local = NeighborhoodSystem::summarize(store);
+    state.illnessRate = local.illnessRate;
+    state.crimeRate = local.crimeRate;
+  } else {
+    evaluateHealthAndCrime(map, roads, store, population, state);
+  }
 }
 
 void playableCityTick(
@@ -262,6 +271,9 @@ void playableCityTick(
     PopulationSystem::allocate(
       store, population, population.getTotalPopulation(), tickSeed + 5u, educationNow
     );
+    const auto survivingResidents = NeighborhoodSystem::summarize(store);
+    state.crimeRate = survivingResidents.crimeRate;
+    state.illnessRate = survivingResidents.illnessRate;
   }
 
   refreshDistrictGrowthModifiers(

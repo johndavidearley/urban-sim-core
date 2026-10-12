@@ -182,13 +182,10 @@ float demandAtTile(const CityMap& map, const RoadNetwork& roads, Coord coord) {
   return std::max(0.0f, std::min(1.0f, baseDemand));
 }
 
-float happinessAtTile(
-  const CityMap& map,
-  const RoadNetwork& roads,
-  Coord coord,
-  const std::vector<ServiceFacility>& facilities,
-  float wasteHappinessPenalty
-) {
+float happinessAtTile(const CityMap &map, const RoadNetwork &roads, Coord coord,
+                      const std::vector<ServiceFacility> &facilities,
+                      float wasteHappinessPenalty,
+                      const EntityStore *neighborhoodStore) {
   const float service = serviceCoverageAtTile(roads, coord, facilities);
   const float congestion = localCongestionAtTile(roads, coord);
   const float pollution = std::max(0.0f, std::min(1.0f, map.pollution(coord)));
@@ -200,6 +197,13 @@ float happinessAtTile(
   happiness -= pollution * 0.25f;
   happiness -= congestion * 0.2f;
   happiness -= wasteHappinessPenalty;
+  if (neighborhoodStore) {
+    const auto *building =
+        neighborhoodStore->getBuilding(map.getTile(coord).buildingId);
+    if (building && building->type == BuildingType::Residential) {
+      happiness -= 0.2f * building->crimeRate + 0.2f * building->illnessRate;
+    }
+  }
 
   if (map.zone(coord) == 0) {
     happiness -= 0.1f;
@@ -399,7 +403,8 @@ RGB tileColor(
     return demandColor(demandAtTile(map, roads, coord));
   }
   if (overlayMode == OverlayMode::Happiness) {
-    return happinessColor(happinessAtTile(map, roads, coord, facilities, wasteHappinessPenalty));
+    return happinessColor(happinessAtTile(map, roads, coord, facilities,
+                                          wasteHappinessPenalty, &store));
   }
   if (overlayMode == OverlayMode::RouteHeatmap) {
     return routeHeatColor(routeHeatAtTile(routeHeatByTile, coord));

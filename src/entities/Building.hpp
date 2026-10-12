@@ -16,4 +16,7 @@ struct Building {
   Coord position{0, 0};
   int capacity = 0;
   int occupancy = 0;
+  // Cached neighborhood read-outs; land value consumes them one tick later.
+  float crimeRate = 0.0f;
+  float illnessRate = 0.0f;
 };

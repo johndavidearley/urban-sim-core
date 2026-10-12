@@ -10,13 +10,10 @@ int shortestRoadDistance(const RoadNetwork& roads, Coord start, Coord goal);
 float serviceCoverageAtTile(const RoadNetwork& roads, Coord coord, const std::vector<ServiceFacility>& facilities);
 float localCongestionAtTile(const RoadNetwork& roads, Coord coord);
 float demandAtTile(const CityMap& map, const RoadNetwork& roads, Coord coord);
-float happinessAtTile(
-  const CityMap& map,
-  const RoadNetwork& roads,
-  Coord coord,
-  const std::vector<ServiceFacility>& facilities,
-  float wasteHappinessPenalty
-);
+float happinessAtTile(const CityMap &map, const RoadNetwork &roads, Coord coord,
+                      const std::vector<ServiceFacility> &facilities,
+                      float wasteHappinessPenalty,
+                      const EntityStore *neighborhoodStore = nullptr);
 RGB tileColor(
   const CityMap& map,
   const RoadNetwork& roads,

@@ -29,6 +29,13 @@ struct PlaytestBridge::Inbox {
 Json playtestCapabilities() {
   return {
       {"bridge_version", 1},
+      {"inspection_version", 2},
+      {"features",
+       {{"population_flow", true},
+        {"neighborhood_rates", true},
+        {"utility_supply", true},
+        {"waste_coverage", true},
+        {"deathcare_coverage", true}}},
       {"window_minimize_restore", glfwGetPlatform() != GLFW_PLATFORM_WAYLAND},
       {"build", "UrbanSimCore-0.1.0 " __DATE__ " " __TIME__},
       {"commands",

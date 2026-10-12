@@ -19,6 +19,14 @@ python -m pip install ./playtest
 urban-sim-mcp --executable /absolute/path/to/UrbanSimCore-playtest --artifacts /absolute/path/to/playtest-artifacts
 ```
 
+For a repository checkout, `python -m pip install -e ./playtest` keeps the
+server in sync with source edits. After updating the package or executable,
+restart the MCP client connection and launch a new game; running processes
+keep their loaded code. MCP package 0.2.0 exposes inspection version 2
+(population flow, neighborhood rates and service/supply metrics). Check
+`status.server_version` and `urban-sim://capabilities` to identify your server
+and executable. The bridge protocol remains version 1.
+
 Python 3.10+ is required. The package pins MCP SDK 1.26.0 and Pillow 11.3.0.
 Python is not a CMake build dependency; `URBAN_SIM_BUILD_VISUALIZER=OFF` still
 requires neither graphics dependencies nor Python. Windows multi-configuration
@@ -72,12 +80,13 @@ an isolated renderer check. This is a test override, not a registry repair.
 | `record`, `replay`, `assert_state` | Retain scenarios, replay into fresh processes, assert inspection fields. |
 
 Read `urban-sim://controls` for key names, overlay ordering and action sources.
+`urban-sim://inspection` documents field units, weighting and tick timing.
 `urban-sim://capabilities`, `urban-sim://state`, `urban-sim://artifacts`, and
 `urban-sim://artifact/{relative}` expose read-only evidence. Artifact names in
 the resource template are URL-encoded and restricted to the current run.
 Prompts `exploratory_playtest` and `regression_investigation` provide workflows.
 
-`inspect(section="state")` includes `population_change` with `arrivals`,
+`inspect(section="summary")` includes `population_change` with `arrivals`,
 `departures`, `deaths`, `net`, and `desirability`. These describe the **last
 completed tick**, not the sum of a multi-tick step. Net change equals arrivals
 minus departures minus deaths. Migration uses the previous completed tick's
@@ -86,6 +95,15 @@ Metrics also expose sewage, garbage, recycling, cemetery and crematorium
 coverage, utility capacities/demand/supply ratios, and deathcare backlog.
 Older saves initialize the new lagged inputs to defaults, then update them
 on the first tick; their stored population target does not limit growth.
+
+Facility inspection includes power source, MW capacity and emissions for
+power plants, and `water_supply` capacity for water facilities.
+
+Residential tile and entity inspection expose `crime_rate` and `illness_rate`
+(0–1). HUD/migration use the population-weighted means; empty homes do not
+weight them. Local service strength decreases with road distance within each
+facility's coverage radius. Local read-outs persist in snapshots and affect
+land value on its next refresh. The Happiness overlay includes both rates.
 
 Input coordinates are **logical window pixels**, not framebuffer pixels.
 Screenshot metadata includes both dimensions for DPI scaling. Placement tool
