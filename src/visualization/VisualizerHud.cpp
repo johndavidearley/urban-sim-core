@@ -201,6 +201,17 @@ void drawGameplayHud(
                std::to_string(change.net),
            {175, 205, 235}, 1);
 
+  const auto &freight = liveState.trafficSummary.freight;
+  drawText(renderer, x + 12, y + 270,
+           "TRUCKS " + std::to_string(freight.trucks) + " UNROUTED " +
+               std::to_string(freight.unroutedGoods),
+           {180, 200, 225}, 1);
+  drawText(renderer, x + 12, y + 286,
+           "TRADE GATE " + std::to_string(freight.gate.x) + " " +
+               std::to_string(freight.gate.y) +
+               (freight.gateConnected ? " CONNECTED" : " NO ROAD"),
+           {180, 200, 225}, 1);
+
   const std::array<std::pair<HudAction, const char*>, 6> controls = {{
     {HudAction::TogglePause, paused ? "PLAY" : "PAUSE"},
     {HudAction::Slow, "1X"},
@@ -228,9 +239,10 @@ void drawGameplayHud(
 void drawCompactGameplayHud(DrawList *renderer, int windowWidth, bool paused,
                             uint32_t population, int64_t funds,
                             const std::string &toolLabel,
-                            const PopulationChange &change) {
+                            const PopulationChange &change,
+                            const FreightSummary &freight) {
   constexpr int width = 330;
-  constexpr int height = 64;
+  constexpr int height = 82;
   const int x = windowWidth - width - 12;
   constexpr int y = 12;
   drawFilledRect(renderer, x, y, width, height, {14, 17, 21}, 165);
@@ -245,6 +257,10 @@ void drawCompactGameplayHud(DrawList *renderer, int windowWidth, bool paused,
                std::to_string(change.departures) + " D " +
                std::to_string(change.deaths) + " NET " +
                std::to_string(change.net),
+           {175, 205, 235}, 1);
+  drawText(renderer, x + 10, y + 65,
+           "TRUCKS " + std::to_string(freight.trucks) + " UNROUTED " +
+               std::to_string(freight.unroutedGoods),
            {175, 205, 235}, 1);
 }
 
@@ -478,8 +494,25 @@ void drawTileInspector(
              + "  WATER " + (tile.connectedToWater ? "YES" : "NO"),
            (tile.connectedToPower && tile.connectedToWater) ? RGB{135, 220, 150} : RGB{255, 150, 120}, 1);
   if (tile.hasRoad) {
+    bool arterial = false;
+    float freightLoad = 0.0f;
+    for (Coord delta : {Coord{1, 0}, Coord{-1, 0}, Coord{0, 1}, Coord{0, -1}}) {
+      arterial |=
+          roads.hasRoad(coord, Coord{coord.x + delta.x, coord.y + delta.y}) &&
+          roads.getRoadClass(coord,
+                             Coord{coord.x + delta.x, coord.y + delta.y}) ==
+              RoadClass::Arterial;
+      freightLoad = std::max(
+          freightLoad, roads.getFreightLoad(
+                           coord, Coord{coord.x + delta.x, coord.y + delta.y}));
+    }
+    drawText(renderer, x + 10, y + 111,
+             "TRUCK EDGE LOAD " + std::to_string(static_cast<int>(freightLoad)),
+             {210, 195, 160}, 1);
     drawText(renderer, x + 10, y + 79,
-             "ROAD  CONGEST " + std::to_string(static_cast<int>(localCongestionAtTile(roads, coord) * 100.0f)),
+             std::string(arterial ? "ARTERIAL 40" : "LOCAL 10") + " CONGEST " +
+                 std::to_string(static_cast<int>(
+                     localCongestionAtTile(roads, coord) * 100.0f)),
              {185, 190, 200}, 1);
   }
   if (tile.buildingId != 0) {

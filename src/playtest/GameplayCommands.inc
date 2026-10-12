@@ -86,7 +86,15 @@ if (command == "inspect") {
       }
     return {{"items", items}, {"total", w * h}};
   }
-  if (section == "entities") {
+  if (section == "roads") {
+    for (const auto& edge : roads.getAllEdgeTraffic()) {
+      items.push_back({{"x1", edge.from.x}, {"y1", edge.from.y},
+                       {"x2", edge.to.x}, {"y2", edge.to.y},
+                       {"road_class", edge.roadClass == RoadClass::Arterial ? "arterial" : "local"},
+                       {"capacity", edge.capacity}, {"load", edge.currentLoad},
+                       {"freight_load", edge.freightLoad}, {"congestion", edge.congestion}});
+    }
+  } else if (section == "entities") {
     std::vector<EntityId> ids;
     for (const auto &item : store.getBuildings())
       ids.push_back(item.first);
@@ -309,6 +317,13 @@ if (command == "tool") {
     type = PaletteTool::None;
   else
     throw std::runtime_error("Unknown tool");
+  RoadClass roadClass = selectedRoadClass;
+  if (args.contains("road_class")) {
+    const auto value = args.at("road_class").get<std::string>();
+    if (type != PaletteTool::Road || (value != "local" && value != "arterial"))
+      throw std::runtime_error("Road class must be local or arterial on the road tool");
+    roadClass = value == "arterial" ? RoadClass::Arterial : RoadClass::Local;
+  }
   ZoneType zone = selectedZone;
   ServiceType service = selectedService;
   DistrictArchetype archetype = selectedArchetype;
@@ -328,6 +343,7 @@ if (command == "tool") {
       (type == PaletteTool::None || !map.isValid(start) || !map.isValid(end)))
     throw std::runtime_error("Placement outside map or tool missing");
   activatePaletteTool(type);
+  selectedRoadClass = roadClass;
   selectedZone = zone;
   selectedService = service;
   selectedArchetype = archetype;

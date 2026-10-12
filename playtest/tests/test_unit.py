@@ -83,7 +83,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(await server.list_resources()), 5)
             inspection = await server.read_resource("urban-sim://inspection")
             reference = json.loads(list(inspection)[0].content)
-            self.assertEqual(reference["inspection_version"], 2)
+            self.assertEqual(reference["inspection_version"], 3)
             self.assertIn("summary", reference["sections"])
             self.assertNotIn("state", reference["sections"])
             self.assertEqual(

@@ -882,3 +882,40 @@ TEST(CitySimulatorTests, UtilitiesEnabledConnectsBuiltAreaAndCityStillGrows) {
   EXPECT_TRUE(sawBuilding);
   EXPECT_TRUE(sawFullyConnectedBuilding);
 }
+
+TEST(CitySimulatorTests,
+     FreightDefaultsOnCanBeDisabledAndAutonomousRoadsStayLocal) {
+  const auto run = [](bool enableFreight) {
+    CityMap map({32, 16});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore people;
+    for (int x = 0; x < 24; ++x)
+      roads.buildRoad({x, 8}, {x + 1, 8});
+    for (const auto type : {BuildingType::Residential, BuildingType::Industrial,
+                            BuildingType::Commercial}) {
+      const Coord position{type == BuildingType::Residential  ? 4
+                           : type == BuildingType::Industrial ? 6
+                                                              : 20,
+                           7};
+      const auto id = store.createBuilding(type, position, 1000);
+      map.getTile(position).buildingId = id;
+      map.setZone(position, static_cast<int>(type));
+    }
+    PopulationSystem::allocate(store, people, 500, 42);
+    SimOptions options;
+    options.buildChance = 0.0f;
+    options.zoneBatchPerTick = 0;
+    options.enableFreight = enableFreight;
+    const auto result =
+        CitySimulator::run(map, roads, store, people, 42, 2, options);
+    for (const auto &edge : roads.getAllEdgeTraffic()) {
+      EXPECT_EQ(edge.roadClass, RoadClass::Local);
+      EXPECT_FLOAT_EQ(edge.capacity, 10.0f);
+    }
+    return result.rows.front();
+  };
+  EXPECT_TRUE(SimOptions{}.enableFreight);
+  EXPECT_GT(run(true).freightTrucks, 0u);
+  EXPECT_EQ(run(false).freightTrucks, 0u);
+}

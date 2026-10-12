@@ -22,8 +22,8 @@ urban-sim-mcp --executable /absolute/path/to/UrbanSimCore-playtest --artifacts /
 For a repository checkout, `python -m pip install -e ./playtest` keeps the
 server in sync with source edits. After updating the package or executable,
 restart the MCP client connection and launch a new game; running processes
-keep their loaded code. MCP package 0.2.0 exposes inspection version 2
-(population flow, neighborhood rates and service/supply metrics). Check
+keep their loaded code. MCP package 0.3.0 exposes inspection version 3
+(population flow, neighborhood rates, freight, road classes and service/supply metrics). Check
 `status.server_version` and `urban-sim://capabilities` to identify your server
 and executable. The bridge protocol remains version 1.
 
@@ -73,7 +73,7 @@ an isolated renderer check. This is a test override, not a registry repair.
 | `time` | Explicit 1–100 ticks, pause, speed, deterministic/realtime mode. |
 | `tool` | Select/apply road, zoning, demolition, services, districts; district archetype/budget policies and deletion. |
 | `view` | Eight overlays, both projections, camera, focus, HUD and gameplay toggles. |
-| `inspect` | Summary/UI, <=512 tiles, or paginated entities/facilities/districts/routes. |
+| `inspect` | Summary/UI, <=512 tiles, or paginated entities/facilities/districts/routes/roads. |
 | `coordinates` | Tile-center to screen and screen to tile under the active projection. |
 | `screenshot` | Next completed Vulkan frame as PNG image content plus metadata. |
 | `diagnostics` | Last 1–500 log lines and renderer validation/memory/frame data. |
@@ -95,6 +95,21 @@ Metrics also expose sewage, garbage, recycling, cemetery and crematorium
 coverage, utility capacities/demand/supply ratios, and deathcare backlog.
 Older saves initialize the new lagged inputs to defaults, then update them
 on the first tick; their stored population target does not limit growth.
+
+M21 adds `inspect(section="roads")`, with endpoint tiles, `road_class`,
+`capacity`, combined `load`, truck-only `freight_load` and `congestion`.
+`tool(action="apply", name="road", road_class="arterial", x1=..., y1=...,
+x2=..., y2=...)` upgrades existing local segments or builds new arterials
+through normal costs. A toggles class while the road tool is active; input
+and semantic actions share the same plan/build path.
+
+`state.metrics` exposes `freight_trucks`, `freight_routes`,
+`freight_domestic_goods`, `freight_imported_goods`, `freight_exported_goods`,
+`freight_unrouted_goods`, and `freight_gate` (`x`, `y`, `connected`). These
+measure the last traffic pass, not a batch's summed ticks. Freight batches
+32 goods per truck, preserves existing commuter loads, and uses the west
+edge gate `(0, height/2)`. Connect it by road to route external trade.
+Industrial-only cities export surplus; commercial-only cities import goods.
 
 Facility inspection includes power source, MW capacity and emissions for
 power plants, and `water_supply` capacity for water facilities.

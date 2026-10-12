@@ -68,6 +68,39 @@ void RoadNetwork::buildRoad(glm::ivec2 from, glm::ivec2 to) {
   }
 }
 
+bool RoadNetwork::setRoadClass(glm::ivec2 from, glm::ivec2 to,
+                               RoadClass roadClass) {
+  if (roadClass != RoadClass::Local && roadClass != RoadClass::Arterial)
+    return false;
+  auto it = edges.find(makeEdgeKey(from, to));
+  if (it == edges.end())
+    return false;
+  it->second.roadClass = roadClass;
+  it->second.capacity = roadClass == RoadClass::Arterial ? 40.0f : 10.0f;
+  return true;
+}
+RoadClass RoadNetwork::getRoadClass(glm::ivec2 from, glm::ivec2 to) const {
+  auto it = edges.find(makeEdgeKey(from, to));
+  return it == edges.end() ? RoadClass::Local : it->second.roadClass;
+}
+float RoadNetwork::getEdgeCapacity(glm::ivec2 from, glm::ivec2 to) const {
+  auto it = edges.find(makeEdgeKey(from, to));
+  return it == edges.end() ? 0.0f : it->second.capacity;
+}
+float RoadNetwork::getFreightLoad(glm::ivec2 from, glm::ivec2 to) const {
+  auto it = edges.find(makeEdgeKey(from, to));
+  return it == edges.end() ? 0.0f : it->second.freightLoad;
+}
+
+void RoadNetwork::addFreightLoad(glm::ivec2 from, glm::ivec2 to, float load) {
+  auto it = edges.find(makeEdgeKey(from, to));
+  if (it == edges.end())
+    return;
+  load = std::max(0.0f, load);
+  it->second.freightLoad += load;
+  it->second.currentLoad += load;
+}
+
 void RoadNetwork::removeRoad(glm::ivec2 from, glm::ivec2 to) {
   if (!isValidCoord(from) || !isValidCoord(to)) {
     return;
@@ -262,6 +295,7 @@ std::vector<glm::ivec2> RoadNetwork::getAllRoadTiles() const {
 void RoadNetwork::resetCongestion() {
   for (auto& [key, edge] : edges) {
     edge.currentLoad = 0.0f;
+    edge.freightLoad = 0.0f;
   }
 }
 
@@ -276,6 +310,8 @@ std::vector<RoadNetwork::EdgeTrafficInfo> RoadNetwork::getAllEdgeTraffic() const
     info.congestion = edge.getCongestion();
     info.currentLoad = edge.currentLoad;
     info.capacity = edge.capacity;
+    info.roadClass = edge.roadClass;
+    info.freightLoad = edge.freightLoad;
     traffic.push_back(info);
   }
 

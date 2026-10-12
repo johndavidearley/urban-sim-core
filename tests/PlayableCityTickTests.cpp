@@ -588,6 +588,10 @@ TEST(PlayableCityTickTests,
   EXPECT_EQ(checkpoint,
             ReplayVerifier::calculateChecksum(resumedMap, resumedRoads,
                                               resumedStore, resumedPeople));
+  EXPECT_FLOAT_EQ(state.trafficSummary.averageEdgeCongestion,
+                  resumed.trafficSummary.averageEdgeCongestion);
+  EXPECT_FLOAT_EQ(state.trafficSummary.maxEdgeCongestion,
+                  resumed.trafficSummary.maxEdgeCongestion);
   int64_t resumedFunds = loaded.funds;
   for (int i = 0; i < 30; ++i) {
     playableCityTick(map, roads, store, people, facilities, state, funds,

@@ -586,6 +586,17 @@ From there, expand into traffic micro-simulation, utilities, services, and polic
 - [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) — Historical implementation journal
 - [NEXT_STEPS.md](docs/NEXT_STEPS.md) — Historical backlog sequence
 
+### Freight and arterial roads
+
+Goods now add batched freight to commuter congestion. CLI
+`--simulate-no-freight` provides a comparison run. The trade gate is at
+`(0, map height/2)`; disconnected cargo appears as unrouted goods in the HUD,
+CSV and MCP inspection. While the road tool is active, **A** switches local
+(capacity 10) and arterial (40) roads. Drag to build or upgrade: $100 per new
+local segment, $400 per new arterial, $300 per local segment upgraded.
+Road classes survive save/load. See [MCP playtesting](docs/PLAYTESTING.md) for
+freight metrics and road inspection.
+
 ## License
 
 MIT

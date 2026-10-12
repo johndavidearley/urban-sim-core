@@ -38,6 +38,8 @@ struct RoadNodeIdHash {
   }
 };
 
+enum class RoadClass : int { Local = 0, Arterial = 1 };
+
 class RoadNetwork {
 public:
   struct Edge {
@@ -45,8 +47,10 @@ public:
     RoadNodeId to;
     float length;      // Always 1.0 for grid movement
     float capacity;    // Max vehicles per tick
-    float currentLoad; // Current vehicles using this edge
-    
+    float currentLoad; // Commuters and freight vehicles using this edge
+    RoadClass roadClass = RoadClass::Local;
+    float freightLoad = 0.0f;
+
     float getCongestion() const {
       if (capacity == 0) return 0.0f;
       return std::min(1.0f, currentLoad / capacity);
@@ -89,6 +93,11 @@ public:
   
   // Road management
   void buildRoad(glm::ivec2 from, glm::ivec2 to);
+  bool setRoadClass(glm::ivec2 from, glm::ivec2 to, RoadClass roadClass);
+  RoadClass getRoadClass(glm::ivec2 from, glm::ivec2 to) const;
+  float getEdgeCapacity(glm::ivec2 from, glm::ivec2 to) const;
+  float getFreightLoad(glm::ivec2 from, glm::ivec2 to) const;
+  void addFreightLoad(glm::ivec2 from, glm::ivec2 to, float load);
   void removeRoad(glm::ivec2 from, glm::ivec2 to);
   void clear();
   bool hasRoad(glm::ivec2 from, glm::ivec2 to) const;
@@ -141,6 +150,8 @@ public:
     float congestion;
     float currentLoad;
     float capacity;
+    RoadClass roadClass = RoadClass::Local;
+    float freightLoad = 0.0f;
   };
   std::vector<EdgeTrafficInfo> getAllEdgeTraffic() const;
   

@@ -41,6 +41,7 @@ enum class Key {
   Num6,
   Num7,
   Num8,
+  A,
   B,
   C,
   D,

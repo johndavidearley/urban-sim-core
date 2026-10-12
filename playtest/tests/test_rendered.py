@@ -517,6 +517,112 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         )
         await s.screenshot("neighborhood-happiness-inspector")
 
+    async def test_freight_gate_arterial_upgrade_and_checkpoint(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request(
+            "tool",
+            {"action": "apply", "name": "road", "x1": 0, "y1": 16, "x2": 24, "y2": 16},
+        )
+        for service, y in (("power", 15), ("water", 17)):
+            await s.request(
+                "tool",
+                {
+                    "action": "apply",
+                    "name": "service",
+                    "service": service,
+                    "x1": 12,
+                    "y1": y,
+                },
+            )
+        for zone, x1, x2, y in (
+            ("residential", 2, 8, 15),
+            ("commercial", 16, 22, 17),
+            ("industrial", 16, 22, 15),
+        ):
+            await s.request(
+                "tool",
+                {
+                    "action": "apply",
+                    "name": "zone",
+                    "zone": zone,
+                    "x1": x1,
+                    "y1": y,
+                    "x2": x2,
+                    "y2": y,
+                },
+            )
+        for _ in range(6):
+            await s.request("time", {"action": "step", "ticks": 40})
+            if s.last_state["metrics"]["freight_trucks"] > 0:
+                break
+        self.assertGreater(s.last_state["metrics"]["freight_trucks"], 0)
+        self.assertTrue(s.last_state["metrics"]["freight_gate"]["connected"])
+
+        def gate_edge(result):
+            return next(e for e in result["items"] if e["x1"] == 0 and e["y1"] == 16)
+
+        before = gate_edge(await s.request("inspect", {"section": "roads"}))
+        self.assertGreater(before["freight_load"], 0)
+        self.assertLess(before["load"], 40)
+        cash = s.last_state["funds"]
+        await s.request(
+            "tool", {"action": "select", "name": "road", "road_class": "local"}
+        )
+        await s.request("input", {"events": [{"type": "key", "key": "A"}]})
+        self.assertEqual(s.last_state["tools"]["road_class"], "arterial")
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request(
+            "view", {"action": "camera", "tile_pixels": 40, "view_x": 0, "view_y": 10}
+        )
+        start = await s.request(
+            "coordinates", {"direction": "tile_to_screen", "x": 0, "y": 16}
+        )
+        end = await s.request(
+            "coordinates", {"direction": "tile_to_screen", "x": 2, "y": 16}
+        )
+        await s.request(
+            "input",
+            {
+                "events": [
+                    {"type": "down", "x": start["x"], "y": start["y"]},
+                    {"type": "move", "x": end["x"], "y": end["y"]},
+                    {"type": "up", "x": end["x"], "y": end["y"]},
+                ]
+            },
+        )
+        after = gate_edge(await s.request("inspect", {"section": "roads"}))
+        self.assertEqual(s.last_state["funds"], cash - 600)
+        self.assertEqual(after["road_class"], "arterial")
+        self.assertEqual(after["capacity"], 40)
+        self.assertEqual(after["freight_load"], before["freight_load"])
+        self.assertLess(after["congestion"], before["congestion"])
+        await s.city("save")
+        await s.request("time", {"action": "step", "ticks": 5})
+        expected = s.last_state.copy()
+        await s.city("load")
+        loaded = gate_edge(await s.request("inspect", {"section": "roads"}))
+        self.assertEqual(loaded["road_class"], "arterial")
+        await s.request("time", {"action": "step", "ticks": 5})
+        for field in ("population", "funds", "tick", "population_change"):
+            self.assertEqual(s.last_state[field], expected[field], field)
+        for field in (
+            "freight_trucks",
+            "freight_domestic_goods",
+            "freight_exported_goods",
+            "freight_imported_goods",
+            "freight_unrouted_goods",
+        ):
+            self.assertEqual(
+                s.last_state["metrics"][field], expected["metrics"][field], field
+            )
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request(
+            "view", {"action": "camera", "tile_pixels": 40, "view_x": 0, "view_y": 10}
+        )
+        await s.request("view", {"action": "overlay", "overlay": 4})
+        await s.screenshot("freight-arterial-congestion")
+
     async def test_sdk_client_and_disconnect_cleanup(self):
         # Stop the fixture game so this test owns only the game launched through MCP.
         await self.session.stop()
@@ -543,13 +649,15 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(launch.isError)
                 data = launch.structuredContent
                 pid = data["pid"]
-                self.assertEqual(data["capabilities"]["inspection_version"], 2)
+                self.assertEqual(data["capabilities"]["inspection_version"], 3)
                 self.assertTrue(data["capabilities"]["features"]["neighborhood_rates"])
+                self.assertTrue(data["capabilities"]["features"]["freight"])
+                self.assertTrue(data["capabilities"]["features"]["road_classes"])
                 status = await client.call_tool("status", {})
-                self.assertEqual(status.structuredContent["server_version"], "0.2.0")
+                self.assertEqual(status.structuredContent["server_version"], "0.3.0")
                 reference = await client.read_resource("urban-sim://inspection")
                 self.assertEqual(
-                    json.loads(reference.contents[0].text)["inspection_version"], 2
+                    json.loads(reference.contents[0].text)["inspection_version"], 3
                 )
 
                 await client.call_tool("city", {"action": "new", "size": 32})
@@ -635,6 +743,28 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     tile.structuredContent["items"][0]["illness_rate"],
                     homes[0]["illness_rate"],
+                )
+                upgraded = await client.call_tool(
+                    "tool",
+                    {
+                        "action": "apply",
+                        "name": "road",
+                        "road_class": "arterial",
+                        "x1": 6,
+                        "y1": 12,
+                        "x2": 10,
+                        "y2": 12,
+                    },
+                )
+                self.assertFalse(upgraded.isError)
+                edges = await client.call_tool("inspect", {"section": "roads"})
+                self.assertFalse(edges.isError)
+                self.assertTrue(edges.structuredContent["items"])
+                self.assertTrue(
+                    all(
+                        e["road_class"] == "arterial" and e["capacity"] == 40
+                        for e in edges.structuredContent["items"]
+                    )
                 )
                 wrong_section = await client.call_tool("inspect", {"section": "state"})
                 self.assertTrue(wrong_section.isError)

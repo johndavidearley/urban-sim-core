@@ -389,3 +389,54 @@ TEST(SaveLoadSystemTests,
             "building neighborhood rates are invalid");
   std::filesystem::remove(path);
 }
+
+TEST(SaveLoadSystemTests,
+     ArterialAndFreightLoadsSurviveCheckpointAndLegacyRoadsStayLocal) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore people;
+  roads.buildRoad({1, 4}, {2, 4});
+  roads.setRoadClass({1, 4}, {2, 4}, RoadClass::Arterial);
+  roads.updateCongestion({1, 4}, {2, 4}, 7.0f);
+  roads.addFreightLoad({1, 4}, {2, 4}, 3.0f);
+  const auto path = std::filesystem::temp_directory_path() /
+                    "urban_road_class_checkpoint.json";
+  ASSERT_TRUE(
+      SaveLoadSystem::saveToFile(path.string(), map, roads, store, people));
+  CitySnapshot snapshot;
+  SnapshotLoadDiagnostics diagnostics;
+  ASSERT_TRUE(SaveLoadSystem::loadSnapshotFromFile(path.string(), snapshot,
+                                                   &diagnostics));
+  CityMap loadedMap({8, 8});
+  RoadNetwork loadedRoads(loadedMap);
+  ASSERT_TRUE(SaveLoadSystem::applySnapshot(snapshot, loadedMap, loadedRoads,
+                                            store, people));
+  EXPECT_EQ(loadedRoads.getRoadClass({1, 4}, {2, 4}), RoadClass::Arterial);
+  EXPECT_FLOAT_EQ(loadedRoads.getEdgeCapacity({1, 4}, {2, 4}), 40.0f);
+  EXPECT_FLOAT_EQ(loadedRoads.getFreightLoad({1, 4}, {2, 4}), 3.0f);
+  EXPECT_FLOAT_EQ(loadedRoads.getCongestion({1, 4}, {2, 4}), 0.25f);
+  json root;
+  {
+    std::ifstream input(path);
+    input >> root;
+  }
+  root["roads"][0].erase("roadClass");
+  root["roads"][0].erase("freightLoad");
+  {
+    std::ofstream output(path);
+    output << root;
+  }
+  ASSERT_TRUE(SaveLoadSystem::loadSnapshotFromFile(path.string(), snapshot,
+                                                   &diagnostics));
+  EXPECT_EQ(snapshot.roads[0].roadClass, RoadClass::Local);
+  EXPECT_FLOAT_EQ(snapshot.roads[0].freightLoad, 0.0f);
+  root["roads"][0]["roadClass"] = 9;
+  {
+    std::ofstream output(path);
+    output << root;
+  }
+  EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(path.string(), snapshot,
+                                                    &diagnostics));
+  std::filesystem::remove(path);
+}

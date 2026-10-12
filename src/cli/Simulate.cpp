@@ -22,17 +22,22 @@ namespace {
 volatile sig_atomic_t g_simulationStop = 0;
 void onSigInt(int) { g_simulationStop = 1; }
 
-static const char* kCSVHeader =
-  "tick,demand_residential,demand_commercial,demand_industrial,demand_office,"
-  "population,employed,residential_buildings,commercial_buildings,industrial_buildings,office_buildings,"
-  "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
-  "service_coverage,sanitation_coverage,service_facilities,avg_land_value,trade_balance,inflation_multiplier,"
-  "transit_routes,transit_bus_routes,transit_rail_routes,transit_ridership,transit_demand,transit_modal_share,"
-  "active_fires,buildings_lost_to_fire,crime_rate,illness_rate,"
-  "earthquake_occurred,flood_occurred,buildings_lost_to_disaster,"
-  "waste_collection_rate,waste_uncollected,waste_pollution_penalty,"
-  "deaths_this_tick,deathcare_backlog,deathcare_happiness_penalty,"
-  "power_supply_ratio,water_supply_ratio\n";
+static const char *kCSVHeader =
+    "tick,demand_residential,demand_commercial,demand_industrial,demand_office,"
+    "population,employed,residential_buildings,commercial_buildings,industrial_"
+    "buildings,office_buildings,"
+    "road_tiles,budget_balance,traffic_congestion,avg_pollution,"
+    "service_coverage,sanitation_coverage,service_facilities,avg_land_value,"
+    "trade_balance,inflation_multiplier,"
+    "transit_routes,transit_bus_routes,transit_rail_routes,transit_ridership,"
+    "transit_demand,transit_modal_share,"
+    "active_fires,buildings_lost_to_fire,crime_rate,illness_rate,"
+    "earthquake_occurred,flood_occurred,buildings_lost_to_disaster,"
+    "waste_collection_rate,waste_uncollected,waste_pollution_penalty,"
+    "deaths_this_tick,deathcare_backlog,deathcare_happiness_penalty,"
+    "power_supply_ratio,water_supply_ratio,freight_trucks,freight_domestic_"
+    "goods,freight_imported_goods,freight_exported_goods,freight_unrouted_"
+    "goods\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -53,26 +58,30 @@ void printRow(const SimTickMetrics& row) {
 }
 
 void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
-  out << row.tick << ","
-      << std::fixed << std::setprecision(4)
-      << row.demandResidential << "," << row.demandCommercial << "," << row.demandIndustrial << ","
-      << row.demandOffice << ","
+  out << row.tick << "," << std::fixed << std::setprecision(4)
+      << row.demandResidential << "," << row.demandCommercial << ","
+      << row.demandIndustrial << "," << row.demandOffice << ","
       << row.population << "," << row.employed << ","
-      << row.residentialBuildings << "," << row.commercialBuildings << "," << row.industrialBuildings << ","
-      << row.officeBuildings << ","
+      << row.residentialBuildings << "," << row.commercialBuildings << ","
+      << row.industrialBuildings << "," << row.officeBuildings << ","
       << row.roadTiles << "," << row.budgetBalance << ","
       << row.trafficCongestion << "," << row.avgPollution << ","
       << row.serviceCoverage << "," << row.sanitationCoverage << ","
       << row.serviceFacilities << "," << row.avgLandValue << ","
       << row.tradeBalance << "," << row.inflationMultiplier << ","
-      << row.transitRoutes << "," << row.transitBusRoutes << "," << row.transitRailRoutes << ","
-      << row.transitRidership << "," << row.transitDemand << ","
-      << row.transitModalShare << ","
-      << row.activeFires << "," << row.buildingsLostToFire << "," << row.crimeRate << "," << row.illnessRate << ","
-      << (row.earthquakeOccurred ? 1 : 0) << "," << (row.floodOccurred ? 1 : 0) << "," << row.buildingsLostToDisaster << ","
-      << row.wasteCollectionRate << "," << row.wasteUncollected << "," << row.wastePollutionPenalty << ","
-      << row.deathsThisTick << "," << row.deathcareBacklog << "," << row.deathcareHappinessPenalty << ","
-      << row.powerSupplyRatio << "," << row.waterSupplyRatio << "\n";
+      << row.transitRoutes << "," << row.transitBusRoutes << ","
+      << row.transitRailRoutes << "," << row.transitRidership << ","
+      << row.transitDemand << "," << row.transitModalShare << ","
+      << row.activeFires << "," << row.buildingsLostToFire << ","
+      << row.crimeRate << "," << row.illnessRate << ","
+      << (row.earthquakeOccurred ? 1 : 0) << "," << (row.floodOccurred ? 1 : 0)
+      << "," << row.buildingsLostToDisaster << "," << row.wasteCollectionRate
+      << "," << row.wasteUncollected << "," << row.wastePollutionPenalty << ","
+      << row.deathsThisTick << "," << row.deathcareBacklog << ","
+      << row.deathcareHappinessPenalty << "," << row.powerSupplyRatio << ","
+      << row.waterSupplyRatio << "," << row.freightTrucks << ","
+      << row.freightDomesticGoods << "," << row.freightImportedGoods << ","
+      << row.freightExportedGoods << "," << row.freightUnroutedGoods << "\n";
 }
 
 bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
@@ -156,29 +165,17 @@ bool writeSimulationReportCSV(const std::string& path, const std::vector<SimTick
 }
 
 int runCitySimulation(
-  int mapSize,
-  uint32_t seed,
-  int ticks,
-  bool generateTerrain,
-  float waterFraction,
-  bool runTraffic,
-  const std::string& reportPath,
-  int gridSpacing,
-  double ticksPerSecond,
-  int trafficInterval,
-  int serviceInterval,
-  int populationInterval,
-  int landValueInterval,
-  float inflationRate,
-  bool enableTransit,
-  const std::vector<SimulateDistrictRequest>& districtRequests,
-  const std::vector<SimulateDistrictArchetypeRequest>& districtArchetypeRequests,
-  bool enableDisasters,
-  float fireRiskMultiplier,
-  float earthquakeRiskMultiplier,
-  float floodRiskMultiplier,
-  bool enableUtilities
-) {
+    int mapSize, uint32_t seed, int ticks, bool generateTerrain,
+    float waterFraction, bool runTraffic, const std::string &reportPath,
+    int gridSpacing, double ticksPerSecond, int trafficInterval,
+    int serviceInterval, int populationInterval, int landValueInterval,
+    float inflationRate, bool enableTransit,
+    const std::vector<SimulateDistrictRequest> &districtRequests,
+    const std::vector<SimulateDistrictArchetypeRequest>
+        &districtArchetypeRequests,
+    bool enableDisasters, float fireRiskMultiplier,
+    float earthquakeRiskMultiplier, float floodRiskMultiplier,
+    bool enableUtilities, bool enableFreight) {
   const bool infinite = (ticks < 0);
   const float sideKm = tileToKm(mapSize);
   const float areaKm2 = mapAreaKm2(mapSize, mapSize);
@@ -221,6 +218,7 @@ int runCitySimulation(
   options.landValueInterval = std::max(1, landValueInterval);
   options.inflationRatePerTick = inflationRate;
   options.enableTransit = enableTransit;
+  options.enableFreight = enableFreight;
   options.enableDisasters = enableDisasters;
   options.fireParams.baseIgnitionChance *= std::max(0.0f, fireRiskMultiplier);
   options.disasterParams.earthquakeChancePerTick *= std::max(0.0f, earthquakeRiskMultiplier);
@@ -273,30 +271,38 @@ int runCitySimulation(
     if (!result.rows.empty()) {
       const SimTickMetrics& last = result.rows.back();
       std::cout << "\nFinal city: population=" << last.population
-                << " employed=" << last.employed
-                << " buildings=" << (last.residentialBuildings + last.commercialBuildings +
-                                     last.industrialBuildings + last.officeBuildings)
+                << " employed=" << last.employed << " buildings="
+                << (last.residentialBuildings + last.commercialBuildings +
+                    last.industrialBuildings + last.officeBuildings)
                 << " (R=" << last.residentialBuildings
                 << " C=" << last.commercialBuildings
                 << " I=" << last.industrialBuildings
                 << " O=" << last.officeBuildings << ")"
                 << " roadTiles=" << last.roadTiles
-                << " residentialPollution=" << std::fixed << std::setprecision(2) << last.avgPollution
-                << " serviceCoverage=" << last.serviceCoverage
-                << " (" << last.serviceFacilities << " facilities)"
+                << " residentialPollution=" << std::fixed
+                << std::setprecision(2) << last.avgPollution
+                << " serviceCoverage=" << last.serviceCoverage << " ("
+                << last.serviceFacilities << " facilities)"
                 << " avgLandValue=" << std::setprecision(1) << last.avgLandValue
                 << " tradeBalance=" << last.tradeBalance
-                << " inflationMultiplier=" << std::setprecision(3) << last.inflationMultiplier
+                << " inflationMultiplier=" << std::setprecision(3)
+                << last.inflationMultiplier
+                << " freightTrucks=" << last.freightTrucks
+                << " freightUnroutedGoods=" << last.freightUnroutedGoods
                 << " transitRoutes=" << last.transitRoutes
-                << " (bus=" << last.transitBusRoutes << " rail=" << last.transitRailRoutes << ")"
+                << " (bus=" << last.transitBusRoutes
+                << " rail=" << last.transitRailRoutes << ")"
                 << " transitRidership=" << last.transitRidership
-                << " transitModalShare=" << std::setprecision(1) << (last.transitModalShare * 100.0f) << "%"
+                << " transitModalShare=" << std::setprecision(1)
+                << (last.transitModalShare * 100.0f) << "%"
                 << " activeFires=" << last.activeFires
                 << " buildingsLostToFire=" << last.buildingsLostToFire
-                << " crimeRate=" << std::setprecision(1) << (last.crimeRate * 100.0f) << "%"
+                << " crimeRate=" << std::setprecision(1)
+                << (last.crimeRate * 100.0f) << "%"
                 << " illnessRate=" << (last.illnessRate * 100.0f) << "%"
                 << " buildingsLostToDisaster=" << last.buildingsLostToDisaster
-                << " powerSupply=" << std::setprecision(0) << (last.powerSupplyRatio * 100.0f) << "%"
+                << " powerSupply=" << std::setprecision(0)
+                << (last.powerSupplyRatio * 100.0f) << "%"
                 << " waterSupply=" << (last.waterSupplyRatio * 100.0f) << "%\n";
       std::cout << "\n" << MetricsSystem::createCitySummaryReport(result.finalMetrics);
     }
@@ -372,29 +378,39 @@ int runCitySimulation(
     if (lastRow.tick % printEvery != 0) {
       printRow(lastRow);
     }
-    std::cout << "\nStopped at tick " << lastRow.tick << ": population=" << lastRow.population
-              << " employed=" << lastRow.employed
-              << " buildings=" << (lastRow.residentialBuildings + lastRow.commercialBuildings +
-                                   lastRow.industrialBuildings + lastRow.officeBuildings)
+    std::cout << "\nStopped at tick " << lastRow.tick
+              << ": population=" << lastRow.population
+              << " employed=" << lastRow.employed << " buildings="
+              << (lastRow.residentialBuildings + lastRow.commercialBuildings +
+                  lastRow.industrialBuildings + lastRow.officeBuildings)
               << " (R=" << lastRow.residentialBuildings
               << " C=" << lastRow.commercialBuildings
               << " I=" << lastRow.industrialBuildings
               << " O=" << lastRow.officeBuildings << ")"
               << " roadTiles=" << lastRow.roadTiles
-              << " serviceCoverage=" << std::fixed << std::setprecision(2) << lastRow.serviceCoverage
-              << " (" << lastRow.serviceFacilities << " facilities)"
-              << " avgLandValue=" << std::setprecision(1) << lastRow.avgLandValue
+              << " serviceCoverage=" << std::fixed << std::setprecision(2)
+              << lastRow.serviceCoverage << " (" << lastRow.serviceFacilities
+              << " facilities)"
+              << " avgLandValue=" << std::setprecision(1)
+              << lastRow.avgLandValue
               << " tradeBalance=" << lastRow.tradeBalance
-              << " inflationMultiplier=" << std::setprecision(3) << lastRow.inflationMultiplier
+              << " inflationMultiplier=" << std::setprecision(3)
+              << lastRow.inflationMultiplier
+              << " freightTrucks=" << lastRow.freightTrucks
+              << " freightUnroutedGoods=" << lastRow.freightUnroutedGoods
               << " transitRoutes=" << lastRow.transitRoutes
-              << " (bus=" << lastRow.transitBusRoutes << " rail=" << lastRow.transitRailRoutes << ")"
+              << " (bus=" << lastRow.transitBusRoutes
+              << " rail=" << lastRow.transitRailRoutes << ")"
               << " transitRidership=" << lastRow.transitRidership
-              << " transitModalShare=" << std::setprecision(1) << (lastRow.transitModalShare * 100.0f) << "%"
+              << " transitModalShare=" << std::setprecision(1)
+              << (lastRow.transitModalShare * 100.0f) << "%"
               << " activeFires=" << lastRow.activeFires
               << " buildingsLostToFire=" << lastRow.buildingsLostToFire
-              << " crimeRate=" << std::setprecision(1) << (lastRow.crimeRate * 100.0f) << "%"
+              << " crimeRate=" << std::setprecision(1)
+              << (lastRow.crimeRate * 100.0f) << "%"
               << " illnessRate=" << (lastRow.illnessRate * 100.0f) << "%"
-              << " buildingsLostToDisaster=" << lastRow.buildingsLostToDisaster << "\n";
+              << " buildingsLostToDisaster=" << lastRow.buildingsLostToDisaster
+              << "\n";
   }
 
   if (!reportPath.empty()) {
@@ -408,27 +424,16 @@ int runCitySimulation(
   return 0;
 }
 
-int runCitySimulationBenchmark(
-  int mapSize,
-  uint32_t seed,
-  int ticks,
-  bool generateTerrain,
-  float waterFraction,
-  bool runTraffic,
-  int trials,
-  int gridSpacing,
-  int trafficInterval,
-  int serviceInterval,
-  int populationInterval,
-  int landValueInterval,
-  float inflationRate,
-  bool enableTransit,
-  bool enableDisasters,
-  float fireRiskMultiplier,
-  float earthquakeRiskMultiplier,
-  float floodRiskMultiplier,
-  bool enableUtilities
-) {
+int runCitySimulationBenchmark(int mapSize, uint32_t seed, int ticks,
+                               bool generateTerrain, float waterFraction,
+                               bool runTraffic, int trials, int gridSpacing,
+                               int trafficInterval, int serviceInterval,
+                               int populationInterval, int landValueInterval,
+                               float inflationRate, bool enableTransit,
+                               bool enableDisasters, float fireRiskMultiplier,
+                               float earthquakeRiskMultiplier,
+                               float floodRiskMultiplier, bool enableUtilities,
+                               bool enableFreight) {
   const int trialCount = std::max(1, trials);
   if (ticks < 0) {
     std::cerr << "Error: --simulate-benchmark-trials requires finite --simulate ticks (no infinite-mode benchmarking)\n";
@@ -465,6 +470,7 @@ int runCitySimulationBenchmark(
     options.landValueInterval = std::max(1, landValueInterval);
     options.inflationRatePerTick = inflationRate;
     options.enableTransit = enableTransit;
+    options.enableFreight = enableFreight;
     options.enableDisasters = enableDisasters;
     options.fireParams.baseIgnitionChance *= std::max(0.0f, fireRiskMultiplier);
     options.disasterParams.earthquakeChancePerTick *= std::max(0.0f, earthquakeRiskMultiplier);

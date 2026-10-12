@@ -90,6 +90,7 @@ void printHelp() {
             << "  --simulate-no-traffic     Skip the commute phase during --simulate\n"
             << "  --simulate-land-value-interval N  Recompute land value every N ticks (default 1)\n"
             << "  --simulate-inflation-rate F  Compounding per-tick inflation on costs/trade prices, not tax revenue (default 0)\n"
+            << "  --simulate-no-freight     Disable truck loads during --simulate (on by default)\n"
             << "  --simulate-no-transit     Disable auto-placed bus routes during --simulate (on by default)\n"
             << "  --simulate-district NAME X1 Y1 X2 Y2  Define a district (repeatable) whose service-budget fulfillment shapes growth pressure during --simulate\n"
             << "  --simulate-district-archetype NAME ARCHETYPE  Apply GENERAL|INDUSTRIAL|TECHHUB ordinance/priority preset to a --simulate-district by name\n"

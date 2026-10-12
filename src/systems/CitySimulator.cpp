@@ -107,6 +107,7 @@ SimResult CitySimulator::run(
   ServiceCoverageCache coverageCache;
   std::vector<TransitRoute> transitRoutes;
   TransitCoverageCache transitCache;
+  FreightRouteCache freightRouteCache;
   TrafficRouteCache trafficRouteCache;  // topology-only paths, reused across ticks until roads change
   // Growth chance modifiers derived from the *previous* tick's district
   // metrics (one-tick lag, like lastCongestion/lastServiceSatisfaction below)
@@ -262,6 +263,11 @@ SimResult CitySimulator::run(
       TransitOffload offload(transitRoutes, transitCache);
       TransitOffload* offloadPtr = options.enableTransit ? &offload : nullptr;
       traffic = TrafficSystem::simulateCommutes(store, population, roads, tickSeed + 2u, &pool, offloadPtr, &trafficRouteCache);
+      if (options.enableFreight) {
+        traffic.freight =
+            FreightSystem::simulate(map, roads, store, &freightRouteCache);
+        TrafficSystem::refreshCongestion(roads, traffic);
+      }
       result.timings.trafficMs += elapsedMs(t0, Clock::now());
       lastCongestion = traffic.maxEdgeCongestion;
       transitSummary = TransitSystem::summarize(transitRoutes, offload, traffic.commutingPopulation);
@@ -465,6 +471,11 @@ SimResult CitySimulator::run(
     row.avgLandValue = economy.averageLandValue;
     row.tradeBalance = economy.tradeBalance;
     row.inflationMultiplier = economy.inflationMultiplier;
+    row.freightTrucks = traffic.freight.trucks;
+    row.freightDomesticGoods = traffic.freight.domesticGoods;
+    row.freightImportedGoods = traffic.freight.importedGoods;
+    row.freightExportedGoods = traffic.freight.exportedGoods;
+    row.freightUnroutedGoods = traffic.freight.unroutedGoods;
     row.transitRoutes = static_cast<uint32_t>(transitRoutes.size());
     row.transitBusRoutes = transitSummary.busRoutes;
     row.transitRailRoutes = transitSummary.railRoutes;

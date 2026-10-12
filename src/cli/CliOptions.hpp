@@ -51,6 +51,7 @@ struct CliOptions {
   int simulateLandValueInterval = 1;
   float simulateInflationRate = 0.0f;
   bool simulateNoTransit = false;
+  bool simulateNoFreight = false;
   std::vector<SimulateDistrictRequest> simulateDistrictRequests;  // name, x1, y1, x2, y2
   std::vector<SimulateDistrictArchetypeRequest> simulateDistrictArchetypeRequests;  // name, archetype
   bool simulateDisasters = false;

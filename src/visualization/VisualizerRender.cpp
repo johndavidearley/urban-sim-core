@@ -73,16 +73,11 @@ RGB buildingFacade(BuildingType type) {
   }
 }
 
-void drawNormalTileDetail(
-  DrawList* renderer,
-  const CityMap& map,
-  const EntityStore& store,
-  const std::vector<ServiceFacility>& facilities,
-  Coord coord,
-  int x,
-  int y,
-  int size
-) {
+void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
+                          const EntityStore &store,
+                          const std::vector<ServiceFacility> &facilities,
+                          Coord coord, int x, int y, int size,
+                          const RoadNetwork *roads) {
   const Tile& tile = map.getTile(coord);
   const uint32_t variation = visualHash(coord);
 
@@ -126,7 +121,15 @@ void drawNormalTileDetail(
   }
 
   if (tile.hasRoad) {
-    const int roadWidth = std::max(4, size * 3 / 5);
+    bool arterial = false;
+    if (roads)
+      for (Coord delta : {Coord{1, 0}, Coord{-1, 0}, Coord{0, 1}, Coord{0, -1}})
+        arterial |= roads->hasRoad(
+                        coord, Coord{coord.x + delta.x, coord.y + delta.y}) &&
+                    roads->getRoadClass(
+                        coord, Coord{coord.x + delta.x, coord.y + delta.y}) ==
+                        RoadClass::Arterial;
+    const int roadWidth = std::max(4, size * (arterial ? 4 : 3) / 5);
     const int half = roadWidth / 2;
     const int centerX = x + size / 2;
     const int centerY = y + size / 2;
@@ -281,7 +284,14 @@ void drawIsometricTile(
   const ScreenPoint center = projection.tileCenter(coord);
   if (tile.hasRoad) {
     const RGB asphalt{58, 61, 65};
-    const int thickness = std::max(2, width / 6);
+    bool arterial = false;
+    for (Coord delta : {Coord{1, 0}, Coord{-1, 0}, Coord{0, 1}, Coord{0, -1}})
+      arterial |=
+          roads.hasRoad(coord, Coord{coord.x + delta.x, coord.y + delta.y}) &&
+          roads.getRoadClass(coord,
+                             Coord{coord.x + delta.x, coord.y + delta.y}) ==
+              RoadClass::Arterial;
+    const int thickness = std::max(2, width / (arterial ? 4 : 6));
     drawDiamond(renderer, {center.x, center.y - height / 3}, width * 2 / 3,
                 std::max(4, height * 2 / 3), asphalt);
     const std::array<Coord, 4> neighbors = {{{coord.x + 1, coord.y}, {coord.x - 1, coord.y}, {coord.x, coord.y + 1}, {coord.x, coord.y - 1}}};

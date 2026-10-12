@@ -452,20 +452,7 @@ TrafficSummary runCommuteLoop(
     summary.totalCommuteBurden = totalCommuteTime;
   }
 
-  float maxCongestion = 0.0f;
-  float totalCongestion = 0.0f;
-  uint32_t congestionDetected = 0;
-  for (const auto& e : network.getAllEdgeTraffic()) {
-    if (e.congestion > 0.0f) {
-      ++congestionDetected;
-      totalCongestion += e.congestion;
-      maxCongestion = std::max(maxCongestion, e.congestion);
-    }
-  }
-  summary.maxEdgeCongestion = maxCongestion;
-  summary.averageEdgeCongestion = congestionDetected > 0
-    ? totalCongestion / static_cast<float>(congestionDetected) : 0.0f;
-  summary.congestionDetectedEdges = congestionDetected;
+  TrafficSystem::refreshCongestion(network, summary);
   return summary;
 }
 
@@ -487,6 +474,26 @@ TrafficSummary TrafficSystem::simulateCommutes(
     transit,
     routeCache
   );
+}
+
+void TrafficSystem::refreshCongestion(const RoadNetwork &network,
+                                      TrafficSummary &summary) {
+  float maxCongestion = 0.0f;
+  float totalCongestion = 0.0f;
+  uint32_t congestionDetected = 0;
+  for (const auto &e : network.getAllEdgeTraffic()) {
+    if (e.congestion > 0.0f) {
+      ++congestionDetected;
+      totalCongestion += e.congestion;
+      maxCongestion = std::max(maxCongestion, e.congestion);
+    }
+  }
+  summary.maxEdgeCongestion = maxCongestion;
+  summary.averageEdgeCongestion =
+      congestionDetected > 0
+          ? totalCongestion / static_cast<float>(congestionDetected)
+          : 0.0f;
+  summary.congestionDetectedEdges = congestionDetected;
 }
 
 void TrafficSystem::applyToMetrics(const TrafficSummary& summary, CityMetrics& metrics) {

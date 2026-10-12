@@ -81,6 +81,7 @@ struct LiveSimulationState {
   ServiceCoverageSummary serviceSummary;
   ServiceCoverageCache serviceCache;
   TrafficSummary trafficSummary;
+  FreightRouteCache freightRouteCache;
   std::unordered_map<Coord, float, Vec2Hash> routeHeatByTile;
   RouteDiagnosticsFilter routeFilter;
   ZoneDemand demand;

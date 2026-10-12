@@ -40,6 +40,11 @@ struct SimTickMetrics {
   float avgLandValue = 100.0f;  // mean Tile::landValue across zoned tiles
   int64_t tradeBalance = 0;     // goodsProduced - goodsConsumed; positive = exporting
   float inflationMultiplier = 1.0f;  // current price-level index applied to costs (1.0 = base year)
+  uint64_t freightTrucks = 0;
+  int64_t freightDomesticGoods = 0;
+  int64_t freightImportedGoods = 0;
+  int64_t freightExportedGoods = 0;
+  int64_t freightUnroutedGoods = 0;
   uint32_t transitRoutes = 0;        // bus + rail routes currently operating
   uint32_t transitBusRoutes = 0;
   uint32_t transitRailRoutes = 0;
@@ -100,6 +105,7 @@ struct SimOptions {
   int populationInterval = 1;  // run full population allocation every N ticks
   int landValueInterval = 1;   // run land-value recompute every N ticks (its job-access BFS is the costliest per-tick pass; >1 cuts CPU on large road networks)
   float inflationRatePerTick = 0.0f;  // compounding per-tick rate applied to maintenance/trade costs (not tax revenue); 0 = no inflation, matching prior behavior
+  bool enableFreight = true;
   bool enableTransit = true;   // auto-place bus routes and let them offload commuters from the road network
   float transitCapacityMultiplier = 1.0f;  // scales auto-placed routes' vehicleCount/capacityPerVehicle (both bus and rail); 1.0 = unchanged behavior for every existing caller. A policy-experiment lever (see CommutePolicySweep) for "what if transit ran N% more/fewer vehicles at the same coverage".
   int districtInterval = 1;    // re-evaluate district metrics/growth pressure every N ticks (only relevant when districts is non-null)

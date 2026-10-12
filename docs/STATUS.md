@@ -2,9 +2,9 @@
 
 Last verified: October 12, 2026
 
-Priorities updated October 10, 2026. The work queue is Phase 6 (M17–M22)
-in `ROADMAP.md`. Strict `ctest` was re-run that day. Sanitizer jobs were
-not.
+Priorities updated October 12, 2026. The work queue is Phase 6 (M17–M22)
+in `ROADMAP.md`. M21 local verification is recorded below; the most recent
+hosted strict and sanitizer run is commit `c4bd14c` (before M21).
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -28,8 +28,8 @@ implemented. Redevelopment chance follows land value, civic coverage,
 and road congestion. The map draws capacity tier. Playable migration now
 uses the same desirability calculation as the autonomous simulator, removing
 the shrinking fixed population target found during the hour-long playtest.
-M20 (neighborhood crime and illness) is implemented. Next is M21, freight
-and player road upgrades.
+M20 (neighborhood crime and illness) and M21 (freight and player road
+upgrades) are implemented. Next is M22, parks and shared-host gaps.
 
 ### Shared full-sim path (CLI + visualizer)
 
@@ -105,9 +105,36 @@ modes immediately, and checks route totals over ten ticks. A separate case
 asserts no rail at 3,999 residents and one rail at 4,000. The rail threshold
 and production simulation are unchanged by this correction.
 
-All 391 individually discovered macOS CTest cases passed. Linux local checks
-could not finish because exhausted host disk space left Docker storage
-read-only; Linux/Windows and sanitizer hosted checks need a run of the fix.
+All 391 individually discovered macOS CTest cases passed. Subsequent hosted
+run `38269529496` on commit `c4bd14c` passed Linux/macOS/Windows strict,
+ASan/UBSan and TSan. M21 has newer local checks below; it has not run in
+hosted CI yet.
+
+### Freight and arterial roads (M21, October 12, 2026)
+
+`FreightSystem` batches 32 goods per truck using the economy's powered
+industrial/commercial occupancy totals and rounding. Retail destination
+preference uses capacity divided by Manhattan distance plus one. Net imports
+restock industrial sites, weighted by capacity and gate proximity, before
+local retail deliveries; a city without industry imports directly to shops.
+Net exports leave industrial sites through the fixed west-edge gate at
+`(0, map height/2)`. Disconnected shipments are reported as unrouted goods.
+Trade prices still use the existing produced-minus-consumed accounting.
+
+Freight is default-on on both hosts and contributes to combined congestion
+and migration. `--simulate-no-freight` disables it; `--simulate-no-traffic`
+skips commuters and freight. Summary/CSV fields report truck counts and
+routed domestic/import/export plus unrouted goods. Paths use a bounded
+128-entry cache invalidated by topology or building-stock changes.
+
+Road edges are local (capacity 10) or arterial (40). A toggles class while
+the road tool is active. Local new segments cost $100, arterial new segments
+$400 and local-to-arterial upgrades $300. Local planning and autonomous
+re-laying leave existing arterials intact. Classes and separate freight
+loads persist in snapshots; old roads load as local with zero freight.
+Both projections draw wider arterial roads; congestion overlays and the
+tile inspector expose the effect. MCP 0.3.0 / inspection version 3 adds road
+inspection, class selection, freight metrics and the A control.
 
 ### Recent performance work (post-MVP)
 
@@ -124,9 +151,9 @@ A multi-batch hot-path pass landed on `main` development:
 
 ## Validation Baseline
 
-- 391 GoogleTest cases pass in the strict macOS Debug build on October 12, 2026.
-  Five rendered MCP acceptance tests and seven Python unit tests pass locally.
-  Headless Release passes 388 tests with Vulkan/GLFW discovery disabled;
+- 402 GoogleTest cases pass in the strict macOS Debug build on October 12, 2026.
+  Six rendered MCP acceptance tests and seven Python unit tests pass locally.
+  Headless Release passes 400 tests with Vulkan/GLFW discovery disabled;
   repeated 100-tick CLI reports match byte-for-byte.
 - Tests are discovered individually by CTest.
 - Regular and warnings-as-errors builds pass.
@@ -169,9 +196,9 @@ Phase 6 in `ROADMAP.md` is the queue. Implement in order.
    improve the neighborhood. Resident-weighted means feed migration and
    the HUD. Lagged local rates lower land value; happiness and tile
    inspection show the local effects.
-5. **M21 Freight and road class.** Goods are an accounting line. Freight
-   loads the road graph. Arterials are a player upgrade; the autonomous
-   grid stays capacity 10.
+5. **M21 Freight and road class.** Done. Batched goods routing adds
+   trucks beside commuters. Player arterials have capacity 40; autonomous
+   local roads stay at 10. Class and freight loads survive save/load.
 6. **M22 Parks and one city on both hosts.** `ZoneType::Park` is
    rejected by the zone tool. Disasters run only in `CitySimulator`.
    Debt exists only on the playable treasury.

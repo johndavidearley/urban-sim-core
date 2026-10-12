@@ -7,6 +7,7 @@ add_library(urban_sim_core
   entities/PopulationStore.cpp
   systems/GrowthSystem.cpp
   systems/PopulationSystem.cpp
+  systems/FreightSystem.cpp
   systems/NeighborhoodSystem.cpp
   systems/MigrationSystem.cpp
   systems/TrafficSystem.cpp

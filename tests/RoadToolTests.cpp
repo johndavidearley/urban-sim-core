@@ -44,3 +44,53 @@ TEST(RoadToolTests, BuildsRoadAndDeductsFundsWithoutChargingExistingSegments) {
   EXPECT_EQ(funds, 400);
   EXPECT_TRUE(roads.hasRoad({2, 1}, {3, 1}));
 }
+
+TEST(RoadToolTests,
+     ArterialUpgradeChargesOnlyLocalSegmentsAndPreservesTopology) {
+  CityMap map({16, 16});
+  RoadNetwork roads(map);
+  int64_t funds = 5000;
+  auto local = RoadTool::plan(map, roads, {2, 8}, {6, 8}, funds);
+  ASSERT_TRUE(RoadTool::build(map, roads, local, funds));
+  const auto topology = roads.getTopologyVersion();
+  roads.updateCongestion({2, 8}, {3, 8}, 20.0f);
+  const auto upgrade =
+      RoadTool::plan(map, roads, {2, 8}, {6, 8}, funds, RoadClass::Arterial);
+  ASSERT_TRUE(upgrade.valid);
+  EXPECT_EQ(upgrade.newSegments, 0);
+  EXPECT_EQ(upgrade.upgradedSegments, 4);
+  EXPECT_EQ(upgrade.cost, 1200);
+  ASSERT_TRUE(RoadTool::build(map, roads, upgrade, funds));
+  EXPECT_EQ(funds, 3400);
+  EXPECT_EQ(roads.getTopologyVersion(), topology);
+  EXPECT_EQ(roads.getRoadClass({2, 8}, {3, 8}), RoadClass::Arterial);
+  EXPECT_FLOAT_EQ(roads.getEdgeCapacity({2, 8}, {3, 8}), 40.0f);
+  EXPECT_FLOAT_EQ(roads.getCongestion({2, 8}, {3, 8}), 0.5f);
+  // Autonomous re-laying and local tool selection never downgrade an arterial.
+  roads.buildRoad({2, 8}, {3, 8});
+  EXPECT_EQ(roads.getRoadClass({2, 8}, {3, 8}), RoadClass::Arterial);
+  EXPECT_FALSE(RoadTool::plan(map, roads, {2, 8}, {6, 8}, funds).valid);
+  EXPECT_FALSE(
+      RoadTool::plan(map, roads, {2, 8}, {6, 8}, funds, RoadClass::Arterial)
+          .valid);
+}
+
+TEST(RoadToolTests,
+     ArterialMixedRouteCostsAndInsufficientFundsAreTransactional) {
+  CityMap map({16, 16});
+  RoadNetwork roads(map);
+  roads.buildRoad({2, 8}, {3, 8});
+  const auto mixed =
+      RoadTool::plan(map, roads, {2, 8}, {4, 8}, 1000, RoadClass::Arterial);
+  ASSERT_TRUE(mixed.valid);
+  EXPECT_EQ(mixed.cost, 700);
+  int64_t funds = 699;
+  EXPECT_FALSE(RoadTool::build(map, roads, mixed, funds));
+  EXPECT_EQ(funds, 699);
+  EXPECT_EQ(roads.getRoadClass({2, 8}, {3, 8}), RoadClass::Local);
+  EXPECT_FALSE(roads.hasRoad({3, 8}, {4, 8}));
+  funds = 1000;
+  ASSERT_TRUE(RoadTool::build(map, roads, mixed, funds));
+  EXPECT_EQ(funds, 300);
+  EXPECT_EQ(roads.getRoadClass({3, 8}, {4, 8}), RoadClass::Arterial);
+}

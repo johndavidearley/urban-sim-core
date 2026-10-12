@@ -1,14 +1,15 @@
 #pragma once
 
-#include <cstdint>
-#include <vector>
-#include <unordered_map>
 #include "src/core/ThreadPool.hpp"
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
+#include "src/metrics/CityMetrics.hpp"
 #include "src/networks/Pathfinding.hpp"
 #include "src/networks/RoadNetwork.hpp"
-#include "src/metrics/CityMetrics.hpp"
+#include "src/systems/FreightSystem.hpp"
+#include <cstdint>
+#include <unordered_map>
+#include <vector>
 
 class TransitOffload;
 
@@ -46,6 +47,7 @@ struct TrafficRouteCache {
 };
 
 struct TrafficSummary {
+  FreightSummary freight;
   uint32_t commutingPopulation = 0;
   float averageCommuteTime = 0.0f;
   float maxEdgeCongestion = 0.0f;
@@ -97,6 +99,9 @@ public:
     TransitOffload* transit = nullptr,
     TrafficRouteCache* routeCache = nullptr
   );
+
+  static void refreshCongestion(const RoadNetwork &roads,
+                                TrafficSummary &summary);
 
   // Apply traffic metrics to city metrics
   static void applyToMetrics(const TrafficSummary& summary, CityMetrics& metrics);

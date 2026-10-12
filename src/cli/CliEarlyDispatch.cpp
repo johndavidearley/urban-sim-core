@@ -122,54 +122,32 @@ std::optional<int> tryEarlyCliDispatch(CliOptions& opts) {
     if (opts.simulateTicks >= 0 && opts.simulateBenchmarkTrials >= 2) {
       const int gridSpacing = (opts.gridSpacingOverride > 0) ? opts.gridSpacingOverride : 4;
       return runCitySimulationBenchmark(
-        opts.mapSize,
-        opts.seed,
-        opts.simulateTicks,
-        opts.generateTerrainFlag,
-        opts.terrainWaterFraction,
-        !opts.simulateNoTraffic,
-        opts.simulateBenchmarkTrials,
-        gridSpacing,
-        opts.simulateTrafficInterval,
-        opts.simulateServiceInterval,
-        opts.simulatePopulationInterval,
-        opts.simulateLandValueInterval,
-        opts.simulateInflationRate,
-        !opts.simulateNoTransit,
-        opts.simulateDisasters,
-        opts.simulateFireRisk,
-        opts.simulateEarthquakeRisk,
-        opts.simulateFloodRisk,
-        opts.simulateUtilities
-      );
+          opts.mapSize, opts.seed, opts.simulateTicks, opts.generateTerrainFlag,
+          opts.terrainWaterFraction, !opts.simulateNoTraffic,
+          opts.simulateBenchmarkTrials, gridSpacing,
+          opts.simulateTrafficInterval, opts.simulateServiceInterval,
+          opts.simulatePopulationInterval, opts.simulateLandValueInterval,
+          opts.simulateInflationRate, !opts.simulateNoTransit,
+          opts.simulateDisasters, opts.simulateFireRisk,
+          opts.simulateEarthquakeRisk, opts.simulateFloodRisk,
+          opts.simulateUtilities, !opts.simulateNoFreight);
     }
 
     if (opts.simulateTicks >= 0 || opts.simulateInfinite) {
       const int gridSpacing = (opts.gridSpacingOverride > 0) ? opts.gridSpacingOverride : 4;
       return runCitySimulation(
-        opts.mapSize,
-        opts.seed,
-        opts.simulateInfinite ? -1 : opts.simulateTicks,
-        opts.generateTerrainFlag,
-        opts.terrainWaterFraction,
-        !opts.simulateNoTraffic,
-        opts.simulateReportPath,
-        gridSpacing,
-        opts.simulateSpeed,
-        opts.simulateTrafficInterval,
-        opts.simulateServiceInterval,
-        opts.simulatePopulationInterval,
-        opts.simulateLandValueInterval,
-        opts.simulateInflationRate,
-        !opts.simulateNoTransit,
-        opts.simulateDistrictRequests,
-        opts.simulateDistrictArchetypeRequests,
-        opts.simulateDisasters,
-        opts.simulateFireRisk,
-        opts.simulateEarthquakeRisk,
-        opts.simulateFloodRisk,
-        opts.simulateUtilities
-      );
+          opts.mapSize, opts.seed,
+          opts.simulateInfinite ? -1 : opts.simulateTicks,
+          opts.generateTerrainFlag, opts.terrainWaterFraction,
+          !opts.simulateNoTraffic, opts.simulateReportPath, gridSpacing,
+          opts.simulateSpeed, opts.simulateTrafficInterval,
+          opts.simulateServiceInterval, opts.simulatePopulationInterval,
+          opts.simulateLandValueInterval, opts.simulateInflationRate,
+          !opts.simulateNoTransit, opts.simulateDistrictRequests,
+          opts.simulateDistrictArchetypeRequests, opts.simulateDisasters,
+          opts.simulateFireRisk, opts.simulateEarthquakeRisk,
+          opts.simulateFloodRisk, opts.simulateUtilities,
+          !opts.simulateNoFreight);
     }
 
     if (opts.microTrafficGrowthTicks >= 0) {

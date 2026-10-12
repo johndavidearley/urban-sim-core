@@ -26,6 +26,8 @@ struct SerializedRoad {
   glm::ivec2 from{0, 0};
   glm::ivec2 to{0, 0};
   float currentLoad = 0.0f;
+  RoadClass roadClass = RoadClass::Local;
+  float freightLoad = 0.0f;
 };
 
 struct CitySnapshot {

@@ -36,7 +36,7 @@ KEYS = [
     "F5",
     "F9",
     *[f"Num{i}" for i in range(1, 9)],
-    *list("BCDFGHLNOPRSTZ"),
+    *list("ABCDFGHLNOPRSTZ"),
 ]
 
 
@@ -56,7 +56,7 @@ def compact(**values):
 
 
 INSPECTION_REFERENCE = {
-    "inspection_version": 2,
+    "inspection_version": 3,
     "sections": [
         "summary",
         "ui",
@@ -65,6 +65,7 @@ INSPECTION_REFERENCE = {
         "facilities",
         "districts",
         "routes",
+        "roads",
     ],
     "summary": {
         "path": "state",
@@ -103,6 +104,37 @@ INSPECTION_REFERENCE = {
             "deathcare_backlog": "residents awaiting disposition",
             "fraction_units": "coverage, supply ratios and rates are 0..1",
         },
+    },
+    "roads": {
+        "fields": [
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "road_class",
+            "capacity",
+            "load",
+            "freight_load",
+            "congestion",
+        ],
+        "capacity": "local=10, arterial=40 vehicles/tick",
+        "load": "commuters plus freight; freight_load is trucks only",
+        "upgrade": "tool(action=apply,name=road,road_class=arterial); $300 per existing local segment",
+    },
+    "freight": {
+        "path": "state.metrics",
+        "fields": [
+            "freight_trucks",
+            "freight_routes",
+            "freight_domestic_goods",
+            "freight_imported_goods",
+            "freight_exported_goods",
+            "freight_unrouted_goods",
+            "freight_gate",
+        ],
+        "period": "last traffic pass, not accumulated across a multi-tick step",
+        "batch": "32 goods per truck; unconnected shipments are counted as unrouted goods",
+        "gate": "fixed west edge at (0,map height/2); requires road access",
     },
     "facilities": {
         "common": ["type", "x", "y", "quality", "distance"],
@@ -253,10 +285,11 @@ def create_server(session: Session) -> FastMCP:
         zone: str | None = None,
         service: str | None = None,
         archetype: str | None = None,
+        road_class: Literal["local", "arterial"] | None = None,
         id: UInt32 | None = None,
         budget_cap: int | None = None,
     ) -> dict[str, Any]:
-        """Use gameplay tools with normal plans, costs and validation. Endpoints are tile coordinates; services use x1/y1. Policies support archetype and budget cap."""
+        """Use gameplay tools with normal plans, costs and validation. Endpoints are tile coordinates; services use x1/y1. Road class local/arterial supports build or upgrade. Policies support archetype and budget cap."""
         return await session.request(
             "tool",
             compact(
@@ -269,6 +302,7 @@ def create_server(session: Session) -> FastMCP:
                 zone=zone,
                 service=service,
                 archetype=archetype,
+                road_class=road_class,
                 id=id,
                 budget_cap=budget_cap,
             ),
@@ -312,7 +346,14 @@ def create_server(session: Session) -> FastMCP:
     @server.tool(annotations=readonly)
     async def inspect(
         section: Literal[
-            "summary", "ui", "tiles", "entities", "facilities", "districts", "routes"
+            "summary",
+            "ui",
+            "tiles",
+            "entities",
+            "facilities",
+            "districts",
+            "routes",
+            "roads",
         ] = "summary",
         offset: Annotated[int, Field(ge=0)] = 0,
         limit: Annotated[int, Field(ge=1, le=512)] = 128,
@@ -392,7 +433,14 @@ def create_server(session: Session) -> FastMCP:
         op: Literal["eq", "count", "lt", "le", "gt", "ge"],
         expected: Any,
         section: Literal[
-            "summary", "ui", "tiles", "entities", "facilities", "districts", "routes"
+            "summary",
+            "ui",
+            "tiles",
+            "entities",
+            "facilities",
+            "districts",
+            "routes",
+            "roads",
         ] = "summary",
         query: dict | None = None,
     ) -> dict[str, Any]:
@@ -425,6 +473,7 @@ def create_server(session: Session) -> FastMCP:
                 "start_screen": {"new": "Enter", "load": "L", "terrain": "T"},
                 "gameplay": {
                     "road": "R",
+                    "road_class_toggle": "A (road tool active)",
                     "zone": "Z",
                     "bulldoze": "B",
                     "service": "S",

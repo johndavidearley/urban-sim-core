@@ -60,6 +60,7 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   tickState.deathcareState = liveState.deathcareState;
   tickState.demand = liveState.demand;
   tickState.trafficSummary = liveState.trafficSummary;
+  tickState.freightRouteCache = std::move(liveState.freightRouteCache);
   tickState.serviceSummary = liveState.serviceSummary;
   tickState.serviceCache = std::move(liveState.serviceCache);
   tickState.waste = liveState.waste;
@@ -94,6 +95,7 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
   liveState.deathcareState = tickState.deathcareState;
   liveState.demand = tickState.demand;
   liveState.trafficSummary = tickState.trafficSummary;
+  liveState.freightRouteCache = std::move(tickState.freightRouteCache);
   liveState.serviceSummary = tickState.serviceSummary;
   liveState.serviceCache = std::move(tickState.serviceCache);
   liveState.waste = tickState.waste;

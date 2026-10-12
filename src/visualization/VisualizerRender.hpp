@@ -12,16 +12,11 @@ void drawFilledRect(DrawList* renderer, int x, int y, int w, int h, RGB color, u
 void drawRectOutline(DrawList* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha = 255);
 bool hasRoadAt(const CityMap& map, Coord coord);
 
-void drawNormalTileDetail(
-  DrawList* renderer,
-  const CityMap& map,
-  const EntityStore& store,
-  const std::vector<ServiceFacility>& facilities,
-  Coord coord,
-  int x,
-  int y,
-  int size
-);
+void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
+                          const EntityStore &store,
+                          const std::vector<ServiceFacility> &facilities,
+                          Coord coord, int x, int y, int size,
+                          const RoadNetwork *roads = nullptr);
 
 void drawDiamond(DrawList* renderer, ScreenPoint top, int width, int height, RGB color, uint8_t alpha = 255);
 

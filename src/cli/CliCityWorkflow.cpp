@@ -82,30 +82,26 @@ int runCityCliWorkflow(CliOptions opts) {
     // Default --ticks N path: same full RCI engine as --simulate (not an empty clock loop).
     if (isPureAutonomousSimulation(opts)) {
       const int gridSpacing = (opts.gridSpacingOverride > 0) ? opts.gridSpacingOverride : 4;
-      return runCitySimulation(
-        opts.mapSize,
-        opts.seed,
-        opts.numTicks,
-        opts.generateTerrainFlag,
-        opts.terrainWaterFraction,
-        /*runTraffic=*/true,
-        /*reportPath=*/"",
-        gridSpacing,
-        /*ticksPerSecond=*/0.0,
-        /*trafficInterval=*/1,
-        /*serviceInterval=*/1,
-        /*populationInterval=*/1,
-        /*landValueInterval=*/1,
-        /*inflationRate=*/0.0f,
-        /*enableTransit=*/true,
-        /*districtRequests=*/{},
-        /*districtArchetypeRequests=*/{},
-        /*enableDisasters=*/false,
-        /*fireRiskMultiplier=*/1.0f,
-        /*earthquakeRiskMultiplier=*/1.0f,
-        /*floodRiskMultiplier=*/1.0f,
-        /*enableUtilities=*/false
-      );
+      return runCitySimulation(opts.mapSize, opts.seed, opts.numTicks,
+                               opts.generateTerrainFlag,
+                               opts.terrainWaterFraction,
+                               /*runTraffic=*/true,
+                               /*reportPath=*/"", gridSpacing,
+                               /*ticksPerSecond=*/0.0,
+                               /*trafficInterval=*/1,
+                               /*serviceInterval=*/1,
+                               /*populationInterval=*/1,
+                               /*landValueInterval=*/1,
+                               /*inflationRate=*/0.0f,
+                               /*enableTransit=*/true,
+                               /*districtRequests=*/{},
+                               /*districtArchetypeRequests=*/{},
+                               /*enableDisasters=*/false,
+                               /*fireRiskMultiplier=*/1.0f,
+                               /*earthquakeRiskMultiplier=*/1.0f,
+                               /*floodRiskMultiplier=*/1.0f,
+                               /*enableUtilities=*/false,
+                               /*enableFreight=*/!opts.simulateNoFreight);
     }
 
     CitySnapshot loadedSnapshot;
@@ -687,30 +683,26 @@ int runCityCliWorkflow(CliOptions opts) {
 
       if (mapIsPristine) {
         const int gridSpacing = (opts.gridSpacingOverride > 0) ? opts.gridSpacingOverride : 4;
-        return runCitySimulation(
-          opts.mapSize,
-          opts.seed,
-          opts.numTicks,
-          opts.generateTerrainFlag,
-          opts.terrainWaterFraction,
-          /*runTraffic=*/true,
-          /*reportPath=*/"",
-          gridSpacing,
-          /*ticksPerSecond=*/0.0,
-          /*trafficInterval=*/1,
-          /*serviceInterval=*/1,
-          /*populationInterval=*/1,
-          /*landValueInterval=*/1,
-          /*inflationRate=*/0.0f,
-          /*enableTransit=*/true,
-          /*districtRequests=*/{},
-          /*districtArchetypeRequests=*/{},
-          /*enableDisasters=*/false,
-          /*fireRiskMultiplier=*/1.0f,
-          /*earthquakeRiskMultiplier=*/1.0f,
-          /*floodRiskMultiplier=*/1.0f,
-          /*enableUtilities=*/false
-        );
+        return runCitySimulation(opts.mapSize, opts.seed, opts.numTicks,
+                                 opts.generateTerrainFlag,
+                                 opts.terrainWaterFraction,
+                                 /*runTraffic=*/true,
+                                 /*reportPath=*/"", gridSpacing,
+                                 /*ticksPerSecond=*/0.0,
+                                 /*trafficInterval=*/1,
+                                 /*serviceInterval=*/1,
+                                 /*populationInterval=*/1,
+                                 /*landValueInterval=*/1,
+                                 /*inflationRate=*/0.0f,
+                                 /*enableTransit=*/true,
+                                 /*districtRequests=*/{},
+                                 /*districtArchetypeRequests=*/{},
+                                 /*enableDisasters=*/false,
+                                 /*fireRiskMultiplier=*/1.0f,
+                                 /*earthquakeRiskMultiplier=*/1.0f,
+                                 /*floodRiskMultiplier=*/1.0f,
+                                 /*enableUtilities=*/false,
+                                 /*enableFreight=*/!opts.simulateNoFreight);
       }
 
       // Loaded / partially built session: continue with CitySimulator on this map.
@@ -718,6 +710,7 @@ int runCityCliWorkflow(CliOptions opts) {
       simOptions.runTraffic = true;
       simOptions.gridSpacing = (opts.gridSpacingOverride > 0) ? opts.gridSpacingOverride : 4;
       simOptions.enableTransit = true;
+      simOptions.enableFreight = !opts.simulateNoFreight;
       std::cout << "Running full city simulation for " << opts.numTicks
                 << " ticks with seed " << opts.seed << " on existing session...\n";
       const SimResult result = CitySimulator::run(

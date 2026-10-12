@@ -148,10 +148,19 @@ void refreshDerivedCityState(
     }
   }
 
+  if (options.runTraffic && options.enableFreight) {
+    state.trafficSummary.freight =
+        FreightSystem::simulate(map, roads, store, &state.freightRouteCache);
+    TrafficSystem::refreshCongestion(roads, state.trafficSummary);
+  }
   if (options.preserveCheckpoint && options.runTraffic) {
     roads.resetCongestion();
-    for (const auto &edge : checkpointLoads)
-      roads.updateCongestion(edge.from, edge.to, edge.currentLoad);
+    for (const auto &edge : checkpointLoads) {
+      roads.updateCongestion(edge.from, edge.to,
+                             edge.currentLoad - edge.freightLoad);
+      roads.addFreightLoad(edge.from, edge.to, edge.freightLoad);
+    }
+    TrafficSystem::refreshCongestion(roads, state.trafficSummary);
   }
 
   if (!ServiceSystem::isResultCacheValid(store, state.serviceCache)) {
@@ -249,6 +258,7 @@ void playableCityTick(
   DerivedCityRefreshOptions refresh;
   refresh.runTraffic = true;
   refresh.enableTransit = options.enableTransit;
+  refresh.enableFreight = options.enableFreight;
   refresh.placeTransit = options.enableTransit;
   refresh.updateLandValues = options.updateLandValues;
   refresh.seed = tickSeed + 3u;

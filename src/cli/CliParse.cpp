@@ -251,6 +251,8 @@ std::optional<int> parseCliArgs(int argc, char* argv[], CliOptions& opts) {
       opts.simulateLandValueInterval = std::atoi(argv[++i]);
     } else if (arg == "--simulate-inflation-rate" && i + 1 < argc) {
       opts.simulateInflationRate = std::stof(argv[++i]);
+    } else if (arg == "--simulate-no-freight") {
+      opts.simulateNoFreight = true;
     } else if (arg == "--simulate-no-transit") {
       opts.simulateNoTransit = true;
     } else if (arg == "--simulate-district" && i + 5 < argc) {

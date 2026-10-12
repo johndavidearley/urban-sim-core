@@ -21,7 +21,7 @@ Last updated: October 10, 2026
 - Automated validation at the M16 close-out: 294 tests passing; regular,
   strict, ASan/UBSan, and TSan configurations verified. Live counts are in
   STATUS.md.
-- Phase 6 (M17–M22): M20 complete. M21 is next.
+- Phase 6 (M17–M22): M21 complete. M22 is next.
 
 ---
 
@@ -201,7 +201,7 @@ Note on default behavior: unlike the additive M12/M13/M14 systems, fire and natu
 
 ## Phase 6: A City With Consequences (M17–M22)
 
-Defined October 6, 2026. M17, M18, M19, and M20 are complete. Implement the rest in order. Each milestone
+Defined October 6, 2026. M17, M18, M19, M20, and M21 are complete. Implement the rest in order. Each milestone
 keeps the suite deterministic and names whether a default `--simulate` run
 changes. The struck-through list under "Next Targets" is finished work.
 
@@ -331,28 +331,30 @@ moves migration.
 
 ### Milestone 21: Freight and road class
 
-`EconomySystem` turns industrial and commercial occupancy into
-`goodsProduced`, `goodsConsumed`, and `tradeBalance`, then into export
-revenue or import cost. No truck moves. `TrafficSystem` load is commuters
-only. Every `RoadNetwork::Edge` is built with capacity 10.
+Completed October 12, 2026. `FreightSystem` adds batched truck loads to
+commuters, and road edges persist their local/arterial class. The fixed trade
+gate is the west map edge at `(0, height/2)` and requires road access.
 
-- [ ] Industrial occupancy generates freight batches to commercial
+- [x] Industrial occupancy generates freight batches to commercial
       buildings, weighted by capacity and distance the way job matching
       already is. Net exports and net imports add batches between
-      industrial buildings and one deterministic map-edge gate.
-- [ ] Freight adds to `Edge::currentLoad` beside commuters and is reported
+      industrial buildings and one deterministic map-edge gate. With no
+      industrial base, imports route directly to retailers.
+- [x] Freight adds to `Edge::currentLoad` beside commuters and is reported
       separately on `TrafficSummary` and `SimTickMetrics`.
-- [ ] A road class on the edge: local stays capacity 10, arterial is
-      higher. The autonomous grid lays local roads, so this milestone
+- [x] A road class on the edge: local stays capacity 10, arterial is
+      capacity 40. The autonomous grid lays local roads, so this milestone
       does not quietly raise capacity. The road tool can upgrade a
-      dragged segment to arterial for a higher construction cost.
-- [ ] Freight is default-on in both hosts, with `--simulate-no-freight`
+      dragged segment to arterial for a higher construction cost. A toggles
+      class while the road tool is active: $100/local new segment,
+      $400/arterial new segment, $300/existing local segment upgraded.
+- [x] Freight is default-on in both hosts, with `--simulate-no-freight`
       for comparison. Arterials are player-built, so an untouched
       `--simulate` run changes only by the added truck load.
-- [ ] `TrafficMicroSim` is left alone.
+- [x] `TrafficMicroSim` is left alone.
 
-**Deliverable:** An industrial city with no commercial base shows import
-cost and freight congestion at the gate. Upgrading one corridor to
+**Deliverable:** An industrial city with no commercial base shows export
+revenue and freight congestion at the gate. Upgrading one corridor to
 arterial lowers congestion on that corridor in the overlay.
 
 ### Milestone 22: Parks and one city on both hosts
@@ -410,7 +412,7 @@ with the autonomous simulator. Population responds to housing, jobs, services,
 utilities and quality of life instead of a fixed target that shrinks after
 mortality. Last-tick arrivals/departures/deaths/net are visible in the HUD and
 MCP. Session inputs survive save/load, and a rendered regression grows an
-ordinary zoned city above 1,200 residents and unlocks bus transit. M20 is now complete; M21 remains
+ordinary zoned city above 1,200 residents and unlocks bus transit. M20 and M21 are now complete; M22 remains
 next; economy balancing and player road upgrades remain future work.
 
 ## Next Targets (Post-Backlog)

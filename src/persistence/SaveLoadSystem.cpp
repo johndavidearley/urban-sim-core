@@ -202,6 +202,12 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
     if (!areAdjacentCardinal(road.from, road.to)) {
       return fail("road endpoints are not cardinally adjacent");
     }
+    if (!std::isfinite(road.currentLoad) || !std::isfinite(road.freightLoad) ||
+        road.freightLoad < 0.0f || road.freightLoad > road.currentLoad ||
+        (road.roadClass != RoadClass::Local &&
+         road.roadClass != RoadClass::Arterial)) {
+      return fail("road class or freight load is invalid");
+    }
     if (road.currentLoad < 0.0f) {
       return fail("road load cannot be negative");
     }
@@ -306,7 +312,9 @@ CitySnapshot SaveLoadSystem::captureSnapshot(
   const auto edgeTraffic = roads.getAllEdgeTraffic();
   snapshot.roads.reserve(edgeTraffic.size());
   for (const auto& edge : edgeTraffic) {
-    snapshot.roads.push_back(SerializedRoad{edge.from, edge.to, edge.currentLoad});
+    snapshot.roads.push_back(SerializedRoad{edge.from, edge.to,
+                                            edge.currentLoad, edge.roadClass,
+                                            edge.freightLoad});
   }
 
   return snapshot;
@@ -361,8 +369,11 @@ bool SaveLoadSystem::applySnapshot(
 
   for (const SerializedRoad& road : snapshot.roads) {
     roads.buildRoad(road.from, road.to);
+    roads.setRoadClass(road.from, road.to, road.roadClass);
     if (road.currentLoad > 0.0f) {
-      roads.updateCongestion(road.from, road.to, road.currentLoad);
+      roads.updateCongestion(road.from, road.to,
+                             road.currentLoad - road.freightLoad);
+      roads.addFreightLoad(road.from, road.to, road.freightLoad);
     }
   }
 
@@ -418,11 +429,12 @@ bool SaveLoadSystem::saveToFile(
 
   root["roads"] = json::array();
   for (const SerializedRoad& road : snapshot.roads) {
-    root["roads"].push_back(json{
-      {"from", coordToJson(road.from)},
-      {"to", coordToJson(road.to)},
-      {"currentLoad", road.currentLoad}
-    });
+    root["roads"].push_back(
+        json{{"from", coordToJson(road.from)},
+             {"to", coordToJson(road.to)},
+             {"currentLoad", road.currentLoad},
+             {"roadClass", static_cast<int>(road.roadClass)},
+             {"freightLoad", road.freightLoad}});
   }
 
   std::ofstream out(filePath);
@@ -510,6 +522,8 @@ bool SaveLoadSystem::loadSnapshotFromFile(
       road.from = coordFromJson(roadJson.at("from"));
       road.to = coordFromJson(roadJson.at("to"));
       road.currentLoad = roadJson.at("currentLoad").get<float>();
+      road.roadClass = static_cast<RoadClass>(roadJson.value("roadClass", 0));
+      road.freightLoad = roadJson.value("freightLoad", 0.0f);
       snapshot.roads.push_back(road);
     }
   } catch (const std::exception& ex) {

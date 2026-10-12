@@ -13,7 +13,7 @@
 namespace visualizer {
 
 constexpr int kHudPanelWidth = 390;
-constexpr int kHudPanelHeight = 274;
+constexpr int kHudPanelHeight = 310;
 constexpr int kDistrictPanelX = 14;
 constexpr int kDistrictPanelY = 308;
 constexpr int kDistrictPanelWidth = 390;
@@ -58,7 +58,8 @@ void drawGameplayHud(
 void drawCompactGameplayHud(DrawList *renderer, int windowWidth, bool paused,
                             uint32_t population, int64_t funds,
                             const std::string &toolLabel,
-                            const PopulationChange &change = {});
+                            const PopulationChange &change = {},
+                            const FreightSummary &freight = {});
 
 void drawToast(
   DrawList* renderer,

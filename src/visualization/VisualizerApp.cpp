@@ -160,6 +160,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   OverlayMode overlayMode = OverlayMode::Zone;
   bool showLegend = true;
   bool roadToolActive = false;
+  RoadClass selectedRoadClass = RoadClass::Local;
   bool zoneToolActive = false;
   bool bulldozeToolActive = false;
   bool serviceToolActive = false;
@@ -437,7 +438,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   };
   auto applyPlacement = [&](Coord tile) {
     if (roadToolActive) {
-      roadPlan = RoadTool::plan(map, roads, toolDragStart, tile, funds);
+      roadPlan = RoadTool::plan(map, roads, toolDragStart, tile, funds,
+                                selectedRoadClass);
       const int64_t cost = roadPlan.cost;
       if (RoadTool::build(map, roads, roadPlan, funds)) {
         sessionDirty = true;
@@ -554,6 +556,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"offset_y", isometricCameraY}}},
          {"tools",
           {{"road", roadToolActive},
+           {"road_class",
+            selectedRoadClass == RoadClass::Arterial ? "arterial" : "local"},
            {"zone", zoneToolActive},
            {"bulldoze", bulldozeToolActive},
            {"service", serviceToolActive},
@@ -571,6 +575,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"road",
             {{"valid", roadPlan.valid},
              {"cost", roadPlan.cost},
+             {"new_segments", roadPlan.newSegments},
+             {"upgraded_segments", roadPlan.upgradedSegments},
+             {"road_class", roadPlan.roadClass == RoadClass::Arterial ? "arterial" : "local"},
              {"tiles", roadPlan.tiles.size()}}},
            {"zone",
             {{"valid", zonePlan.valid},
@@ -618,8 +625,21 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"water_demand", liveState.serviceSummary.waterDemand},
            {"water_supply", liveState.serviceSummary.waterSupply},
            {"water_supply_ratio", liveState.serviceSummary.waterSupplyRatio},
-           {"deathcare_backlog",
-            liveState.deathcareState.awaitingDisposition}}},
+           {"deathcare_backlog", liveState.deathcareState.awaitingDisposition},
+           {"freight_trucks", liveState.trafficSummary.freight.trucks},
+           {"freight_routes", liveState.trafficSummary.freight.routes},
+           {"freight_domestic_goods",
+            liveState.trafficSummary.freight.domesticGoods},
+           {"freight_exported_goods",
+            liveState.trafficSummary.freight.exportedGoods},
+           {"freight_imported_goods",
+            liveState.trafficSummary.freight.importedGoods},
+           {"freight_unrouted_goods",
+            liveState.trafficSummary.freight.unroutedGoods},
+           {"freight_gate",
+            {{"x", 0},
+             {"y", mapSize / 2},
+             {"connected", liveState.trafficSummary.freight.gateConnected}}}}},
          {"demand",
           {{"residential", liveState.demand.residential},
            {"commercial", liveState.demand.commercial},
@@ -833,6 +853,19 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         case Key::F9:
           loadSession();
+          break;
+        case Key::A:
+          if (roadToolActive && !event.key.repeat) {
+            selectedRoadClass = selectedRoadClass == RoadClass::Local
+                                    ? RoadClass::Arterial
+                                    : RoadClass::Local;
+            toolDragging = false;
+            roadPlan = {};
+            notify(selectedRoadClass == RoadClass::Arterial
+                       ? "ARTERIAL ROAD - DRAG TO BUILD OR UPGRADE"
+                       : "LOCAL ROAD",
+                   true);
+          }
           break;
         case Key::R:
           roadToolActive = !roadToolActive;
@@ -1124,7 +1157,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         const Coord tile = tileAtScreen(event.motion.x, event.motion.y);
         if (map.isValid(tile)) {
           if (roadToolActive) {
-            roadPlan = RoadTool::plan(map, roads, toolDragStart, tile, funds);
+            roadPlan = RoadTool::plan(map, roads, toolDragStart, tile, funds,
+                                      selectedRoadClass);
           } else if (zoneToolActive) {
             zonePlan =
                 ZoneTool::plan(map, toolDragStart, tile, selectedZone, funds);
@@ -1245,7 +1279,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
 
           if (overlayMode == OverlayMode::Zone) {
             drawNormalTileDetail(renderer, map, store, facilities, coord,
-                                 rect.x, rect.y, tilePixels);
+                                 rect.x, rect.y, tilePixels, &roads);
           }
         }
       }
@@ -1375,7 +1409,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
 
     std::string activeToolLabel = "NONE";
     if (roadToolActive) {
-      activeToolLabel = "ROAD";
+      activeToolLabel =
+          selectedRoadClass == RoadClass::Arterial ? "ARTERIAL" : "LOCAL ROAD";
     } else if (zoneToolActive) {
       activeToolLabel = Zoning::zoneToString(static_cast<int>(selectedZone));
     } else if (bulldozeToolActive) {
@@ -1388,7 +1423,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     if (cleanUiMode) {
       drawCompactGameplayHud(renderer, windowWidth, liveState.paused,
                              population.getTotalPopulation(), funds,
-                             activeToolLabel, liveState.populationChange);
+                             activeToolLabel, liveState.populationChange,
+                             liveState.trafficSummary.freight);
     } else {
       drawGameplayHud(renderer, windowWidth, population.getTotalPopulation(),
                       store.getBuildingCount(), funds, activeToolLabel,
@@ -1406,7 +1442,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         paletteHitTest(mouseX, mouseY, windowWidth, windowHeight);
     switch (hoveredTool) {
     case PaletteTool::Road:
-      uiHoverText = "ROAD TOOL: DRAG A ROUTE - $100 PER NEW SEGMENT";
+      uiHoverText =
+          "ROAD: A TOGGLE LOCAL/ARTERIAL - $100/$400 NEW - $300 UPGRADE";
       break;
     case PaletteTool::Zone:
       uiHoverText = std::string("ZONE ") +

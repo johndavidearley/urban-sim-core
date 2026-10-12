@@ -33,6 +33,7 @@ struct PlayableCityTickState {
   DeathcareState deathcareState;
   ZoneDemand demand;
   TrafficSummary trafficSummary;
+  FreightRouteCache freightRouteCache;
   ServiceCoverageSummary serviceSummary;
   ServiceCoverageCache serviceCache;
   WasteSummary waste;
@@ -77,6 +78,7 @@ struct PlayableCityTickOptions {
   double treasuryInterestRate = 0.001;
   // Base seed mixed with tick for deterministic subsystem RNGs.
   uint32_t baseSeed = 1000u;
+  bool enableFreight = true;
   bool enableTransit = true;
   float transitCapacityMultiplier = 1.0f;
   // Road-hops a transit stop covers; CitySimulator uses gridSpacing * 3.
@@ -95,6 +97,7 @@ struct DerivedCityRefreshOptions {
   bool preserveCheckpoint = false;
   bool reallocPopulation = false;
   bool runTraffic = true;
+  bool enableFreight = true;
   bool enableTransit = true;
   bool updateLandValues = true;
   bool placeTransit = false;

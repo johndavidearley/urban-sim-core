@@ -157,6 +157,8 @@ uint64_t ReplayVerifier::calculateChecksum(
       hashValue(hash, value);
     }
     hashValue(hash, road.currentLoad);
+    hashValue(hash, road.roadClass);
+    hashValue(hash, road.freightLoad);
   }
 
   return hash;
