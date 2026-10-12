@@ -126,6 +126,35 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                 {"direction": "screen_to_tile", "x": screen["x"], "y": screen["y"]},
             )
             self.assertEqual((tile["x"], tile["y"]), (tx, ty))
+            # Zoom can produce odd isometric tile heights. Picking must still
+            # agree with the rendered tile center and keep the cursor anchor.
+            for _ in range(2):
+                await s.request(
+                    "input",
+                    {
+                        "events": [
+                            {
+                                "type": "scroll",
+                                "x": screen["x"],
+                                "y": screen["y"],
+                                "delta": 1,
+                            }
+                        ]
+                    },
+                )
+                tile = await s.request(
+                    "coordinates",
+                    {
+                        "direction": "screen_to_tile",
+                        "x": screen["x"],
+                        "y": screen["y"],
+                    },
+                )
+                self.assertEqual((tile["x"], tile["y"]), (tx, ty))
+        await s.request(
+            "view",
+            {"action": "camera", "tile_pixels": 28, "view_x": 0, "view_y": 0},
+        )
         await s.request("view", {"action": "projection", "projection": "top_down"})
         await s.request(
             "input",

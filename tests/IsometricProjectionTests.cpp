@@ -30,3 +30,16 @@ TEST(IsometricProjectionTests, InvalidSizesAreClamped) {
   EXPECT_EQ(projection.tileWidth(), 2);
   EXPECT_EQ(projection.tileHeight(), 2);
 }
+
+TEST(IsometricProjectionTests, OddDimensionCentersRoundTripAtZoomScales) {
+  for (int width = 12; width <= 48; ++width) {
+    const IsometricProjection projection(width, width / 2, {745, -137});
+    for (int y = -8; y < 96; y += 7) {
+      for (int x = -8; x < 96; x += 5) {
+        const Coord tile{x, y};
+        EXPECT_EQ(projection.screenToTile(projection.tileCenter(tile)), tile)
+            << "width=" << width << " tile=" << x << ',' << y;
+      }
+    }
+  }
+}

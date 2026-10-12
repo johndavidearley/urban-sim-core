@@ -176,9 +176,43 @@ the sole failure, producing zero rail routes. Headless configuration succeeded
 with Vulkan/GLFW package discovery disabled. The Windows installed layout and
 shipped example CLI are included in acceptance checks.
 
-Linux/macOS builds and local hardware runs were not available in this workspace.
+Linux builds and local hardware runs were not available in that workspace.
 Python unit checks and strict builds are configured on all desktop CI runners;
 rendered X11/Wayland runs and retained evidence upload are configured on Linux.
-Those CI executions and macOS installed-runtime/hardware acceptance remain to
-be verified. Wayland minimize/restore is explicitly reported as unsupported by
-the GLFW backend rather than counted as native coverage.
+Those CI executions remain to be verified. Wayland minimize/restore is
+explicitly reported as unsupported by the GLFW backend rather than counted as
+native coverage.
+
+### macOS MCP verification
+
+On macOS 15.8.1 with Intel Iris Plus 655 and MoltenVK, the strict Debug build
+passed all 375 C++ tests and seven Python MCP unit tests. All four rendered
+acceptance tests passed in both the build layout and installed layout. Installed
+checks cleared `VK_DRIVER_FILES` and `VK_ICD_FILENAMES`, exercising bundled
+loader/GLFW libraries and automatic bundled MoltenVK manifest discovery.
+The installed visualizer also passed all 16 graphics capture probes, with
+20 frames/20 draw calls and stable 4 MiB reusable geometry buffers.
+
+The MCP SDK client verified discovery, image responses, resources, prompts,
+invalid schemas, and disconnect cleanup. Rendered scenarios covered both
+projections and all eight overlays, road/zoning/service/district actions,
+save/load and imported saves, identical two-run replays, resize,
+minimize/restore, close while minimized, focus-loss cancellation, insufficient
+funds, and process-crash recovery.
+
+Additional installed-bundle MCP checks verified start-screen button input,
+coordinate-derived road dragging, logical 1280×800 to framebuffer 2560×1600
+Retina scaling, cursor-anchored zoom, HUD pause/speed/save/load, step input,
+large bitmap text, realtime ticks, and unsaved quit/cancel. Odd-height isometric
+picking initially failed after zoom; inverse projection now uses the same
+integer half extents as drawing, with CPU and rendered MCP regression coverage.
+
+Retained evidence is under `playtest-artifacts/macos-build`,
+`playtest-artifacts/macos-installed`, and
+`playtest-artifacts/macos-installed-suite`; the supplemental SDK report is
+`playtest-artifacts/macos-installed/macos-mcp-report.json`. These are local,
+git-ignored artifacts. Logs and the supplemental SDK client script are retained
+under `playtest-artifacts/macos-validation`. No Vulkan errors were reported,
+but Khronos validation layers were unavailable on this Mac, so this run does not establish validation
+layer coverage. Apple Silicon, cross-display scaling, and native OS input/focus
+delivery remain separate hardware checks; MCP input is synthetic.

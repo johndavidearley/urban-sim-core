@@ -24,8 +24,10 @@ ScreenPoint IsometricProjection::tileCenter(Coord tile) const {
 }
 
 Coord IsometricProjection::screenToTile(ScreenPoint screen) const {
-  const double halfWidth = static_cast<double>(tileWidth_) / 2.0;
-  const double halfHeight = static_cast<double>(tileHeight_) / 2.0;
+  // Match the integer half extents used by tileTop(), tileCenter(), and
+  // diamond drawing, including odd dimensions reached while zooming.
+  const double halfWidth = static_cast<double>(tileWidth_ / 2);
+  const double halfHeight = static_cast<double>(tileHeight_ / 2);
   const double projectedX = static_cast<double>(screen.x - origin_.x) / halfWidth;
   const double projectedY = static_cast<double>(screen.y - origin_.y) / halfHeight;
 
