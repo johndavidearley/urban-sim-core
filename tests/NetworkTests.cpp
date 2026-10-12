@@ -309,3 +309,29 @@ TEST(PathfindingTests, HeuristicSymmetric) {
   
   EXPECT_FLOAT_EQ(h1, h2);
 }
+
+TEST(PathfindingTests, EqualCostRoutesIgnoreRoadConstructionOrder) {
+  CityMap firstMap({8, 8}), secondMap({8, 8});
+  RoadNetwork first(firstMap), second(secondMap);
+  const std::vector<std::pair<glm::ivec2, glm::ivec2>> edges = {
+      {{2, 2}, {3, 2}}, {{3, 2}, {3, 3}}, {{2, 2}, {2, 3}}, {{2, 3}, {3, 3}}};
+  for (const auto &edge : edges)
+    first.buildRoad(edge.first, edge.second);
+  for (auto it = edges.rbegin(); it != edges.rend(); ++it)
+    second.buildRoad(it->first, it->second);
+  const auto a =
+      Pathfinding::findShortestPathWithCongestion(first, {2, 2}, {3, 3});
+  const auto b =
+      Pathfinding::findShortestPathWithCongestion(second, {2, 2}, {3, 3});
+  ASSERT_TRUE(a.found);
+  ASSERT_TRUE(b.found);
+  EXPECT_EQ(a.waypoints, b.waypoints);
+  EXPECT_FLOAT_EQ(a.totalDistance, b.totalDistance);
+  const auto trafficA = first.getAllEdgeTraffic();
+  const auto trafficB = second.getAllEdgeTraffic();
+  ASSERT_EQ(trafficA.size(), trafficB.size());
+  for (size_t i = 0; i < trafficA.size(); ++i) {
+    EXPECT_EQ(trafficA[i].from, trafficB[i].from);
+    EXPECT_EQ(trafficA[i].to, trafficB[i].to);
+  }
+}

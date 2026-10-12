@@ -1,4 +1,8 @@
+#include "src/persistence/GameplaySessionSystem.hpp"
+#include "src/persistence/ReplayVerifier.hpp"
 #include "gtest/gtest.h"
+#include <algorithm>
+#include <filesystem>
 
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
@@ -6,6 +10,7 @@
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/DistrictSystem.hpp"
 #include "src/systems/PlayableCityTick.hpp"
+#include "src/systems/PopulationSystem.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
 
@@ -301,6 +306,7 @@ TEST(PlayableCityTickTests, SchoolsRaiseOfficeShareOnTheNextTick) {
   PopulationStore schooledPeople;
   laySpine(schooledMap, schooledRoads);
   placeLaborBuildings(schooledMap, schooledStore);
+  PopulationSystem::allocate(schooledStore, schooledPeople, 200, 1u);
 
   std::vector<ServiceFacility> schools;
   schools.push_back({ServiceType::Education, {12, 12}, 16, 1.0f});
@@ -345,6 +351,7 @@ TEST(PlayableCityTickTests, SchoolsRaiseOfficeShareOnTheNextTick) {
   PopulationStore plainPeople;
   laySpine(plainMap, plainRoads);
   placeLaborBuildings(plainMap, plainStore);
+  PopulationSystem::allocate(plainStore, plainPeople, 200, 1u);
   PlayableCityTickState plain;
   plain.populationTarget = 200;
   int64_t plainFunds = 50000;
@@ -421,4 +428,187 @@ TEST(PlayableCityTickTests, RedevelopmentBillsMoreThanANewLowBuilding) {
   EXPECT_EQ(redevelopSpend, buildingConstructionCost(BuildingType::Residential, newCapacity));
   EXPECT_GT(redevelopSpend, spawnState.constructionSpend);
   EXPECT_GE(state.treasuryExpenses, redevelopSpend);
+}
+
+namespace {
+void migrationCity(CityMap &map, RoadNetwork &roads, EntityStore &store,
+                   std::vector<ServiceFacility> &facilities) {
+  laySpine(map, roads);
+  const int y = map.getDimensions().y / 2 - 1;
+  for (int x : {6, 9, 12}) {
+    map.getTile({x, y}).buildingId =
+        store.createBuilding(BuildingType::Residential, {x, y}, 512);
+  }
+  map.getTile({15, y}).buildingId =
+      store.createBuilding(BuildingType::Commercial, {15, y}, 1280);
+  map.getTile({18, y}).buildingId =
+      store.createBuilding(BuildingType::Industrial, {18, y}, 1536);
+  map.getTile({21, y}).buildingId =
+      store.createBuilding(BuildingType::Office, {21, y}, 1152);
+  for (ServiceType type :
+       {ServiceType::Fire, ServiceType::Police, ServiceType::Health,
+        ServiceType::Education, ServiceType::Power, ServiceType::Water,
+        ServiceType::Sanitation, ServiceType::Garbage, ServiceType::Cemetery}) {
+    facilities.push_back({type, {16, y}, 64, 1.0f});
+  }
+}
+PlayableCityTickOptions migrationOptions() {
+  PlayableCityTickOptions options;
+  options.growthChance = 0.0f;
+  options.refreshPollution = false;
+  options.updateLandValues = false;
+  return options;
+}
+} // namespace
+
+TEST(PlayableCityTickTests,
+     HealthyCityExceedsLegacyPopulationTargetAndUnlocksBus) {
+  CityMap map({32, 32});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore people;
+  std::vector<ServiceFacility> facilities;
+  migrationCity(map, roads, store, facilities);
+  PlayableCityTickState state;
+  state.populationTarget =
+      272; // A legacy hour-playtest save must not cap arrivals.
+  int64_t funds = 50000;
+  const auto options = migrationOptions();
+  for (int i = 0; i < 80; ++i) {
+    const auto before = people.getTotalPopulation();
+    playableCityTick(map, roads, store, people, facilities, state, funds,
+                     options);
+    EXPECT_EQ(state.populationChange.net,
+              static_cast<int64_t>(state.populationChange.arrivals) -
+                  state.populationChange.departures -
+                  state.populationChange.deaths);
+    EXPECT_EQ(static_cast<int64_t>(people.getTotalPopulation()) - before,
+              state.populationChange.net);
+  }
+  EXPECT_GT(people.getTotalPopulation(), 1200u);
+  EXPECT_LE(people.getTotalPopulation(), 1536u);
+  EXPECT_GT(state.deathcareState.fractionalDeaths, 0.0);
+  EXPECT_FALSE(state.transitRoutes.empty());
+}
+
+TEST(PlayableCityTickTests,
+     UtilityOutageReversesMigrationWithoutDoubleCountingDeaths) {
+  CityMap map({32, 32});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore people;
+  std::vector<ServiceFacility> facilities;
+  migrationCity(map, roads, store, facilities);
+  PlayableCityTickState state;
+  int64_t funds = 50000;
+  const auto options = migrationOptions();
+  for (int i = 0; i < 20; ++i)
+    playableCityTick(map, roads, store, people, facilities, state, funds,
+                     options);
+  const auto healthyPopulation = people.getTotalPopulation();
+  facilities.erase(std::remove_if(facilities.begin(), facilities.end(),
+                                  [](const ServiceFacility &f) {
+                                    return f.type == ServiceType::Power ||
+                                           f.type == ServiceType::Water;
+                                  }),
+                   facilities.end());
+  for (int i = 0; i < 10; ++i) {
+    playableCityTick(map, roads, store, people, facilities, state, funds,
+                     options);
+    if (i > 0) {
+      EXPECT_EQ(state.populationChange.arrivals, 0u);
+      EXPECT_GT(state.populationChange.departures, 0u);
+    }
+    EXPECT_EQ(state.populationChange.net,
+              static_cast<int64_t>(state.populationChange.arrivals) -
+                  state.populationChange.departures -
+                  state.populationChange.deaths);
+  }
+  EXPECT_LT(people.getTotalPopulation(), healthyPopulation);
+}
+
+TEST(PlayableCityTickTests,
+     SaveLoadContinuesMigrationEducationAndMortalityDeterministically) {
+  CityMap map({32, 32});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore people;
+  std::vector<ServiceFacility> facilities;
+  migrationCity(map, roads, store, facilities);
+  PlayableCityTickState state;
+  int64_t funds = 50000;
+  const auto options = migrationOptions();
+  for (int i = 0; i < 13; ++i)
+    playableCityTick(map, roads, store, people, facilities, state, funds,
+                     options);
+  GameplaySessionState saved;
+  saved.tick = state.tick;
+  saved.funds = funds;
+  saved.populationTarget = state.populationTarget;
+  saved.migrationConditions = state.migrationConditions;
+  saved.populationChange = state.populationChange;
+  saved.laggedEducationCoverage = state.laggedEducationCoverage;
+  saved.fractionalDeaths = state.deathcareState.fractionalDeaths;
+  saved.awaitingDisposition = state.deathcareState.awaitingDisposition;
+  saved.growthModifiers = state.districtGrowthModifiers;
+  saved.transitRoutes = state.transitRoutes;
+  saved.facilities = facilities;
+  const auto path = std::filesystem::temp_directory_path() /
+                    "urban_migration_continuation.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store,
+                                          people, saved));
+  CityMap resumedMap({32, 32});
+  RoadNetwork resumedRoads(resumedMap);
+  EntityStore resumedStore;
+  PopulationStore resumedPeople;
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), resumedMap,
+                                          resumedRoads, resumedStore,
+                                          resumedPeople, loaded));
+  PlayableCityTickState resumed;
+  resumed.tick = loaded.tick;
+  resumed.populationTarget = loaded.populationTarget;
+  resumed.migrationConditions = loaded.migrationConditions;
+  resumed.populationChange = loaded.populationChange;
+  resumed.laggedEducationCoverage = loaded.laggedEducationCoverage;
+  resumed.deathcareState = {loaded.fractionalDeaths,
+                            loaded.awaitingDisposition};
+  resumed.districtGrowthModifiers = loaded.growthModifiers;
+  resumed.transitRoutes = loaded.transitRoutes;
+  // The host refreshes HUD summaries on load without advancing simulation.
+  const auto checkpoint = ReplayVerifier::calculateChecksum(
+      resumedMap, resumedRoads, resumedStore, resumedPeople);
+  DerivedCityRefreshOptions refresh;
+  refresh.preserveCheckpoint = true;
+  refresh.runTraffic = true;
+  refresh.enableTransit = true;
+  refresh.seed = 777u;
+  refreshDerivedCityState(resumedMap, resumedRoads, resumedStore, resumedPeople,
+                          loaded.facilities, resumed, refresh);
+  EXPECT_EQ(checkpoint,
+            ReplayVerifier::calculateChecksum(resumedMap, resumedRoads,
+                                              resumedStore, resumedPeople));
+  int64_t resumedFunds = loaded.funds;
+  for (int i = 0; i < 30; ++i) {
+    playableCityTick(map, roads, store, people, facilities, state, funds,
+                     options);
+    playableCityTick(resumedMap, resumedRoads, resumedStore, resumedPeople,
+                     loaded.facilities, resumed, resumedFunds, options);
+    EXPECT_EQ(people.getTotalPopulation(), resumedPeople.getTotalPopulation());
+    EXPECT_EQ(funds, resumedFunds);
+    EXPECT_EQ(ReplayVerifier::calculateChecksum(map, roads, store, people),
+              ReplayVerifier::calculateChecksum(resumedMap, resumedRoads,
+                                                resumedStore, resumedPeople));
+    EXPECT_EQ(state.populationChange.net, resumed.populationChange.net);
+    EXPECT_EQ(state.populationChange.deaths, resumed.populationChange.deaths);
+    EXPECT_FLOAT_EQ(state.populationChange.desirability,
+                    resumed.populationChange.desirability);
+    EXPECT_DOUBLE_EQ(state.deathcareState.fractionalDeaths,
+                     resumed.deathcareState.fractionalDeaths);
+    EXPECT_EQ(state.transitRoutes.size(), resumed.transitRoutes.size());
+    EXPECT_EQ(occupancyOf(store, BuildingType::Office),
+              occupancyOf(resumedStore, BuildingType::Office));
+  }
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
 }

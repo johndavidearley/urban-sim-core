@@ -404,6 +404,16 @@ shortfall.
 
 ---
 
+## Playtest-driven correction before M20
+
+Completed October 12, 2026: player-built cities now share `MigrationSystem`
+with the autonomous simulator. Population responds to housing, jobs, services,
+utilities and quality of life instead of a fixed target that shrinks after
+mortality. Last-tick arrivals/departures/deaths/net are visible in the HUD and
+MCP. Session inputs survive save/load, and a rendered regression grows an
+ordinary zoned city above 1,200 residents and unlocks bus transit. M20 remains
+next; economy balancing and player road upgrades remain future work.
+
 ## Next Targets (Post-Backlog)
 
 Finished. The active queue is Phase 6 (M17–M22) above. This list is the

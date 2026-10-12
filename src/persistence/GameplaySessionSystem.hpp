@@ -1,9 +1,11 @@
 #pragma once
 
+#include "src/systems/MigrationSystem.hpp"
 #include <cstdint>
 #include <string>
 #include <vector>
 
+#include "src/systems/GrowthSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/systems/TransitSystem.hpp"
 #include "src/world/Zoning.hpp"
@@ -24,7 +26,12 @@ struct GameplaySessionState {
   int64_t treasuryNet = 0;
   int64_t treasuryDebt = 0;
   double treasuryInterestRemainder = 0.0;
+  // Last migration request, retained in saves for compatibility; not a cap.
   uint32_t populationTarget = 480;
+  MigrationConditions migrationConditions;
+  PopulationChange populationChange;
+  std::vector<GrowthChanceModifier> growthModifiers;
+  float laggedEducationCoverage = 0.0f;
   double fractionalDeaths = 0.0;
   uint32_t awaitingDisposition = 0;
   std::vector<ServiceFacility> facilities;

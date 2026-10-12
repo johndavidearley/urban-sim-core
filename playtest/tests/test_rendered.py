@@ -269,6 +269,211 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(s.broken)
         await s.launch()
 
+    async def test_playable_migration_unlocks_transit_and_survives_load(self):
+        s = self.session
+        await s.city("new", 64)
+        await s.request(
+            "tool",
+            {"action": "apply", "name": "road", "x1": 8, "y1": 32, "x2": 40, "y2": 32},
+        )
+        for service, x, y in (
+            ("power", 24, 31),
+            ("water", 24, 33),
+            ("education", 25, 31),
+        ):
+            await s.request(
+                "tool",
+                {
+                    "action": "apply",
+                    "name": "service",
+                    "service": service,
+                    "x1": x,
+                    "y1": y,
+                },
+            )
+        for zone, x1, x2, y in (
+            ("residential", 8, 22, 31),
+            ("commercial", 8, 22, 33),
+            ("industrial", 28, 40, 31),
+            ("office", 28, 40, 33),
+        ):
+            await s.request(
+                "tool",
+                {
+                    "action": "apply",
+                    "name": "zone",
+                    "zone": zone,
+                    "x1": x1,
+                    "y1": y,
+                    "x2": x2,
+                    "y2": y,
+                },
+            )
+        for _ in range(10):
+            await s.request("time", {"action": "step", "ticks": 30})
+            if s.last_state["funds"] >= 250000:
+                break
+        self.assertGreaterEqual(s.last_state["funds"], 250000)
+        for service, x, y in (
+            ("health", 26, 31),
+            ("sanitation", 26, 33),
+            ("police", 23, 31),
+            ("fire", 23, 33),
+            ("garbage", 27, 31),
+            ("cemetery", 27, 33),
+        ):
+            await s.request(
+                "tool",
+                {
+                    "action": "apply",
+                    "name": "service",
+                    "service": service,
+                    "x1": x,
+                    "y1": y,
+                },
+            )
+        # Expand into road-connected, utility-served neighborhoods rather than
+        # relying on redevelopment along a saturated single-road village.
+        await s.request(
+            "tool",
+            {"action": "apply", "name": "road", "x1": 40, "y1": 32, "x2": 42, "y2": 36},
+        )
+        for y in range(36, 61, 4):
+            await s.request(
+                "tool",
+                {
+                    "action": "apply",
+                    "name": "road",
+                    "x1": 10,
+                    "y1": y,
+                    "x2": 42,
+                    "y2": y,
+                },
+            )
+        for x in range(10, 43, 4):
+            await s.request(
+                "tool",
+                {
+                    "action": "apply",
+                    "name": "road",
+                    "x1": x,
+                    "y1": 36,
+                    "x2": x,
+                    "y2": 60,
+                },
+            )
+        for x in (15, 35):
+            for service, sx, y in (
+                ("power", x, 47),
+                ("water", x, 49),
+                ("education", x + 2, 47),
+                ("health", x + 2, 49),
+                ("garbage", x, 51),
+            ):
+                await s.request(
+                    "tool",
+                    {
+                        "action": "apply",
+                        "name": "service",
+                        "service": service,
+                        "x1": sx,
+                        "y1": y,
+                    },
+                )
+        for x, y in ((20, 43), (32, 51)):
+            for service, sx, sy in (
+                ("sanitation", x, y),
+                ("cemetery", x, y + 2),
+                ("fire", x + 1, y),
+                ("police", x + 1, y + 2),
+            ):
+                await s.request(
+                    "tool",
+                    {
+                        "action": "apply",
+                        "name": "service",
+                        "service": service,
+                        "x1": sx,
+                        "y1": sy,
+                    },
+                )
+        reserved = {
+            (14, 44),
+            (14, 48),
+            (34, 44),
+            (34, 48),
+            (18, 40),
+            (18, 44),
+            (30, 48),
+            (30, 52),
+        }
+        for ix, x in enumerate(range(10, 42, 4)):
+            for iy, y in enumerate(range(36, 60, 4)):
+                if (x, y) in reserved:
+                    continue
+                zone = (
+                    "residential"
+                    if (ix + iy) % 3 != 2
+                    else ("commercial" if iy % 2 == 0 else "industrial")
+                )
+                await s.request(
+                    "tool",
+                    {
+                        "action": "apply",
+                        "name": "zone",
+                        "zone": zone,
+                        "x1": x + 1,
+                        "y1": y + 1,
+                        "x2": x + 3,
+                        "y2": y + 3,
+                    },
+                )
+        await s.request(
+            "tool",
+            {
+                "action": "apply",
+                "name": "district",
+                "archetype": "general",
+                "x1": 10,
+                "y1": 36,
+                "x2": 42,
+                "y2": 60,
+            },
+        )
+        for _ in range(12):
+            await s.request("time", {"action": "step", "ticks": 50})
+            flow = s.last_state["population_change"]
+            self.assertEqual(
+                flow["net"], flow["arrivals"] - flow["departures"] - flow["deaths"]
+            )
+            self.assertGreater(s.last_state["population"], 0)
+            if s.last_state["population"] > 1200 and s.last_state["routes"] > 0:
+                break
+        self.assertGreater(s.last_state["population"], 1200)
+        self.assertGreater(s.last_state["routes"], 0)
+        await s.city("save")
+        await s.request("time", {"action": "step", "ticks": 10})
+        expected = s.last_state.copy()
+        await s.city("load")
+        await s.request("time", {"action": "step", "ticks": 10})
+        for field in (
+            "population",
+            "funds",
+            "tick",
+            "buildings",
+            "routes",
+            "population_change",
+        ):
+            self.assertEqual(s.last_state[field], expected[field], field)
+        await s.request(
+            "view", {"action": "toggle", "name": "compact_ui", "enabled": False}
+        )
+        await s.screenshot("migration-population-hud")
+        await s.request(
+            "view", {"action": "toggle", "name": "compact_ui", "enabled": True}
+        )
+        await s.screenshot("migration-compact-hud")
+
     async def test_sdk_client_and_disconnect_cleanup(self):
         # Stop the fixture game so this test owns only the game launched through MCP.
         await self.session.stop()

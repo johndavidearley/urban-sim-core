@@ -9,6 +9,7 @@ add_executable(test_core
   GrowthSystemTests.cpp
   GrowthMetricsTests.cpp
   PopulationSystemTests.cpp
+  MigrationSystemTests.cpp
   TrafficSystemTests.cpp
   EconomySystemTests.cpp
   MetricsSystemTests.cpp

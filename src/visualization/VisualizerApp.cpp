@@ -112,6 +112,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       liveState.treasuryDebt = session.treasuryDebt;
       liveState.treasuryInterestRemainder = session.treasuryInterestRemainder;
       liveState.populationTarget = session.populationTarget;
+      liveState.migrationConditions = session.migrationConditions;
+      liveState.populationChange = session.populationChange;
+      liveState.districtGrowthModifiers = session.growthModifiers;
+      liveState.laggedEducationCoverage = session.laggedEducationCoverage;
       liveState.deathcareState.fractionalDeaths = session.fractionalDeaths;
       liveState.deathcareState.awaitingDisposition =
           session.awaitingDisposition;
@@ -140,7 +144,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.paused = true;
   }
   refreshLiveDerivedState(map, roads, store, population, facilities, liveState,
-                          98765u);
+                          98765u, false, true, loadedAtStartup);
   refreshRouteHeat(store, population, roads, liveState,
                    bridge ? bridge->simulationSeed : 98765u);
 
@@ -286,6 +290,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     session.treasuryDebt = liveState.treasuryDebt;
     session.treasuryInterestRemainder = liveState.treasuryInterestRemainder;
     session.populationTarget = liveState.populationTarget;
+    session.migrationConditions = liveState.migrationConditions;
+    session.populationChange = liveState.populationChange;
+    session.growthModifiers = liveState.districtGrowthModifiers;
+    session.laggedEducationCoverage = liveState.laggedEducationCoverage;
     session.fractionalDeaths = liveState.deathcareState.fractionalDeaths;
     session.awaitingDisposition = liveState.deathcareState.awaitingDisposition;
     session.autonomousGrowth = liveState.autonomousGrowth;
@@ -331,6 +339,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.lowFunds = funds > 0 && funds < 5000;
     liveState.bankrupt = funds == 0 && liveState.treasuryDebt > 0;
     liveState.populationTarget = session.populationTarget;
+    liveState.migrationConditions = session.migrationConditions;
+    liveState.populationChange = session.populationChange;
+    liveState.districtGrowthModifiers = session.growthModifiers;
+    liveState.laggedEducationCoverage = session.laggedEducationCoverage;
     liveState.deathcareState.fractionalDeaths = session.fractionalDeaths;
     liveState.deathcareState.awaitingDisposition = session.awaitingDisposition;
     liveState.autonomousGrowth = session.autonomousGrowth;
@@ -345,7 +357,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     facilities = std::move(session.facilities);
     applySessionDistricts(districts, session);
     refreshLiveDerivedState(map, roads, store, population, facilities,
-                            liveState, 3001u + (liveState.tick * 31u));
+                            liveState, 3001u + (liveState.tick * 31u), false,
+                            true, true);
     refreshRouteHeat(store, population, roads, liveState,
                      3001u + (liveState.tick * 31u));
     roadToolActive = false;
@@ -513,7 +526,13 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     Json result = bridge->metadata(
         host, gpu, showQuitDialog ? "quit_dialog" : "gameplay", liveState.tick);
     result.update(
-        {{"funds", funds},
+        {{"population_change",
+          {{"arrivals", liveState.populationChange.arrivals},
+           {"departures", liveState.populationChange.departures},
+           {"deaths", liveState.populationChange.deaths},
+           {"net", liveState.populationChange.net},
+           {"desirability", liveState.populationChange.desirability}}},
+         {"funds", funds},
          {"paused", liveState.paused},
          {"dirty", sessionDirty},
          {"population", population.getTotalPopulation()},
@@ -586,7 +605,21 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"health_coverage", liveState.serviceSummary.healthCoverage},
            {"education_coverage", liveState.serviceSummary.educationCoverage},
            {"power_coverage", liveState.serviceSummary.powerCoverage},
-           {"water_coverage", liveState.serviceSummary.waterCoverage}}},
+           {"water_coverage", liveState.serviceSummary.waterCoverage},
+           {"sanitation_coverage", liveState.serviceSummary.sanitationCoverage},
+           {"garbage_coverage", liveState.serviceSummary.garbageCoverage},
+           {"recycling_coverage", liveState.serviceSummary.recyclingCoverage},
+           {"cemetery_coverage", liveState.serviceSummary.cemeteryCoverage},
+           {"crematorium_coverage",
+            liveState.serviceSummary.crematoriumCoverage},
+           {"power_demand_mw", liveState.serviceSummary.powerDemandMW},
+           {"power_supply_mw", liveState.serviceSummary.powerGenerationMW},
+           {"power_supply_ratio", liveState.serviceSummary.powerSupplyRatio},
+           {"water_demand", liveState.serviceSummary.waterDemand},
+           {"water_supply", liveState.serviceSummary.waterSupply},
+           {"water_supply_ratio", liveState.serviceSummary.waterSupplyRatio},
+           {"deathcare_backlog",
+            liveState.deathcareState.awaitingDisposition}}},
          {"demand",
           {{"residential", liveState.demand.residential},
            {"commercial", liveState.demand.commercial},
@@ -1355,7 +1388,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     if (cleanUiMode) {
       drawCompactGameplayHud(renderer, windowWidth, liveState.paused,
                              population.getTotalPopulation(), funds,
-                             activeToolLabel);
+                             activeToolLabel, liveState.populationChange);
     } else {
       drawGameplayHud(renderer, windowWidth, population.getTotalPopulation(),
                       store.getBuildingCount(), funds, activeToolLabel,

@@ -115,6 +115,10 @@ void refreshDerivedCityState(
       state.laggedEducationCoverage);
   }
 
+  const auto checkpointLoads =
+      options.preserveCheckpoint && options.runTraffic
+          ? roads.getAllEdgeTraffic()
+          : std::vector<RoadNetwork::EdgeTrafficInfo>{};
   if (options.runTraffic) {
     if (options.enableTransit) {
       if (options.placeTransit) {
@@ -141,6 +145,12 @@ void refreshDerivedCityState(
     }
   }
 
+  if (options.preserveCheckpoint && options.runTraffic) {
+    roads.resetCongestion();
+    for (const auto &edge : checkpointLoads)
+      roads.updateCongestion(edge.from, edge.to, edge.currentLoad);
+  }
+
   if (!ServiceSystem::isResultCacheValid(store, state.serviceCache)) {
     state.serviceSummary = ServiceSystem::evaluateFromCache(
       store, roads, state.serviceCache, nullptr);
@@ -149,7 +159,7 @@ void refreshDerivedCityState(
     state.serviceSummary = state.serviceCache.cachedResult;
   }
 
-  if (options.updateLandValues) {
+  if (options.updateLandValues && !options.preserveCheckpoint) {
     LandValueSystem::updateLandValues(
       map, roads, store, &state.serviceCache, ax0, ay0, ax1, ay1);
   }
@@ -176,6 +186,7 @@ void playableCityTick(
   int64_t& funds,
   const PlayableCityTickOptions& options
 ) {
+  const uint32_t populationBefore = population.getTotalPopulation();
   const uint32_t tickSeed = options.baseSeed + (state.tick * 31u);
   const float educationNow = state.laggedEducationCoverage;
   int ax0 = 0, ay0 = 0, ax1 = 0, ay1 = 0;
@@ -209,8 +220,22 @@ void playableCityTick(
   state.buildingsDemolished = growth.totalDemolished();
   state.constructionSpend = growth.constructionSpend;
 
-  PopulationSystem::allocate(
-    store, population, state.populationTarget, tickSeed + 2u, educationNow);
+  MigrationConditions conditions = state.migrationConditions;
+  if (!options.requireUtilities)
+    conditions.utilityAvailability = 1.0f;
+  const auto migration = MigrationSystem::evaluate(
+      populationBefore, population.getTotalEmployed(),
+      city_sim::summarize(store).resCapacity, conditions);
+  state.populationTarget = migration.requestedPopulation;
+  PopulationSystem::allocate(store, population, migration.requestedPopulation,
+                             tickSeed + 2u, educationNow);
+  const uint32_t afterMigration = population.getTotalPopulation();
+  state.populationChange = {};
+  state.populationChange.desirability = migration.desirability;
+  state.populationChange.arrivals =
+      afterMigration > populationBefore ? afterMigration - populationBefore : 0;
+  state.populationChange.departures =
+      populationBefore > afterMigration ? populationBefore - afterMigration : 0;
 
   DerivedCityRefreshOptions refresh;
   refresh.runTraffic = true;
@@ -234,8 +259,6 @@ void playableCityTick(
     tickResPollution, state.deathcareState
   );
   if (state.deathcare.deaths > 0) {
-    state.populationTarget = state.populationTarget > state.deathcare.deaths
-      ? state.populationTarget - state.deathcare.deaths : 0;
     PopulationSystem::allocate(
       store, population, population.getTotalPopulation(), tickSeed + 5u, educationNow
     );
@@ -267,6 +290,21 @@ void playableCityTick(
   state.treasuryInterestRemainder = debt.interestRemainder;
   state.lowFunds = funds > 0 && funds < 5000;
   state.bankrupt = funds == 0 && (flow.shortfall > 0 || state.treasuryDebt > 0);
+  state.populationChange.deaths = state.deathcare.deaths;
+  state.populationChange.net =
+      static_cast<int64_t>(population.getTotalPopulation()) - populationBefore;
+  state.migrationConditions = {
+      state.trafficSummary.averageEdgeCongestion,
+      tickResPollution,
+      state.serviceSummary.satisfaction,
+      state.crimeRate,
+      state.illnessRate,
+      options.requireUtilities
+          ? std::min({state.serviceSummary.powerCoverage,
+                      state.serviceSummary.waterCoverage,
+                      state.serviceSummary.powerSupplyRatio,
+                      state.serviceSummary.waterSupplyRatio})
+          : 1.0f};
   state.laggedEducationCoverage = state.serviceSummary.educationCoverage;
 
   ++state.tick;

@@ -12,7 +12,12 @@ namespace {
 struct PQCompare {
   bool operator()(const std::pair<float, glm::ivec2>& a,
                   const std::pair<float, glm::ivec2>& b) const {
-    return a.first > b.first;  // Min-heap based on distance
+    // Stable ties make equal-cost paths independent of edge insertion order.
+    if (a.first != b.first)
+      return a.first > b.first;
+    if (a.second.x != b.second.x)
+      return a.second.x > b.second.x;
+    return a.second.y > b.second.y;
   }
 };
 

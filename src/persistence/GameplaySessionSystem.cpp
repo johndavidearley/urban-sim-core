@@ -1,5 +1,6 @@
 #include "src/persistence/GameplaySessionSystem.hpp"
 
+#include <cmath>
 #include <exception>
 #include <fstream>
 
@@ -194,35 +195,56 @@ bool GameplaySessionSystem::save(
     });
   }
 
-  const json root = {
-    {"version", kGameplaySessionVersion},
-    {"citySnapshot", cityPathFor(sessionPath)},
-    {"funds", session.funds},
-    {"tick", session.tick},
-    {"paused", session.paused},
-    {"tickIntervalMs", session.tickIntervalMs},
-    {"treasuryRevenue", session.treasuryRevenue},
-    {"treasuryExpenses", session.treasuryExpenses},
-    {"treasuryNet", session.treasuryNet},
-    {"treasuryDebt", session.treasuryDebt},
-    {"treasuryInterestRemainder", session.treasuryInterestRemainder},
-    {"populationTarget", session.populationTarget},
-    {"fractionalDeaths", session.fractionalDeaths},
-    {"awaitingDisposition", session.awaitingDisposition},
-    {"autonomousGrowth", session.autonomousGrowth},
-    {"autonomousExtent", session.autonomousExtent},
-    {"emptyZonedCount", session.emptyZonedCount},
-    {"transitRoutes", serializeTransitRoutes(session.transitRoutes)},
-    {"districts", serializeDistricts(session.districts)},
-    {"demand", {
-      {"residential", session.demand.residential},
-      {"commercial", session.demand.commercial},
-      {"industrial", session.demand.industrial},
-      {"office", session.demand.office}
-    }},
-    {"facilities", facilities}
-  };
+  json root = {{"version", kGameplaySessionVersion},
+               {"citySnapshot", cityPathFor(sessionPath)},
+               {"funds", session.funds},
+               {"tick", session.tick},
+               {"paused", session.paused},
+               {"tickIntervalMs", session.tickIntervalMs},
+               {"treasuryRevenue", session.treasuryRevenue},
+               {"treasuryExpenses", session.treasuryExpenses},
+               {"treasuryNet", session.treasuryNet},
+               {"treasuryDebt", session.treasuryDebt},
+               {"treasuryInterestRemainder", session.treasuryInterestRemainder},
+               {"populationTarget", session.populationTarget},
+               {"laggedEducationCoverage", session.laggedEducationCoverage},
+               {"migrationConditions",
+                {{"congestion", session.migrationConditions.congestion},
+                 {"pollution", session.migrationConditions.pollution},
+                 {"serviceSatisfaction",
+                  session.migrationConditions.serviceSatisfaction},
+                 {"crimeRate", session.migrationConditions.crimeRate},
+                 {"illnessRate", session.migrationConditions.illnessRate},
+                 {"utilityAvailability",
+                  session.migrationConditions.utilityAvailability}}},
+               {"populationChange",
+                {{"arrivals", session.populationChange.arrivals},
+                 {"departures", session.populationChange.departures},
+                 {"deaths", session.populationChange.deaths},
+                 {"net", session.populationChange.net},
+                 {"desirability", session.populationChange.desirability}}},
+               {"fractionalDeaths", session.fractionalDeaths},
+               {"awaitingDisposition", session.awaitingDisposition},
+               {"autonomousGrowth", session.autonomousGrowth},
+               {"autonomousExtent", session.autonomousExtent},
+               {"emptyZonedCount", session.emptyZonedCount},
+               {"transitRoutes", serializeTransitRoutes(session.transitRoutes)},
+               {"districts", serializeDistricts(session.districts)},
+               {"demand",
+                {{"residential", session.demand.residential},
+                 {"commercial", session.demand.commercial},
+                 {"industrial", session.demand.industrial},
+                 {"office", session.demand.office}}},
+               {"facilities", facilities}};
 
+  root["growthModifiers"] = json::array();
+  for (const auto &modifier : session.growthModifiers) {
+    root["growthModifiers"].push_back({{"x1", modifier.minCorner.x},
+                                       {"y1", modifier.minCorner.y},
+                                       {"x2", modifier.maxCorner.x},
+                                       {"y2", modifier.maxCorner.y},
+                                       {"multiplier", modifier.multiplier}});
+  }
   std::ofstream out(sessionPath);
   if (!out.is_open()) {
     return fail(errorMessage, "unable to open gameplay session file for writing");
@@ -262,6 +284,56 @@ bool GameplaySessionSystem::load(
     loaded.treasuryDebt = root.value("treasuryDebt", int64_t{0});
     loaded.treasuryInterestRemainder = root.value("treasuryInterestRemainder", 0.0);
     loaded.populationTarget = root.value("populationTarget", uint32_t{480});
+    loaded.laggedEducationCoverage =
+        root.value("laggedEducationCoverage", 0.0f);
+    if (root.contains("migrationConditions")) {
+      const auto &c = root.at("migrationConditions");
+      loaded.migrationConditions = {c.at("congestion").get<float>(),
+                                    c.at("pollution").get<float>(),
+                                    c.at("serviceSatisfaction").get<float>(),
+                                    c.at("crimeRate").get<float>(),
+                                    c.at("illnessRate").get<float>(),
+                                    c.at("utilityAvailability").get<float>()};
+    }
+    if (root.contains("populationChange")) {
+      const auto &c = root.at("populationChange");
+      loaded.populationChange = {
+          c.at("arrivals").get<uint32_t>(), c.at("departures").get<uint32_t>(),
+          c.at("deaths").get<uint32_t>(), c.at("net").get<int64_t>(),
+          c.at("desirability").get<float>()};
+      const auto &change = loaded.populationChange;
+      if (change.net != static_cast<int64_t>(change.arrivals) -
+                            change.departures - change.deaths)
+        return fail(errorMessage,
+                    "gameplay session has inconsistent population change");
+    }
+    const auto &c = loaded.migrationConditions;
+    for (float value :
+         {loaded.laggedEducationCoverage, c.congestion, c.pollution,
+          c.serviceSatisfaction, c.crimeRate, c.illnessRate,
+          c.utilityAvailability, loaded.populationChange.desirability}) {
+      if (!std::isfinite(value) || value < 0.0f || value > 1.0f)
+        return fail(errorMessage,
+                    "gameplay session has invalid migration conditions");
+    }
+    if (root.contains("growthModifiers")) {
+      for (const auto &item : root.at("growthModifiers")) {
+        GrowthChanceModifier modifier;
+        modifier.minCorner = {item.at("x1").get<int>(),
+                              item.at("y1").get<int>()};
+        modifier.maxCorner = {item.at("x2").get<int>(),
+                              item.at("y2").get<int>()};
+        modifier.multiplier = item.at("multiplier").get<float>();
+        if (!map.isValid(modifier.minCorner) ||
+            !map.isValid(modifier.maxCorner) ||
+            modifier.minCorner.x > modifier.maxCorner.x ||
+            modifier.minCorner.y > modifier.maxCorner.y ||
+            !std::isfinite(modifier.multiplier) || modifier.multiplier < 0.0f)
+          return fail(errorMessage,
+                      "gameplay session has invalid growth modifiers");
+        loaded.growthModifiers.push_back(modifier);
+      }
+    }
     loaded.fractionalDeaths = root.value("fractionalDeaths", 0.0);
     loaded.awaitingDisposition = root.value("awaitingDisposition", uint32_t{0});
     loaded.autonomousGrowth = root.value("autonomousGrowth", false);

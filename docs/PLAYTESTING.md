@@ -77,6 +77,16 @@ Read `urban-sim://controls` for key names, overlay ordering and action sources.
 the resource template are URL-encoded and restricted to the current run.
 Prompts `exploratory_playtest` and `regression_investigation` provide workflows.
 
+`inspect(section="state")` includes `population_change` with `arrivals`,
+`departures`, `deaths`, `net`, and `desirability`. These describe the **last
+completed tick**, not the sum of a multi-tick step. Net change equals arrivals
+minus departures minus deaths. Migration uses the previous completed tick's
+conditions; edits to utilities take effect in those conditions after a tick.
+Metrics also expose sewage, garbage, recycling, cemetery and crematorium
+coverage, utility capacities/demand/supply ratios, and deathcare backlog.
+Older saves initialize the new lagged inputs to defaults, then update them
+on the first tick; their stored population target does not limit growth.
+
 Input coordinates are **logical window pixels**, not framebuffer pixels.
 Screenshot metadata includes both dimensions for DPI scaling. Placement tool
 endpoints are tile coordinates. Use `inspect(section="ui")` for visible control

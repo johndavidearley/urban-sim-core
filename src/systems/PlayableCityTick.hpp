@@ -1,5 +1,6 @@
 #pragma once
 
+#include "src/systems/MigrationSystem.hpp"
 #include <cstdint>
 #include <vector>
 
@@ -25,7 +26,10 @@
 // playable city sees the same environment model as `--simulate`.
 struct PlayableCityTickState {
   uint32_t tick = 0;
+  // Last migration request, retained in saves for compatibility; not a cap.
   uint32_t populationTarget = 480;
+  MigrationConditions migrationConditions;
+  PopulationChange populationChange;
   DeathcareState deathcareState;
   ZoneDemand demand;
   TrafficSummary trafficSummary;
@@ -86,6 +90,9 @@ struct PlayableCityTickOptions {
 };
 
 struct DerivedCityRefreshOptions {
+  // Rebuild display/cache data without replacing the saved congestion or land
+  // values that govern the next growth step.
+  bool preserveCheckpoint = false;
   bool reallocPopulation = false;
   bool runTraffic = true;
   bool enableTransit = true;

@@ -193,6 +193,14 @@ void drawGameplayHud(
              + "  HIGH " + std::to_string(highIncome),
            {225, 228, 235}, 1);
 
+  const auto &change = liveState.populationChange;
+  drawText(renderer, x + 12, y + 254,
+           "IN " + std::to_string(change.arrivals) + " OUT " +
+               std::to_string(change.departures) + " DEAD " +
+               std::to_string(change.deaths) + " NET " +
+               std::to_string(change.net),
+           {175, 205, 235}, 1);
+
   const std::array<std::pair<HudAction, const char*>, 6> controls = {{
     {HudAction::TogglePause, paused ? "PLAY" : "PAUSE"},
     {HudAction::Slow, "1X"},
@@ -217,16 +225,12 @@ void drawGameplayHud(
   }
 }
 
-void drawCompactGameplayHud(
-  DrawList* renderer,
-  int windowWidth,
-  bool paused,
-  uint32_t population,
-  int64_t funds,
-  const std::string& toolLabel
-) {
+void drawCompactGameplayHud(DrawList *renderer, int windowWidth, bool paused,
+                            uint32_t population, int64_t funds,
+                            const std::string &toolLabel,
+                            const PopulationChange &change) {
   constexpr int width = 330;
-  constexpr int height = 46;
+  constexpr int height = 64;
   const int x = windowWidth - width - 12;
   constexpr int y = 12;
   drawFilledRect(renderer, x, y, width, height, {14, 17, 21}, 165);
@@ -236,8 +240,13 @@ void drawCompactGameplayHud(
   drawText(renderer, x + 86, y + 9, "POP " + std::to_string(population), {225, 230, 235}, 2);
   drawText(renderer, x + 178, y + 9, "$" + std::to_string(funds), {255, 220, 95}, 2);
   drawText(renderer, x + 10, y + 29, "TOOL " + toolLabel + "   F4 DETAILS", {175, 195, 215}, 1);
+  drawText(renderer, x + 10, y + 47,
+           "IN " + std::to_string(change.arrivals) + " OUT " +
+               std::to_string(change.departures) + " D " +
+               std::to_string(change.deaths) + " NET " +
+               std::to_string(change.net),
+           {175, 205, 235}, 1);
 }
-
 
 void drawToast(
   DrawList* renderer,

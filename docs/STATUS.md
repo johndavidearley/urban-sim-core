@@ -1,6 +1,6 @@
 # Project Status
 
-Last verified: September 29, 2026
+Last verified: October 12, 2026
 
 Priorities updated October 10, 2026. The work queue is Phase 6 (M17–M22)
 in `ROADMAP.md`. Strict `ctest` was re-run that day. Sanitizer jobs were
@@ -25,7 +25,9 @@ Phase 1 through Phase 5 milestone work recorded in the roadmap is complete.
 Phase 6 (M17–M22) is the active queue. M17 (utility shortage), M18
 (schools and the labor market), and M19 (density and land value) are
 implemented. Redevelopment chance follows land value, civic coverage,
-and road congestion. The map draws capacity tier. Next is M20,
+and road congestion. The map draws capacity tier. Playable migration now
+uses the same desirability calculation as the autonomous simulator, removing
+the shrinking fixed population target found during the hour-long playtest. Next is M20,
 neighborhood crime and illness.
 
 ### Shared full-sim path (CLI + visualizer)
@@ -50,6 +52,22 @@ neighborhood crime and illness.
   Session save/load persists principal and interest remainder (older saves load
   as debt 0). `CitySimulator` still uses cash-only treasury accounting.
 
+### Playable migration correction (October 12, 2026)
+
+- Housing headroom, employment and lagged city conditions determine arrivals
+  and departures. Utility coverage and supply shortages also affect playable
+  desirability. Deaths are counted once after migration.
+- The full and compact HUD show arrivals, departures, deaths and net change
+  for the last completed tick; MCP exposes the same ledger and desirability.
+- Saves persist migration conditions, education lag and district growth
+  modifiers. Older version-1 sessions still load; their old population target
+  is no longer a cap. Loading refreshes summaries without changing saved
+  road loads or land values.
+- Road route ties and edge aggregation now use stable coordinate order,
+  preventing construction/load insertion order from changing continuation.
+  This can change equally short commute routes in existing CLI scenarios;
+  the extracted CLI migration formula itself is unchanged.
+
 ### Recent performance work (post-MVP)
 
 A multi-batch hot-path pass landed on `main` development:
@@ -65,7 +83,8 @@ A multi-batch hot-path pass landed on `main` development:
 
 ## Validation Baseline
 
-- 367 tests across the GoogleTest suites. Strict `ctest --test-dir build-strict` passed on October 10, 2026.
+- 385 GoogleTest cases pass in the strict macOS Debug build on October 12, 2026.
+  Five rendered MCP acceptance tests and seven Python unit tests pass locally.
 - Tests are discovered individually by CTest.
 - Regular and warnings-as-errors builds pass.
 - Full ASan/UBSan and ThreadSanitizer runs pass.

@@ -278,6 +278,16 @@ std::vector<RoadNetwork::EdgeTrafficInfo> RoadNetwork::getAllEdgeTraffic() const
     info.capacity = edge.capacity;
     traffic.push_back(info);
   }
-  
+
+  std::sort(traffic.begin(), traffic.end(),
+            [](const EdgeTrafficInfo &a, const EdgeTrafficInfo &b) {
+              if (a.from.x != b.from.x)
+                return a.from.x < b.from.x;
+              if (a.from.y != b.from.y)
+                return a.from.y < b.from.y;
+              if (a.to.x != b.to.x)
+                return a.to.x < b.to.x;
+              return a.to.y < b.to.y;
+            });
   return traffic;
 }

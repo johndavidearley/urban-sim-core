@@ -1,5 +1,6 @@
 #pragma once
 
+#include "src/systems/MigrationSystem.hpp"
 #include <array>
 #include <cstdint>
 #include <string>
@@ -102,7 +103,10 @@ struct LiveSimulationState {
   WasteSummary waste;
   DeathcareState deathcareState;
   DeathcareSummary deathcare;
+  // Last migration request, retained in saves for compatibility; not a cap.
   uint32_t populationTarget = 480;
+  MigrationConditions migrationConditions;
+  PopulationChange populationChange;
   // Transit routes persist across live ticks (same stack as CitySimulator).
   std::vector<TransitRoute> transitRoutes;
   TransitCoverageCache transitCache;

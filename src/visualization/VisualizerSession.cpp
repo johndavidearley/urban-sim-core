@@ -55,6 +55,8 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   PlayableCityTickState tickState;
   tickState.tick = liveState.tick;
   tickState.populationTarget = liveState.populationTarget;
+  tickState.migrationConditions = liveState.migrationConditions;
+  tickState.populationChange = liveState.populationChange;
   tickState.deathcareState = liveState.deathcareState;
   tickState.demand = liveState.demand;
   tickState.trafficSummary = liveState.trafficSummary;
@@ -87,6 +89,8 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
 void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tickState) {
   liveState.tick = tickState.tick;
   liveState.populationTarget = tickState.populationTarget;
+  liveState.migrationConditions = tickState.migrationConditions;
+  liveState.populationChange = tickState.populationChange;
   liveState.deathcareState = tickState.deathcareState;
   liveState.demand = tickState.demand;
   liveState.trafficSummary = tickState.trafficSummary;
@@ -135,20 +139,16 @@ void updatePlayableUtilityConnectivity(
   updateUtilityConnectivityFromFacilities(map, roads, store, facilities);
 }
 
-void refreshLiveDerivedState(
-  CityMap& map,
-  RoadNetwork& roads,
-  EntityStore& store,
-  PopulationStore& population,
-  const std::vector<ServiceFacility>& facilities,
-  LiveSimulationState& liveState,
-  uint32_t seed,
-  bool reallocPopulation,
-  bool runTraffic
-) {
+void refreshLiveDerivedState(CityMap &map, RoadNetwork &roads,
+                             EntityStore &store, PopulationStore &population,
+                             const std::vector<ServiceFacility> &facilities,
+                             LiveSimulationState &liveState, uint32_t seed,
+                             bool reallocPopulation, bool runTraffic,
+                             bool preserveCheckpoint) {
   PlayableCityTickState tickState = captureTickState(liveState);
   DerivedCityRefreshOptions options;
   options.reallocPopulation = reallocPopulation;
+  options.preserveCheckpoint = preserveCheckpoint;
   options.runTraffic = runTraffic;
   options.enableTransit = true;
   options.placeTransit = false;

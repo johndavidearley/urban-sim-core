@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <nlohmann/json.hpp>
 #include <string>
 
 #include "gtest/gtest.h"
@@ -31,6 +32,10 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   saved.treasuryDebt = 250;
   saved.treasuryInterestRemainder = 0.4;
   saved.populationTarget = 900;
+  saved.migrationConditions = {0.2f, 0.3f, 0.7f, 0.1f, 0.2f, 0.8f};
+  saved.populationChange = {12, 3, 1, 8, 0.6f};
+  saved.growthModifiers.push_back({{1, 1}, {4, 4}, 0.8f});
+  saved.laggedEducationCoverage = 0.75f;
   saved.fractionalDeaths = 0.75;
   saved.awaitingDisposition = 12;
   saved.autonomousGrowth = true;
@@ -82,6 +87,13 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   EXPECT_EQ(loaded.treasuryDebt, 250);
   EXPECT_DOUBLE_EQ(loaded.treasuryInterestRemainder, 0.4);
   EXPECT_EQ(loaded.populationTarget, 900u);
+  EXPECT_FLOAT_EQ(loaded.migrationConditions.congestion, 0.2f);
+  EXPECT_FLOAT_EQ(loaded.migrationConditions.utilityAvailability, 0.8f);
+  EXPECT_EQ(loaded.populationChange.net, 8);
+  ASSERT_EQ(loaded.growthModifiers.size(), 1u);
+  EXPECT_FLOAT_EQ(loaded.growthModifiers[0].multiplier, 0.8f);
+  EXPECT_EQ(loaded.populationChange.deaths, 1u);
+  EXPECT_FLOAT_EQ(loaded.laggedEducationCoverage, 0.75f);
   EXPECT_DOUBLE_EQ(loaded.fractionalDeaths, 0.75);
   EXPECT_EQ(loaded.awaitingDisposition, 12u);
   EXPECT_TRUE(loaded.autonomousGrowth);
@@ -156,4 +168,71 @@ TEST(GameplaySessionSystemTests, MissingSessionReturnsUsefulError) {
   EXPECT_FALSE(GameplaySessionSystem::load(
     path.string(), map, roads, store, population, session, &error));
   EXPECT_FALSE(error.empty());
+}
+
+TEST(GameplaySessionSystemTests, LegacySaveLoadsWithoutMigrationFields) {
+  CityMap map({4, 4});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore people;
+  GameplaySessionState saved;
+  saved.populationTarget = 272;
+  const auto path =
+      std::filesystem::temp_directory_path() / "urban_migration_legacy.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store,
+                                          people, saved));
+  nlohmann::json document;
+  {
+    std::ifstream in(path);
+    in >> document;
+  }
+  document.erase("migrationConditions");
+  document.erase("populationChange");
+  document.erase("laggedEducationCoverage");
+  document.erase("growthModifiers");
+  {
+    std::ofstream out(path);
+    out << document;
+  }
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store,
+                                          people, loaded));
+  EXPECT_EQ(loaded.populationTarget, 272u);
+  EXPECT_EQ(loaded.populationChange.net, 0);
+  EXPECT_FLOAT_EQ(loaded.migrationConditions.utilityAvailability, 1.0f);
+  EXPECT_FLOAT_EQ(loaded.laggedEducationCoverage, 0.0f);
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
+}
+
+TEST(GameplaySessionSystemTests,
+     RejectsInvalidMigrationConditionsWithoutReplacingState) {
+  CityMap map({4, 4});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore people;
+  GameplaySessionState saved;
+  const auto path =
+      std::filesystem::temp_directory_path() / "urban_migration_invalid.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store,
+                                          people, saved));
+  nlohmann::json document;
+  {
+    std::ifstream in(path);
+    in >> document;
+  }
+  document["migrationConditions"]["utilityAvailability"] = -0.5;
+  {
+    std::ofstream out(path);
+    out << document;
+  }
+  GameplaySessionState loaded;
+  loaded.funds = 123;
+  std::string error;
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(), map, roads, store,
+                                           people, loaded, &error));
+  EXPECT_NE(error.find("migration conditions"), std::string::npos);
+  EXPECT_EQ(loaded.funds, 123);
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
 }

@@ -15,6 +15,7 @@
 #include "src/systems/GrowthSystem.hpp"
 #include "src/systems/LandValueSystem.hpp"
 #include "src/systems/MetricsSystem.hpp"
+#include "src/systems/MigrationSystem.hpp"
 #include "src/systems/PopulationSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/systems/TrafficSystem.hpp"
@@ -189,24 +190,11 @@ SimResult CitySimulator::run(
       const auto t0 = Clock::now();
       const uint32_t prevPop = population.getTotalPopulation();
       const uint32_t prevEmployed = population.getTotalEmployed();
-      const float unemployment = prevPop > 0 ? city_sim::clamp01(static_cast<float>(prevPop - prevEmployed) / prevPop) : 0.0f;
-      float desirability = city_sim::attractivenessFromUnemployment(unemployment);
-      desirability *= city_sim::clamp01(1.0f - 0.4f * lastCongestion);
-      desirability *= city_sim::clamp01(1.0f - 0.5f * tickResPollution);
-      desirability *= city_sim::clamp01(0.6f + 0.4f * lastServiceSatisfaction);
-      desirability *= city_sim::clamp01(1.0f - 0.25f * lastCrimeRate);
-      desirability *= city_sim::clamp01(1.0f - 0.3f * lastIllnessRate);
-
-      const float headroom = tickCap.resCapacity > prevPop
-        ? static_cast<float>(tickCap.resCapacity - prevPop) : 0.0f;
-      float requested;
-      if (desirability < 0.05f && prevPop > 0) {
-        requested = static_cast<float>(prevPop) * 0.98f;
-      } else {
-        requested = static_cast<float>(prevPop) + 0.25f * desirability * headroom + 3.0f * desirability;
-      }
-      const uint32_t requestedPop = static_cast<uint32_t>(
-        std::max(0.0f, std::min(static_cast<float>(tickCap.resCapacity), requested)));
+      const auto migration = MigrationSystem::evaluate(
+          prevPop, prevEmployed, tickCap.resCapacity,
+          {lastCongestion, tickResPollution, lastServiceSatisfaction,
+           lastCrimeRate, lastIllnessRate});
+      const uint32_t requestedPop = migration.requestedPopulation;
 
       if (tick % std::max(1, options.populationInterval) == 0) {
         PopulationSystem::allocate(store, population, requestedPop, tickSeed + 1u, educationNow);

@@ -23,17 +23,13 @@ void updatePlayableUtilityConnectivity(
 
 // Recompute utilities/services/land value/economy (and optionally occupancy
 // and traffic) after a player tool or session load. Does not advance the tick.
-void refreshLiveDerivedState(
-  CityMap& map,
-  RoadNetwork& roads,
-  EntityStore& store,
-  PopulationStore& population,
-  const std::vector<ServiceFacility>& facilities,
-  LiveSimulationState& liveState,
-  uint32_t seed,
-  bool reallocPopulation = false,
-  bool runTraffic = true
-);
+void refreshLiveDerivedState(CityMap &map, RoadNetwork &roads,
+                             EntityStore &store, PopulationStore &population,
+                             const std::vector<ServiceFacility> &facilities,
+                             LiveSimulationState &liveState, uint32_t seed,
+                             bool reallocPopulation = false,
+                             bool runTraffic = true,
+                             bool preserveCheckpoint = false);
 
 void runSimulationTick(
   CityMap& map,
