@@ -119,9 +119,12 @@ struct JobSpatialIndex {
   int cellsY = 1;
   std::vector<std::vector<const Building*>> cells;
   const std::vector<const Building*>* allJobs = nullptr;
+  bool occupiedWeights = false;
 
   void build(const std::vector<const Building*>& jobBuildings) {
     allJobs = &jobBuildings;
+    occupiedWeights = std::any_of(jobBuildings.begin(), jobBuildings.end(),
+      [](const Building* b) { return b->occupancy > 0; });
     cells.clear();
     if (jobBuildings.empty()) {
       cellsX = cellsY = 1;
@@ -154,7 +157,7 @@ struct JobSpatialIndex {
   }
 };
 
-// Distance- and capacity-weighted job pick for a commute batch anchored at
+// Distance- and occupied-workplace-weighted job pick for a commute batch anchored at
 // `home`: nearer, larger job buildings are more likely. Straight-line
 // (Manhattan) distance is the cheap proxy; actual routing still uses the road
 // network. Candidates are gathered from expanding spatial-hash rings until
@@ -209,7 +212,8 @@ const Building* pickWeightedJob(
     const int dx = candidates[i]->position.x - home.x;
     const int dy = candidates[i]->position.y - home.y;
     const float dist = static_cast<float>(std::abs(dx) + std::abs(dy));
-    const float capacityWeight = static_cast<float>(std::max(1, candidates[i]->capacity));
+    const float capacityWeight = static_cast<float>(index.occupiedWeights
+      ? std::max(0, candidates[i]->occupancy) : std::max(1, candidates[i]->capacity));
     const float w = capacityWeight / (1.0f + kDistanceDecay * dist);
     weights[i] = w;
     totalWeight += w;
@@ -245,19 +249,33 @@ std::vector<CommuteSpec> collectCommuteSpecs(
   std::vector<CommuteSpec> specs;
   outTotalCommuters = 0;
 
-  const BuildingPartitions parts = BuildingPartitions::fromStore(store, /*sortById=*/true);
+  BuildingPartitions parts = BuildingPartitions::fromStore(store, /*sortById=*/true);
+  const auto occupiedOnlyWhenPopulated = [](std::vector<const Building*>& buildings) {
+    if (std::any_of(buildings.begin(), buildings.end(), [](const Building* b) { return b->occupancy > 0; }))
+      buildings.erase(std::remove_if(buildings.begin(), buildings.end(),
+        [](const Building* b) { return b->occupancy <= 0; }), buildings.end());
+  };
+  occupiedOnlyWhenPopulated(parts.residential);
+  occupiedOnlyWhenPopulated(parts.jobs);
   if (parts.residential.empty() || parts.jobs.empty()) return specs;
 
   JobSpatialIndex jobIndex;
   jobIndex.build(parts.jobs);
 
   std::mt19937 rng(seed);
-  std::uniform_int_distribution<size_t> resDist(0, parts.residential.size() - 1);
+  std::vector<double> homeWeights;
+  double occupiedHomes = 0;
+  for (const Building* home : parts.residential) occupiedHomes += std::max(0, home->occupancy);
+  for (const Building* home : parts.residential)
+    homeWeights.push_back(occupiedHomes > 0 ? std::max(0, home->occupancy) : 1);
+  std::discrete_distribution<size_t> resDist(homeWeights.begin(), homeWeights.end());
 
   for (const PopulationGroup* gp : groupsInIdOrder(population)) {
     if (gp->employed == 0) continue;
     outTotalCommuters += gp->employed;
-    const uint32_t wpc = std::max(1u, gp->employed / 10u);
+    // Bound sampling error as cities grow instead of putting hundreds of
+    // workers onto one randomly selected route.
+    const uint32_t wpc = std::clamp(gp->employed / 10u, 1u, 32u);
     const uint32_t n = (gp->employed + wpc - 1) / wpc;
     for (uint32_t c = 0; c < n; ++c) {
       const Building* home = parts.residential[resDist(rng)];
@@ -303,9 +321,11 @@ TrafficSummary runCommuteLoop(
   TrafficSummary summary;
   network.resetCongestion();
 
-  if (routeCache != nullptr && routeCache->topologyVersion != network.getTopologyVersion()) {
+  if (routeCache != nullptr && (routeCache->topologyVersion != network.getTopologyVersion() ||
+      routeCache->routingVersion != network.getRoutingVersion())) {
     routeCache->paths.clear();
     routeCache->topologyVersion = network.getTopologyVersion();
+    routeCache->routingVersion = network.getRoutingVersion();
   }
 
   uint32_t totalCommuters = 0;
@@ -332,11 +352,12 @@ TrafficSummary runCommuteLoop(
   // after resetCongestion, so concurrent reads on edges are safe).
   std::vector<Pathfinding::Path> paths(specs.size());
 
-  if (pool != nullptr && specs.size() > 1) {
+  const bool parallelRoutes = pool != nullptr && specs.size() > 1;
+  if (parallelRoutes) {
     // Every edge is at zero load right after resetCongestion() above, and
     // this phase runs entirely before any congestion is accumulated (that
     // happens in phase 3 below) - so the path found here depends only on
-    // topology, never on congestionWeight or which tick it is. That's what
+    // topology and road classes, never on congestionWeight or which tick it is. That's what
     // makes routeCache safe to reuse across ticks.
     //
     // Misses are batched into ~threadCount chunks rather than one pool task
@@ -435,7 +456,7 @@ TrafficSummary runCommuteLoop(
     const Pathfinding::Path& path = paths[i];
     if (!path.found || path.waypoints.size() <= 1) continue;
 
-    if (pool != nullptr) {
+    if (parallelRoutes) {
       // Parallel mode: congestion not yet accumulated.
       for (size_t j = 0; j + 1 < path.waypoints.size(); ++j) {
         network.updateCongestion(path.waypoints[j], path.waypoints[j + 1],
@@ -589,7 +610,8 @@ std::vector<EdgeTrafficData> TrafficSystem::getTopRouteDiagnosticEdges(
   edges.reserve(edgeTotals.size());
   for (auto& [key, edge] : edgeTotals) {
     (void)key;
-    edge.congestion = std::min(1.0f, edge.totalCommuters / 10.0f);
+    const float capacity = network.getEdgeCapacity(edge.from, edge.to);
+    edge.congestion = capacity > 0.f ? std::min(1.0f, edge.totalCommuters / capacity) : 0.f;
     edges.push_back(edge);
   }
 

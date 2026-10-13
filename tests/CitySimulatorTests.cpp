@@ -911,7 +911,7 @@ TEST(CitySimulatorTests,
         CitySimulator::run(map, roads, store, people, 42, 2, options);
     for (const auto &edge : roads.getAllEdgeTraffic()) {
       EXPECT_EQ(edge.roadClass, RoadClass::Local);
-      EXPECT_FLOAT_EQ(edge.capacity, 10.0f);
+      EXPECT_FLOAT_EQ(edge.capacity, kLocalRoadCapacity);
     }
     return result.rows.front();
   };

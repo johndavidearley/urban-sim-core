@@ -47,7 +47,7 @@ TEST(FreightSystem, DomesticAndExportsAddToExistingCommuterLoad) {
   TrafficSystem::refreshCongestion(city.roads, summary);
   EXPECT_GT(summary.averageEdgeCongestion, 0.0f);
   city.roads.setRoadClass({6, 8}, {7, 8}, RoadClass::Arterial);
-  EXPECT_FLOAT_EQ(city.roads.getCongestion({6, 8}, {7, 8}), 27.0f / 40.0f);
+  EXPECT_FLOAT_EQ(city.roads.getCongestion({6, 8}, {7, 8}), 27.0f / kArterialRoadCapacity);
 }
 
 TEST(FreightSystem, CommercialOnlyCityImportsAndUnpoweredStockDoesNotShip) {

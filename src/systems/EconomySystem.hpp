@@ -86,6 +86,19 @@ struct EconomyLandValueBounds {
   int y1 = 0;
 };
 
+// Fiscal valuations are separate from construction costs and asset wealth.
+// Defaults preserve the headless simulation's existing economic model.
+struct EconomyValuation {
+  float propertyValuePerUnit = 10000.0f;
+  float incomePerWorker = 50000.0f;
+  bool taxOccupiedSpace = false;
+  bool scaleMaintenanceByCapacity = false;
+
+  static EconomyValuation playable() {
+    return {200.0f, 200.0f, true, true};
+  }
+};
+
 class EconomySystem {
 public:
   // Calculate economic state from city current entities and population.
@@ -119,7 +132,8 @@ public:
     const CityMap* map = nullptr,
     const TradeRates& tradeRates = TradeRates{},
     float inflationMultiplier = 1.0f,
-    EconomyLandValueBounds landValueBounds = {}
+    EconomyLandValueBounds landValueBounds = {},
+    EconomyValuation valuation = {}
   );
 
   // Apply economy state to city metrics

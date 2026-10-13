@@ -190,8 +190,8 @@ TEST(RoadNetworkTests, CongestionUpdate) {
   
   EXPECT_FLOAT_EQ(network.getCongestion({10, 10}, {10, 11}), 0.0f);
   
-  network.updateCongestion({10, 10}, {10, 11}, 5.0f);
-  EXPECT_FLOAT_EQ(network.getCongestion({10, 10}, {10, 11}), 0.5f); // 5/10 capacity
+  network.updateCongestion({10, 10}, {10, 11}, kLocalRoadCapacity / 2);
+  EXPECT_FLOAT_EQ(network.getCongestion({10, 10}, {10, 11}), 0.5f); // Half the local-road capacity
 }
 
 // Pathfinding tests

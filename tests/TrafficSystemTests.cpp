@@ -668,3 +668,90 @@ TEST_F(TrafficSystemTests, RouteDiagnosticsFilterNoMatchesReturnsEmpty) {
 
   EXPECT_TRUE(edges.empty());
 }
+
+TEST(TransportRegression, CommutesAvoidVacantHomesAndWorkplacesWhenOccupiedStockExists) {
+  CityMap map({16, 8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  for (int x = 1; x < 12; ++x) roads.buildRoad({x, 4}, {x + 1, 4});
+  const auto home = store.createBuilding(BuildingType::Residential, {2, 4}, 8);
+  store.getBuilding(home)->occupancy = 8;
+  store.createBuilding(BuildingType::Residential, {10, 4}, 512);
+  const auto job = store.createBuilding(BuildingType::Commercial, {5, 4}, 20);
+  store.getBuilding(job)->occupancy = 8;
+  store.createBuilding(BuildingType::Commercial, {8, 4}, 512);
+  people.createGroup(IncomeBand::Middle, 8, 8);
+  RouteDiagnosticsFilter filter;
+  filter.hasOrigin = true; filter.origin = {10, 4};
+  EXPECT_TRUE(TrafficSystem::getTopRouteDiagnosticEdges(store, people, roads, filter, 32, 42).empty());
+  filter.hasOrigin = false; filter.hasDestination = true; filter.destination = {8, 4};
+  EXPECT_TRUE(TrafficSystem::getTopRouteDiagnosticEdges(store, people, roads, filter, 32, 42).empty());
+  filter.hasDestination = false;
+  EXPECT_FALSE(TrafficSystem::getTopRouteDiagnosticEdges(store, people, roads, filter, 32, 42).empty());
+}
+
+TEST(TransportRegression, RouteDiagnosticsUseArterialCapacity) {
+  CityMap map({16, 8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  for (int x = 2; x < 5; ++x) {
+    roads.buildRoad({x, 4}, {x + 1, 4});
+    roads.setRoadClass({x, 4}, {x + 1, 4}, RoadClass::Arterial);
+  }
+  const auto home = store.createBuilding(BuildingType::Residential, {2, 4}, 200);
+  const auto job = store.createBuilding(BuildingType::Commercial, {5, 4}, 200);
+  store.getBuilding(home)->occupancy = 200; store.getBuilding(job)->occupancy = 200;
+  people.createGroup(IncomeBand::Middle, 200, 200);
+  const auto edges = TrafficSystem::getTopRouteDiagnosticEdges(store, people, roads, {}, 32, 42);
+  const auto summary = TrafficSystem::simulateCommutes(store, people, roads, 42);
+  ASSERT_EQ(edges.size(), 3u);
+  for (const auto& edge : edges) {
+    EXPECT_FLOAT_EQ(edge.totalCommuters, 200.f);
+    EXPECT_FLOAT_EQ(edge.congestion, 0.5f);
+    EXPECT_FLOAT_EQ(edge.congestion, roads.getCongestion(edge.from, edge.to));
+  }
+  EXPECT_FLOAT_EQ(summary.averageEdgeCongestion, 0.5f);
+}
+
+TEST(TransportRegression, SingleBatchPoolDoesNotDoubleCountRoadLoad) {
+  CityMap map({8, 8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  roads.buildRoad({2, 4}, {3, 4});
+  const auto home = store.createBuilding(BuildingType::Residential, {2, 4}, 8);
+  const auto job = store.createBuilding(BuildingType::Commercial, {3, 4}, 20);
+  store.getBuilding(home)->occupancy = 1; store.getBuilding(job)->occupancy = 1;
+  people.createGroup(IncomeBand::Middle, 1, 1);
+  const auto serial = TrafficSystem::simulateCommutes(store, people, roads, 42);
+  ThreadPool pool(2);
+  const auto pooled = TrafficSystem::simulateCommutes(store, people, roads, 42, &pool);
+  EXPECT_FLOAT_EQ(pooled.averageEdgeCongestion, serial.averageEdgeCongestion);
+  EXPECT_FLOAT_EQ(roads.getCongestion({2, 4}, {3, 4}), 1.f / kLocalRoadCapacity);
+}
+
+TEST(TransportRegression, ArterialUpgradeInvalidatesCachedFreeFlowRoutesWithoutChangingTopology) {
+  CityMap map({16, 8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  for (int x = 2; x < 12; ++x) {
+    roads.buildRoad({x, 2}, {x + 1, 2});
+    roads.buildRoad({x, 3}, {x + 1, 3});
+  }
+  roads.buildRoad({2, 2}, {2, 3}); roads.buildRoad({12, 2}, {12, 3});
+  const auto home = store.createBuilding(BuildingType::Residential, {2, 2}, 100);
+  const auto job = store.createBuilding(BuildingType::Commercial, {12, 2}, 100);
+  store.getBuilding(home)->occupancy = 80; store.getBuilding(job)->occupancy = 80;
+  people.createGroup(IncomeBand::Middle, 80, 80);
+  ThreadPool pool(2); TrafficRouteCache cache;
+  const auto before = TrafficSystem::simulateCommutes(store, people, roads, 42, &pool, nullptr, &cache);
+  const RouteEndpointKey key{{2, 2}, {12, 2}};
+  ASSERT_EQ(cache.paths.at(key).waypoints[1], Coord(3, 2));
+  const auto topology = roads.getTopologyVersion();
+  const auto routing = roads.getRoutingVersion();
+  for (int x = 2; x < 12; ++x) roads.setRoadClass({x, 3}, {x + 1, 3}, RoadClass::Arterial);
+  roads.setRoadClass({2, 2}, {2, 3}, RoadClass::Arterial);
+  roads.setRoadClass({12, 2}, {12, 3}, RoadClass::Arterial);
+  EXPECT_EQ(roads.getTopologyVersion(), topology);
+  EXPECT_GT(roads.getRoutingVersion(), routing);
+  const auto after = TrafficSystem::simulateCommutes(store, people, roads, 42, &pool, nullptr, &cache);
+  EXPECT_EQ(cache.paths.at(key).waypoints[1], Coord(2, 3));
+  EXPECT_LT(after.averageCommuteTime, before.averageCommuteTime);
+  EXPECT_FLOAT_EQ(after.averageCommuteTime, 12.f);
+  const auto version = roads.getRoutingVersion();
+  roads.setRoadClass({2, 2}, {2, 3}, RoadClass::Arterial);
+  EXPECT_EQ(roads.getRoutingVersion(), version);
+  const auto distanceOnly = Pathfinding::findShortestPath(roads, {2, 2}, {12, 2});
+  EXPECT_FLOAT_EQ(distanceOnly.totalDistance, 10.f);
+}

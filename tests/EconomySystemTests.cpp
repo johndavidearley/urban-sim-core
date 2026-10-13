@@ -446,3 +446,40 @@ TEST_F(EconomySystemTests, OfficeOccupancyDoesNotAffectTrade) {
   EXPECT_EQ(state.goodsConsumed, 0);
   EXPECT_EQ(state.tradeBalance, 0);
 }
+
+TEST_F(EconomySystemTests, PlayableVacantTowerCostsMoreWithoutGeneratingTax) {
+  const auto id = store->createBuilding(BuildingType::Residential, {1, 1}, 8);
+  auto small = EconomySystem::calculateEconomy(*store, *population, {}, nullptr, {},
+                                               1.f, {}, EconomyValuation::playable());
+  store->getBuilding(id)->capacity = 512;
+  auto tower = EconomySystem::calculateEconomy(*store, *population, {}, nullptr, {},
+                                               1.f, {}, EconomyValuation::playable());
+  EXPECT_EQ(small.residentialTaxRevenue, 0);
+  EXPECT_EQ(tower.residentialTaxRevenue, 0);
+  EXPECT_EQ(tower.residentialMaintenance, small.residentialMaintenance * 64);
+  EXPECT_LT(tower.balance, small.balance);
+}
+
+TEST_F(EconomySystemTests, PlayableTaxFollowsOccupiedSpaceRatherThanCapacity) {
+  const auto id = store->createBuilding(BuildingType::Residential, {1, 1}, 8);
+  store->getBuilding(id)->occupancy = 8;
+  auto small = EconomySystem::calculateEconomy(*store, *population, {}, nullptr, {},
+                                               1.f, {}, EconomyValuation::playable());
+  store->getBuilding(id)->capacity = 512;
+  auto tower = EconomySystem::calculateEconomy(*store, *population, {}, nullptr, {},
+                                               1.f, {}, EconomyValuation::playable());
+  EXPECT_EQ(tower.residentialTaxRevenue, small.residentialTaxRevenue);
+  store->getBuilding(id)->occupancy = 16;
+  auto occupied = EconomySystem::calculateEconomy(*store, *population, {}, nullptr, {},
+                                                  1.f, {}, EconomyValuation::playable());
+  EXPECT_EQ(occupied.residentialTaxRevenue, small.residentialTaxRevenue * 2);
+}
+
+TEST_F(EconomySystemTests, PlayableIncomeTaxUsesEarningsInsteadOfAssetWealth) {
+  population->createGroup(IncomeBand::Middle, 100, 100);
+  const auto economy = EconomySystem::calculateEconomy(*store, *population, {}, nullptr, {},
+                                                        1.f, {}, EconomyValuation::playable());
+  EXPECT_EQ(economy.totalTaxRevenue, 2000);
+  const auto legacy = EconomySystem::calculateEconomy(*store, *population);
+  EXPECT_EQ(legacy.totalTaxRevenue, 500000);
+}

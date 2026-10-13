@@ -340,7 +340,7 @@ void drawOnboarding(DrawList* renderer, int windowHeight, int step) {
       break;
     case 1:
       drawText(renderer, x + 12, y + 38, "2 ZONE LAND", {235, 238, 242}, 2);
-      drawText(renderer, x + 12, y + 62, "DRAG A ZONE BESIDE ROAD", {175, 185, 200}, 1);
+      drawText(renderer, x + 12, y + 62, "ZONE HOMES AND JOBS BY ROADS", {175, 185, 200}, 1);
       break;
     case 2:
       drawText(renderer, x + 12, y + 38, "3 START TIME", {235, 238, 242}, 2);
@@ -355,8 +355,8 @@ void drawOnboarding(DrawList* renderer, int windowHeight, int step) {
       drawText(renderer, x + 12, y + 62, "CYCLE SERVICE TO WATER", {175, 185, 200}, 1);
       break;
     case 5:
-      drawText(renderer, x + 12, y + 38, "6 PLACE A CIVIC SERVICE", {235, 238, 242}, 2);
-      drawText(renderer, x + 12, y + 62, "FIRE POLICE HEALTH OR SCHOOL", {175, 185, 200}, 1);
+      drawText(renderer, x + 12, y + 38, "6 EXPAND YOUR CITY", {235, 238, 242}, 2);
+      drawText(renderer, x + 12, y + 62, "ADD SERVICES WHEN BUDGET ALLOWS", {175, 185, 200}, 1);
       break;
     default:
       break;

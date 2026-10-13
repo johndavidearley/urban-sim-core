@@ -183,7 +183,7 @@ void refreshDerivedCityState(
   lvBounds.x1 = ax1;
   lvBounds.y1 = ay1;
   state.economy = EconomySystem::calculateEconomy(
-    store, population, TaxRates{}, &map, TradeRates{}, 1.0f, lvBounds);
+    store, population, TaxRates{}, &map, TradeRates{}, 1.0f, lvBounds, EconomyValuation::playable());
 
   if (options.preserveCheckpoint) {
     const auto local = NeighborhoodSystem::summarize(store);

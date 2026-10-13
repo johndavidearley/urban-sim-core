@@ -64,8 +64,8 @@ TEST(RoadToolTests,
   EXPECT_EQ(funds, 3400);
   EXPECT_EQ(roads.getTopologyVersion(), topology);
   EXPECT_EQ(roads.getRoadClass({2, 8}, {3, 8}), RoadClass::Arterial);
-  EXPECT_FLOAT_EQ(roads.getEdgeCapacity({2, 8}, {3, 8}), 40.0f);
-  EXPECT_FLOAT_EQ(roads.getCongestion({2, 8}, {3, 8}), 0.5f);
+  EXPECT_FLOAT_EQ(roads.getEdgeCapacity({2, 8}, {3, 8}), kArterialRoadCapacity);
+  EXPECT_FLOAT_EQ(roads.getCongestion({2, 8}, {3, 8}), 20.0f / kArterialRoadCapacity);
   // Autonomous re-laying and local tool selection never downgrade an arterial.
   roads.buildRoad({2, 8}, {3, 8});
   EXPECT_EQ(roads.getRoadClass({2, 8}, {3, 8}), RoadClass::Arterial);

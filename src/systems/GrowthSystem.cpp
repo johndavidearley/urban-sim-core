@@ -516,7 +516,11 @@ GrowthStats GrowthSystem::runStep(
         if (store.getBuilding(tile.buildingId) == nullptr) continue;
 
         bool demolished = false;
-        const float demolChance = demolitionPressure(zone, balance, demand);
+        // Low demand can retire vacant stock, but must not evict residents or
+        // jobs from occupied buildings and repeatedly bill their replacements.
+        const Building* standing = store.getBuilding(tile.buildingId);
+        const float demolChance = standing->occupancy == 0
+          ? demolitionPressure(zone, balance, demand) : 0.0f;
         if (demolChance > 0.0f && rng.chance(demolChance)) {
           if (store.removeBuilding(tile.buildingId)) {
             tile.buildingId = EntityIdUtils::NullEntity;

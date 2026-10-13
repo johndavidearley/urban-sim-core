@@ -255,11 +255,21 @@ city dimensions before constructing the simulation map.
 New cities now begin paused and genuinely empty rather than loading a seeded
 demonstration layout. The in-window guide walks through constructing the first
 road, zoning land, starting simulation time, and placing a civic service.
-Loaded sessions bypass the guide.
+Loaded sessions bypass the guide. Start with several connected blocks of homes
+and workplaces, then power and water. Expand the tax base before buying more
+civic services: a tiny settlement cannot cover full utility upkeep, and a
+redundant utility still incurs operating costs. Watch the HUD's IN and OUT
+figures before adding facilities. Low-demand growth only retires vacant
+buildings; occupied homes and workplaces are not automatically demolished.
 
 The construction fund is also the live city treasury. Each simulation tick
 applies one percent of the economy system's tax/export revenue and
 maintenance/import expenses to match the visualizer's short tick cadence.
+Playable property taxes use occupied space valued at $200 per unit, and income
+tax uses $200 of earnings per employed resident, adjusted by income band.
+Maintenance scales with building capacity relative to its type's base building,
+so empty towers cost money rather than generating capacity-based tax windfalls.
+The headless simulator retains its existing default fiscal valuation.
 The HUD shows the latest scaled income, expenses, and net treasury change;
 session saves keep those figures plus outstanding municipal debt.
 
@@ -604,7 +614,7 @@ Goods now add batched freight to commuter congestion. CLI
 `--simulate-no-freight` provides a comparison run. The trade gate is at
 `(0, map height/2)`; disconnected cargo appears as unrouted goods in the HUD,
 CSV and MCP inspection. While the road tool is active, **A** switches local
-(capacity 10) and arterial (40) roads. Drag to build or upgrade: $100 per new
+(capacity 100) and arterial (400) roads. Drag to build or upgrade: $100 per new
 local segment, $400 per new arterial, $300 per local segment upgraded.
 Road classes survive save/load. See [MCP playtesting](docs/PLAYTESTING.md) for
 freight metrics and road inspection.
@@ -612,3 +622,15 @@ freight metrics and road inspection.
 ## License
 
 MIT
+
+Road capacities express aggregate trips/trucks per traffic pass. Commutes use
+occupied homes and workplaces with batches of at most 32 workers, reducing
+sampling artifacts in dense cities. The route diagnostics use each road's
+actual class capacity. Transit takes riders out of car loads; congestion
+continues to represent demand divided by capacity on used edges.
+
+Congestion-aware commute routing assigns relative free-flow costs of 1.25
+per local-road edge and 1.0 per arterial edge, encouraging modest arterial
+detours. Road-class changes invalidate cached commute paths immediately;
+reapplying the same class preserves the cache. Distance-only paths used for
+coverage, freight, and other spatial checks retain unit edge lengths.

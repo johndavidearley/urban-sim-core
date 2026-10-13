@@ -616,3 +616,23 @@ TEST(PlayableCityTickTests,
   std::filesystem::remove(path);
   std::filesystem::remove(path.string() + ".city.json");
 }
+
+TEST(PlayableCityTickTests, DerivedPlayableEconomyDoesNotTaxVacantCapacity) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  const Coord site{5, 5};
+  map.getTile(site).zone = static_cast<int>(ZoneType::Residential);
+  map.getTile(site).buildingId = store.createBuilding(BuildingType::Residential, site, 512);
+  PlayableCityTickState state;
+  DerivedCityRefreshOptions options;
+  options.preserveCheckpoint = true;
+  options.runTraffic = false;
+  options.enableTransit = false;
+  options.updateLandValues = false;
+  refreshDerivedCityState(map, roads, store, population, {}, state, options);
+  EXPECT_EQ(state.economy.residentialTaxRevenue, 0);
+  EXPECT_EQ(state.economy.residentialMaintenance, 3200);
+  EXPECT_LT(state.economy.balance, 0);
+}

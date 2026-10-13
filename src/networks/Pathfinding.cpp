@@ -21,8 +21,9 @@ struct PQCompare {
   }
 };
 
-// A* over the road graph. Edge cost is 1.0 plus an optional congestion
-// penalty (congestionWeight <= 0 disables the penalty). Manhattan distance
+// A* over the road graph. Distance-only paths use unit edge costs;
+// congestion-aware paths include local-road free-flow and congestion costs.
+// Manhattan distance
 // is admissible because every edge costs at least 1.0, so fewer nodes are
 // expanded than plain Dijkstra for typical OD pairs on a sparse road net.
 Pathfinding::Path runAStar(
@@ -102,6 +103,10 @@ Pathfinding::Path runAStar(
 
       float edgeCost = 1.0f;
       if (useCongestion) {
+        // Prefer arterial free-flow travel while keeping minimum cost 1,
+        // so the Manhattan heuristic remains admissible.
+        if (network.getRoadClass(current, neighbor) == RoadClass::Local)
+          edgeCost += 0.25f;
         edgeCost += network.getCongestion(current, neighbor) * congestionWeight;
       }
 

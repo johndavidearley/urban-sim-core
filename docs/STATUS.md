@@ -1,6 +1,6 @@
 # Project Status
 
-Last verified: October 12, 2026
+Last verified: October 13, 2026
 
 Priorities updated October 12, 2026. The work queue is Phase 6 (M17–M22)
 in `ROADMAP.md`. M21 local verification is recorded below; the most recent
@@ -222,3 +222,73 @@ Still constraints, not milestones:
 - `MVP_SPEC.md`: original product scope and success criteria.
 - `IMPLEMENTATION_STATUS.md`: historical implementation journal.
 - `NEXT_STEPS.md`: historical backlog sequence.
+
+## Playable economy balance — October 13, 2026
+
+Playable refreshes now opt into occupancy-based property taxation ($200 per
+occupied unit), earned-income valuation ($200 per worker, weighted by income
+band), and maintenance proportional to capacity divided by base capacity.
+The headless simulator keeps its original default valuations. Construction,
+service operating costs, treasury scaling, and saved balances retain their
+existing rules. Existing savings are not reset; revised flows apply on ticks.
+
+The continued hour-city finished with 5,345 residents and $866,899,979. Its
+revenue dropped from $282,829 to $2,415 per tick; expenses were $1,283 after the
+maintenance change. A new mixed-zone starter retained $6,078 after 200 ticks
+from $27,500 following setup, with no debt; that lightly serviced small city
+still runs a deficit and needs expansion or spending changes. The recorded
+starter replayed twice with identical canonical saved states. Evidence is in
+`playtest-artifacts/economy-balance-20261013`. This checks two scenarios, not
+long-term balance across every city size.
+
+### Multi-seed balance pass
+
+Twelve rendered 600-tick runs cover three simulation seeds (98765, 7, 42) and
+four layouts: tiny settlement, connected multi-block starter, mature imported
+city, and a starter with redundant power. Occupied housing/workplaces are now
+protected from low-demand demolition; vacant stock can still retire. This
+shared growth rule applies to both playable and autonomous cities.
+
+All multi-block starters retained $21,761–$22,691 with no debt and a $14–$16
+last-tick surplus. Tiny settlements and redundant-power layouts entered debt,
+preserving expansion and spending tradeoffs. Mature populations grew in all
+three seeds. Four layout scenarios and an arterial/trade scenario each replayed
+twice with identical saved states. Core tests passed 414/414.
+
+A sequential mature-city transport check found congestion medians 0.971 on
+local roads, 0.930 after arterial trunk upgrades, and 0.860 after trade-gate
+connection; unrouted goods fell from 546 to zero. City evolution between phases
+means those comparisons are not fully controlled experiments. Congestion is
+still high; larger transport scenarios remain a tuning priority. Evidence and
+limitations are in `playtest-artifacts/balance-pass-20261013/REPORT.md`.
+
+### Controlled transport tuning
+
+Shared aggregate road throughput is now local 100 / arterial 400 trips/trucks
+per traffic pass. Commute batches cap at 32 workers; sampling follows occupied
+homes/workplaces, with an all-empty fixture fallback. Route diagnostics use
+actual road capacity. Frozen 178-, 5,345-, and 6,892-resident cities were
+compared under three seeds, three road configurations, transit on/off, and
+sequential/parallel routing. For the reference parallel case, median
+congestion is 0.928 on locals, 0.599 on all arterials, and 0.499 on all
+arterials with transit. Costs and the 4:1 class capacity ratio are unchanged.
+
+417/417 C++ tests passed, including single-batch pooled-load parity. Six more rendered 600-tick growing/mature runs stayed
+solvent; starter and mature scenarios each replayed twice identically. Larger
+cities and parallel routing's topology-only path selection remain limits.
+See `playtest-artifacts/transport-pass-20261013/REPORT.md` for controlled
+results, CPU measurements, methodology, and raw evidence.
+
+### Arterial route attraction and cache correctness
+
+Congestion-aware commute paths now charge relative free-flow cost 1.25 per
+local edge and 1.0 per arterial edge. Separate routing revisions invalidate
+commute caches on genuine class changes without changing topology/coverage
+cache revisions. Idempotent upgrades preserve caches; distance-only paths
+retain unit edge costs. On the frozen reference city, arterial-trunk median
+congestion improved from 0.860 to 0.717 (0.799 to 0.656 with transit).
+
+418/418 C++ tests passed. Six rendered 600-tick growing/mature cases remained
+solvent, with starter/mature double replays plus a double upgrade/trade replay.
+Evidence and remaining parallel queue-routing limits are documented in
+`playtest-artifacts/arterial-routing-20261013/REPORT.md`.

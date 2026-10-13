@@ -413,9 +413,9 @@ TEST(SaveLoadSystemTests,
   ASSERT_TRUE(SaveLoadSystem::applySnapshot(snapshot, loadedMap, loadedRoads,
                                             store, people));
   EXPECT_EQ(loadedRoads.getRoadClass({1, 4}, {2, 4}), RoadClass::Arterial);
-  EXPECT_FLOAT_EQ(loadedRoads.getEdgeCapacity({1, 4}, {2, 4}), 40.0f);
+  EXPECT_FLOAT_EQ(loadedRoads.getEdgeCapacity({1, 4}, {2, 4}), kArterialRoadCapacity);
   EXPECT_FLOAT_EQ(loadedRoads.getFreightLoad({1, 4}, {2, 4}), 3.0f);
-  EXPECT_FLOAT_EQ(loadedRoads.getCongestion({1, 4}, {2, 4}), 0.25f);
+  EXPECT_FLOAT_EQ(loadedRoads.getCongestion({1, 4}, {2, 4}), 10.0f / kArterialRoadCapacity);
   json root;
   {
     std::ifstream input(path);

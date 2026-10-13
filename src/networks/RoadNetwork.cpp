@@ -43,7 +43,7 @@ void RoadNetwork::buildRoad(glm::ivec2 from, glm::ivec2 to) {
   
   if (edges.find(edgeKey) == edges.end()) {
     // Create edge
-    Edge newEdge{makeNodeId(from), makeNodeId(to), 1.0f, 10.0f, 0.0f};
+    Edge newEdge{makeNodeId(from), makeNodeId(to), 1.0f, kLocalRoadCapacity, 0.0f};
     edges[edgeKey] = newEdge;
     
     // Add to adjacency lists (nodes created on demand)
@@ -65,6 +65,7 @@ void RoadNetwork::buildRoad(glm::ivec2 from, glm::ivec2 to) {
     const_cast<CityMap&>(cityMap).getTile(to).hasRoad = true;
 
     ++topologyVersion;
+    ++routingVersion;
   }
 }
 
@@ -75,8 +76,9 @@ bool RoadNetwork::setRoadClass(glm::ivec2 from, glm::ivec2 to,
   auto it = edges.find(makeEdgeKey(from, to));
   if (it == edges.end())
     return false;
+  if (it->second.roadClass != roadClass) ++routingVersion;
   it->second.roadClass = roadClass;
-  it->second.capacity = roadClass == RoadClass::Arterial ? 40.0f : 10.0f;
+  it->second.capacity = roadClass == RoadClass::Arterial ? kArterialRoadCapacity : kLocalRoadCapacity;
   return true;
 }
 RoadClass RoadNetwork::getRoadClass(glm::ivec2 from, glm::ivec2 to) const {
@@ -146,12 +148,14 @@ void RoadNetwork::removeRoad(glm::ivec2 from, glm::ivec2 to) {
     }
 
     ++topologyVersion;
+    ++routingVersion;
   }
 }
 
 void RoadNetwork::clear() {
   if (!edges.empty() || !nodes.empty()) {
     ++topologyVersion;
+    ++routingVersion;
   }
   CityMap& mutableMap = const_cast<CityMap&>(cityMap);
   for (auto& [coord, node] : nodes) {

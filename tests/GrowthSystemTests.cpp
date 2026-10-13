@@ -1,4 +1,6 @@
 #include "gtest/gtest.h"
+#include <array>
+#include <vector>
 
 #include "src/entities/EntityStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
@@ -488,8 +490,8 @@ TEST(GrowthSystemTests, HighestCapacityFollowsLandValueNotTheSaturatedFringe) {
   map.landValue(fringe) = kRedevelopmentLandValueFloor;
   map.landValue(jammed) = kRedevelopmentLandValueCeiling;
   map.landValue(prime) = kRedevelopmentLandValueCeiling;
-  roads.updateCongestion({3, 2}, {4, 2}, 10.0f);
-  roads.updateCongestion({4, 2}, {5, 2}, 10.0f);
+  roads.updateCongestion({3, 2}, {4, 2}, kLocalRoadCapacity);
+  roads.updateCongestion({4, 2}, {5, 2}, kLocalRoadCapacity);
 
   std::vector<ServiceFacility> facilities;
   for (ServiceType type : {ServiceType::Fire, ServiceType::Police, ServiceType::Health, ServiceType::Education}) {
@@ -520,4 +522,39 @@ TEST(GrowthSystemTests, HighestCapacityFollowsLandValueNotTheSaturatedFringe) {
   EXPECT_EQ(fringeBuilding->capacity, 8);
   EXPECT_EQ(jammedBuilding->capacity, 8);
   EXPECT_GT(primeBuilding->capacity, jammedBuilding->capacity);
+}
+
+TEST(GrowthSystemTests, LowDemandDoesNotDemolishOccupiedHousingOrJobs) {
+  CityMap map({8, 8});
+  EntityStore store;
+  const std::array<BuildingType, 4> types = {BuildingType::Residential,
+      BuildingType::Commercial, BuildingType::Industrial, BuildingType::Office};
+  std::vector<EntityId> ids;
+  for (size_t i = 0; i < types.size(); ++i) {
+    const Coord site{2 + static_cast<int>(i), 2};
+    map.getTile(site).zone = static_cast<int>(types[i]);
+    const auto id = store.createBuilding(types[i], site, 20);
+    store.getBuilding(id)->occupancy = 10;
+    map.getTile(site).buildingId = id;
+    ids.push_back(id);
+  }
+  const ZoneDemand noDemand{0.f, 0.f, 0.f, 0.f};
+  for (uint32_t seed = 1; seed <= 200; ++seed) {
+    const auto stats = GrowthSystem::runStep(map, store, noDemand, seed, 0.f);
+    EXPECT_EQ(stats.totalDemolished(), 0);
+  }
+  for (const auto id : ids) ASSERT_NE(store.getBuilding(id), nullptr);
+}
+
+TEST(GrowthSystemTests, LowDemandCanStillRetireVacantStock) {
+  CityMap map({8, 8});
+  EntityStore store;
+  const Coord site{2, 2};
+  map.getTile(site).zone = static_cast<int>(ZoneType::Residential);
+  const auto id = store.createBuilding(BuildingType::Residential, site, 8);
+  map.getTile(site).buildingId = id;
+  const ZoneDemand noDemand{0.f, 0.f, 0.f, 0.f};
+  for (uint32_t seed = 1; seed <= 200 && store.getBuilding(id); ++seed)
+    GrowthSystem::runStep(map, store, noDemand, seed, 0.f);
+  EXPECT_EQ(store.getBuilding(id), nullptr);
 }

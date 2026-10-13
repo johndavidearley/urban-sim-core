@@ -16,7 +16,7 @@ class TransitOffload;
 // A commute's endpoints, independent of congestion weight - the parallel
 // pathfinding phase in runCommuteLoop always runs immediately after
 // RoadNetwork::resetCongestion(), so every edge is at zero load when those
-// paths are computed and the result is purely topology-dependent.
+// paths are computed and the result depends on topology and road classes.
 struct RouteEndpointKey {
   glm::ivec2 origin;
   glm::ivec2 destination;
@@ -32,18 +32,20 @@ struct RouteEndpointKeyHash {
   }
 };
 
-// Caller-owned cache of topology-only shortest paths, reused across ticks
+// Caller-owned cache of class-aware free-flow paths, reused across ticks
 // the same way ServiceCoverageCache/TransitCoverageCache persist across
 // CitySimulator ticks. Road topology in an autonomous --simulate run only
 // changes when the grid expands outward (a handful of times over a whole
 // run), so almost every tick is a pure cache hit once the city has grown
 // past its initial footprint - avoiding a full Dijkstra re-run per commute
 // per tick, which dominates per-tick cost at scale. Invalidated (cleared)
-// automatically whenever RoadNetwork::getTopologyVersion() moves past the
-// version recorded at last use.
+// automatically when RoadNetwork's topology or routing revision changes.
+// Class edits advance only the routing revision, leaving service coverage
+// caches valid while commute paths are recomputed.
 struct TrafficRouteCache {
   std::unordered_map<RouteEndpointKey, Pathfinding::Path, RouteEndpointKeyHash> paths;
   uint64_t topologyVersion = 0;
+  uint64_t routingVersion = 0;
 };
 
 struct TrafficSummary {
@@ -73,7 +75,9 @@ struct RouteDiagnosticsFilter {
 
 class TrafficSystem {
 public:
-  // Simulate commute flows for all employed population.
+  // Simulate commute flows for all employed population. Samples homes by
+  // resident occupancy and jobs by occupied workplaces, with batches capped
+  // at 32 workers. All-empty fixtures fall back to uniform homes/capacity jobs.
   // Updates road network congestion, returns traffic summary.
   // If pool is non-null, Dijkstra calls are fanned out across pool workers
   // (specs are collected sequentially to preserve RNG determinism; congestion

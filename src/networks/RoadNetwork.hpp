@@ -39,6 +39,9 @@ struct RoadNodeIdHash {
 };
 
 enum class RoadClass : int { Local = 0, Arterial = 1 };
+// Aggregate trip/truck throughput per simulation traffic pass, not lane count.
+constexpr float kLocalRoadCapacity = 100.0f;
+constexpr float kArterialRoadCapacity = 400.0f;
 
 class RoadNetwork {
 public:
@@ -142,6 +145,8 @@ public:
   // callers cache topology-dependent results (e.g. TrafficRouteCache) across
   // ticks and cheaply detect when they've gone stale.
   uint64_t getTopologyVersion() const { return topologyVersion; }
+  // Includes topology edits and class changes affecting travel cost.
+  uint64_t getRoutingVersion() const { return routingVersion; }
   
   // Traffic queries
   struct EdgeTrafficInfo {
@@ -163,6 +168,7 @@ private:
   // on removeRoad so memory tracks the live road network.
   std::unordered_map<glm::ivec2, Node, Vec2Hash> nodes;
   uint64_t topologyVersion = 0;
+  uint64_t routingVersion = 0;
   
   RoadNodeId makeNodeId(glm::ivec2 coord) const;
   bool isValidCoord(glm::ivec2 coord) const;
