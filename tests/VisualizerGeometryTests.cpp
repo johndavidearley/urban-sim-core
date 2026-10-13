@@ -91,3 +91,162 @@ TEST(VisualizerGeometry, LogicalHitTestsIgnoreFramebufferScale) {
   EXPECT_EQ(button.x - resized.x, 90);
   EXPECT_EQ(button.y - resized.y, 80);
 }
+
+TEST(VisualizerGeometry, DiamondUsesConstantGeometryAndExactProjectedArea) {
+  DrawList list;
+  drawDiamond(&list, {100, 20}, 32, 16, {100, 150, 200}, 128);
+  ASSERT_EQ(list.vertices.size(), 6u);
+  EXPECT_FLOAT_EQ(area(list), 256.f);
+  EXPECT_FLOAT_EQ(list.vertices[0].x, 100.f);
+  EXPECT_FLOAT_EQ(list.vertices[0].y, 20.f);
+  EXPECT_FLOAT_EQ(list.vertices[2].y, 36.f);
+  EXPECT_FLOAT_EQ(list.vertices[0].a, 128.f / 255.f);
+  list.clear();
+  drawDiamond(&list, {0, 0}, 320, 160, {100, 150, 200});
+  EXPECT_EQ(list.vertices.size(), 6u);
+  EXPECT_FLOAT_EQ(area(list), 25600.f);
+  list.clear();
+  drawDiamond(&list, {0, 0}, 0, 16, {100, 150, 200});
+  EXPECT_TRUE(list.vertices.empty());
+}
+
+TEST(VisualizerGeometry, IsometricWallsMeetRoofAndGroundAtProjectedCorners) {
+  DrawList list;
+  drawIsometricObject(&list, {100, 20}, 32, 16, {200, 160, 120}, 24);
+  // Shadow, left wall, right wall, and roof each have two triangles.
+  ASSERT_GE(list.vertices.size(), 24u);
+  EXPECT_FLOAT_EQ(list.vertices[6].x, 88.f);
+  EXPECT_FLOAT_EQ(list.vertices[6].y, 4.f);
+  EXPECT_FLOAT_EQ(list.vertices[7].x, 100.f);
+  EXPECT_FLOAT_EQ(list.vertices[7].y, 9.f);
+  EXPECT_FLOAT_EQ(list.vertices[8].y, 33.f);
+  EXPECT_FLOAT_EQ(list.vertices[12].x, list.vertices[7].x);
+  EXPECT_FLOAT_EQ(list.vertices[12].y, list.vertices[7].y);
+  EXPECT_FLOAT_EQ(list.vertices[19].x, 112.f);
+  EXPECT_FLOAT_EQ(list.vertices[19].y, 4.f);
+  EXPECT_GT(list.vertices[6].r, list.vertices[12].r);
+  EXPECT_GT(list.vertices[18].r, list.vertices[6].r);
+}
+
+TEST(VisualizerGeometry, IsometricRoadsUseNetworkEdgesAndStayInsideParcel) {
+  CityMap map({4, 4});
+  RoadNetwork roads(map);
+  EntityStore store;
+  const std::vector<ServiceFacility> facilities;
+  const std::unordered_map<Coord, float, Vec2Hash> heat;
+  const IsometricProjection projection(64, 32, {100, 100});
+  map.getTile({1, 1}).hasRoad = true;
+  DrawList isolated, adjacent, connected;
+  const auto draw = [&](DrawList& list) {
+    drawIsometricTile(&list, map, roads, store, facilities, heat, 0.f,
+                      OverlayMode::Zone, projection, {1, 1});
+  };
+  draw(isolated);
+  // A neighboring road tile without an edge must not create a connection.
+  map.getTile({2, 1}).hasRoad = true;
+  draw(adjacent);
+  ASSERT_EQ(isolated.vertices.size(), adjacent.vertices.size());
+  for (size_t i = 0; i < isolated.vertices.size(); ++i) {
+    EXPECT_EQ(isolated.vertices[i].x, adjacent.vertices[i].x);
+    EXPECT_EQ(isolated.vertices[i].y, adjacent.vertices[i].y);
+  }
+  roads.buildRoad({1, 1}, {2, 1});
+  draw(connected);
+  EXPECT_GT(connected.vertices.size(), adjacent.vertices.size());
+  const auto top = projection.tileTop({1, 1});
+  for (const auto& vertex : connected.vertices) {
+    EXPECT_GE(vertex.x, top.x - 32);
+    EXPECT_LE(vertex.x, top.x + 33);
+    EXPECT_GE(vertex.y, top.y);
+    EXPECT_LE(vertex.y, top.y + 33);
+  }
+}
+
+TEST(VisualizerGeometry, CivicLandmarksRemainFiniteAtEverySupportedZoom) {
+  CityMap map({4, 4});
+  RoadNetwork roads(map);
+  EntityStore store;
+  const std::unordered_map<Coord, float, Vec2Hash> heat;
+  for (int width : {14, 22, 32, 64, 128}) {
+    const IsometricProjection projection(width, width / 2, {100, 100});
+    for (size_t service = 0; service < kServiceTypeCount; ++service) {
+      const std::vector<ServiceFacility> facilities = {
+          {static_cast<ServiceType>(service), {1, 1}, 10, 1.f}};
+      DrawList list;
+      drawIsometricTile(&list, map, roads, store, facilities, heat, 0.f,
+                        OverlayMode::Zone, projection, {1, 1});
+      EXPECT_GT(list.vertices.size(), 6u);
+      EXPECT_EQ(list.vertices.size() % 3, 0u);
+      for (const auto& vertex : list.vertices) {
+        EXPECT_TRUE(std::isfinite(vertex.x));
+        EXPECT_TRUE(std::isfinite(vertex.y));
+        EXPECT_GE(vertex.a, 0.f);
+        EXPECT_LE(vertex.a, 1.f);
+      }
+      DrawList overlay;
+      drawIsometricTile(&overlay, map, roads, store, facilities, heat, 0.f,
+                        OverlayMode::LandValue, projection, {1, 1});
+      DrawList plainOverlay;
+      drawIsometricTile(&plainOverlay, map, roads, store, {}, heat, 0.f,
+                        OverlayMode::LandValue, projection, {1, 1});
+      EXPECT_EQ(overlay.vertices.size(), plainOverlay.vertices.size());
+    }
+  }
+}
+
+TEST(VisualizerGeometry, DistrictBoundariesAreThinAndPrecedeBuildings) {
+  CityMap map({4, 4});
+  EntityStore store;
+  RoadNetwork roads(map);
+  DistrictSystem districts;
+  districts.createDistrict("Core", {1, 1}, {2, 2});
+  const IsometricProjection projection(64, 32, {100, 100});
+  const std::unordered_map<Coord, float, Vec2Hash> heat;
+  map.getTile({1, 1}).buildingId = store.createBuilding(BuildingType::Office, {1, 1}, 64);
+  DrawList plain, marked;
+  drawIsometricTile(&plain, map, roads, store, {}, heat, 0.f,
+                    OverlayMode::Zone, projection, {1, 1});
+  drawIsometricTile(&marked, map, roads, store, {}, heat, 0.f,
+                    OverlayMode::Zone, projection, {1, 1}, &districts);
+  const size_t added = marked.vertices.size() - plain.vertices.size();
+  ASSERT_EQ(added, 24u); // Two one-pixel boundary segments.
+  EXPECT_LT(area(marked) - area(plain), 150.f);
+  // All building geometry remains the same suffix, after the boundary layer.
+  const size_t buildingVertices = 24;
+  for (size_t offset = 1; offset <= buildingVertices; ++offset) {
+    const auto& a = plain.vertices[plain.vertices.size() - offset];
+    const auto& b = marked.vertices[marked.vertices.size() - offset];
+    EXPECT_EQ(a.x, b.x);
+    EXPECT_EQ(a.y, b.y);
+    EXPECT_EQ(a.r, b.r);
+    EXPECT_EQ(a.a, b.a);
+  }
+}
+
+TEST(VisualizerGeometry, OccupancyDoesNotChangeBuildingSilhouette) {
+  CityMap map({4, 4});
+  RoadNetwork roads(map);
+  EntityStore store;
+  const Coord coord{1, 1};
+  const auto id = store.createBuilding(BuildingType::Residential, coord, 100);
+  map.getTile(coord).buildingId = id;
+  const IsometricProjection projection(64, 32, {100, 100});
+  const std::unordered_map<Coord, float, Vec2Hash> heat;
+  DrawList lowIso, highIso, lowTop, highTop;
+  store.getBuilding(id)->occupancy = 25;
+  drawIsometricTile(&lowIso, map, roads, store, {}, heat, 0.f,
+                    OverlayMode::Zone, projection, coord);
+  drawNormalTileDetail(&lowTop, map, store, {}, coord, 0, 0, 32);
+  store.getBuilding(id)->occupancy = 90;
+  drawIsometricTile(&highIso, map, roads, store, {}, heat, 0.f,
+                    OverlayMode::Zone, projection, coord);
+  drawNormalTileDetail(&highTop, map, store, {}, coord, 0, 0, 32);
+  for (const auto pair : {std::pair<const DrawList*, const DrawList*>{&lowIso, &highIso},
+                          {&lowTop, &highTop}}) {
+    ASSERT_EQ(pair.first->vertices.size(), pair.second->vertices.size());
+    for (size_t i = 0; i < pair.first->vertices.size(); ++i) {
+      EXPECT_EQ(pair.first->vertices[i].x, pair.second->vertices[i].x);
+      EXPECT_EQ(pair.first->vertices[i].y, pair.second->vertices[i].y);
+    }
+  }
+}

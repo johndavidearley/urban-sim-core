@@ -39,7 +39,9 @@ void drawIsometricTile(
   float happinessPenalty,
   OverlayMode overlayMode,
   const IsometricProjection& projection,
-  Coord coord
+  Coord coord,
+  const DistrictSystem* districts = nullptr,
+  DistrictId selectedDistrictId = 0
 );
 
 void drawGradientBar(DrawList* renderer, int x, int y, int w, int h, OverlayMode mode);

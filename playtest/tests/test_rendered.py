@@ -27,6 +27,21 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_focus_centers_developed_area_in_both_projections(self):
+        s = self.session
+        await s.city("new", 64)
+        await s.request("tool", {"action": "apply", "name": "road",
+                                "x1": 40, "y1": 40, "x2": 44, "y2": 40})
+        for projection in ("top_down", "isometric"):
+            await s.request("view", {"action": "projection", "projection": projection})
+            await s.request("view", {"action": "focus"})
+            point = await s.request("coordinates", {"direction": "tile_to_screen",
+                                                    "x": 42, "y": 40})
+            dimensions = s.last_state["dimensions"]
+            self.assertLessEqual(abs(point["x"] - dimensions["width"] / 2), 28)
+            self.assertLessEqual(abs(point["y"] - dimensions["height"] / 2), 28)
+            await s.screenshot("focused-" + projection)
+
     async def test_semantic_scenario_and_identical_replays(self):
         s = self.session
         await record(s, "start")

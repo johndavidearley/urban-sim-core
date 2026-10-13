@@ -233,6 +233,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
     const Coord center = maxX >= 0 ? Coord{(minX + maxX) / 2, (minY + maxY) / 2}
                                    : Coord{mapSize / 2, mapSize / 2};
+    if (!isometricMode) {
+      const int visibleX = std::max(1, windowWidth / tilePixels);
+      const int visibleY = std::max(1, windowHeight / tilePixels);
+      viewX = std::clamp(center.x - visibleX / 2, 0, std::max(0, mapSize - visibleX));
+      viewY = std::clamp(center.y - visibleY / 2, 0, std::max(0, mapSize - visibleY));
+    }
     isometricCameraX = 0;
     isometricCameraY = 0;
     const ScreenPoint projected = isometricProjection().tileCenter(center);
@@ -507,7 +513,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
             }
             notify("DISTRICT REMOVED", true);
           } else {
-            if (!districts.getDistricts().empty()) {
+            if (!isometricMode && !districts.getDistricts().empty()) {
               selectedDistrictId = districts.getDistricts().back().id;
             }
             notify(std::string("DISTRICT ") +
@@ -1239,7 +1245,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                             liveState.routeHeatByTile,
                             liveState.waste.happinessPenalty +
                                 liveState.deathcare.happinessPenalty,
-                            overlayMode, projection, {x, y});
+                            overlayMode, projection, {x, y}, &districts, selectedDistrictId);
           if (x == mapSize - 1 || y == mapSize - 1) {
             const ScreenPoint top = projection.tileTop({x, y});
             const RGB wall{67, 79, 68};
@@ -1289,7 +1295,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         districts.getDistrictConst(selectedDistrictId) == nullptr) {
       selectedDistrictId = 0;
     }
-    if (!districts.getDistricts().empty()) {
+    if (!isometricMode && !districts.getDistricts().empty()) {
       drawDistrictOutlines(renderer, districts, isometricMode,
                            isometricProjection(), viewX, viewY, tilePixels,
                            selectedDistrictId);

@@ -38,6 +38,20 @@ int runGraphicsSmoke(WindowHost &host, VulkanRenderer &gpu,
       heat[{x, y}] = static_cast<float>(x) / 16.f;
     }
   }
+  // Include an arterial junction so street widths and crosswalks are captured.
+  for (int y = 3; y <= 13; ++y) {
+    map.getTile({14, y}).type = 0;
+    if (y > 3) {
+      roads.buildRoad({14, y - 1}, {14, y});
+      roads.setRoadClass({14, y - 1}, {14, y}, RoadClass::Arterial);
+    }
+  }
+  roads.buildRoad({13, 8}, {14, 8});
+  for (size_t service = 0; service < kServiceTypeCount; ++service) {
+    const Coord position{2 + static_cast<int>(service), 12};
+    map.getTile(position).type = 0;
+    facilities.push_back({static_cast<ServiceType>(service), position, 10, 1.f});
+  }
   LiveSimulationState state;
   state.paused = true;
   state.demand = {0.4f, 0.3f, 0.2f, 0.1f};

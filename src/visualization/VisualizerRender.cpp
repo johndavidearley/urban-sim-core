@@ -154,12 +154,9 @@ void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
   if (tile.buildingId != 0) {
     const Building* building = store.getBuilding(tile.buildingId);
     if (building != nullptr) {
-      const float occupancy = building->capacity > 0
-        ? std::clamp(static_cast<float>(building->occupancy) / static_cast<float>(building->capacity), 0.0f, 1.0f)
-        : 0.0f;
       const int tier = buildingDensityTier(building->type, building->capacity);
       const int margin = std::max(1, std::max(2, size / 7) - std::min(tier, 3));
-      const int lift = size >= 18 ? 2 + static_cast<int>(occupancy * 3.0f) : 1;
+      const int lift = size >= 18 ? 3 : 1;
       const int width = std::max(3, size - margin * 2);
       const int height = std::max(3, size - margin * 2 - lift);
       const RGB facade = buildingFacade(building->type);
@@ -212,13 +209,12 @@ void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
 }
 
 void drawDiamond(DrawList* renderer, ScreenPoint top, int width, int height, RGB color, uint8_t alpha) {
-  const int halfWidth = width / 2;
-  const int halfHeight = std::max(1, height / 2);
-  for (int row = 0; row < height; ++row) {
-    const int distance = std::abs(row - halfHeight);
-    const int rowHalfWidth = std::max(1, halfWidth - (distance * halfWidth) / halfHeight);
-    drawFilledRect(renderer, top.x - rowHalfWidth, top.y + row, rowHalfWidth * 2, 1, color, alpha);
-  }
+  if (width <= 0 || height <= 0) return;
+  setDrawColor(renderer, color.r, color.g, color.b, alpha);
+  renderer->polygon({{top.x, top.y},
+                     {top.x + width / 2, top.y + height / 2},
+                     {top.x, top.y + height},
+                     {top.x - width / 2, top.y + height / 2}});
 }
 
 void drawIsometricObject(
@@ -229,29 +225,146 @@ void drawIsometricObject(
   RGB facade,
   int objectHeight
 ) {
-  const int halfWidth = tileWidth / 2;
-  const int inset = std::max(2, tileWidth / 7);
-  const int left = top.x - halfWidth + inset;
-  const int width = tileWidth - inset * 2;
+  if (tileWidth <= 0 || tileHeight <= 0 || objectHeight <= 0) return;
+  const int halfWidth = std::max(1, tileWidth / 2 - std::max(2, tileWidth / 7));
+  const int halfDepth = std::max(1, tileHeight / 3);
   const int baseY = top.y + tileHeight / 2;
-  drawFilledRect(renderer, left + 2, baseY - objectHeight + 3, width, objectHeight, {35, 40, 40}, 95);
-  drawFilledRect(renderer, left, baseY - objectHeight, width / 2, objectHeight, facade);
-  const RGB shaded{
-    static_cast<uint8_t>(facade.r * 3 / 4),
-    static_cast<uint8_t>(facade.g * 3 / 4),
-    static_cast<uint8_t>(facade.b * 3 / 4)
+  const int roofY = baseY - objectHeight;
+  const auto tint = [](RGB c, int delta) -> RGB {
+    return {static_cast<uint8_t>(std::clamp(c.r + delta, 0, 255)),
+            static_cast<uint8_t>(std::clamp(c.g + delta, 0, 255)),
+            static_cast<uint8_t>(std::clamp(c.b + delta, 0, 255))};
   };
-  drawFilledRect(renderer, left + width / 2, baseY - objectHeight, width - width / 2, objectHeight, shaded);
-  drawDiamond(renderer, {top.x, baseY - objectHeight - tileHeight / 3}, width, std::max(4, tileHeight * 2 / 3), {
-    static_cast<uint8_t>(std::min(255, facade.r + 30)),
-    static_cast<uint8_t>(std::min(255, facade.g + 30)),
-    static_cast<uint8_t>(std::min(255, facade.b + 30))
-  });
+  const auto quad = [&](const std::vector<Point>& points, RGB color, uint8_t alpha = 255) {
+    setDrawColor(renderer, color.r, color.g, color.b, alpha);
+    renderer->polygon(points);
+  };
+  // Grounded shadow, then the two visible faces of a single projected prism.
+  const int shadow = std::max(2, objectHeight / 4);
+  quad({{top.x - halfWidth, baseY}, {top.x, baseY - halfDepth},
+        {top.x + halfWidth + shadow, baseY + shadow / 2},
+        {top.x + shadow, baseY + halfDepth + shadow / 2}}, {30, 43, 39}, 65);
+  quad({{top.x - halfWidth, roofY}, {top.x, roofY + halfDepth},
+        {top.x, baseY + halfDepth}, {top.x - halfWidth, baseY}}, facade);
+  quad({{top.x, roofY + halfDepth}, {top.x + halfWidth, roofY},
+        {top.x + halfWidth, baseY}, {top.x, baseY + halfDepth}}, tint(facade, -40));
+  drawDiamond(renderer, {top.x, roofY - halfDepth}, halfWidth * 2,
+              halfDepth * 2, tint(facade, 30));
+
   if (tileWidth >= 22 && objectHeight >= 8) {
-    drawFilledRect(renderer, left + 3, baseY - objectHeight + 3, 2, 2, {205, 230, 225});
-    drawFilledRect(renderer, left + width - 5, baseY - objectHeight + 3, 2, 2, {170, 208, 220});
+    // Window quads follow each wall's slope, with floor spacing tied to zoom.
+    const int floorStep = std::max(5, tileHeight / 3);
+    const int columns = std::clamp(halfWidth / 6, 1, 5);
+    const int windowWidth = std::max(2, halfWidth / (columns * 2 + 1));
+    for (int floor = 4; floor + 3 < objectHeight; floor += floorStep) {
+      for (int column = 0; column < columns; ++column) {
+        const int offset = (column + 1) * halfWidth / (columns + 1);
+        const int rise = offset * halfDepth / halfWidth;
+        const int slope = std::max(1, windowWidth * halfDepth / halfWidth);
+        const int wy = roofY + halfDepth - rise + floor;
+        quad({{top.x - offset, wy}, {top.x - offset + windowWidth, wy + slope},
+              {top.x - offset + windowWidth, wy + slope + 2}, {top.x - offset, wy + 2}},
+             {199, 225, 226});
+        quad({{top.x + offset - windowWidth, wy + slope}, {top.x + offset, wy},
+              {top.x + offset, wy + 2}, {top.x + offset - windowWidth, wy + slope + 2}},
+             {137, 183, 201});
+      }
+    }
+    // A smaller rooftop plant box makes tall silhouettes less uniform.
+    if (objectHeight > tileHeight * 2) {
+      drawDiamond(renderer, {top.x, roofY - halfDepth / 2},
+                  std::max(4, halfWidth / 2), std::max(2, halfDepth / 2), tint(facade, -12));
+    }
   }
 }
+
+namespace {
+void drawIsometricFacility(DrawList* renderer, ScreenPoint top, int width, int height,
+                           const ServiceFacility& facility) {
+  const RGB color = serviceFacilityColor(facility.type);
+  const int cx = top.x;
+  const int baseY = top.y + height / 2;
+  const int unit = std::max(1, width / 16);
+  const auto rect = [&](int x, int y, int w, int h, RGB tint) {
+    drawFilledRect(renderer, cx + x * unit, baseY + y * unit,
+                   std::max(1, w * unit), std::max(1, h * unit), tint);
+  };
+  if (facility.type == ServiceType::Cemetery) {
+    drawDiamond(renderer, {cx, top.y + height / 8}, width * 3 / 4,
+                height * 3 / 4, {89, 126, 83});
+    for (int row = 0; row < 2; ++row) {
+      for (int column = 0; column < 3; ++column) {
+        rect(-4 + column * 3, -2 + row * 3, 2, 3, {146, 155, 149});
+        rect(-4 + column * 3, -2 + row * 3, 2, 1, {217, 219, 204});
+      }
+    }
+    return;
+  }
+  if (facility.type == ServiceType::Water) {
+    // Raised reservoir: legs, narrow tank, and a bright cap.
+    rect(-3, -7, 1, 8, {108, 120, 129});
+    rect(2, -7, 1, 8, {87, 100, 113});
+    drawIsometricObject(renderer, {cx, top.y - height / 2}, width * 3 / 5,
+                        std::max(4, height / 2), color, std::max(8, height / 2));
+    return;
+  }
+  const int lift = facility.type == ServiceType::Health ? height * 3 / 2 : height;
+  drawIsometricObject(renderer, top, width, height, color, lift);
+  const int roofY = baseY - lift;
+  if (width < 22) return;
+  const RGB cream{235, 235, 217};
+  switch (facility.type) {
+    case ServiceType::Fire:
+      // Three garage bays with red lintels.
+      for (int bay = 0; bay < 3; ++bay) {
+        rect(-5 + bay * 3, -2, 2, 3, {62, 70, 74});
+        rect(-5 + bay * 3, -3, 2, 1, cream);
+      }
+      break;
+    case ServiceType::Police:
+      setDrawColor(renderer, 209, 221, 231, 255);
+      drawLine(renderer, cx, roofY - height / 2, cx, roofY);
+      drawFilledRect(renderer, cx, roofY - height / 2, 3 * unit, unit, {81, 140, 211});
+      break;
+    case ServiceType::Health:
+      drawFilledRect(renderer, cx - unit, roofY - 3 * unit, 2 * unit, 6 * unit, cream);
+      drawFilledRect(renderer, cx - 3 * unit, roofY - unit, 6 * unit, 2 * unit, cream);
+      break;
+    case ServiceType::Education:
+      drawIsometricObject(renderer, {cx, top.y - height / 2}, width / 3,
+                          std::max(4, height / 3), color, height);
+      drawFilledRect(renderer, cx - unit, roofY - height / 3, 2 * unit, 2 * unit, cream);
+      break;
+    case ServiceType::Power:
+    case ServiceType::Crematorium: {
+      const int chimney = facility.type == ServiceType::Power ? height : height / 2;
+      drawFilledRect(renderer, cx + 2 * unit, roofY - chimney, 2 * unit, chimney, {98, 104, 107});
+      drawFilledRect(renderer, cx + unit, roofY - chimney, 4 * unit, unit, cream);
+      if (facility.type == ServiceType::Power)
+        drawDiamond(renderer, {cx - 2 * unit, roofY - unit}, width / 3,
+                    std::max(2, height / 3), {71, 103, 132});
+      break;
+    }
+    case ServiceType::Sanitation:
+      drawDiamond(renderer, {cx, roofY - height / 4}, width / 2,
+                  std::max(3, height / 2), {91, 148, 159});
+      drawDiamond(renderer, {cx, roofY - height / 4 + unit}, width / 3,
+                  std::max(2, height / 3), {58, 99, 114});
+      break;
+    case ServiceType::Garbage:
+    case ServiceType::Recycling:
+      for (int bin = 0; bin < 3; ++bin) {
+        rect(-4 + bin * 3, -1, 2, 3, facility.type == ServiceType::Recycling
+            ? RGB{60, 137, 83} : RGB{96, 102, 88});
+        rect(-4 + bin * 3, -1, 2, 1, cream);
+      }
+      break;
+    case ServiceType::Water:
+    case ServiceType::Cemetery:
+      break;
+  }
+}
+} // namespace
 
 void drawIsometricTile(
   DrawList* renderer,
@@ -263,17 +376,29 @@ void drawIsometricTile(
   float happinessPenalty,
   OverlayMode overlayMode,
   const IsometricProjection& projection,
-  Coord coord
+  Coord coord,
+  const DistrictSystem* districts,
+  DistrictId selectedDistrictId
 ) {
   const Tile& tile = map.getTile(coord);
   const ScreenPoint top = projection.tileTop(coord);
   const int width = projection.tileWidth();
   const int height = projection.tileHeight();
-  const RGB base = tileColor(
+  RGB base = tileColor(
     map, roads, store, coord, overlayMode, facilities, routeHeatByTile, happinessPenalty
   );
+  const uint32_t variation = visualHash(coord);
+  const bool hasFacility = std::any_of(facilities.begin(), facilities.end(),
+      [&](const ServiceFacility& facility) { return facility.position == coord; });
+  if (overlayMode == OverlayMode::Zone && hasFacility) base = {177, 184, 173};
+  if (overlayMode == OverlayMode::Zone && !tile.hasRoad && tile.buildingId == 0) {
+    const int tone = static_cast<int>(variation % 11u) - 5;
+    base.r = static_cast<uint8_t>(std::clamp(base.r + tone, 0, 255));
+    base.g = static_cast<uint8_t>(std::clamp(base.g + tone, 0, 255));
+    base.b = static_cast<uint8_t>(std::clamp(base.b + tone, 0, 255));
+  }
   drawDiamond(renderer, top, width, height, base);
-  setDrawColor(renderer, 55, 70, 62, 80);
+  setDrawColor(renderer, 55, 70, 62, overlayMode == OverlayMode::Zone ? 25 : 80);
   const Point outline[5] = {
     {top.x, top.y}, {top.x + width / 2, top.y + height / 2},
     {top.x, top.y + height}, {top.x - width / 2, top.y + height / 2}, {top.x, top.y}
@@ -282,28 +407,85 @@ void drawIsometricTile(
 
   if (overlayMode != OverlayMode::Zone) return;
   const ScreenPoint center = projection.tileCenter(coord);
+  if (tile.type == 2 && width >= 16) {
+    const uint32_t phase = (renderer->frameTimeMs / 220u + visualHash(coord)) % 5u;
+    const int rippleY = top.y + height / 3 + static_cast<int>(phase);
+    setDrawColor(renderer, 161, 207, 233, 95);
+    drawLine(renderer, center.x - width / 6, rippleY,
+                       center.x + width / 6, rippleY);
+  }
+  // Parcel-local coordinates keep ground details inside their own tile.
+  const auto groundPoint = [&](int u, int v) -> Point {
+    return {top.x + (u - v) * width / 200,
+            top.y + (u + v) * height / 200};
+  };
+  const auto groundRect = [&](int u, int v, int w, int h, RGB color, uint8_t alpha = 255) {
+    setDrawColor(renderer, color.r, color.g, color.b, alpha);
+    renderer->polygon({groundPoint(u, v), groundPoint(u + w, v),
+                       groundPoint(u + w, v + h), groundPoint(u, v + h)});
+  };
+  const std::array<Coord, 4> neighbors = {{{coord.x + 1, coord.y}, {coord.x - 1, coord.y},
+                                        {coord.x, coord.y + 1}, {coord.x, coord.y - 1}}};
+  if (tile.type != 2) {
+    for (size_t i = 0; i < neighbors.size(); ++i) {
+      if (!map.isValid(neighbors[i]) || map.getTile(neighbors[i]).type != 2) continue;
+      const int u = i == 0 ? 87 : 0;
+      const int v = i == 2 ? 87 : 0;
+      groundRect(u, v, i < 2 ? 13 : 100, i < 2 ? 100 : 13, {218, 207, 150}, 220);
+    }
+  }
   if (tile.hasRoad) {
-    const RGB asphalt{58, 61, 65};
+    std::array<bool, 4> connected{};
+    int connections = 0;
     bool arterial = false;
-    for (Coord delta : {Coord{1, 0}, Coord{-1, 0}, Coord{0, 1}, Coord{0, -1}})
-      arterial |=
-          roads.hasRoad(coord, Coord{coord.x + delta.x, coord.y + delta.y}) &&
-          roads.getRoadClass(coord,
-                             Coord{coord.x + delta.x, coord.y + delta.y}) ==
-              RoadClass::Arterial;
-    const int thickness = std::max(2, width / (arterial ? 4 : 6));
-    drawDiamond(renderer, {center.x, center.y - height / 3}, width * 2 / 3,
-                std::max(4, height * 2 / 3), asphalt);
-    const std::array<Coord, 4> neighbors = {{{coord.x + 1, coord.y}, {coord.x - 1, coord.y}, {coord.x, coord.y + 1}, {coord.x, coord.y - 1}}};
-    for (const Coord neighbor : neighbors) {
-      if (!hasRoadAt(map, neighbor)) continue;
-      const ScreenPoint target = projection.tileCenter(neighbor);
-      setDrawColor(renderer, asphalt.r, asphalt.g, asphalt.b, 255);
-      const int slope = ((target.x - center.x) * (target.y - center.y) >= 0) ? 1 : -1;
-      for (int offset = -thickness / 2; offset <= thickness / 2; ++offset) {
-        drawLine(renderer, center.x + offset, center.y - slope * offset,
-                          target.x + offset, target.y - slope * offset);
+    for (size_t i = 0; i < neighbors.size(); ++i) {
+      connected[i] = roads.hasRoad(coord, neighbors[i]);
+      connections += connected[i] ? 1 : 0;
+      if (connected[i])
+        arterial |= roads.getRoadClass(coord, neighbors[i]) == RoadClass::Arterial;
+    }
+    const int low = arterial ? 16 : 24;
+    const int high = 100 - low;
+    const RGB asphalt{57, 62, 67};
+    groundRect(low, low, high - low, high - low, asphalt);
+    for (size_t i = 0; i < connected.size(); ++i) {
+      if (!connected[i]) continue;
+      const int u = i == 0 ? high : (i == 1 ? 0 : low);
+      const int v = i == 2 ? high : (i == 3 ? 0 : low);
+      groundRect(u, v, i < 2 ? low : high - low, i < 2 ? high - low : low, asphalt);
+      if (width < 24) continue;
+      // Lane markings stop before junctions; arterial roads get double lines.
+      const RGB marking{225, 199, 113};
+      for (int offset : {arterial ? 47 : 49, arterial ? 53 : 49}) {
+        if (i < 2) groundRect(i == 0 ? 76 : 5, offset, 19, 3, marking, 220);
+        else groundRect(offset, i == 2 ? 76 : 5, 3, 19, marking, 220);
+        if (!arterial) break;
       }
+      if (connections >= 3 && width >= 32) {
+        for (int stripe = low + 4; stripe < high - 3; stripe += 10) {
+          if (i < 2) groundRect(i == 0 ? high - 6 : low + 2, stripe, 4, 6, {223, 227, 221}, 220);
+          else groundRect(stripe, i == 2 ? high - 6 : low + 2, 6, 4, {223, 227, 221}, 220);
+        }
+      }
+    }
+  }
+
+  // District boundaries belong to the ground layer, before walls and roofs.
+  if (districts) {
+    for (const District& district : districts->getDistricts()) {
+      if (coord.x < district.minCorner.x || coord.x > district.maxCorner.x ||
+          coord.y < district.minCorner.y || coord.y > district.maxCorner.y) continue;
+      const RGB tint = district.id == selectedDistrictId ? RGB{255, 245, 150}
+                                                        : districtArchetypeColor(district.archetype);
+      setDrawColor(renderer, tint.r, tint.g, tint.b, district.id == selectedDistrictId ? 230 : 160);
+      const auto edge = [&](int u, int v, int endU, int endV) {
+        const Point a = groundPoint(u, v), b = groundPoint(endU, endV);
+        drawLine(renderer, a.x, a.y, b.x, b.y);
+      };
+      if (coord.x == district.minCorner.x) edge(0, 0, 0, 100);
+      if (coord.x == district.maxCorner.x) edge(100, 0, 100, 100);
+      if (coord.y == district.minCorner.y) edge(0, 0, 100, 0);
+      if (coord.y == district.maxCorner.y) edge(0, 100, 100, 100);
     }
   }
 
@@ -316,32 +498,62 @@ void drawIsometricTile(
       const int tier = buildingDensityTier(building->type, building->capacity);
       const int typeFloors = building->type == BuildingType::Office
         ? 2 : (building->type == BuildingType::Commercial ? 1 : 0);
-      drawIsometricObject(renderer, top, width, height, buildingFacade(building->type),
-                          std::max(10, height + (typeFloors + tier) * height / 2
-                            + static_cast<int>(occupancy * height * 1.5f)));
+      const int objectHeight = std::max(10, height + (typeFloors + tier + 1) * height / 2);
+      RGB facade = buildingFacade(building->type);
+      const int tone = static_cast<int>(visualHash(coord) % 19u) - 9;
+      facade.r = static_cast<uint8_t>(std::clamp(facade.r + tone, 0, 255));
+      facade.g = static_cast<uint8_t>(std::clamp(facade.g + tone, 0, 255));
+      facade.b = static_cast<uint8_t>(std::clamp(facade.b + tone, 0, 255));
+      groundRect(44, 72, 12, 28, {182, 183, 167});
+      drawIsometricObject(renderer, top, width, height, facade, objectHeight);
+      if (width >= 24) {
+        const int doorWidth = std::max(2, width / 12);
+        const int doorHeight = std::max(4, height / 3);
+        setDrawColor(renderer, 60, 80, 83, 255);
+        renderer->polygon({{center.x - doorWidth, center.y + height / 3 - doorHeight},
+                           {center.x, center.y + height / 3 - doorHeight + doorWidth / 2},
+                           {center.x, center.y + height / 3},
+                           {center.x - doorWidth, center.y + height / 3 - doorWidth / 2}});
+      }
       const int baseY = center.y;
+      const int roofY = baseY - objectHeight;
       switch (building->type) {
-        case BuildingType::Residential:
-          setDrawColor(renderer, 116, 72, 55, 255);
-          drawLine(renderer, center.x - width / 4, baseY - height - 2,
-                            center.x, baseY - height - 7);
-          drawLine(renderer, center.x, baseY - height - 7,
-                            center.x + width / 4, baseY - height - 2);
+        case BuildingType::Residential: {
+          const int roofHalf = std::max(1, width / 2 - std::max(2, width / 7));
+          const int depth = std::max(1, height / 3);
+          const int ridge = std::max(3, height / 3);
+          setDrawColor(renderer, 151, 91, 66, 255);
+          renderer->polygon({{center.x - roofHalf, roofY},
+                             {center.x, roofY - depth - ridge},
+                             {center.x, roofY + depth - ridge},
+                             {center.x, roofY + depth}});
+          setDrawColor(renderer, 111, 66, 53, 255);
+          renderer->polygon({{center.x, roofY - depth - ridge},
+                             {center.x + roofHalf, roofY},
+                             {center.x, roofY + depth},
+                             {center.x, roofY + depth - ridge}});
+          setDrawColor(renderer, 176, 111, 79, 255);
+          drawLine(renderer, center.x, roofY - depth - ridge,
+                            center.x, roofY + depth - ridge);
           break;
+        }
         case BuildingType::Commercial:
-          drawFilledRect(renderer, center.x - width / 3, baseY - 4,
-                         width * 2 / 3, 3, {235, 185, 65});
+          setDrawColor(renderer, 235, 185, 65, 255);
+          renderer->polygon({{center.x - width / 3, baseY - height / 4},
+                             {center.x, baseY + height / 12},
+                             {center.x + width / 12, baseY},
+                             {center.x - width / 4, baseY - height / 3}});
           break;
         case BuildingType::Industrial:
-          drawFilledRect(renderer, center.x + width / 6, baseY - height - 7,
+          drawFilledRect(renderer, center.x + width / 6, roofY - 7,
                          std::max(2, width / 8), 8, {91, 86, 78});
-          drawFilledRect(renderer, center.x + width / 6 - 1, baseY - height - 8,
+          drawFilledRect(renderer, center.x + width / 6 - 1, roofY - 8,
                          std::max(3, width / 8 + 2), 2, {145, 145, 135});
           break;
         case BuildingType::Office:
           setDrawColor(renderer, 190, 210, 220, 230);
-          drawLine(renderer, center.x, baseY - height * 2 - 5,
-                            center.x, baseY - height * 2 + 2);
+          drawLine(renderer, center.x, roofY - height / 3 - 5,
+                            center.x, roofY - height / 3 + 2);
           break;
       }
       if (occupancy < 0.15f) {
@@ -357,33 +569,34 @@ void drawIsometricTile(
   }
   for (const ServiceFacility& facility : facilities) {
     if (facility.position == coord) {
-      drawIsometricObject(renderer, top, width, height, serviceFacilityColor(facility.type), height);
+      drawIsometricFacility(renderer, top, width, height, facility);
       break;
     }
   }
 
-  const uint32_t variation = visualHash(coord);
-  if (!tile.hasRoad && tile.buildingId == 0 && tile.zone == 0 && tile.type != 2
-      && variation % 17u == 0u) {
+  if (!tile.hasRoad && tile.buildingId == 0 && !hasFacility && tile.zone == 0 && tile.type == 0
+      && variation % 11u == 0u && width >= 14) {
     const int trunkHeight = std::max(3, height / 2);
+    const int crownWidth = std::max(4, width / 5);
+    const int crownHeight = std::max(5, height * 3 / 4);
+    drawDiamond(renderer, {center.x + width / 12, center.y - height / 8},
+                crownWidth * 2, std::max(3, height / 3), {38, 65, 40}, 65);
     drawFilledRect(renderer, center.x - 1, center.y - trunkHeight, 2, trunkHeight,
                    {101, 76, 45});
-    drawDiamond(renderer, {center.x, center.y - trunkHeight - height},
-                std::max(6, width / 2), std::max(5, height), {48, 121, 62});
-    drawDiamond(renderer, {center.x - 1, center.y - trunkHeight - height - 2},
-                std::max(5, width * 2 / 5), std::max(4, height * 3 / 4), {70, 153, 76});
+    const int crownY = center.y - trunkHeight - crownHeight / 2;
+    setDrawColor(renderer, 48, 112, 61, 255);
+    renderer->polygon({{center.x, crownY - crownHeight},
+                       {center.x + crownWidth, crownY - crownHeight / 2},
+                       {center.x + crownWidth, crownY},
+                       {center.x, crownY + crownHeight / 3},
+                       {center.x - crownWidth, crownY},
+                       {center.x - crownWidth, crownY - crownHeight / 2}});
+    setDrawColor(renderer, 77, static_cast<uint8_t>(145 + variation % 17u), 77, 255);
+    renderer->polygon({{center.x, crownY - crownHeight},
+                       {center.x, crownY}, {center.x - crownWidth, crownY},
+                       {center.x - crownWidth, crownY - crownHeight / 2}});
   }
 
-  if (tile.type != 2) {
-    const RGB shore{218, 207, 150};
-    const std::array<Coord, 4> neighbors = {{{coord.x + 1, coord.y}, {coord.x - 1, coord.y}, {coord.x, coord.y + 1}, {coord.x, coord.y - 1}}};
-    for (const Coord neighbor : neighbors) {
-      if (!map.isValid(neighbor) || map.getTile(neighbor).type != 2) continue;
-      const ScreenPoint edge = projection.tileCenter(neighbor);
-      setDrawColor(renderer, shore.r, shore.g, shore.b, 210);
-      drawLine(renderer, center.x, center.y, (center.x + edge.x) / 2, (center.y + edge.y) / 2);
-    }
-  }
 }
 
 void drawGradientBar(DrawList* renderer, int x, int y, int w, int h, OverlayMode mode) {

@@ -206,7 +206,7 @@ restores the legacy compact size when more panel space is preferred.
 
 The normal map view uses deterministic procedural detail at every zoom level:
 terrain variation, moving water bands, connected road surfaces and lane
-markings, dimensional building facades with occupancy-driven height, windows,
+markings, dimensional building facades with capacity-driven height, windows,
 shadows, and distinct civic facility markers. Analytical overlays remain flat
 and unobstructed so their data stays readable.
 Unzoned land also gains sparse procedural trees and shoreline transitions,
@@ -219,7 +219,19 @@ the live terrain, depth-sorted buildings, and construction tools into an
 optional isometric view without coupling projection math to simulation state.
 The live isometric view centers the city vertically and adds wider road
 surfaces, scaled building height, vegetation, shoreline accents, and shaded
-map edges while retaining `F3` as a top-down fallback.
+map edges while retaining `F3` as a top-down fallback. Buildings use projected
+wall and roof faces, directional facade shading, sloped window rows, grounded
+shadows, pitched residential roofs, and height-aligned rooftop details. Seeded
+facade variation distinguishes neighboring buildings, and water has animated
+ripples. Isometric streets use parcel-bound road surfaces, single or double
+lane markings, and junction crosswalks following the actual road network.
+Softer terrain grids, seeded ground variation, edge-following sandy shorelines,
+and shaded tree canopies give undeveloped land more depth. Diamond surfaces
+use two triangles regardless of zoom level. Civic facilities have distinct
+isometric landmarks: fire-station bays, a police flag mast, a hospital cross,
+a school tower, a raised water reservoir, utility stacks and treatment tanks,
+waste bins, and cemetery headstones. Buildings also gain entrance paths and
+projected doors, while shops have awnings following their facade perspective.
 
 Hovering over tool-palette, overlay, playback, speed, save, and load buttons
 also displays a descriptive tooltip. Tooltips explain interactions, current
