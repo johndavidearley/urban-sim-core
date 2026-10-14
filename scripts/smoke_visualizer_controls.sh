@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
 # Run under xvfb-run, with xdotool, wmctrl, and Openbox installed. Uses only a temporary save directory.
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "Control smoke failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 visualizer=$(realpath "$1")
+artifacts_dir="${URBAN_SMOKE_ARTIFACTS_DIR:-$PWD/graphics-controls}"
 work_dir=$(mktemp -d)
 app_pid=''
 wm_pid=''
 cleanup() {
   status=$?
-  if test "$status" -ne 0; then cat "$work_dir/visualizer.log" "$work_dir/wm.log" 2>/dev/null || true; fi
+  if test "$status" -ne 0; then
+    cat "$work_dir/visualizer.log" "$work_dir/wm.log" 2>/dev/null || true
+    if test -n "${window:-}"; then
+      xdotool getwindowname "$window" || true
+      xprop -id "$window" _NET_WM_NAME WM_STATE || true
+      xprop -root _NET_ACTIVE_WINDOW || true
+    fi
+    mkdir -p "$artifacts_dir"
+    cp -R "$work_dir/." "$artifacts_dir/"
+  fi
   test -z "$app_pid" || kill "$app_pid" 2>/dev/null || true
   test -z "$wm_pid" || kill "$wm_pid" 2>/dev/null || true
   rm -rf "$work_dir"
@@ -65,6 +76,14 @@ drag() {
   xdotool mouseup 1
   sleep 0.2
 }
+# Mapping the GLFW window precedes Vulkan initialization. Wait for a
+# successfully presented start frame before sending native keyboard input.
+for attempt in $(seq 1 200); do
+  if xdotool getwindowname "$window" | grep -q '(Start Screen)'; then break; fi
+  kill -0 "$app_pid"
+  sleep 0.1
+done
+xdotool getwindowname "$window" | grep -q '(Start Screen)'
 tap Return
 for attempt in $(seq 1 100); do
   if xdotool getwindowname "$window" | grep -q ' | '; then break; fi

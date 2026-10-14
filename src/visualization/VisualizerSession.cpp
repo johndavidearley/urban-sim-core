@@ -366,6 +366,7 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
   int mouseX = 0;
   int mouseY = 0;
   bool choosing = true;
+  bool startFramePresented = false;
   while (choosing) {
     if (bridge) {
       if (bridge->disconnected()) { result.quit=true; break; }
@@ -491,6 +492,10 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
     drawText(renderer, loadButton.x + 24, loadButton.y + 20, "LOAD SESSION", {235, 240, 250}, 2);
     drawText(renderer, windowWidth / 2 - 170, 585, "ENTER NEW   L LOAD   T TERRAIN", {150, 160, 175}, 1);
     const bool presented = gpu.present(*renderer, bridge ? bridge->capturePath : "");
+    if (presented && !startFramePresented) {
+      host.title("UrbanSimCore Visualizer (Start Screen)");
+      startFramePresented = true;
+    }
     if(bridge && presented) { ++bridge->frame; bridge->complete(bridge->metadata(host,gpu,"start_screen",0)); }
 
   }
