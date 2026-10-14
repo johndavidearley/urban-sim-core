@@ -3,6 +3,7 @@
 #include "src/gameplay/ServiceTool.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/world/CityMap.hpp"
+#include "src/world/Zoning.hpp"
 
 TEST(ServiceToolTests, PlansRoadAccessibleFacilityWithTypeSpecificCostAndRange) {
   CityMap map({16, 16});
@@ -91,4 +92,12 @@ TEST(ServiceToolTests, CivicTypesHaveDistinctPositiveOperatingCosts) {
   EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Recycling), 11000);
   EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Cemetery), 10000);
   EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Crematorium), 14000);
+}
+
+TEST(ServiceToolTests, MustClearParkBeforePlacingFacility) {
+  CityMap map({8, 8}); RoadNetwork roads(map);
+  roads.buildRoad({2, 2}, {3, 2});
+  map.getTile({2, 3}).zone = static_cast<int>(ZoneType::Park);
+  const auto plan = ServiceTool::plan(map, roads, {}, ServiceType::Fire, {2, 3}, 50000);
+  EXPECT_FALSE(plan.valid);
 }

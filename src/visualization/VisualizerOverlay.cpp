@@ -32,6 +32,7 @@
 #include "src/world/CityMap.hpp"
 #include "src/world/TerrainGenerator.hpp"
 #include "src/world/Zoning.hpp"
+#include "src/systems/ParkSystem.hpp"
 
 #include "src/visualization/VisualizerOverlay.hpp"
 
@@ -193,6 +194,7 @@ float happinessAtTile(const CityMap &map, const RoadNetwork &roads, Coord coord,
 
   float happiness = 0.45f;
   happiness += service * 0.25f;
+  happiness += 0.08f * ParkSystem::proximity(map, coord);
   happiness += landNorm * 0.2f;
   happiness -= pollution * 0.25f;
   happiness -= congestion * 0.2f;

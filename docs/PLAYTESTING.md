@@ -259,3 +259,13 @@ under `playtest-artifacts/macos-validation`. No Vulkan errors were reported,
 but Khronos validation layers were unavailable on this Mac, so this run does not establish validation
 layer coverage. Apple Silicon, cross-display scaling, and native OS input/focus
 delivery remain separate hardware checks; MCP input is synthetic.
+
+### Parks
+
+The bridge advertises `features.parks=true`. Apply parks through
+`tool(action="apply", name="zone", zone="park", x1=..., y1=..., x2=..., y2=...)`.
+Summary state exposes `park_tiles` and `park_upkeep` (playable dollars/tick).
+Tile inspection uses existing zone and land-value fields. Save/load and
+record/replay retain parks as ordinary zone-4 tiles; no snapshot migration is
+needed. Placement costs $100/tile, upkeep $2/tile/tick. Benefits taper over
+four Manhattan tiles and use the nearest park rather than stacking.

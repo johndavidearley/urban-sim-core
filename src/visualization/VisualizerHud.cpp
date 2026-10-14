@@ -615,15 +615,18 @@ void drawZoneLegend(DrawList* renderer, int x, int y) {
   // Categories shown in zone overlay rendering path.
   drawText(renderer, x, y - 12, "ZONE", {230, 230, 230}, 2);
   drawSwatch(renderer, x + 0, y, zoneColor(1));       // Residential
-  drawSwatch(renderer, x + 42, y, zoneColor(2));      // Commercial
-  drawSwatch(renderer, x + 84, y, zoneColor(3));      // Industrial
-  drawSwatch(renderer, x + 126, y, zoneColor(5));     // Office
-  drawSwatch(renderer, x + 168, y, {64, 64, 64});     // Road
+  drawSwatch(renderer, x + 36, y, zoneColor(2));      // Commercial
+  drawSwatch(renderer, x + 72, y, zoneColor(3));      // Industrial
+  drawSwatch(renderer, x + 108, y, zoneColor(5));     // Office
+  drawSwatch(renderer, x + 180, y, {64, 64, 64});     // Road
   drawText(renderer, x + 0, y + 16, "RES", {205, 220, 205}, 1);
-  drawText(renderer, x + 42, y + 16, "COM", {205, 220, 205}, 1);
-  drawText(renderer, x + 84, y + 16, "IND", {205, 220, 205}, 1);
-  drawText(renderer, x + 126, y + 16, "OFF", {205, 220, 205}, 1);
-  drawText(renderer, x + 168, y + 16, "ROAD", {205, 220, 205}, 1);
+  drawText(renderer, x + 36, y + 16, "COM", {205, 220, 205}, 1);
+  drawText(renderer, x + 72, y + 16, "IND", {205, 220, 205}, 1);
+  drawText(renderer, x + 108, y + 16, "OFF", {205, 220, 205}, 1);
+  drawText(renderer, x + 180, y + 16, "ROAD", {205, 220, 205}, 1);
+
+  drawSwatch(renderer, x + 144, y, zoneColor(4));
+  drawText(renderer, x + 144, y + 16, "PARK", {205, 220, 205}, 1);
 
   // Building colors are distinct from zoning base colors.
   drawText(renderer, x + 232, y - 12, "BLDG", {230, 230, 230}, 2);

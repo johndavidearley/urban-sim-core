@@ -1,13 +1,16 @@
 #include "src/gameplay/ZoneTool.hpp"
 
 #include <algorithm>
+#include "src/systems/ParkSystem.hpp"
+#include "src/systems/ServiceSystem.hpp"
 
 ZonePlan ZoneTool::plan(
   const CityMap& map,
   Coord start,
   Coord end,
   ZoneType zone,
-  int64_t availableFunds
+  int64_t availableFunds,
+  const std::vector<ServiceFacility>* facilities
 ) {
   ZonePlan result;
   result.zone = zone;
@@ -17,7 +20,8 @@ ZonePlan ZoneTool::plan(
     result.error = "area is outside the map";
     return result;
   }
-  if (zone == ZoneType::None || zone == ZoneType::Park) {
+  if (zone != ZoneType::Residential && zone != ZoneType::Commercial &&
+      zone != ZoneType::Industrial && zone != ZoneType::Office && zone != ZoneType::Park) {
     result.error = "unsupported zone type";
     return result;
   }
@@ -35,7 +39,12 @@ ZonePlan ZoneTool::plan(
         result.error = "area includes a road";
         return result;
       }
-      if (tile.buildingId != 0 && map.zone(coord) != static_cast<int>(zone)) {
+      if (facilities && std::any_of(facilities->begin(), facilities->end(),
+          [&](const ServiceFacility& facility) { return facility.position == coord; })) {
+        result.error = "area includes a service facility";
+        return result;
+      }
+      if (tile.buildingId != 0 && (zone == ZoneType::Park || map.zone(coord) != static_cast<int>(zone))) {
         result.error = "cannot rezone an occupied tile";
         return result;
       }
@@ -45,7 +54,7 @@ ZonePlan ZoneTool::plan(
     }
   }
 
-  result.cost = static_cast<int64_t>(result.changedTiles) * kCostPerTile;
+  result.cost = static_cast<int64_t>(result.changedTiles) * (zone == ZoneType::Park ? ParkSystem::kPlacementCost : kCostPerTile);
   if (result.changedTiles == 0) {
     result.error = "area already has this zone";
     return result;
@@ -58,13 +67,13 @@ ZonePlan ZoneTool::plan(
   return result;
 }
 
-bool ZoneTool::apply(CityMap& map, const ZonePlan& plan, int64_t& availableFunds) {
+bool ZoneTool::apply(CityMap& map, const ZonePlan& plan, int64_t& availableFunds, const std::vector<ServiceFacility>* facilities) {
   if (!plan.valid || plan.cost > availableFunds || plan.tiles.empty()) {
     return false;
   }
 
   const ZonePlan current = ZoneTool::plan(
-    map, plan.tiles.front(), plan.tiles.back(), plan.zone, availableFunds
+    map, plan.tiles.front(), plan.tiles.back(), plan.zone, availableFunds, facilities
   );
   if (!current.valid || current.tiles != plan.tiles || current.cost != plan.cost) {
     return false;

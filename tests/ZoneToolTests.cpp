@@ -1,3 +1,4 @@
+#include "src/systems/ServiceSystem.hpp"
 #include "gtest/gtest.h"
 
 #include "src/gameplay/ZoneTool.hpp"
@@ -43,4 +44,19 @@ TEST(ZoneToolTests, AppliesZoneLandValueAndCost) {
   EXPECT_EQ(map.zone({2, 1}), static_cast<int>(ZoneType::Office));
   EXPECT_FLOAT_EQ(map.landValue({1, 1}), Zoning::defaultLandValueForZone(ZoneType::Office));
   EXPECT_EQ(funds, 50);
+}
+
+TEST(ZoneToolTests, ParksChargePlacementAndNeverReplaceBuildingsOrFacilities) {
+  CityMap map({8, 8}); int64_t funds = 1000;
+  auto plan = ZoneTool::plan(map, {2, 2}, {3, 3}, ZoneType::Park, funds);
+  ASSERT_TRUE(plan.valid);
+  EXPECT_EQ(plan.cost, 400);
+  ASSERT_TRUE(ZoneTool::apply(map, plan, funds));
+  EXPECT_EQ(funds, 600);
+  EXPECT_FALSE(ZoneTool::plan(map, {2, 2}, {3, 3}, ZoneType::Park, funds).valid);
+  map.getTile({4, 4}).buildingId = 1;
+  EXPECT_FALSE(ZoneTool::plan(map, {4, 4}, {4, 4}, ZoneType::Park, funds).valid);
+  const std::vector<ServiceFacility> facilities = {{ServiceType::Fire, {5, 5}, 10, 1.f}};
+  EXPECT_FALSE(ZoneTool::plan(map, {5, 5}, {5, 5}, ZoneType::Park, funds, &facilities).valid);
+  EXPECT_FALSE(ZoneTool::plan(map, {6, 6}, {6, 6}, static_cast<ZoneType>(99), funds).valid);
 }

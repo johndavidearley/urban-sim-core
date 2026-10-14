@@ -464,10 +464,13 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                false);
       }
     } else if (zoneToolActive) {
-      zonePlan = ZoneTool::plan(map, toolDragStart, tile, selectedZone, funds);
+      zonePlan = ZoneTool::plan(map, toolDragStart, tile, selectedZone, funds, &facilities);
       const int64_t cost = zonePlan.cost;
-      if (ZoneTool::apply(map, zonePlan, funds)) {
+      if (ZoneTool::apply(map, zonePlan, funds, &facilities)) {
         sessionDirty = true;
+        refreshLiveDerivedState(map, roads, store, population, facilities,
+                                liveState, 1003u + liveState.tick * 31u,
+                                /*reallocPopulation=*/false, /*runTraffic=*/false);
         notify("ZONE APPLIED $" + std::to_string(cost), true);
         if (onboardingStep == 1) {
           onboardingStep = 2;
@@ -546,6 +549,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
          {"population", population.getTotalPopulation()},
          {"buildings", store.getBuildingCount()},
          {"facilities", facilities.size()},
+         {"park_tiles", liveState.economy.parkTiles},
+         {"park_upkeep", liveState.economy.parkTiles * 2},
          {"districts", districts.getDistricts().size()},
          {"routes", liveState.transitRoutes.size()},
          {"debt", liveState.treasuryDebt},
@@ -1167,7 +1172,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                                       selectedRoadClass);
           } else if (zoneToolActive) {
             zonePlan =
-                ZoneTool::plan(map, toolDragStart, tile, selectedZone, funds);
+                ZoneTool::plan(map, toolDragStart, tile, selectedZone, funds, &facilities);
           } else if (bulldozeToolActive) {
             bulldozePlan = BulldozeTool::plan(map, roads, facilities,
                                               toolDragStart, tile, funds);
@@ -1454,7 +1459,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     case PaletteTool::Zone:
       uiHoverText = std::string("ZONE ") +
                     Zoning::zoneToString(static_cast<int>(selectedZone)) +
-                    ": DRAG AN AREA - $25 PER TILE - CLICK AGAIN TO CYCLE";
+                    (selectedZone == ZoneType::Park
+                         ? ": $100 PER TILE - $2 UPKEEP PER TICK - DRAG TO PLACE"
+                         : ": DRAG AN AREA - $25 PER TILE - CLICK AGAIN TO CYCLE");
       break;
     case PaletteTool::Bulldoze:
       uiHoverText =

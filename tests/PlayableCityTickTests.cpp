@@ -636,3 +636,30 @@ TEST(PlayableCityTickTests, DerivedPlayableEconomyDoesNotTaxVacantCapacity) {
   EXPECT_EQ(state.economy.residentialMaintenance, 3200);
   EXPECT_LT(state.economy.balance, 0);
 }
+
+TEST(PlayableCityTickTests, ParksRaiseNearbyValueAndPayUpkeepWithoutGrowingBuildings) {
+  CityMap map({12, 12}); RoadNetwork roads(map); EntityStore store; PopulationStore population;
+  map.setZone({3, 3}, static_cast<int>(ZoneType::Residential));
+  map.setZone({9, 9}, static_cast<int>(ZoneType::Residential));
+  PlayableCityTickState state;
+  DerivedCityRefreshOptions refresh; refresh.runTraffic = false; refresh.enableTransit = false;
+  refreshDerivedCityState(map, roads, store, population, {}, state, refresh);
+  const float before = map.landValue({3, 3});
+  map.setZone({4, 3}, static_cast<int>(ZoneType::Park));
+  refreshDerivedCityState(map, roads, store, population, {}, state, refresh);
+  EXPECT_FLOAT_EQ(map.landValue({3, 3}), before + 22.5f);
+  EXPECT_FLOAT_EQ(map.landValue({9, 9}), before);
+  EXPECT_EQ(state.economy.parkTiles, 1);
+  EXPECT_EQ(state.economy.parkMaintenance, 200);
+  PlayableCityTickOptions options; options.growthChance = 0.f;
+  int64_t funds = 1000;
+  playableCityTick(map, roads, store, population, {}, state, funds, options);
+  EXPECT_EQ(state.treasuryExpenses, 2);
+  EXPECT_EQ(funds, 998);
+  EXPECT_EQ(map.getTile({4, 3}).buildingId, 0u);
+  map.setZone({4, 3}, static_cast<int>(ZoneType::None));
+  playableCityTick(map, roads, store, population, {}, state, funds, options);
+  EXPECT_EQ(state.treasuryExpenses, 0);
+  EXPECT_EQ(state.economy.parkTiles, 0);
+  EXPECT_FLOAT_EQ(map.landValue({3, 3}), before);
+}

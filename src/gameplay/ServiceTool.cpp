@@ -1,4 +1,5 @@
 #include "src/gameplay/ServiceTool.hpp"
+#include "src/world/Zoning.hpp"
 
 #include "src/networks/RoadNetwork.hpp"
 #include "src/world/CityMap.hpp"
@@ -83,6 +84,10 @@ ServicePlan ServiceTool::plan(
   }
   if (tile.hasRoad) {
     result.error = "cannot build on a road";
+    return result;
+  }
+  if (tile.zone == static_cast<int>(ZoneType::Park)) {
+    result.error = "bulldoze the park before placing a service";
     return result;
   }
   if (tile.buildingId != 0) {

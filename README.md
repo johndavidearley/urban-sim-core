@@ -100,7 +100,7 @@ Controls:
 - Click Save/Load in the HUD, or press `F5`/`F9`, to persist the playable session
 - `R`: toggle the road construction tool
 - `Z`: activate the zoning tool; press repeatedly to cycle Residential,
-  Commercial, Industrial, and Office
+  Commercial, Industrial, Office, and Park
 - `B`: toggle the bulldozer tool
 - `S`: activate the service tool; press repeatedly to cycle Fire, Police,
   Health, Education, Power, Water, Sanitation, Garbage, Recycling, Cemetery,
@@ -142,7 +142,14 @@ charges $100 for each new road segment. Green previews are buildable; red
 previews cross blocked terrain/buildings or exceed available funds. Existing
 segments included in a dragged route are not charged again.
 
-Zoning costs $25 per changed tile and uses rectangular drag selection. It
+Zoning costs $25 per changed tile and uses rectangular drag selection.
+Park zoning costs $100 per changed tile and $2 per tile per playable tick.
+Cycle `Z` past Office to select Park. Parks need empty land, cannot cover civic
+facilities, and never grow buildings. Nearby zoned land gains up to 30 land
+value and the happiness overlay gains up to 0.08, tapering to zero at four
+Manhattan tiles. Nearest-park benefits do not stack. Parks have paths, benches,
+and trees in both projections, and existing snapshot zoning persists them.
+Bulldozing or rezoning a park removes its upkeep and neighborhood benefit. It
 cannot cover water or roads, and occupied tiles cannot be changed to another
 zone type. Reapplying the same zone is free and does not consume funds.
 

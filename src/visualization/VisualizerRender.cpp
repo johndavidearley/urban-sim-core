@@ -32,6 +32,7 @@
 #include "src/world/CityMap.hpp"
 #include "src/world/TerrainGenerator.hpp"
 #include "src/world/Zoning.hpp"
+#include "src/systems/ParkSystem.hpp"
 
 #include "src/visualization/VisualizerRender.hpp"
 #include "src/visualization/VisualizerOverlay.hpp"
@@ -85,6 +86,23 @@ void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
     if (size >= 6) {
       const int bandY = y + 2 + static_cast<int>((variation + renderer->frameTimeMs / 180u) % std::max(2, size - 3));
       drawFilledRect(renderer, x + 1, bandY, std::max(1, size - 2), 1, {145, 190, 250}, 120);
+    }
+    return;
+  }
+
+  if (ParkSystem::isPark(map, coord)) {
+    drawFilledRect(renderer, x + 1, y + 1, size - 2, size - 2, {77, 155, 87});
+    if (size >= 10) {
+      const int path = std::max(2, size / 7);
+      drawFilledRect(renderer, x, y + size / 2 - path / 2, size, path, {211, 198, 156});
+      drawFilledRect(renderer, x + size / 2 - path / 2, y, path, size, {211, 198, 156});
+      drawFilledRect(renderer, x + size / 6, y + size * 2 / 3, std::max(3, size / 4), 2, {136, 91, 54});
+      for (int offset : {size / 5, size * 3 / 5}) {
+        const int crown = std::max(3, size / 5);
+        drawFilledRect(renderer, x + offset + 1, y + offset + 2, crown, crown, {31, 76, 45}, 100);
+        drawFilledRect(renderer, x + offset, y + offset, crown, crown, {45, 111, 61});
+        drawFilledRect(renderer, x + offset, y + offset, crown - 1, std::max(1, crown / 2), {93, 181, 92});
+      }
     }
     return;
   }
@@ -470,6 +488,33 @@ void drawIsometricTile(
     }
   }
 
+  if (ParkSystem::isPark(map, coord)) {
+    groundRect(6, 6, 88, 88, {77, 155, 87});
+    groundRect(44, 0, 12, 100, {211, 198, 156});
+    groundRect(0, 44, 100, 12, {211, 198, 156});
+    groundRect(13, 62, 22, 7, {136, 91, 54});
+    groundRect(13, 62, 22, 2, {187, 134, 74});
+    for (int offset : {24, 76}) {
+      const Point tree = groundPoint(offset, offset);
+      const int crown = std::max(3, width / 8);
+      const int lift = std::max(4, height / 2);
+      drawDiamond(renderer, {tree.x + 2, tree.y - 1}, crown * 2, std::max(2, height / 4), {31, 76, 45}, 100);
+      drawFilledRect(renderer, tree.x - 1, tree.y - lift, 2, lift, {101, 76, 45});
+      setDrawColor(renderer, 45, 111, 61, 255);
+      renderer->polygon({{tree.x, tree.y - lift - crown * 2},
+                         {tree.x + crown, tree.y - lift - crown},
+                         {tree.x + crown, tree.y - lift},
+                         {tree.x, tree.y - lift + crown / 2},
+                         {tree.x - crown, tree.y - lift},
+                         {tree.x - crown, tree.y - lift - crown}});
+      setDrawColor(renderer, 93, 181, 92, 255);
+      renderer->polygon({{tree.x, tree.y - lift - crown * 2},
+                         {tree.x, tree.y - lift},
+                         {tree.x - crown, tree.y - lift},
+                         {tree.x - crown, tree.y - lift - crown}});
+    }
+  }
+
   // District boundaries belong to the ground layer, before walls and roofs.
   if (districts) {
     for (const District& district : districts->getDistricts()) {
@@ -645,6 +690,7 @@ std::array<uint8_t, 5> glyphRows(char c) {
     case '6': return {0b011, 0b100, 0b111, 0b101, 0b111};
     case '7': return {0b111, 0b001, 0b001, 0b001, 0b001};
     case '8': return {0b111, 0b101, 0b111, 0b101, 0b111};
+    case '9': return {0b111, 0b101, 0b111, 0b001, 0b110};
     case '-': return {0b000, 0b000, 0b111, 0b000, 0b000};
     case ':': return {0b000, 0b010, 0b000, 0b010, 0b000};
     case '$': return {0b010, 0b111, 0b110, 0b011, 0b010};

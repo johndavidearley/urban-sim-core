@@ -20,6 +20,8 @@ struct EconomyState {
   int64_t industrialMaintenance = 0;
   int64_t officeMaintenance = 0;
   int64_t totalMaintenance = 0;
+  int parkTiles = 0;
+  int64_t parkMaintenance = 0;
 
   // Budget state
   int64_t balance = 0;
@@ -93,9 +95,10 @@ struct EconomyValuation {
   float incomePerWorker = 50000.0f;
   bool taxOccupiedSpace = false;
   bool scaleMaintenanceByCapacity = false;
+  float parkMaintenancePerTile = 2.f;
 
   static EconomyValuation playable() {
-    return {200.0f, 200.0f, true, true};
+    return {200.0f, 200.0f, true, true, 200.f};
   }
 };
 

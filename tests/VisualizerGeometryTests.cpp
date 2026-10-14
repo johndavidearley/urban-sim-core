@@ -1,3 +1,4 @@
+#include "src/visualization/VisualizerOverlay.hpp"
 #include "src/visualization/DrawList.hpp"
 #include "src/visualization/VisualizerHud.hpp"
 #include "src/visualization/VisualizerRender.hpp"
@@ -249,4 +250,20 @@ TEST(VisualizerGeometry, OccupancyDoesNotChangeBuildingSilhouette) {
       EXPECT_EQ(pair.first->vertices[i].y, pair.second->vertices[i].y);
     }
   }
+}
+
+TEST(VisualizerGeometry, ParkHappinessTapersWithoutStackingAndBothViewsHaveDetail) {
+  CityMap map({12, 12}); RoadNetwork roads(map);
+  const float base = happinessAtTile(map, roads, {3, 3}, {}, 0.f);
+  map.setZone({4, 3}, static_cast<int>(ZoneType::Park));
+  EXPECT_NEAR(happinessAtTile(map, roads, {3, 3}, {}, 0.f) - base, 0.06f, 1e-6);
+  map.setZone({2, 3}, static_cast<int>(ZoneType::Park));
+  EXPECT_NEAR(happinessAtTile(map, roads, {3, 3}, {}, 0.f) - base, 0.06f, 1e-6);
+  EXPECT_FLOAT_EQ(happinessAtTile(map, roads, {9, 9}, {}, 0.f), base);
+  EntityStore store; DrawList top, iso;
+  drawNormalTileDetail(&top, map, store, {}, {4, 3}, 0, 0, 32);
+  drawIsometricTile(&iso, map, roads, store, {}, {}, 0.f, OverlayMode::Zone,
+                    IsometricProjection(32, 16), {4, 3});
+  EXPECT_GT(top.vertices.size(), 30u);
+  EXPECT_GT(iso.vertices.size(), 30u);
 }

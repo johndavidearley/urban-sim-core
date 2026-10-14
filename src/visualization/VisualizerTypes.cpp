@@ -104,7 +104,8 @@ ZoneType nextPlayableZone(ZoneType zone) {
     case ZoneType::Residential: return ZoneType::Commercial;
     case ZoneType::Commercial: return ZoneType::Industrial;
     case ZoneType::Industrial: return ZoneType::Office;
-    case ZoneType::Office:
+    case ZoneType::Office: return ZoneType::Park;
+    case ZoneType::Park:
     default: return ZoneType::Residential;
   }
 }

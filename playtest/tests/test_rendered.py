@@ -42,6 +42,40 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             self.assertLessEqual(abs(point["y"] - dimensions["height"] / 2), 28)
             await s.screenshot("focused-" + projection)
 
+    async def test_parks_cost_upkeep_persistence_and_projection(self):
+        s = self.session
+        await record(s, "start")
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "zone", "zone": "park",
+                                 "x1": 8, "y1": 12, "x2": 9, "y2": 13})
+        self.assertEqual(s.last_state["funds"], 49600)
+        self.assertEqual(s.last_state["park_tiles"], 4)
+        self.assertEqual(s.last_state["park_upkeep"], 8)
+        await s.request("tool", {"action": "apply", "name": "zone", "zone": "residential",
+                                 "x1": 10, "y1": 12, "x2": 10, "y2": 12})
+        tiles = await s.request("inspect", {"section": "tiles", "x": 10, "y": 12})
+        self.assertGreater(tiles["items"][0]["land_value"], 120)
+        await s.request("time", {"action": "step", "ticks": 3})
+        self.assertEqual(s.last_state["funds"], 49551)
+        self.assertEqual(s.last_state["buildings"], 0)
+        for projection in ("top_down", "isometric"):
+            await s.request("view", {"action": "projection", "projection": projection})
+            await s.request("view", {"action": "focus"})
+            await s.screenshot("park-" + projection)
+        await s.city("save")
+        await s.city("load")
+        self.assertEqual(s.last_state["park_tiles"], 4)
+        self.assertEqual(s.last_state["funds"], 49551)
+        await s.request("tool", {"action": "apply", "name": "bulldoze",
+                                 "x1": 8, "y1": 12, "x2": 9, "y2": 13})
+        self.assertEqual(s.last_state["park_tiles"], 0)
+        self.assertEqual(s.last_state["funds"], 49531)
+        await s.request("time", {"action": "step", "ticks": 1})
+        self.assertEqual(s.last_state["expenses"], 0)
+        self.assertEqual(s.last_state["funds"], 49531)
+        scenario = await record(s, "stop", "parks")
+        self.assertTrue((await replay(s, scenario["scenario"], 2))["identical"])
+
     async def test_semantic_scenario_and_identical_replays(self):
         s = self.session
         await record(s, "start")

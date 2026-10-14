@@ -1,10 +1,10 @@
 # Project Status
 
-Last verified: October 13, 2026
+Last verified: October 14, 2026
 
 Priorities updated October 12, 2026. The work queue is Phase 6 (M17–M22)
 in `ROADMAP.md`. M21 local verification is recorded below; the most recent
-hosted strict and sanitizer run is commit `c4bd14c` (before M21).
+hosted strict and sanitizer run passed on commit `edc8d70` (before parks).
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -292,3 +292,19 @@ congestion improved from 0.860 to 0.717 (0.799 to 0.656 with transit).
 solvent, with starter/mature double replays plus a double upgrade/trade replay.
 Evidence and remaining parallel queue-routing limits are documented in
 `playtest-artifacts/arterial-routing-20261013/REPORT.md`.
+
+### M22 parks — implemented October 14, 2026
+
+Players can zone parks on empty land for $100/tile, with $2/tile/tick upkeep.
+Roads, water, buildings, and services are excluded. Parks cannot grow
+buildings; automated zoning never places them. Nearest-park proximity tapers
+over four Manhattan tiles, adding at most 30 land value and 0.08 happiness
+overlay value. Benefits do not stack and are refreshed on placement/removal.
+Both projections render landscaped paths, benches and trees. Existing zone
+storage handles persistence; MCP adds park capability and upkeep inspection.
+
+Local strict build and 422 C++ tests passed, along with eight rendered tests,
+16 graphics capture checks, and identical two-run park replays. Evidence and
+limitations are in `playtest-artifacts/parks-20261014/REPORT.md`. Hosted CI
+verification of parks remains pending. Other M22 host-parity work is still
+open; this does not add disasters or visible transit routes.

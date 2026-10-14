@@ -365,10 +365,10 @@ see one. Two host gaps are left after M17–M21: disasters run only inside
 `CitySimulator`, and municipal debt exists only on the playable treasury.
 `CitySimulator` is still cash-only.
 
-- [ ] The zone tool accepts Park on empty, non-road, non-water tiles.
+- [x] The zone tool accepts Park on empty, non-road, non-water tiles.
       Zoning a park removes no buildings; occupied tiles still require
       the bulldozer first. Parks have a small per-tile upkeep.
-- [ ] A park raises land value and the happiness overlay in a short
+- [x] A park raises land value and the happiness overlay in a short
       radius. Growth still never builds on a park tile. The autonomous
       loop does not auto-zone parks.
 - [ ] `playableCityTick` can run `FireSystem` and `NaturalDisasterSystem`

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "src/world/Zoning.hpp"
+struct ServiceFacility;
 
 struct ZonePlan {
   std::vector<Coord> tiles;
@@ -24,8 +25,10 @@ public:
     Coord start,
     Coord end,
     ZoneType zone,
-    int64_t availableFunds
+    int64_t availableFunds,
+    const std::vector<ServiceFacility>* facilities = nullptr
   );
 
-  static bool apply(CityMap& map, const ZonePlan& plan, int64_t& availableFunds);
+  static bool apply(CityMap& map, const ZonePlan& plan, int64_t& availableFunds,
+                    const std::vector<ServiceFacility>* facilities = nullptr);
 };

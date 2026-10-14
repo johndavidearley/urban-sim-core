@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "src/world/Zoning.hpp"
+#include "src/systems/ParkSystem.hpp"
 
 namespace {
 
@@ -196,7 +197,7 @@ void LandValueSystem::updateLandValues(
                     params.maxIllnessPenalty * building->illnessRate
               : 0.0f;
       map.landValue({x, y}) =
-          std::clamp(base + jobBonus + serviceBonus - pollutionPenalty -
+          std::clamp(base + jobBonus + serviceBonus + 30.f * ParkSystem::proximity(map, {x, y}) - pollutionPenalty -
                          neighborhoodPenalty,
                      params.minLandValue, params.maxLandValue);
     }

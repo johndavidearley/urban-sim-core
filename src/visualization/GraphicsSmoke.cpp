@@ -52,6 +52,10 @@ int runGraphicsSmoke(WindowHost &host, VulkanRenderer &gpu,
     map.getTile(position).type = 0;
     facilities.push_back({static_cast<ServiceType>(service), position, 10, 1.f});
   }
+  for (int x = 3; x <= 6; ++x) {
+    map.getTile({x, 14}).type = 0;
+    map.getTile({x, 14}).zone = static_cast<int>(ZoneType::Park);
+  }
   LiveSimulationState state;
   state.paused = true;
   state.demand = {0.4f, 0.3f, 0.2f, 0.1f};

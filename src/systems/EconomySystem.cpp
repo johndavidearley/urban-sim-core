@@ -4,6 +4,7 @@
 
 #include "src/systems/LandValueSystem.hpp"
 #include "src/systems/GrowthSystem.hpp"
+#include "src/systems/ParkSystem.hpp"
 
 namespace {
 
@@ -127,7 +128,10 @@ EconomyState EconomySystem::calculateEconomy(
   state.totalTaxRevenue = state.residentialTaxRevenue + state.commercialTaxRevenue +
                           state.industrialTaxRevenue + state.officeTaxRevenue + populationIncomeTax;
 
-  state.totalMaintenance = state.residentialMaintenance + state.commercialMaintenance +
+  state.parkTiles = map ? ParkSystem::count(*map) : 0;
+  state.parkMaintenance = static_cast<int64_t>(state.parkTiles *
+      static_cast<double>(valuation.parkMaintenancePerTile) * inflationMultiplier);
+  state.totalMaintenance = state.parkMaintenance + state.residentialMaintenance + state.commercialMaintenance +
                            state.industrialMaintenance + state.officeMaintenance;
 
   // Calculate balance (trade revenue/cost flow through here too, so a strong
