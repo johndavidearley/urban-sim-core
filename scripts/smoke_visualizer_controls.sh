@@ -2,6 +2,9 @@
 # Run under xvfb-run, with xdotool, wmctrl, and Openbox installed. Uses only a temporary save directory.
 set -Eeuo pipefail
 trap 'echo "Control smoke failed at line $LINENO: $BASH_COMMAND" >&2' ERR
+# This suite uses X11-native input even when a runner inherits Wayland hints.
+unset WAYLAND_DISPLAY
+export XDG_SESSION_TYPE=x11
 visualizer=$(realpath "$1")
 artifacts_dir="${URBAN_SMOKE_ARTIFACTS_DIR:-$PWD/graphics-controls}"
 work_dir=$(mktemp -d)
@@ -11,6 +14,8 @@ cleanup() {
   status=$?
   if test "$status" -ne 0; then
     cat "$work_dir/visualizer.log" "$work_dir/wm.log" 2>/dev/null || true
+    xwininfo -root -tree || true
+    ps -p "${app_pid:-0}" -o pid,stat,args || true
     if test -n "${window:-}"; then
       xdotool getwindowname "$window" || true
       xprop -id "$window" _NET_WM_NAME WM_STATE || true
@@ -60,11 +65,15 @@ done
 app_pid=$!
 window=''
 for attempt in $(seq 1 100); do
-  window=$(xdotool search --onlyvisible --name 'UrbanSimCore Visualizer' 2>/dev/null | head -1 || true)
+  window=$(xdotool search --pid "$app_pid" 2>/dev/null | head -1 || true)
   test -z "$window" || break
   sleep 0.1
 done
-if test -z "$window"; then cat visualizer.log; exit 1; fi
+if test -z "$window"; then
+  echo "No X11 window found for visualizer PID $app_pid" >&2
+  exit 1
+fi
+xdotool windowmap --sync "$window"
 xdotool windowactivate --sync "$window"
 xdotool windowfocus --sync "$window"
 tap() { xdotool key --clearmodifiers "$1"; sleep 0.15; }
