@@ -241,7 +241,7 @@ TEST(VisualizerGeometry, OccupancyDoesNotChangeBuildingSilhouette) {
   drawIsometricTile(&highIso, map, roads, store, {}, heat, 0.f,
                     OverlayMode::Zone, projection, coord);
   drawNormalTileDetail(&highTop, map, store, {}, coord, 0, 0, 32);
-  for (const auto pair : {std::pair<const DrawList*, const DrawList*>{&lowIso, &highIso},
+  for (const auto& pair : {std::pair<const DrawList*, const DrawList*>{&lowIso, &highIso},
                           {&lowTop, &highTop}}) {
     ASSERT_EQ(pair.first->vertices.size(), pair.second->vertices.size());
     for (size_t i = 0; i < pair.first->vertices.size(); ++i) {
