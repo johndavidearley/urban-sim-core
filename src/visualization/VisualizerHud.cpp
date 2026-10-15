@@ -75,11 +75,21 @@ void drawToolPalette(
 Rect budgetPanelRect(int windowWidth, int windowHeight) {
   return {(windowWidth - 720) / 2, (windowHeight - 540) / 2, 720, 540};
 }
-Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool services) {
+bool budgetControlVisible(int action, bool services, bool trends, bool alerts) {
+  if (action == 0 || action == 12 || action == 13 || action == 36 || action == 37) return true;
+  if (action >= 38) return alerts;
+  if (alerts) return false;
+  if (trends) return false;
+  return !((action >= 2 && action < 12 && services) || (action >= 14 && !services));
+}
+Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool services, bool, bool) {
   const auto panel = budgetPanelRect(windowWidth, windowHeight);
   if (action == 0) return {panel.x + 664, panel.y + 12, 40, 26};
   if (action == 1) return {panel.x + 24, panel.y + (services ? 338 : 278), 240, 24};
-  if (action == 12 || action == 13) return {panel.x + 24 + (action - 12) * 140, panel.y + 76, 136, 24};
+  if (action >= 38 && action < 43) return {panel.x + 552, panel.y + 116 + (action - 38) * 64, 144, 24};
+  if (action == 37) return {panel.x + 264, panel.y + 76, 76, 24};
+  if (action == 36) return {panel.x + 184, panel.y + 76, 76, 24};
+  if (action == 12 || action == 13) return {panel.x + 24 + (action - 12) * 80, panel.y + 76, 76, 24};
   if (action >= 14 && action < 36)
     return {panel.x + 220 + ((action - 14) % 2) * 40,
             panel.y + 130 + ((action - 14) / 2) * 18, 30, 16};
@@ -88,9 +98,9 @@ Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool servi
             panel.y + 112 + ((action - 2) / 2) * 30, 30, 26};
   return {};
 }
-int budgetHitTest(int x, int y, int windowWidth, int windowHeight, bool services) {
-  for (int action = 0; action < 36; ++action) {
-    if ((action >= 2 && action < 12 && services) || (action >= 14 && !services)) continue;
+int budgetHitTest(int x, int y, int windowWidth, int windowHeight, bool services, bool trends, bool alerts) {
+  for (int action = 0; action < 43; ++action) {
+    if (!budgetControlVisible(action, services, trends, alerts)) continue;
     const auto r = budgetControlRect(action, windowWidth, windowHeight, services);
     if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return action;
   }
@@ -100,7 +110,8 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   const BudgetPolicy& policy, const TreasuryBreakdown& preview,
   const TreasuryLedger& ledger, int64_t funds, int64_t debt, int mouseX, int mouseY,
   bool services, const std::array<int64_t, kServiceTypeCount>& serviceCosts,
-  const std::array<float, kServiceTypeCount>& serviceCoverage) {
+  const std::array<float, kServiceTypeCount>& serviceCoverage,
+  bool trends, const CityHistory& history, bool alerts, const CityAlerts& diagnostics) {
   drawFilledRect(renderer, 0, 0, windowWidth, windowHeight, {5, 10, 18}, 195);
   const auto panel = budgetPanelRect(windowWidth, windowHeight);
   const int x = panel.x, y = panel.y;
@@ -110,12 +121,22 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   drawText(renderer, x + 24, y + 50,
     "CASH $" + std::to_string(funds) + "   DEBT $" + std::to_string(debt), {255, 220, 130}, 1);
   const std::array<const char*, 5> taxNames{{"RESIDENTIAL", "COMMERCIAL", "INDUSTRIAL", "OFFICE", "INCOME"}};
-  if (!services) for (size_t i = 0; i < taxNames.size(); ++i) {
+  if (!services && !trends && !alerts) for (size_t i = 0; i < taxNames.size(); ++i) {
     drawText(renderer, x + 24, y + 121 + static_cast<int>(i) * 30, taxNames[i], {205, 220, 235}, 1);
     drawText(renderer, x + 156, y + 118 + static_cast<int>(i) * 30,
              std::to_string(policy.taxPercent[i]) + "%", {240, 245, 250}, 2);
   }
-  if (services) {
+  if (!services && !trends && !alerts) {
+    const auto attraction = policy.taxAttraction();
+    const char* names[] = {"R", "C", "I", "O"};
+    for (size_t i = 0; i < attraction.size(); ++i) {
+      const int percent = static_cast<int>(std::lround(attraction[i] * 100.f));
+      drawText(renderer, x + 24 + static_cast<int>(i) * 78, y + 262,
+        std::string(names[i]) + " " + std::to_string(percent) + "%", {135, 215, 240}, 1);
+    }
+    drawText(renderer, x + 24, y + 306, "ATTRACTION VS DEFAULT TAXES", {165, 185, 205}, 1);
+  }
+  if (services && !trends && !alerts) {
     drawText(renderer, x + 24, y + 112, "SERVICE", {135, 215, 240}, 1);
     drawText(renderer, x + 156, y + 112, "FUNDING", {135, 215, 240}, 1);
     drawText(renderer, x + 360, y + 112, "COST/TICK", {135, 215, 240}, 1);
@@ -129,8 +150,8 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     }
     drawText(renderer, x + 360, y + 346, "TOTAL $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
   }
-  for (int action = 0; action < 36; ++action) {
-    if ((action >= 2 && action < 12 && services) || (action >= 14 && !services)) continue;
+  for (int action = 0; action < 43; ++action) {
+    if (!budgetControlVisible(action, services, trends, alerts)) continue;
     const auto r = budgetControlRect(action, windowWidth, windowHeight, services);
     const bool hovered = mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
     bool disabled = false;
@@ -138,22 +159,116 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       const int rate = policy.taxPercent[static_cast<size_t>((action - 2) / 2)];
       disabled = (action % 2 == 0 && rate == 0) || (action % 2 == 1 && rate == 20);
     }
-    if (action >= 14) {
+    if (action >= 14 && action < 36) {
       const int percent = policy.servicePercent[static_cast<size_t>((action - 14) / 2)];
       disabled = (action % 2 == 0 && percent == 0) || (action % 2 == 1 && percent == 100);
     }
     drawFilledRect(renderer, r.x, r.y, r.w, r.h,
                    disabled ? RGB{28, 32, 40} : (hovered ? RGB{65, 90, 115} : RGB{42, 58, 75}));
-    const bool activeTab = (action == 12 && !services) || (action == 13 && services);
+    const bool activeTab = (action == 12 && !services && !trends && !alerts) || (action == 13 && services && !trends && !alerts) || (action == 36 && trends && !alerts) || (action == 37 && alerts);
     drawRectOutline(renderer, r.x, r.y, r.w, r.h, activeTab ? RGB{255, 225, 110} :
                     (disabled ? RGB{65, 70, 80} : RGB{135, 165, 190}));
     const char* label = action == 0 ? "X" : (action == 1 ? (services ? "RESTORE FULL FUNDING" : "RESET DEFAULT TAXES") :
-      (action == 12 ? "TAXES" : (action == 13 ? "SERVICES" : (action % 2 == 0 ? "-" : "+"))));
-    drawText(renderer, r.x + 10, r.y + (action >= 14 ? 3 : 7), label, disabled ? RGB{95, 100, 110} : RGB{235, 245, 250}, 1);
+      (action == 12 ? "TAXES" : (action == 13 ? "SERVICES" : (action == 36 ? "TRENDS" : (action == 37 ? "ALERTS" : (action >= 38 ? "VIEW" : (action % 2 == 0 ? "-" : "+")))))));
+    drawText(renderer, r.x + 10, r.y + (action >= 14 && action < 36 ? 3 : 7), label, disabled ? RGB{95, 100, 110} : RGB{235, 245, 250}, 1);
   }
-  if (!services) {
-  drawText(renderer, x + 24, y + 312, "TAXES CHANGE REVENUE ONLY.", {165, 185, 205}, 1);
-  drawText(renderer, x + 24, y + 328, "0 TO 20 PERCENT. F6 OR ESC CLOSES.", {165, 185, 205}, 1);
+  if (alerts) {
+    const auto& v = diagnostics.inputs;
+    auto percent = [](float value) { return std::to_string(static_cast<int>(std::lround(value * 100.f))) + "%"; };
+    for (size_t i = 0; i < diagnostics.records.size(); ++i) {
+      const auto& r = diagnostics.records[i];
+      const int row = y + 118 + static_cast<int>(i) * 64;
+      const std::string state = !diagnostics.checkedTick ? "UNCHECKED" : (r.active ? "ACTIVE" : (r.badTicks ? "WATCHING" : "CLEAR"));
+      drawText(renderer, x + 24, row, std::string(CityAlerts::name(i)) + " - " + state,
+        r.active ? RGB{255, 180, 110} : RGB{165, 205, 190}, 1);
+      std::string measured, advice;
+      if (i < 2) {
+        const float coverage = i == 0 ? v.powerCoverage : v.waterCoverage;
+        const float supply = i == 0 ? v.powerSupply : v.waterSupply;
+        measured = "ROAD COVERAGE " + percent(coverage) + "  SUPPLY " + percent(supply);
+        advice = supply < .95f ? "CHECK CAPACITY AND DEPARTMENT FUNDING." : "CHECK ROAD LINKS AND FACILITY REACH.";
+        if (!v.requireUtilities) advice = "UTILITY REQUIREMENT DISABLED.";
+      } else if (i == 2) {
+        measured = percent(v.unemployment) + " OF RESIDENTS NOT EMPLOYED.";
+        advice = "CHECK JOB ZONES, EDUCATION AND UTILITY ACCESS.";
+      } else if (i == 3) {
+        measured = "LOWEST FIRE/POLICE/HEALTH/EDU COVERAGE " + percent(v.serviceCoverage);
+        advice = "CHECK FACILITY REACH, ROAD LINKS AND FUNDING.";
+      } else {
+        measured = "REVENUE $" + std::to_string(v.revenue) + "  EXPENSES $" + std::to_string(v.expenses);
+        advice = "REVIEW TAXES, FUNDING AND CONSTRUCTION SPENDING.";
+      }
+      if (!diagnostics.checkedTick) {
+        measured = "NO COMPLETED TICK MEASUREMENT.";
+        advice = "RUN A SIMULATION TICK TO UPDATE DIAGNOSTICS.";
+      }
+      drawText(renderer, x + 24, row + 19, measured, {205, 220, 235}, 1);
+      drawText(renderer, x + 24, row + 35, advice, {165, 185, 205}, 1);
+    }
+    drawText(renderer, x + 24, y + 450, diagnostics.checkedTick ? "LAST CHECKED TICK " + std::to_string(diagnostics.checkedTick) : "NO COMPLETED TICK CHECKED YET", {135, 215, 240}, 1);
+    drawText(renderer, x + 24, y + 470, "ALERTS NEED 3 BAD TICKS. RECOVERY NEEDS 2 HEALTHY TICKS.", {165, 185, 205}, 1);
+    drawText(renderer, x + 24, y + 490, "REPEAT NOTICES WAIT 60 TICKS. PAUSED EDITS WAIT FOR A TICK.", {165, 185, 205}, 1);
+    drawText(renderer, x + 24, y + 512, "VIEW OPENS A RELEVANT OVERLAY OR THE BUDGET. F7 OR ESC CLOSES.", {165, 185, 205}, 1);
+    return;
+  }
+  if (trends) {
+    if (history.samples.empty()) {
+      drawText(renderer, x + 24, y + 140, "NO COMPLETED TICKS IN HISTORY", {185, 205, 220}, 1);
+      drawText(renderer, x + 24, y + 164, "HISTORY STARTS WITH THE NEXT SIMULATION TICK.", {165, 185, 205}, 1);
+      return;
+    }
+    const auto& latest = history.samples.back();
+    const char* names[] = {"POPULATION", "NET POP CHANGE", "REVENUE", "EXPENSES", "CASH", "DEBT"};
+    auto value = [](const CityHistorySample& s, int chart) -> int64_t {
+      switch (chart) {
+        case 0: return s.population;
+        case 1: return s.migration.net;
+        case 2: return s.revenue;
+        case 3: return s.expenses;
+        case 4: return s.funds;
+        default: return s.debt;
+      }
+    };
+    for (int chart = 0; chart < 6; ++chart) {
+      const int cx = x + 24 + (chart % 2) * 340;
+      const int cy = y + 116 + (chart / 2) * 110;
+      int64_t lo = 0, hi = 0;
+      for (const auto& sample : history.samples) {
+        lo = std::min(lo, value(sample, chart));
+        hi = std::max(hi, value(sample, chart));
+      }
+      drawText(renderer, cx, cy, std::string(names[chart]) + " " + std::to_string(value(latest, chart)), {220, 235, 245}, 1);
+      drawText(renderer, cx, cy + 16, std::to_string(lo) + " TO " + std::to_string(hi), {145, 165, 185}, 1);
+      const int top = cy + 32, bottom = cy + 92, width = 308;
+      drawRectOutline(renderer, cx, top, width + 1, bottom - top + 1, {65, 85, 100});
+      auto px = [&](size_t i) { return cx + static_cast<int>(i * width / std::max(size_t{1}, history.samples.size() - 1)); };
+      auto py = [&](int64_t v) { return bottom - static_cast<int>(
+        (static_cast<double>(v) - static_cast<double>(lo)) /
+        std::max(1.0, static_cast<double>(hi) - static_cast<double>(lo)) * (bottom - top)); };
+      setDrawColor(renderer, 65, 85, 100, 255);
+      drawLine(renderer, cx, py(0), cx + width, py(0));
+      for (size_t i = 0; i < history.samples.size(); ++i) {
+        if (history.policyChanged(i)) {
+          setDrawColor(renderer, 230, 190, 80, 255);
+          drawLine(renderer, px(i), top, px(i), bottom);
+        }
+      }
+      setDrawColor(renderer, 120, 215, 240, 255);
+      for (size_t i = 1; i < history.samples.size(); ++i)
+        drawLine(renderer, px(i - 1), py(value(history.samples[i - 1], chart)), px(i), py(value(history.samples[i], chart)));
+      drawFilledRect(renderer, px(history.samples.size() - 1) - 1, py(value(latest, chart)) - 1, 3, 3, {120, 215, 240});
+    }
+    drawText(renderer, x + 24, y + 450, "TICKS " + std::to_string(history.samples.front().tick) + " TO " + std::to_string(latest.tick) +
+      "  LAST " + std::to_string(history.samples.size()) + "/240", {165, 185, 205}, 1);
+    drawText(renderer, x + 24, y + 468, "GOLD: CHANGED POLICY FIRST APPLIED. EACH CHART HAS ITS OWN SCALE.", {230, 195, 105}, 1);
+    drawText(renderer, x + 24, y + 486, "LAST TICK: IN " + std::to_string(latest.migration.arrivals) + " OUT " +
+      std::to_string(latest.migration.departures) + " DEATHS " + std::to_string(latest.migration.deaths), {185, 205, 220}, 1);
+    drawText(renderer, x + 24, y + 512, "COMPLETED TICKS. NET CHANGE INCLUDES DEATHS. CASH INCLUDES TOOL SPEND.", {165, 185, 205}, 1);
+    return;
+  }
+  if (!services && !trends && !alerts) {
+  drawText(renderer, x + 24, y + 324, "TAXES AFFECT GROWTH AND MIGRATION.", {165, 185, 205}, 1);
+  drawText(renderer, x + 24, y + 342, "DEFAULT RATES ARE NEUTRAL.", {165, 185, 205}, 1);
   drawText(renderer, x + 360, y + 76, "NEXT TICK ESTIMATE", {135, 215, 240}, 1);
   const std::array<const char*, 6> revenueNames{{"RES TAX", "COM TAX", "IND TAX", "OFF TAX", "INCOME TAX", "EXPORTS"}};
   for (size_t i = 0; i < revenueNames.size(); ++i) {
@@ -202,15 +317,16 @@ Rect hudControlRect(HudAction action, int windowWidth) {
     case HudAction::Save: return {panelX + 10, y + 30, 106, 24};
     case HudAction::Load: return {panelX + 124, y + 30, 106, 24};
     case HudAction::ToggleDisasters: return {panelX + 10, 322, 180, 24};
+    case HudAction::Alerts: return {panelX + 242, y + 30, 128, 24};
     case HudAction::Budget: return {panelX + 210, 322, 160, 24};
     default: return {0, 0, 0, 0};
   }
 }
 
 HudAction hudHitTest(int mouseX, int mouseY, int windowWidth) {
-  const std::array<HudAction, 8> actions = {
+  const std::array<HudAction, 9> actions = {
     HudAction::TogglePause, HudAction::Slow, HudAction::Normal, HudAction::Fast,
-    HudAction::Save, HudAction::Load, HudAction::ToggleDisasters, HudAction::Budget
+    HudAction::Save, HudAction::Load, HudAction::ToggleDisasters, HudAction::Budget, HudAction::Alerts
   };
   for (const HudAction action : actions) {
     const Rect rect = hudControlRect(action, windowWidth);
@@ -342,7 +458,7 @@ void drawGameplayHud(
   drawText(renderer, x + 210, y + 302,
            events.disaster.earthquakeOccurred ? "EARTHQUAKE" :
            (events.disaster.floodOccurred ? "FLOOD" : ""), {255, 145, 100}, 1);
-  const std::array<std::pair<HudAction, const char*>, 8> controls = {{
+  const std::array<std::pair<HudAction, const char*>, 9> controls = {{
     {HudAction::TogglePause, paused ? "PLAY" : "PAUSE"},
     {HudAction::Slow, "1X"},
     {HudAction::Normal, "2X"},
@@ -350,6 +466,7 @@ void drawGameplayHud(
     {HudAction::Save, "F5 SAVE"},
     {HudAction::Load, "F9 LOAD"},
     {HudAction::Budget, "F6 BUDGET"},
+    {HudAction::Alerts, "F7 ALERTS"},
     {HudAction::ToggleDisasters, liveState.enableDisasters ? "DISASTERS ON" : "DISASTERS OFF"},
   }};
   for (const auto& [action, label] : controls) {

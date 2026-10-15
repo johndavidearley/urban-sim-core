@@ -142,7 +142,8 @@ SimResult CitySimulator::run(
     const uint32_t tickSeed = seed + static_cast<uint32_t>(tick);
     const float educationNow = lastEducationCoverage;
 
-    const ZoneDemand demand = evaluateDemand(store, population);
+    const ZoneDemand demand = options.budgetPolicy.adjustedDemand(
+        evaluateDemand(store, population));
 
     city_sim::ConstructionOptions constructionOpts;
     constructionOpts.gridSpacing = spacing;
@@ -204,7 +205,7 @@ SimResult CitySimulator::run(
       const auto migration = MigrationSystem::evaluate(
           prevPop, prevEmployed, tickCap.resCapacity,
           {lastCongestion, tickResPollution, lastServiceSatisfaction,
-           lastCrimeRate, lastIllnessRate});
+           lastCrimeRate, lastIllnessRate}, options.budgetPolicy.taxAttraction()[0]);
       const uint32_t requestedPop = migration.requestedPopulation;
 
       if (tick % std::max(1, options.populationInterval) == 0) {

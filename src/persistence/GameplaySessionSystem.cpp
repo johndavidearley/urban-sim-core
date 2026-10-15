@@ -1,4 +1,6 @@
 #include "src/persistence/GameplaySessionSystem.hpp"
+#include "src/persistence/CityHistoryJson.hpp"
+#include "src/persistence/CityAlertsJson.hpp"
 
 #include <cmath>
 #include <algorithm>
@@ -245,6 +247,8 @@ bool GameplaySessionSystem::save(
                {"budgetTaxPercent", session.budgetPolicy.taxPercent},
                {"budgetServicePercent", session.budgetPolicy.servicePercent},
                {"treasuryLedger", ledgerJson},
+               {"cityHistory", cityHistoryJson(session.history)},
+               {"cityAlerts", cityAlertsJson(session.alerts)},
                {"simulationSeed", session.simulationSeed},
                {"disasters", disasterState},
                {"citySnapshot", std::filesystem::absolute(cityPathFor(sessionPath)).string()},
@@ -361,6 +365,8 @@ bool GameplaySessionSystem::load(
     }
     loaded.funds = root.at("funds").get<int64_t>();
     loaded.tick = root.at("tick").get<uint32_t>();
+    if (root.contains("cityAlerts")) loaded.alerts = parseCityAlerts(root.at("cityAlerts"), loaded.tick);
+    if (root.contains("cityHistory")) loaded.history = parseCityHistory(root.at("cityHistory"), loaded.tick);
     if (root.contains("budgetTaxPercent")) {
       const auto& values = root.at("budgetTaxPercent");
       if (!values.is_array() || values.size() != 5)
@@ -569,6 +575,8 @@ PlayableCityTickState GameplaySessionSystem::advance(
   state.tick = session.tick;
   state.budgetPolicy = session.budgetPolicy;
   state.treasuryLedger = session.treasuryLedger;
+  state.history = session.history;
+  state.alerts = session.alerts;
   state.populationTarget = session.populationTarget;
   state.migrationConditions = session.migrationConditions;
   state.populationChange = session.populationChange;
@@ -622,6 +630,8 @@ PlayableCityTickState GameplaySessionSystem::advance(
   session.tick = state.tick;
   session.budgetPolicy = state.budgetPolicy;
   session.treasuryLedger = state.treasuryLedger;
+  session.history = state.history;
+  session.alerts = state.alerts;
   session.populationTarget = state.populationTarget;
   session.migrationConditions = state.migrationConditions;
   session.populationChange = state.populationChange;

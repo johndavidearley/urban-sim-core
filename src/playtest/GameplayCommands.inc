@@ -13,7 +13,12 @@ if (command == "stop") {
 }
 if (command == "budget") {
   const auto action = args.value("action", "inspect");
-  if (action == "set_taxes") {
+  if (action == "view_alert") {
+    if (!args.at("alert_index").is_number_integer()) throw std::runtime_error("Alert index must be integer 0 to 4");
+    const auto index = args.at("alert_index").get<int64_t>();
+    if (index < 0 || index > 4) throw std::runtime_error("Alert index must be 0 to 4");
+    viewCityAlert(static_cast<size_t>(index));
+  } else if (action == "set_taxes") {
     const auto& values = args.at("tax_percent");
     if (!values.is_array() || values.size() != 5)
       throw std::runtime_error("Provide five tax percentages from 0 to 20");
@@ -45,8 +50,10 @@ if (command == "budget") {
     auto policy = liveState.budgetPolicy;
     policy.servicePercent = BudgetPolicy{}.servicePercent;
     setBudgetPolicy(policy);
-  } else if (action == "services" || action == "taxes") {
+  } else if (action == "services" || action == "taxes" || action == "trends" || action == "alerts") {
     budgetServices = action == "services";
+    budgetTrends = action == "trends";
+    budgetAlerts = action == "alerts";
     showBudgetPanel = true; toolDragging = false; cameraPanning = false;
   } else if (action == "reset") setBudgetPolicy(BudgetPolicy{});
   else if (action == "open") { showBudgetPanel = true; toolDragging = false; cameraPanning = false; }
@@ -74,20 +81,22 @@ if (command == "inspect") {
              quitButtonRect(static_cast<QuitAction>(i), windowWidth,
                             windowHeight));
     else if (showBudgetPanel) {
-      for (int i = 0; i < 36; ++i) {
-        if ((i >= 2 && i < 12 && budgetServices) || (i >= 14 && !budgetServices)) continue;
+      for (int i = 0; i < 43; ++i) {
+        if (!budgetControlVisible(i, budgetServices, budgetTrends, budgetAlerts)) continue;
+        if (i >= 37) { rect(i == 37 ? "budget_alerts" : "alert_view_" + std::to_string(i - 38), budgetControlRect(i, windowWidth, windowHeight)); continue; }
+        if (i == 36) { rect("budget_trends", budgetControlRect(i, windowWidth, windowHeight)); continue; }
         rect(i == 0 ? "budget_close" : (i == 1 ? "budget_reset" :
           (i == 12 ? "budget_taxes" : (i == 13 ? "budget_services" :
             (i >= 14 ? "funding_" + std::to_string((i - 14) / 2) : "tax_" + std::to_string((i - 2) / 2)) +
               (i % 2 == 0 ? "_minus" : "_plus")))),
-          budgetControlRect(i, windowWidth, windowHeight, budgetServices));
+          budgetControlRect(i, windowWidth, windowHeight, budgetServices, budgetTrends, budgetAlerts));
       }
     } else {
       if (!cleanUiMode)
-        for (int i = 1; i <= 8; ++i)
-          rect(std::array<std::string, 8>{"pause", "speed_1", "speed_2",
+        for (int i = 1; i <= 9; ++i)
+          rect(std::array<std::string, 9>{"pause", "speed_1", "speed_2",
                                           "speed_3", "save",
-                                          "load", "disasters", "budget"}[static_cast<size_t>(i - 1)],
+                                          "load", "disasters", "budget", "alerts"}[static_cast<size_t>(i - 1)],
                hudControlRect(static_cast<HudAction>(i), windowWidth));
       for (int i = 0; i < 5; ++i)
         rect(std::array<std::string, 5>{"road", "zone", "bulldoze", "service",

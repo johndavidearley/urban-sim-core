@@ -187,7 +187,7 @@ void PlaytestBridge::begin(
 #define K(name) {#name, Key::name}
               K(Escape), K(Enter), K(Space), K(Period), K(Equal), K(Plus),
               K(Minus),  K(Left),  K(Right), K(Up),     K(Down),  K(F1),
-              K(F2),     K(F3),    K(F4),    K(F5), K(F6),     K(F9),    K(Num1),
+              K(F2),     K(F3),    K(F4),    K(F5), K(F6), K(F7),     K(F9),    K(Num1),
               K(Num2),   K(Num3),  K(Num4),  K(Num5),   K(Num6),  K(Num7),
               K(Num8), K(Num9),   K(A),     K(B),     K(C),      K(D),     K(F),
               K(G),      K(H),     K(L),     K(N),      K(O),     K(P),

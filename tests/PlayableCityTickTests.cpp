@@ -861,3 +861,71 @@ TEST(PlayableCityTickTests, FundingChangesReachCapacityAndBillsWithoutMutatingFa
   EXPECT_FLOAT_EQ(state.serviceSummary.powerGenerationMW, 100.f);
   EXPECT_TRUE(map.getTile({3,17}).connectedToPower);
 }
+
+TEST(PlayableCityTickTests, TaxPolicyAdjustsStartupDemandOnTheNextTick) {
+  std::array<ZoneDemand, 3> demands;
+  for (size_t i = 0; i < demands.size(); ++i) {
+    CityMap map({24,24});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    PlayableCityTickState state;
+    if (i == 0) state.budgetPolicy.taxPercent.fill(0);
+    if (i == 2) state.budgetPolicy.taxPercent.fill(20);
+    PlayableCityTickOptions options;
+    options.growthChance = 0.f;
+    options.requireUtilities = false;
+    int64_t funds = 10000;
+    playableCityTick(map, roads, store, population, {}, state, funds, options);
+    demands[i] = state.demand;
+  }
+  EXPECT_GT(demands[0].residential, demands[1].residential);
+  EXPECT_GT(demands[1].residential, demands[2].residential);
+  EXPECT_GT(demands[0].commercial, demands[2].commercial);
+  EXPECT_GT(demands[0].industrial, demands[2].industrial);
+  EXPECT_GT(demands[0].office, demands[2].office);
+}
+
+TEST(PlayableCityTickTests, HistoryRecordsCompletedLedgerAndAppliedPolicyOnly) {
+  CityMap map({24,24});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  PlayableCityTickState state;
+  PlayableCityTickOptions options;
+  options.growthChance = 0;
+  int64_t funds = 10000;
+  playableCityTick(map,roads,store,population,{},state,funds,options);
+  ASSERT_EQ(state.history.samples.size(), 1u);
+  state.budgetPolicy.taxPercent[0] = 15;
+  refreshDerivedCityState(map,roads,store,population,{},state,{});
+  EXPECT_EQ(state.history.samples.size(), 1u);
+  playableCityTick(map,roads,store,population,{},state,funds,options);
+  ASSERT_EQ(state.history.samples.size(), 2u);
+  const auto& sample = state.history.samples.back();
+  EXPECT_EQ(sample.tick, state.tick);
+  EXPECT_EQ(sample.funds, funds);
+  EXPECT_EQ(sample.revenue, state.treasuryLedger.flow.revenue);
+  EXPECT_EQ(sample.expenses, state.treasuryLedger.flow.expenses);
+  EXPECT_EQ(sample.population, population.getTotalPopulation());
+  EXPECT_TRUE(state.history.policyChanged(1));
+}
+
+TEST(PlayableCityTickTests, AlertsUseCompletedLedgerAndIgnorePausedRefresh) {
+  CityMap map({24,24}); RoadNetwork roads(map); EntityStore store; PopulationStore population;
+  PlayableCityTickState state;
+  PlayableCityTickOptions options; options.growthChance = 0;
+  const std::vector<ServiceFacility> facilities{{ServiceType::Fire,{12,12},12,1.f}};
+  int64_t funds = 10000;
+  for (int i = 0; i < 3; ++i) playableCityTick(map,roads,store,population,facilities,state,funds,options);
+  EXPECT_TRUE(state.alerts.records[4].active);
+  EXPECT_EQ(state.alerts.inputs.expenses,state.treasuryLedger.flow.expenses);
+  EXPECT_EQ(state.alerts.checkedTick,3u);
+  state.budgetPolicy.servicePercent[0] = 0;
+  refreshDerivedCityState(map,roads,store,population,facilities,state,{});
+  EXPECT_EQ(state.alerts.checkedTick,3u);
+  EXPECT_TRUE(state.alerts.records[4].active);
+  for (int i = 0; i < 2; ++i) playableCityTick(map,roads,store,population,facilities,state,funds,options);
+  EXPECT_FALSE(state.alerts.records[4].active);
+  EXPECT_EQ(state.alerts.checkedTick,5u);
+}

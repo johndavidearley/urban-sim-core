@@ -1,4 +1,6 @@
 #pragma once
+#include "src/gameplay/CityAlerts.hpp"
+#include "src/gameplay/CityHistory.hpp"
 #include "src/gameplay/BudgetPolicy.hpp"
 #include "src/gameplay/TreasurySystem.hpp"
 
@@ -30,6 +32,8 @@
 struct PlayableCityTickState {
   BudgetPolicy budgetPolicy;
   TreasuryLedger treasuryLedger;
+  CityHistory history;
+  CityAlerts alerts;
   uint32_t tick = 0;
   CityDisasterState disasters;
   // Last migration request, retained in saves for compatibility; not a cap.

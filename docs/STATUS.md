@@ -2,9 +2,9 @@
 
 Last verified: October 14, 2026
 
-Phases 6–7 (M17–M23) are implemented and locally verified; see `ROADMAP.md`.
+Phases 6–7 (M17–M26) are implemented and locally verified; see `ROADMAP.md`.
 The last hosted strict and sanitizer run verified here passed on commit
-`edc8d70` (before parks). Hosted verification of the current M22/M23 tree is pending.
+`edc8d70` (before parks). Hosted verification of the current working tree is pending.
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -376,7 +376,7 @@ with citywide residential/commercial/industrial/office/income tax controls.
 Whole percentages range from 0 to 20; reset restores the unchanged defaults
 5/8/6/9/10. Paused edits recompute the estimate without a tick, cash movement,
 or changes to the last recorded transaction. Taxes currently affect revenue;
-no migration or zoning-demand response to tax levels is modeled.
+that first slice did not yet model tax responses (added in M24 below).
 
 The next-tick estimate itemizes six revenue and five expense categories.
 Rounding is apportioned cumulatively so displayed categories reconcile to
@@ -422,3 +422,69 @@ acceptance cases, 7/7 Python unit tests, GCC 16 strict syntax checks and
 minimum-window layout, paused edits, persistence, replay and GUI/headless
 continuation parity. Evidence: `playtest-artifacts/m23-funding-20261014/REPORT.md`.
 Hosted CI has not been run for these uncommitted changes.
+
+
+### M24 — tax effects on growth and migration (October 14, 2026)
+
+Implemented and locally verified. Zone taxes now modify construction demand
+relative to neutral defaults; household attraction averages residential and
+income tax deviations and affects migration. Default policies preserve prior
+behavior. Attraction is bounded to 40–140%; demand remains normalized.
+Above-default household taxes add gradual departure pressure rather than
+changing population during a policy edit. Budget → Taxes shows R/C/I/O
+attraction, and MCP exposes `budget.tax_attraction`. These are relative factors,
+not promised growth rates. Existing saved taxes drive identical rules in both
+hosts without additional hidden or lagged policy state. Existing custom-tax
+saves consequently acquire the new behavior when continued.
+
+Validation: warnings-as-errors build; 444 C++ tests; all 12 existing rendered
+cases plus a new low/high-tax branch and low-tax save/load case; 7 Python unit
+tests; GCC 16 strict checks. The minimum-window budget screenshot was inspected
+and its new attraction row moved to avoid the reset control. Low-tax
+migration keeps saved desirability normalized to 0–1. Evidence is retained in
+`playtest-artifacts/m24-20261014/REPORT.md`. Hosted CI remains unrun for these
+working-tree changes.
+
+
+### M25 — population and budget trends (October 14, 2026)
+
+Implemented: F6 → Trends adds six charts for population, net population change,
+revenue, expenses, cash and debt. The latest 240 completed ticks are retained;
+new and legacy cities start empty. Each chart labels its own scale and latest
+value. Last-tick arrivals, departures and deaths appear separately. Revenue
+and expenses are actual billings, while cash includes prior tool purchases.
+Gold markers compare the policy applied on a completed tick with the preceding
+recorded tick. The first retained row is the baseline; paused edits do not
+append samples or rewrite history. Markers show timing, not proven causation.
+
+History survives saves and headless playable continuation, with bounded,
+validated imports rejected before city mutation. MCP exposes history and a
+`trends` budget action; native tab hit-testing shares the visible-control rules.
+Local validation passed: warnings-as-errors build, 449 C++ tests, all 14
+rendered playtests, 7 Python unit tests and GCC 16 strict checks. Normal, empty
+and minimum-window Trends captures were inspected. Evidence is recorded in
+`playtest-artifacts/m25-20261014/REPORT.md`. Hosted CI remains unrun for this
+working tree.
+
+
+### M26 — city alerts and diagnostics (October 14, 2026)
+
+Implemented and locally verified. F7, the detailed HUD Alerts button, and the
+budget Alerts tab show power/water shortages, unemployment, essential-service
+gaps and budget deficits. Each row shows measured completed-tick inputs,
+a suggested check and a View action for the service overlay, demand overlay
+or Taxes tab. Unchecked cities show no claimed measurements. Three bad ticks
+activate an alert; two recovered ticks clear it, with threshold deadbands.
+Repeat notices, including recurrences, wait at least 60 simulation ticks.
+Paused edits and load do not evaluate alerts or issue notices. Saved inputs,
+state, counters and cooldowns continue identically in both playable hosts;
+missing legacy state starts unchecked. Invalid imports reject before mutation.
+
+Validation passed: warnings-as-errors build, 454 C++ tests, 15 rendered
+playtests, 7 Python unit tests and GCC 16 strict checks. The alert case was
+repeated after the final unchecked-state UI refinement. Native routing,
+recovery, persistence, cooldown suppression, minimum-window layout and
+GUI/headless equality passed. One intermediate test run overlapped relinking
+and could not launch three tests; the final complete rerun passed 454/454.
+Evidence: `playtest-artifacts/m26-20261014/REPORT.md`. Hosted CI remains unrun
+for this working tree.

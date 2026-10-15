@@ -311,7 +311,8 @@ def create_server(session: Session) -> FastMCP:
 
     @server.tool(annotations=local)
     async def budget(
-        action: Literal["inspect", "set_taxes", "set_funding", "reset_funding", "reset", "open", "close", "services", "taxes"] = "inspect",
+        action: Literal["inspect", "set_taxes", "set_funding", "reset_funding", "reset", "open", "close", "services", "taxes", "trends", "alerts", "view_alert"] = "inspect",
+        alert_index: Annotated[int, Field(ge=0, le=4)] | None = None,
         tax_percent: Annotated[
             list[Annotated[int, Field(ge=0, le=20)]], Field(min_length=5, max_length=5)
         ] | None = None,
@@ -328,9 +329,12 @@ def create_server(session: Session) -> FastMCP:
         Garbage, Recycling, Cemetery, Crematorium; 0..100%, default all 100.
         Cuts reduce reach, utility supply, and processing capacity; zero closes
         operation without removing facilities. reset restores the entire budget;
-        reset_funding preserves taxes. services/taxes select the panel tab.
+        reset_funding preserves taxes. services/taxes/trends select the panel tab. History contains the latest
+        240 completed ticks, including the policy used for each sample.
+        alerts opens completed-tick diagnostics; view_alert follows its action
+        (index 0 power, 1 water, 2 unemployment, 3 services, 4 budget).
         """
-        return await session.request("budget", compact(action=action, tax_percent=tax_percent, service_percent=service_percent))
+        return await session.request("budget", compact(action=action, alert_index=alert_index, tax_percent=tax_percent, service_percent=service_percent))
 
     @server.tool(annotations=local)
     async def view(

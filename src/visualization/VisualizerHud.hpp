@@ -40,13 +40,16 @@ void drawToolPalette(
 
 Rect budgetPanelRect(int windowWidth, int windowHeight);
 // 0 close, 1 reset, then decrease/increase pairs for the five taxes.
-Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool services = false);
-int budgetHitTest(int x, int y, int windowWidth, int windowHeight, bool services = false);
+bool budgetControlVisible(int action, bool services, bool trends, bool alerts = false);
+Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool services = false, bool trends = false, bool alerts = false);
+int budgetHitTest(int x, int y, int windowWidth, int windowHeight, bool services = false, bool trends = false, bool alerts = false);
 void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   const BudgetPolicy& policy, const TreasuryBreakdown& preview,
   const TreasuryLedger& ledger, int64_t funds, int64_t debt, int mouseX, int mouseY,
   bool services = false, const std::array<int64_t, kServiceTypeCount>& serviceCosts = {},
-  const std::array<float, kServiceTypeCount>& serviceCoverage = {});
+  const std::array<float, kServiceTypeCount>& serviceCoverage = {},
+  bool trends = false, const CityHistory& history = {},
+  bool alerts = false, const CityAlerts& diagnostics = {});
 
 Rect hudControlRect(HudAction action, int windowWidth);
 HudAction hudHitTest(int mouseX, int mouseY, int windowWidth);

@@ -980,3 +980,23 @@ TEST(CitySimulatorTests, ServiceFundingAppliesToAutonomousUtilitySupply) {
     else EXPECT_FLOAT_EQ(result.rows.back().powerSupplyRatio, 1.f);
   }
 }
+
+TEST(CitySimulatorTests, TaxPolicyAdjustsAutonomousDemand) {
+  std::array<SimTickMetrics, 2> rows;
+  for (size_t i = 0; i < rows.size(); ++i) {
+    CityMap map({32,32});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    map.getTile({17,17}).buildingId = store.createBuilding(BuildingType::Residential, {17,17}, 20);
+    map.getTile({17,17}).zone = 1;
+    SimOptions options = fastOptions();
+    options.buildChance = 0;
+    options.budgetPolicy.taxPercent.fill(i == 0 ? 0 : 20);
+    const auto result = CitySimulator::run(map, roads, store, population, 42, 1, options);
+    ASSERT_EQ(result.rows.size(), 1u);
+    rows[i] = result.rows.front();
+  }
+  EXPECT_GT(rows[0].demandResidential, rows[1].demandResidential);
+  EXPECT_GT(rows[0].demandIndustrial, rows[1].demandIndustrial);
+}

@@ -220,6 +220,8 @@ void playableCityTick(
     state.demand = Zoning::calculateDemand(tickSeed);
   }
 
+  state.demand = state.budgetPolicy.adjustedDemand(state.demand);
+
   if (options.refreshPollution) {
     city_sim::updatePollution(map, store, ax0, ay0, ax1, ay1, pool);
   }
@@ -251,7 +253,8 @@ void playableCityTick(
     conditions.utilityAvailability = 1.0f;
   const auto migration = MigrationSystem::evaluate(
       populationBefore, population.getTotalEmployed(),
-      city_sim::summarize(store).resCapacity, conditions);
+      city_sim::summarize(store).resCapacity, conditions,
+      state.budgetPolicy.taxAttraction()[0]);
   state.populationTarget = migration.requestedPopulation;
   PopulationSystem::allocate(store, population, migration.requestedPopulation,
                              tickSeed + 2u, educationNow);
@@ -364,4 +367,13 @@ void playableCityTick(
   state.laggedEducationCoverage = state.serviceSummary.educationCoverage;
 
   ++state.tick;
+  const uint32_t residents = population.getTotalPopulation();
+  state.alerts.update(state.tick, {store.getBuildingCount() > 0, residents > 0, options.requireUtilities,
+    state.serviceSummary.powerCoverage, state.serviceSummary.powerSupplyRatio,
+    state.serviceSummary.waterCoverage, state.serviceSummary.waterSupplyRatio,
+    residents ? static_cast<float>(residents - std::min(residents, population.getTotalEmployed())) / residents : 0.f,
+    std::min({state.serviceSummary.fireCoverage, state.serviceSummary.policeCoverage,
+      state.serviceSummary.healthCoverage, state.serviceSummary.educationCoverage}), flow.revenue, flow.expenses});
+  state.history.append({state.tick, population.getTotalPopulation(), state.populationChange,
+    flow.revenue, flow.expenses, funds, state.treasuryDebt, state.budgetPolicy});
 }

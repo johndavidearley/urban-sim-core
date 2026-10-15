@@ -689,7 +689,7 @@ budget. Change residential, commercial, industrial, office, and income taxes
 with the minus/plus buttons (0–20%, in whole percentage points). **Reset
 default taxes** restores 5/8/6/9/10. Tax edits refresh the estimate immediately
 without advancing time, spending cash, or changing the last completed ledger.
-Taxes currently affect revenue; they do not alter migration or zoning demand.
+Taxes also affect construction demand and household migration; see M24 below.
 
 The panel separates the **next tick estimate** from the **last completed
 tick**. The estimate itemizes taxes, exports, building/park upkeep, imports,
@@ -727,3 +727,66 @@ migration, schooling, waste and mortality occur through normal subsequent
 ticks. Utility capacity and reach are separate constraints; the coverage
 column shows road reach, while utility supply/shortage is reported in the HUD.
 Funding persists with the city and is honored by both simulation hosts.
+
+
+### M24: tax effects on growth and migration
+
+The Taxes tab shows R/C/I/O attraction relative to default rates (100%).
+Each percentage point above a zone's default tax reduces its demand multiplier
+by 4%; lower taxes increase it. Residential attraction uses the average of
+residential and income tax deviations. Multipliers stay within 40–140%, and
+adjusted demand stays within 0–100%. A tax cut cannot create demand when there
+is no underlying need for that zone.
+
+Household attraction also scales arrivals. Above-default household taxes add
+at most 0.3% of current population in departure pressure per simulation tick;
+normal jobs, housing, services and utilities still govern migration. These
+are relative attraction factors, not promised population growth percentages.
+Policy edits while paused change the preview only. Responses begin on the
+next tick, and default taxes preserve prior behavior. Existing saved tax
+policies now have these effects in both GUI and headless simulations.
+
+
+### M25: population and budget trends
+
+Open **F6 → Trends** for the latest 240 completed ticks: population, net
+population change, revenue, expenses, cash and debt. Each chart labels its own
+range and latest value; scales differ between charts. Net population change
+includes deaths, with last-tick arrivals, departures and deaths below the charts.
+Revenue and expenses are actual tick billings, separate from the Taxes tab's
+next-tick estimate. Cash includes purchases made before that tick's sample.
+
+Gold lines mark the first completed tick that used a changed tax or service
+funding policy, compared with the preceding recorded tick. The first retained
+sample is the baseline. Several paused edits before a tick produce one applied
+policy, and changing back before stepping produces no marker. History starts
+empty for new cities and older saves, persists through save/load and headless
+playable continuation, and drops the oldest sample after 240 ticks. Paused
+policy edits and tool actions do not create samples. Charts show observed
+results; policy markers alone do not establish causation.
+
+
+### M26: city alerts and diagnostics
+
+Press **F7**, click **F7 ALERTS** in the detailed HUD, or choose the budget's
+**Alerts** tab. Five diagnostics cover power, water, unemployment, essential
+service gaps and budget deficits. Each row shows its last completed-tick
+measurement and a suggested check; **View** opens the service overlay, demand
+overlay or Taxes budget tab. Viewing an alert clears the active placement tool.
+
+An alert activates after three consecutive bad ticks and clears after two
+recovered ticks. Power/water use the lower of road reach and supply ratio
+(bad below 95%, recovered at 99%); they are disabled when utilities are not
+required or there are no buildings. Unemployment activates above 20% and
+recovers at 15%. Service gaps use the lowest fire, police, health or education
+coverage (bad below 50%, recovered at 65%). Deficit means actual tick expenses
+exceed revenue. Threshold deadbands prevent flicker. Watching means a problem
+has not yet reached the three-tick activation threshold.
+
+Repeat notices wait at least 60 simulation ticks per diagnostic, including
+recurrences. Active state, measurements, counters and cooldowns survive saves
+and headless playable continuation. New and legacy saves start unchecked.
+Paused edits do not run checks, change past measurements or emit notices;
+load does not reissue a toast. The panel labels its last checked tick, and
+only completed ticks update it. Advice identifies useful checks rather than
+claiming a single proven cause.

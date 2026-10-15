@@ -1,4 +1,6 @@
 #include <algorithm>
+#include "src/persistence/CityHistoryJson.hpp"
+#include "src/persistence/CityAlertsJson.hpp"
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -107,6 +109,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       liveState.tick = session.tick;
       liveState.budgetPolicy = session.budgetPolicy;
       liveState.treasuryLedger = session.treasuryLedger;
+      liveState.history = session.history;
+      liveState.alerts = session.alerts;
       liveState.simulationSeed = session.simulationSeed;
       liveState.enableDisasters = session.enableDisasters;
       liveState.disasters = session.disasters;
@@ -163,6 +167,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   bool isometricMode = true;
   bool showBudgetPanel = false;
   bool budgetServices = false;
+  bool budgetTrends = false;
+  bool budgetAlerts = false;
   bool cleanUiMode = false;
   int isometricCameraX = 0;
   int isometricCameraY = 0;
@@ -291,6 +297,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     } else if (!liveState.lowFunds && !liveState.bankrupt &&
                liveState.treasuryDebt == 0 && (wasLow || wasBankrupt)) {
       notify("TREASURY RECOVERED", true);
+    } else if (liveState.alerts.hasNotice()) {
+      notify("CITY ALERTS " + std::to_string(liveState.alerts.activeCount()) + " ACTIVE - F7", false);
     }
   };
 
@@ -300,6 +308,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     session.tick = liveState.tick;
     session.budgetPolicy = liveState.budgetPolicy;
     session.treasuryLedger = liveState.treasuryLedger;
+    session.history = liveState.history;
+    session.alerts = liveState.alerts;
     session.simulationSeed = liveState.simulationSeed;
     session.enableDisasters = liveState.enableDisasters;
     session.disasters = liveState.disasters;
@@ -348,6 +358,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.tick = session.tick;
     liveState.budgetPolicy = session.budgetPolicy;
     liveState.treasuryLedger = session.treasuryLedger;
+    liveState.history = session.history;
+    liveState.alerts = session.alerts;
     liveState.simulationSeed = session.simulationSeed;
     liveState.enableDisasters = session.enableDisasters;
     liveState.disasters = session.disasters;
@@ -563,6 +575,17 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         store, population, policy.rates(), &map, TradeRates{}, 1.f, {}, EconomyValuation::playable());
     sessionDirty = true;
   };
+  auto viewCityAlert = [&](size_t index) {
+    if (index >= 5) throw std::runtime_error("Alert index must be 0 to 4");
+    budgetAlerts = false; budgetTrends = false;
+    toolDragging = false; cameraPanning = false;
+    activatePaletteTool(PaletteTool::None);
+    if (index == 4) { showBudgetPanel = true; budgetServices = false; }
+    else {
+      showBudgetPanel = false;
+      overlayMode = index == 2 ? OverlayMode::Demand : OverlayMode::ServiceCoverage;
+    }
+  };
   auto budgetPreview = [&]() {
     const auto serviceCosts = liveState.budgetPolicy.serviceCost(facilities);
     return TreasurySystem::breakdown(liveState.economy, 0.01, serviceCosts);
@@ -571,6 +594,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     const auto preview = budgetPreview();
     const auto& ledger = liveState.treasuryLedger;
     return {{"tax_percent", liveState.budgetPolicy.taxPercent},
+      {"history", cityHistoryJson(liveState.history)},
+      {"alerts", cityAlertsJson(liveState.alerts)},
+      {"tax_attraction", liveState.budgetPolicy.taxAttraction()},
       {"service_percent", liveState.budgetPolicy.servicePercent},
       {"service_costs", liveState.budgetPolicy.serviceCosts(facilities)},
       {"service_coverage", BudgetPolicy::coverage(liveState.serviceSummary)},
@@ -721,6 +747,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"compact", cleanUiMode},
            {"budget", showBudgetPanel},
            {"budget_services", budgetServices},
+           {"budget_trends", budgetTrends},
+           {"budget_alerts", budgetAlerts},
            {"large_text", gReadableUiText},
            {"onboarding", showOnboarding},
            {"onboarding_step", onboardingStep},
@@ -801,7 +829,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       if (showBudgetPanel) {
         if (event.type == EventType::Quit) showQuitDialog = true;
         if (event.type == EventType::KeyDown &&
-            (event.key.sym == Key::Escape || event.key.sym == Key::F6)) showBudgetPanel = false;
+            (event.key.sym == Key::Escape || event.key.sym == Key::F6 || (event.key.sym == Key::F7 && budgetAlerts))) showBudgetPanel = false;
+        else if (event.type == EventType::KeyDown && event.key.sym == Key::F7) {
+          budgetAlerts = true; budgetTrends = false;
+        }
         if (event.type == EventType::KeyDown && event.key.sym == Key::Space) {
           liveState.paused = !liveState.paused;
           sessionDirty = true;
@@ -813,17 +844,20 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           mouseX = event.motion.x; mouseY = event.motion.y;
         }
         if (event.type == EventType::MouseDown && event.button.button == MouseButton::Left) {
-          const int action = budgetHitTest(event.button.x, event.button.y, windowWidth, windowHeight, budgetServices);
+          const int action = budgetHitTest(event.button.x, event.button.y, windowWidth, windowHeight, budgetServices, budgetTrends, budgetAlerts);
           if (action == 0) showBudgetPanel = false;
-          if (action == 12) budgetServices = false;
-          if (action == 13) budgetServices = true;
+          if (action == 12) { budgetServices = false; budgetTrends = false; budgetAlerts = false; }
+          if (action == 13) { budgetServices = true; budgetTrends = false; budgetAlerts = false; }
+          if (action == 36) { budgetTrends = true; budgetAlerts = false; }
+          if (action == 37) { budgetAlerts = true; budgetTrends = false; }
+          if (action >= 38 && action < 43) viewCityAlert(static_cast<size_t>(action - 38));
           if (action == 1) {
             auto policy = liveState.budgetPolicy;
             if (budgetServices) policy.servicePercent = BudgetPolicy{}.servicePercent;
             else policy.taxPercent = BudgetPolicy{}.taxPercent;
             setBudgetPolicy(policy);
           }
-          if (action >= 14) {
+          if (action >= 14 && action < 36) {
             auto policy = liveState.budgetPolicy;
             const size_t index = static_cast<size_t>((action - 14) / 2);
             policy.servicePercent[index] = std::clamp(policy.servicePercent[index] + (action % 2 == 0 ? -25 : 25), 0, 100);
@@ -963,6 +997,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                      ? "AUTONOMOUS GROWTH ON (CITYSIM ROADS/ZONES/SERVICES)"
                      : "AUTONOMOUS GROWTH OFF (PLAYER BUILD ONLY)",
                  true);
+          break;
+        case Key::F7:
+          showBudgetPanel = true; budgetAlerts = true; budgetTrends = false;
+          toolDragging = false; cameraPanning = false;
           break;
         case Key::F6:
           showBudgetPanel = true;
@@ -1186,6 +1224,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         case HudAction::Load:
           loadSession();
+          break;
+        case HudAction::Alerts:
+          showBudgetPanel = true; budgetAlerts = true; budgetTrends = false;
+          toolDragging = false; cameraPanning = false;
           break;
         case HudAction::Budget:
           showBudgetPanel = true;
@@ -1656,6 +1698,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       case HudAction::Load:
         uiHoverText = "LOAD: RESTORE THE DEFAULT SESSION";
         break;
+      case HudAction::Alerts:
+        uiHoverText = "ALERTS: MEASURED CITY PROBLEMS AND RELEVANT ACTIONS";
+        break;
       case HudAction::Budget:
         uiHoverText = "BUDGET: INSPECT TREASURY FLOWS AND CHANGE CITY TAXES";
         break;
@@ -1760,7 +1805,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       drawBudgetPanel(renderer, windowWidth, windowHeight, liveState.budgetPolicy,
                       budgetPreview(), liveState.treasuryLedger, funds,
                       liveState.treasuryDebt, mouseX, mouseY, budgetServices,
-                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary));
+                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary), budgetTrends, liveState.history, budgetAlerts, liveState.alerts);
     if (showQuitDialog) {
       drawQuitDialog(renderer, windowWidth, windowHeight, mouseX, mouseY,
                      sessionDirty);

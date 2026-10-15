@@ -99,6 +99,161 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s.last_state["budget"]["service_coverage"][0], 1)
         self.assertEqual(s.last_state["facilities"], 3)
 
+    async def test_tax_pressure_changes_growth_and_survives_low_tax_save(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        for service, x in (("power", 15), ("water", 17)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
+        for zone, y in (("residential", 15), ("commercial", 17)):
+            await s.request("tool", {"action": "apply", "name": "zone", "zone": zone, "x1": 6, "y1": y, "x2": 13, "y2": y})
+        await s.request("time", {"action": "step", "ticks": 20})
+        await s.city("save")
+        frozen = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core = s.artifact("tax-branch.city.json")
+        core.write_bytes(Path(frozen["citySnapshot"]).read_bytes())
+        frozen["citySnapshot"] = str(core)
+        checkpoint = s.artifact("tax-branch.json")
+        checkpoint.write_text(json.dumps(frozen))
+        populations = []
+        for rate in (0, 20):
+            await s.city("load", import_path=str(checkpoint))
+            before = s.last_state.copy()
+            await s.request("budget", {"action": "set_taxes", "tax_percent": [rate]*5})
+            self.assertEqual(s.last_state["population"], before["population"])
+            await s.request("time", {"action": "step", "ticks": 12})
+            populations.append(s.last_state["population"])
+            await s.city("save")
+            await s.city("load")
+            self.assertEqual(s.last_state["population"], populations[-1])
+            self.assertEqual(s.last_state["budget"]["tax_percent"], [rate]*5)
+        self.assertGreater(populations[0], populations[1])
+
+    async def test_trends_history_and_headless_continuation(self):
+        s = self.session
+        await s.city("new", 32)
+        self.assertEqual(s.last_state["budget"]["history"], [])
+        await s.request("budget", {"action": "trends"})
+        await s.screenshot("trends-empty")
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        for service, x in (("power", 15), ("water", 17)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
+        for zone, y in (("residential", 15), ("commercial", 17)):
+            await s.request("tool", {"action": "apply", "name": "zone", "zone": zone, "x1": 6, "y1": y, "x2": 13, "y2": y})
+        await s.request("time", {"action": "step", "ticks": 20})
+        initial = s.last_state["budget"]["history"]
+        self.assertEqual(len(initial), 20)
+        self.assertGreater(initial[-1]["population"], 0)
+        await s.request("budget", {"action": "set_taxes", "tax_percent": [12,8,6,9,10]})
+        self.assertEqual(s.last_state["budget"]["history"], initial)
+        await s.request("time", {"action": "step", "ticks": 3})
+        history = s.last_state["budget"]["history"]
+        self.assertEqual([r["tick"] for r in history if r["policy_changed"]], [21])
+        self.assertEqual(history[-1]["revenue"], s.last_state["budget"]["last_tick"]["total_revenue"])
+        self.assertEqual(history[-1]["funds"], s.last_state["funds"])
+        await s.request("budget", {"action": "taxes"})
+        layout = await s.request("inspect", {"section": "ui"})
+        button = next(c for c in layout["controls"] if c["name"] == "budget_trends")
+        await s.request("input", {"events": [{"type": "down", "x": button["x"]+2, "y": button["y"]+2},
+                                             {"type": "up", "x": button["x"]+2, "y": button["y"]+2}]})
+        self.assertTrue(s.last_state["ui"]["budget_trends"])
+        controls = (await s.request("inspect", {"section": "ui"}))["controls"]
+        self.assertEqual({c["name"] for c in controls}, {"budget_close", "budget_taxes", "budget_services", "budget_trends", "budget_alerts"})
+        await s.screenshot("trends-normal")
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        await s.screenshot("trends-minimum-window")
+        await s.city("save")
+        frozen = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core = s.artifact("trends-branch.city.json")
+        core.write_bytes(Path(frozen["citySnapshot"]).read_bytes())
+        frozen["citySnapshot"] = str(core)
+        checkpoint = s.artifact("trends-branch.json")
+        checkpoint.write_text(json.dumps(frozen))
+        await s.request("time", {"action": "step", "ticks": 2})
+        await s.city("save")
+        gui = json.loads(s.artifact("urban_sim_session.json").read_text())
+        output = s.artifact("trends-headless.json")
+        cli = Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest", "-cli"))
+        process = await asyncio.create_subprocess_exec(str(cli), "--simulate", "2",
+            "--simulate-session", str(checkpoint), "--simulate-session-out", str(output),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+        self.assertEqual(process.returncode, 0, stderr.decode())
+        headless = json.loads(output.read_text())
+        self.assertEqual(headless["cityHistory"], gui["cityHistory"])
+        await s.city("load", import_path=str(output))
+        self.assertEqual(s.last_state["budget"]["history"], gui["cityHistory"])
+        await s.city("new", 32)
+        self.assertEqual(s.last_state["budget"]["history"], [])
+
+    async def test_city_alerts_diagnostics_actions_and_continuation(self):
+        s = self.session
+        await s.city("new",32)
+        await s.request("budget", {"action":"alerts"})
+        self.assertEqual(s.last_state["budget"]["alerts"]["checked_tick"],0)
+        await s.screenshot("alerts-unchecked")
+        await s.request("budget", {"action":"close"})
+        await s.request("tool", {"action":"apply","name":"road","x1":6,"y1":16,"x2":22,"y2":16})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool", {"action":"apply","name":"service","service":service,"x1":x,"y1":15})
+        for zone,y in (("residential",15),("commercial",17)):
+            await s.request("tool", {"action":"apply","name":"zone","zone":zone,"x1":6,"y1":y,"x2":13,"y2":y})
+        await s.request("time", {"action":"step","ticks":20})
+        before = s.last_state["budget"]["alerts"]
+        funding = [100]*11
+        funding[4] = funding[5] = 0
+        await s.request("budget", {"action":"set_funding","service_percent":funding})
+        self.assertEqual(s.last_state["budget"]["alerts"],before)
+        await s.request("time", {"action":"step","ticks":3})
+        alerts = s.last_state["budget"]["alerts"]
+        self.assertEqual(alerts["checked_tick"],23)
+        self.assertTrue(alerts["records"][0]["active"])
+        self.assertTrue(alerts["records"][1]["active"])
+        self.assertEqual(alerts["records"][0]["last_notice_tick"],23)
+        await s.request("input", {"events":[{"type":"key","key":"F7"}]})
+        self.assertTrue(s.last_state["ui"]["budget_alerts"])
+        await s.screenshot("alerts-normal")
+        await s.request("window", {"action":"resize","width":800,"height":640})
+        await s.screenshot("alerts-minimum-window")
+        controls = (await s.request("inspect", {"section":"ui"}))["controls"]
+        button = next(c for c in controls if c["name"] == "alert_view_0")
+        await s.request("input", {"events":[{"type":"down","x":button["x"]+2,"y":button["y"]+2},
+                                             {"type":"up","x":button["x"]+2,"y":button["y"]+2}]})
+        self.assertFalse(s.last_state["ui"]["budget"])
+        self.assertEqual(s.last_state["overlay"],3)
+        await s.request("budget", {"action":"view_alert","alert_index":2})
+        self.assertEqual(s.last_state["overlay"],5)
+        await s.request("budget", {"action":"view_alert","alert_index":4})
+        self.assertTrue(s.last_state["ui"]["budget"])
+        self.assertFalse(s.last_state["ui"]["budget_alerts"])
+        await s.city("save")
+        frozen = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core = s.artifact("alerts-branch.city.json")
+        core.write_bytes(Path(frozen["citySnapshot"]).read_bytes())
+        frozen["citySnapshot"] = str(core)
+        checkpoint = s.artifact("alerts-branch.json")
+        checkpoint.write_text(json.dumps(frozen))
+        await s.city("load",import_path=str(checkpoint))
+        self.assertEqual(s.last_state["budget"]["alerts"],alerts)
+        await s.request("time", {"action":"step","ticks":2})
+        self.assertEqual(s.last_state["budget"]["alerts"]["records"][0]["last_notice_tick"],23)
+        await s.city("save")
+        gui = json.loads(s.artifact("urban_sim_session.json").read_text())
+        cli = Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"))
+        output = s.artifact("alerts-headless.json")
+        process = await asyncio.create_subprocess_exec(str(cli),"--simulate","2",
+            "--simulate-session",str(checkpoint),"--simulate-session-out",str(output),
+            stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        stdout,stderr = await process.communicate()
+        self.assertEqual(process.returncode,0,stderr.decode())
+        headless = json.loads(output.read_text())
+        self.assertEqual(headless["cityAlerts"],gui["cityAlerts"])
+        await s.city("load",import_path=str(output))
+        await s.request("budget", {"action":"reset_funding"})
+        await s.request("time", {"action":"step","ticks":2})
+        self.assertFalse(s.last_state["budget"]["alerts"]["records"][0]["active"])
+        self.assertFalse(s.last_state["budget"]["alerts"]["records"][1]["active"])
+
     async def test_budget_policy_records_and_replays(self):
         s = self.session
         await record(s, "start")
@@ -143,8 +298,11 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s.last_state["budget"]["last_tick"], initial["budget"]["last_tick"])
         await s.request("budget", {"action": "set_taxes", "tax_percent": [0, 0, 0, 0, 0]})
         self.assertEqual(s.last_state["budget"]["preview"]["total_revenue"], 0)
+        self.assertTrue(all(v > 1 for v in s.last_state["budget"]["tax_attraction"]))
         await s.request("budget", {"action": "set_taxes", "tax_percent": [20, 20, 20, 20, 20]})
         self.assertGreater(s.last_state["budget"]["preview"]["total_revenue"], 0)
+        self.assertTrue(all(v < 1 for v in s.last_state["budget"]["tax_attraction"]))
+        self.assertEqual(s.last_state["population"], initial["population"])
         preview = s.last_state["budget"]["preview"]
         self.assertEqual(sum(preview["revenue"]), preview["total_revenue"])
         self.assertEqual(sum(preview["expenses"]), preview["total_expenses"])
@@ -183,7 +341,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         stdout, stderr = await process.communicate()
         self.assertEqual(process.returncode, 0, stderr.decode())
         headless = json.loads(output.read_text())
-        for key in ("funds", "tick", "treasuryDebt", "treasuryLedger", "budgetTaxPercent"):
+        for key in ("funds", "tick", "treasuryDebt", "treasuryLedger", "budgetTaxPercent", "populationChange", "demand", "cityHistory"):
             self.assertEqual(headless[key], gui[key], key)
         await s.request("budget", {"action": "open"})
         await s.request("budget", {"action": "reset"})

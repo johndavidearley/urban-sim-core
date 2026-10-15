@@ -56,6 +56,8 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   tickState.tick = liveState.tick;
   tickState.budgetPolicy = liveState.budgetPolicy;
   tickState.treasuryLedger = liveState.treasuryLedger;
+  tickState.history = liveState.history;
+  tickState.alerts = liveState.alerts;
   tickState.populationTarget = liveState.populationTarget;
   tickState.migrationConditions = liveState.migrationConditions;
   tickState.populationChange = liveState.populationChange;
@@ -94,6 +96,8 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
   liveState.tick = tickState.tick;
   liveState.budgetPolicy = tickState.budgetPolicy;
   liveState.treasuryLedger = tickState.treasuryLedger;
+  liveState.history = tickState.history;
+  liveState.alerts = tickState.alerts;
   liveState.populationTarget = tickState.populationTarget;
   liveState.migrationConditions = tickState.migrationConditions;
   liveState.populationChange = tickState.populationChange;

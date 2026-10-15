@@ -31,5 +31,6 @@ class MigrationSystem {
 public:
   static MigrationDemand evaluate(uint32_t population, uint32_t employed,
                                   uint32_t housingCapacity,
-                                  const MigrationConditions &conditions);
+                                  const MigrationConditions &conditions,
+                                  float taxAttraction = 1.0f);
 };

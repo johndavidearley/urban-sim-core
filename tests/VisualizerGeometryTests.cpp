@@ -346,3 +346,32 @@ TEST(VisualizerGeometry, ServiceFundingControlsFitTheMinimumWindowAndTabsDoNotOv
   drawBudgetPanel(&list,800,640,{}, {}, {},50000,0,0,0,true);
   EXPECT_GT(area(list),0.f);
 }
+
+TEST(VisualizerGeometry, TrendsTabHidesPolicyInputsAndFitsMinimumWindow) {
+  for (int action = 0; action < 37; ++action) {
+    if (!budgetControlVisible(action, false, true)) continue;
+    EXPECT_TRUE(action == 0 || action == 12 || action == 13 || action == 36);
+    const auto r = budgetControlRect(action, 800, 640, false, true);
+    EXPECT_EQ(budgetHitTest(r.x+1,r.y+1,800,640,false,true), action);
+  }
+  CityHistory history;
+  history.append({1, 100, {0,5,0,-5,0}, 40,50,1000,0,{}});
+  history.append({2, 105, {5,0,0,5,0}, 60,30,1100,0,{}});
+  DrawList list;
+  drawBudgetPanel(&list,800,640,{}, {}, {},1100,0,0,0,false,{}, {},true,history);
+  EXPECT_GT(area(list), 0.f);
+}
+
+TEST(VisualizerGeometry, AlertActionsFitAndHidePolicyControls) {
+  for (int action = 0; action < 43; ++action) {
+    if (!budgetControlVisible(action,false,false,true)) continue;
+    EXPECT_TRUE(action == 0 || action == 12 || action == 13 || action >= 36);
+    const auto r = budgetControlRect(action,800,640,false,false,true);
+    EXPECT_EQ(budgetHitTest(r.x+1,r.y+1,800,640,false,false,true),action);
+    EXPECT_GE(r.x,0); EXPECT_GE(r.y,0);
+    EXPECT_LE(r.x+r.w,800); EXPECT_LE(r.y+r.h,640);
+  }
+  DrawList list;
+  drawBudgetPanel(&list,800,640,{}, {}, {},50000,0,0,0,false,{}, {},false,{},true,{});
+  EXPECT_GT(area(list),0.f);
+}

@@ -33,6 +33,7 @@ enum class Key {
   F4,
   F5,
   F6,
+  F7,
   F9,
   Num1,
   Num2,

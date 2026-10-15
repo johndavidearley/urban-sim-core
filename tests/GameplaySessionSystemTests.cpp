@@ -7,6 +7,8 @@
 #include "gtest/gtest.h"
 
 #include "src/persistence/GameplaySessionSystem.hpp"
+#include "src/persistence/CityHistoryJson.hpp"
+#include "src/persistence/CityAlertsJson.hpp"
 #include "src/systems/PlayableCityTick.hpp"
 #include "src/systems/TransitSystem.hpp"
 #include "src/world/CityMap.hpp"
@@ -24,6 +26,10 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   GameplaySessionState saved;
   saved.funds = 12345;
   saved.tick = 77;
+  CityAlertInputs alertInputs; alertInputs.expenses = 50;
+  for (uint32_t tick = 1; tick <= 77; ++tick) saved.alerts.update(tick, alertInputs);
+  saved.history.append({76, 100, {}, 40, 30, 12000, 250, {}});
+  saved.history.append({77, 100, {}, 50, 40, 12345, 250, {}});
   saved.paused = true;
   saved.tickIntervalMs = 120;
   saved.demand = {0.1f, 0.2f, 0.3f, 0.4f};
@@ -111,6 +117,8 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   EXPECT_EQ(loaded.treasuryDebt, 250);
   EXPECT_DOUBLE_EQ(loaded.treasuryInterestRemainder, 0.4);
   EXPECT_EQ(loaded.simulationSeed, 123u);
+  EXPECT_EQ(cityAlertsJson(loaded.alerts), cityAlertsJson(saved.alerts));
+  EXPECT_EQ(cityHistoryJson(loaded.history), cityHistoryJson(saved.history));
   EXPECT_EQ(loaded.budgetPolicy.taxPercent, saved.budgetPolicy.taxPercent);
   EXPECT_EQ(loaded.budgetPolicy.servicePercent, saved.budgetPolicy.servicePercent);
   EXPECT_TRUE(loaded.treasuryLedger.valid);
@@ -232,6 +240,8 @@ TEST(GameplaySessionSystemTests, LegacySaveLoadsWithoutMigrationFields) {
   document.erase("simulationSeed");
   document.erase("budgetTaxPercent");
   document.erase("budgetServicePercent");
+  document.erase("cityHistory");
+  document.erase("cityAlerts");
   document.erase("treasuryLedger");
   {
     std::ofstream out(path);
@@ -244,6 +254,8 @@ TEST(GameplaySessionSystemTests, LegacySaveLoadsWithoutMigrationFields) {
   EXPECT_FALSE(loaded.enableDisasters);
   EXPECT_TRUE(loaded.disasters.burningTiles.empty());
   EXPECT_EQ(loaded.simulationSeed, 98765u);
+  EXPECT_TRUE(loaded.history.samples.empty());
+  EXPECT_EQ(loaded.alerts.checkedTick, 0u);
   EXPECT_EQ(loaded.budgetPolicy.taxPercent, BudgetPolicy{}.taxPercent);
   EXPECT_EQ(loaded.budgetPolicy.servicePercent, BudgetPolicy{}.servicePercent);
   EXPECT_FALSE(loaded.treasuryLedger.valid);
@@ -400,5 +412,150 @@ TEST(GameplaySessionSystemTests, InvalidServiceFundingDoesNotMutateCityOrPolicy)
     EXPECT_EQ(loaded.budgetPolicy.servicePercent,BudgetPolicy{}.servicePercent);
     EXPECT_EQ(map.zone({1,1}),static_cast<int>(ZoneType::Park));
   }
+  std::filesystem::remove(path); std::filesystem::remove(path.string()+".city.json");
+}
+
+TEST(CityHistoryTests, RetainsLatestTicksAndMarksAppliedPolicyChanges) {
+  CityHistory history;
+  BudgetPolicy policy;
+  for (uint32_t tick = 1; tick <= 300; ++tick) {
+    if (tick == 100) policy.taxPercent[0] = 8;
+    if (tick == 200) policy.servicePercent[0] = 50;
+    history.append({tick, 100, {}, 20, 30, 1000, 0, policy});
+  }
+  ASSERT_EQ(history.samples.size(), 240u);
+  EXPECT_EQ(history.samples.front().tick, 61u);
+  EXPECT_EQ(history.samples.back().tick, 300u);
+  EXPECT_FALSE(history.policyChanged(0));
+  size_t changes = 0;
+  for (size_t i = 0; i < history.samples.size(); ++i) {
+    if (history.policyChanged(i)) {
+      ++changes;
+      EXPECT_TRUE(history.samples[i].tick == 100 || history.samples[i].tick == 200);
+    }
+  }
+  EXPECT_EQ(changes, 2u);
+  EXPECT_EQ(cityHistoryJson(parseCityHistory(cityHistoryJson(history), 300)), cityHistoryJson(history));
+}
+
+TEST(CityHistoryTests, RejectsInvalidAndUnboundedImportedHistory) {
+  CityHistory history;
+  history.append({1,100,{},20,30,1000,0,{}});
+  history.append({2,100,{},20,30,1000,0,{}});
+  const auto good = cityHistoryJson(history);
+  for (int invalid = 0; invalid < 10; ++invalid) {
+    auto rows = good;
+    if (invalid == 0) rows[1]["tick"] = 1;
+    if (invalid == 1) rows[1]["tick"] = 3;
+    if (invalid == 2) rows[1]["population"] = -1;
+    if (invalid == 3) rows[1]["revenue"] = 0.5;
+    if (invalid == 4) rows[1]["net_migration"] = 5;
+    if (invalid == 5) rows[1]["tax_percent"][0] = 21;
+    if (invalid == 6) rows[1]["service_percent"][0] = -1;
+    if (invalid == 7) rows[1]["debt"] = std::numeric_limits<uint64_t>::max();
+    if (invalid == 8) rows[1]["tax_percent"].erase(0);
+    if (invalid == 9) for (int i = 0; i < 240; ++i) rows.push_back(good[0]);
+    EXPECT_THROW(parseCityHistory(rows, 2), std::exception);
+  }
+  EXPECT_TRUE(parseCityHistory(nlohmann::json::array(), 500).samples.empty());
+}
+
+TEST(GameplaySessionSystemTests, InvalidHistoryDoesNotMutateCityOrSession) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore population;
+  GameplaySessionState saved;
+  saved.tick = 1;
+  saved.history.append({1,0,{},20,30,1000,0,{}});
+  const auto path = std::filesystem::temp_directory_path() / "urban_invalid_history.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(),map,roads,store,population,saved));
+  nlohmann::json root;
+  { std::ifstream input(path); input >> root; }
+  root["cityHistory"][0]["tick"] = 2;
+  { std::ofstream output(path); output << root; }
+  GameplaySessionState loaded; loaded.funds = 123;
+  map.setZone({1,1},static_cast<int>(ZoneType::Park));
+  std::string error;
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(),map,roads,store,population,loaded,&error));
+  EXPECT_EQ(loaded.funds,123);
+  EXPECT_TRUE(loaded.history.samples.empty());
+  EXPECT_EQ(map.zone({1,1}),static_cast<int>(ZoneType::Park));
+  std::filesystem::remove(path); std::filesystem::remove(path.string()+".city.json");
+}
+
+TEST(CityAlertsTests, DebounceRecoveryHysteresisAndCooldownSurviveSave) {
+  CityAlerts alerts;
+  CityAlertInputs inputs;
+  inputs.hasBuildings = true;
+  inputs.powerCoverage = 0.f;
+  alerts.update(1, inputs); alerts.update(2, inputs);
+  EXPECT_FALSE(alerts.records[0].active);
+  alerts.update(3, inputs);
+  EXPECT_TRUE(alerts.records[0].active);
+  EXPECT_EQ(alerts.records[0].sinceTick, 1u);
+  EXPECT_TRUE(alerts.hasNotice());
+  alerts = parseCityAlerts(cityAlertsJson(alerts), 3);
+  alerts.update(4, inputs);
+  EXPECT_FALSE(alerts.hasNotice());
+  inputs.powerCoverage = .97f;
+  alerts.update(5, inputs); alerts.update(6, inputs);
+  EXPECT_TRUE(alerts.records[0].active);
+  inputs.powerCoverage = 1.f;
+  alerts.update(7, inputs); alerts.update(8, inputs);
+  EXPECT_FALSE(alerts.records[0].active);
+  inputs.powerCoverage = 0.f;
+  for (uint32_t tick = 9; tick < 63; ++tick) {
+    alerts.update(tick, inputs);
+    EXPECT_FALSE(alerts.hasNotice());
+  }
+  alerts.update(63, inputs);
+  EXPECT_TRUE(alerts.hasNotice());
+  EXPECT_EQ(alerts.records[0].lastNoticeTick,63u);
+  alerts.update(63, inputs);
+  EXPECT_EQ(alerts.records[0].badTicks,3u);
+}
+
+TEST(CityAlertsTests, DiagnosticsRequireRealDemandAndTrackAllProblemTypes) {
+  CityAlerts alerts;
+  CityAlertInputs inputs;
+  inputs.requireUtilities = false;
+  inputs.powerCoverage = inputs.waterCoverage = 0;
+  for (uint32_t tick = 1; tick <= 3; ++tick) alerts.update(tick,inputs);
+  EXPECT_EQ(alerts.activeCount(),0u);
+  inputs.hasBuildings = inputs.hasResidents = inputs.requireUtilities = true;
+  inputs.unemployment = .5f;
+  inputs.serviceCoverage = .25f;
+  inputs.revenue = 50; inputs.expenses = 100;
+  for (uint32_t tick = 4; tick <= 6; ++tick) alerts.update(tick,inputs);
+  EXPECT_EQ(alerts.activeCount(),5u);
+  const auto saved = cityAlertsJson(alerts);
+  EXPECT_EQ(cityAlertsJson(parseCityAlerts(saved,6)),saved);
+  for (int invalid = 0; invalid < 7; ++invalid) {
+    auto bad = saved;
+    if (invalid == 0) bad["checked_tick"] = 7;
+    if (invalid == 1) bad["records"][0]["last_notice_tick"] = 7;
+    if (invalid == 2) bad["records"][0]["bad_ticks"] = 4;
+    if (invalid == 3) bad["records"][0]["since_tick"] = 0;
+    if (invalid == 4) bad["inputs"]["power_supply"] = -1;
+    if (invalid == 5) bad["inputs"]["revenue"] = -1;
+    if (invalid == 6) bad["records"].erase(0);
+    EXPECT_THROW(parseCityAlerts(bad,6),std::exception);
+  }
+}
+
+TEST(GameplaySessionSystemTests, InvalidAlertStateDoesNotMutateCityOrSession) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore population;
+  GameplaySessionState saved;
+  const auto path = std::filesystem::temp_directory_path() / "urban_invalid_alerts.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(),map,roads,store,population,saved));
+  nlohmann::json root;
+  { std::ifstream input(path); input >> root; }
+  root["cityAlerts"]["records"][0]["last_notice_tick"] = 1;
+  { std::ofstream output(path); output << root; }
+  GameplaySessionState loaded; loaded.funds = 123;
+  map.setZone({1,1},static_cast<int>(ZoneType::Park));
+  std::string error;
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(),map,roads,store,population,loaded,&error));
+  EXPECT_EQ(loaded.funds,123);
+  EXPECT_EQ(loaded.alerts.checkedTick,0u);
+  EXPECT_EQ(map.zone({1,1}),static_cast<int>(ZoneType::Park));
   std::filesystem::remove(path); std::filesystem::remove(path.string()+".city.json");
 }

@@ -323,3 +323,39 @@ Operating costs are summed and rounded to dollars per department, using the
 same function for preview and billing. Invalid arrays/rates are rejected
 before policy or city mutation. Effective facilities are derived from original
 ratings each refresh; raw facility inspection and saves retain installed ratings.
+
+
+M24 adds `budget.tax_attraction`: four R/C/I/O multipliers relative to default
+taxes. Residential combines residential and income tax deviations equally.
+These are demand/arrival multipliers, not predicted population growth. Tax
+edits remain paused-safe; effects occur on simulation ticks. Existing saved
+`budgetTaxPercent` supplies all inputs, so no additional lag or save fields
+are required. `populationChange.desirability` remains normalized to 0–1.
+
+
+M25 adds `budget(action="trends")` and `ui.budget_trends`. UI inspection exposes
+`budget_trends` on all budget tabs and hides tax/funding inputs in Trends.
+`budget.history` contains up to 240 completed-tick rows with `tick`, `population`,
+`arrivals`, `departures`, `deaths`, `net_migration` (including deaths), `revenue`,
+`expenses`, `funds`, `debt`, `tax_percent`, `service_percent`, and the derived
+`policy_changed` marker. Values are actual outcomes, not next-tick forecasts.
+Saves store the same bounded rows under optional `cityHistory`; legacy saves
+start empty. Bad lengths, ticks, numeric ranges, policy arrays and inconsistent
+migration totals are rejected before city mutation. The first retained row is
+a baseline, so its marker is false. Continuation appends identical samples in
+GUI and headless playable modes.
+
+
+M26 adds F7, native HUD `alerts`, budget tab `budget_alerts`, and
+`budget(action="alerts")`. `budget(action="view_alert", alert_index=0..4)`
+shares native actions (power, water, unemployment, services, budget), routing
+to service overlay, demand overlay or Taxes. UI inspection names row buttons
+`alert_view_0` through `alert_view_4`. `ui.budget_alerts` identifies the tab.
+`budget.alerts` exposes `checked_tick`, measured `inputs`, and five `records`
+with active state, bad/good tick counters, first-detected tick and last-notice
+tick. Counter thresholds are 3 bad / 2 recovered ticks; cooldown is 60 ticks.
+`cityAlerts` is optional saved state; missing means unchecked, and invalid
+counts, ranges, timestamps and inconsistent states reject before city mutation.
+Both playable hosts update alerts after the actual treasury and population
+results, and GUI/headless saved alert state is identical. Paused refreshes and
+save/load do not evaluate alerts or emit notices.

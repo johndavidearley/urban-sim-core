@@ -387,7 +387,7 @@ shortfall.
 
 ---
 
-## Phase 7: Player fiscal controls (M23)
+## Phase 7: Player fiscal controls and diagnostics (M23–M26)
 
 ### Milestone 23: Budget controls and treasury breakdown
 
@@ -414,9 +414,35 @@ panel. Service policy uses the same rules on both hosts.
 **Deliverable:** A player can explain last tick's cash movement,
 change taxes and department funding while paused, see revenue, cost and service
 coverage respond, and continue
-the saved policy on either host. Taxes currently change revenue; no migration
-or demand response to tax levels is modeled. Tool purchases are immediate
+the saved policy on either host. Tax effects on migration and demand are
+covered by M24 below. Tool purchases are immediate
 cash transactions outside the simulation-tick ledger.
+
+## Milestone 24: Tax policy effects on growth and migration
+
+- [x] Zone-specific construction demand responds to taxes relative to neutral defaults.
+- [x] Residential and income taxes influence arrivals and gradual departures.
+- [x] Budget panel explains relative attraction without promising population growth.
+- [x] Verify defaults, bounded responses, persistence, replay and both hosts.
+
+The existing saved tax policy drives responses each tick. No extra hidden lag
+state is introduced; paused edits do not advance population or construction.
+
+## Milestone 25: Population and budget trends
+
+- [x] Retain a bounded completed-tick history of population, migration and finances.
+- [x] Add a Trends budget tab with independently labeled chart scales.
+- [x] Mark ticks that first apply changed taxes or department funding.
+- [x] Preserve history through save/load and headless playable continuation.
+- [x] Verify retention, legacy saves, rejected imports, native UI and replay.
+
+## Milestone 26: City alerts and diagnostics
+
+- [x] Diagnose utility shortages, unemployment, essential-service gaps and deficits.
+- [x] Show measurements and actionable checks in an F7 Alerts view.
+- [x] Route alert actions to relevant overlays or the budget.
+- [x] Persist debounce, recovery and cooldown state on both playable hosts.
+- [x] Verify native actions, saved cooldowns, recovery, legacy saves and replay.
 
 ---
 
@@ -430,10 +456,10 @@ cash transactions outside the simulation-tick ledger.
 | 4 | M9–M10 | 4–6 weeks |
 | 5 | M11+ | 12+ weeks |
 | 6 | M17–M22 | complete |
-| 7 | M23 | complete |
+| 7 | M23–M26 | complete |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
-**Phase 7 (M23):** implemented and locally verified.
+**Phase 7 (M23–M26):** implemented and locally verified.
 
 ---
 
@@ -449,7 +475,7 @@ controls are complete and locally verified.
 
 ## Next Targets (Post-Backlog)
 
-Finished through Phase 7 (M23). No later milestone is defined yet. This list is the
+Finished through Phase 7 (M26). This list is the
 record of work that landed after M16.
 
 1. ~~District-level service policies and budget controls~~ - already done,
