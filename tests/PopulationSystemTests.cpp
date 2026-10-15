@@ -364,3 +364,16 @@ TEST(PopulationSystemTests, EducatedOfficeSpareStaysEmpty) {
   EXPECT_EQ(educated.summary.highIncomePopulation, 30u);
   EXPECT_GT(educated.summary.unemploymentRate, 0.0f);
 }
+
+TEST(PopulationStoreTests, ImportedIdsRemainReservedForNewGroups) {
+  PopulationStore population;
+  const EntityId imported = EntityIdUtils::generateEntityId() + 1000;
+  PopulationGroup group;
+  group.id = imported;
+  group.band = IncomeBand::Low;
+  group.size = 10;
+  population.upsertGroup(group);
+  const auto created = population.createGroup(IncomeBand::High, 20, 5);
+  EXPECT_GT(created, imported);
+  EXPECT_EQ(population.getTotalPopulation(), 30u);
+}

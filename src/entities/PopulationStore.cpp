@@ -26,6 +26,7 @@ void PopulationStore::clear() {
 }
 
 void PopulationStore::upsertGroup(const PopulationGroup& group) {
+  EntityIdUtils::reserveThrough(group.id);
   groups[group.id] = group;
 }
 

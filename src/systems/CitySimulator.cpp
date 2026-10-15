@@ -1,4 +1,6 @@
 #include "src/systems/CitySimulator.hpp"
+#include "src/systems/CityDisasterState.hpp"
+#include "src/gameplay/ServiceTool.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -93,6 +95,10 @@ SimResult CitySimulator::run(
   const DistrictSystem* districts
 ) {
   SimResult result;
+  int64_t funds = std::max<int64_t>(0, options.initialFunds);
+  TreasuryDebt debt = options.initialDebt;
+  result.finalFunds = funds;
+  result.finalDebt = debt;
   const bool infinite = (ticks < 0);
   result.rows.reserve(static_cast<size_t>(std::max(0, ticks)));
 
@@ -158,15 +164,18 @@ SimResult CitySimulator::run(
     const int ay1 = region.ay1;
     const int serviceRadius = region.serviceRadius;
 
+    int64_t constructionSpend = 0;
     // Build on zoned, road-accessible land in proportion to demand. District
     // growth-pressure modifiers (if any) come from the previous tick's
     // service-budget/density evaluation below.
     {
       const auto t0 = Clock::now();
+      BurningGrowthGuard burningGuard(map, burningTiles);
       const GrowthStats growth = GrowthSystem::runStep(
         map, store, demand, tickSeed, options.buildChance,
         &districtGrowthModifiers, {ax0, ay0}, {ax1, ay1}, &pool,
         options.enableUtilities, &roads, &coverageCache);
+      constructionSpend = growth.constructionSpend;
       // Spawn fills empty zoned tiles; demolition frees them. Redevelopment
       // is excluded from both counters inside GrowthSystem.
       city_sim::applyEmptyZonedDelta(
@@ -250,7 +259,8 @@ SimResult CitySimulator::run(
       const auto t0 = Clock::now();
       city_sim::placeTransitRoutesIfNeeded(roads, store, transitRoutes, population.getTotalPopulation(), serviceRadius,
                                  options.transitCapacityMultiplier);
-      if (transitRoutes.size() != transitCache.builtForRouteCount) {
+      if (transitRoutes.size() != transitCache.builtForRouteCount ||
+          transitCache.topologyVersion != roads.getTopologyVersion()) {
         TransitSystem::buildCache(roads, transitRoutes, transitCache);
       }
       result.timings.transitMs += elapsedMs(t0, Clock::now());
@@ -448,6 +458,15 @@ SimResult CitySimulator::run(
       result.timings.districtMs += elapsedMs(t0, Clock::now());
     }
 
+    int64_t operatingCosts = constructionSpend;
+    for (const auto& facility : facilities)
+      operatingCosts += ServiceTool::operatingCostPerTick(facility.type);
+    const auto treasury = TreasurySystem::applyEconomy(
+        economy, funds, options.treasuryTickScale, operatingCosts,
+        &debt, options.treasuryInterestRate);
+    result.finalFunds = funds;
+    result.finalDebt = debt;
+
     SimTickMetrics row;
     row.tick = tick;
     row.demandResidential = demand.residential;
@@ -462,6 +481,9 @@ SimResult CitySimulator::run(
     row.officeBuildings = tickCap.officeBuildings;
     row.roadTiles = static_cast<uint32_t>(roads.getRoadCount());
     row.budgetBalance = economy.balance;
+    row.funds = funds;
+    row.treasury = treasury;
+    row.treasuryInterestRemainder = debt.interestRemainder;
     row.trafficCongestion = traffic.maxEdgeCongestion;
     lastResPollution = tickResPollution;
     row.avgPollution = tickResPollution;

@@ -69,6 +69,7 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   tickState.illnessRate = liveState.illnessRate;
   tickState.crimeRate = liveState.crimeRate;
   tickState.laggedEducationCoverage = liveState.laggedEducationCoverage;
+  tickState.disasters = std::move(liveState.disasters);
   tickState.treasuryRevenue = liveState.treasuryRevenue;
   tickState.treasuryExpenses = liveState.treasuryExpenses;
   tickState.treasuryNet = liveState.treasuryNet;
@@ -104,6 +105,7 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
   liveState.illnessRate = tickState.illnessRate;
   liveState.crimeRate = tickState.crimeRate;
   liveState.laggedEducationCoverage = tickState.laggedEducationCoverage;
+  liveState.disasters = std::move(tickState.disasters);
   liveState.treasuryRevenue = tickState.treasuryRevenue;
   liveState.treasuryExpenses = tickState.treasuryExpenses;
   liveState.treasuryNet = tickState.treasuryNet;
@@ -208,6 +210,7 @@ void runSimulationTick(
   PlayableCityTickState tickState = captureTickState(liveState);
 
   PlayableCityTickOptions options;
+  options.enableDisasters = liveState.enableDisasters;
   options.growthChance = 0.18f;
   options.requireUtilities = true;
   options.treasuryTickScale = 0.01;

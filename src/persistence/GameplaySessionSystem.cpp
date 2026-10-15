@@ -1,8 +1,18 @@
 #include "src/persistence/GameplaySessionSystem.hpp"
 
 #include <cmath>
+#include <algorithm>
+#include <stdexcept>
+#include <filesystem>
+#include <thread>
+#include "src/core/ThreadPool.hpp"
+#include "src/systems/CitySimulator.hpp"
+#include "src/systems/CitySimSupport.hpp"
+#include "src/systems/PlayableCityTick.hpp"
 #include <exception>
 #include <fstream>
+#include <limits>
+#include <set>
 
 #include <nlohmann/json.hpp>
 
@@ -13,6 +23,16 @@ using nlohmann::json;
 
 namespace {
 constexpr int kGameplaySessionVersion = 1;
+
+std::string snapshotPath(const json& root, const std::string& sessionPath) {
+  const auto raw = root.value("citySnapshot", sessionPath + ".city.json");
+  const std::filesystem::path path(raw);
+  if (path.is_relative()) {
+    const auto adjacent = std::filesystem::path(sessionPath).parent_path() / path;
+    if (std::filesystem::exists(adjacent)) return adjacent.string();
+  }
+  return raw; // Legacy saves sometimes stored a path relative to the process.
+}
 
 std::string cityPathFor(const std::string& sessionPath) {
   return sessionPath + ".city.json";
@@ -152,7 +172,7 @@ bool GameplaySessionSystem::readMapDimensions(
     if (root.value("version", -1) != kGameplaySessionVersion) {
       return fail(errorMessage, "unsupported gameplay session version");
     }
-    const std::string cityPath = root.value("citySnapshot", cityPathFor(sessionPath));
+    const std::string cityPath = snapshotPath(root, sessionPath);
     CitySnapshot snapshot;
     SnapshotLoadDiagnostics diagnostics;
     if (!SaveLoadSystem::loadSnapshotFromFile(cityPath, snapshot, &diagnostics)) {
@@ -195,8 +215,24 @@ bool GameplaySessionSystem::save(
     });
   }
 
+  json burning = json::array();
+  for (const auto& tile : session.disasters.burningTiles)
+    burning.push_back({{"x", tile.position.x}, {"y", tile.position.y},
+                       {"ticksRemaining", tile.ticksRemaining}});
+  const auto& events = session.disasters;
+  json disasterState = {{"enabled", session.enableDisasters},
+                        {"burningTiles", burning},
+                        {"buildingsLostToFire", events.buildingsLostToFire},
+                        {"buildingsLostToDisaster", events.buildingsLostToDisaster},
+                        {"newIgnitions", events.fire.newIgnitions},
+                        {"fireBuildingsDestroyed", events.fire.buildingsDestroyed},
+                        {"earthquakeOccurred", events.disaster.earthquakeOccurred},
+                        {"floodOccurred", events.disaster.floodOccurred},
+                        {"disasterBuildingsDestroyed", events.disaster.buildingsDestroyed}};
   json root = {{"version", kGameplaySessionVersion},
-               {"citySnapshot", cityPathFor(sessionPath)},
+               {"simulationSeed", session.simulationSeed},
+               {"disasters", disasterState},
+               {"citySnapshot", std::filesystem::absolute(cityPathFor(sessionPath)).string()},
                {"funds", session.funds},
                {"tick", session.tick},
                {"paused", session.paused},
@@ -274,6 +310,40 @@ bool GameplaySessionSystem::load(
     }
 
     GameplaySessionState loaded;
+    loaded.simulationSeed = root.value("simulationSeed", uint32_t{98765});
+    if (root.contains("disasters")) {
+      const auto& item = root.at("disasters");
+      auto& events = loaded.disasters;
+      loaded.enableDisasters = item.value("enabled", false);
+      const auto count = [&](const char* key) {
+        const int64_t value = item.value(key, int64_t{0});
+        if (value < 0 || value > std::numeric_limits<uint32_t>::max())
+          throw std::runtime_error("invalid disaster loss count");
+        return static_cast<uint32_t>(value);
+      };
+      events.buildingsLostToFire = count("buildingsLostToFire");
+      events.buildingsLostToDisaster = count("buildingsLostToDisaster");
+      events.fire.newIgnitions = count("newIgnitions");
+      events.fire.buildingsDestroyed = count("fireBuildingsDestroyed");
+      events.disaster.buildingsDestroyed = count("disasterBuildingsDestroyed");
+      events.disaster.earthquakeOccurred = item.value("earthquakeOccurred", false);
+      events.disaster.floodOccurred = item.value("floodOccurred", false);
+      std::set<std::pair<int, int>> positions;
+      for (const auto& tile : item.at("burningTiles")) {
+        const Coord c{tile.at("x").get<int>(), tile.at("y").get<int>()};
+        const int remaining = tile.at("ticksRemaining").get<int>();
+        if (!map.isValid(c) || remaining <= 0 ||
+            !positions.emplace(c.x, c.y).second)
+          return fail(errorMessage, "gameplay session has invalid burning tiles");
+        events.burningTiles.push_back({c, remaining});
+      }
+      events.fire.activeFires = static_cast<uint32_t>(events.burningTiles.size());
+      if (events.fire.buildingsDestroyed > events.buildingsLostToFire ||
+          events.disaster.buildingsDestroyed > events.buildingsLostToDisaster ||
+          events.fire.newIgnitions != events.fire.buildingsDestroyed ||
+          (!loaded.enableDisasters && !events.burningTiles.empty()))
+        return fail(errorMessage, "gameplay session has inconsistent disasters");
+    }
     loaded.funds = root.at("funds").get<int64_t>();
     loaded.tick = root.at("tick").get<uint32_t>();
     loaded.paused = root.at("paused").get<bool>();
@@ -342,7 +412,7 @@ bool GameplaySessionSystem::load(
     if (loaded.funds < 0 || loaded.tickIntervalMs < 16 || loaded.tickIntervalMs > 5000) {
       return fail(errorMessage, "gameplay session has invalid funds or speed");
     }
-    if (loaded.treasuryDebt < 0 || loaded.treasuryInterestRemainder < 0.0) {
+    if (loaded.treasuryDebt < 0 || (!std::isfinite(loaded.treasuryInterestRemainder) || loaded.treasuryInterestRemainder < 0.0 || loaded.treasuryInterestRemainder >= 1.0)) {
       return fail(errorMessage, "gameplay session has invalid treasury debt");
     }
     if (loaded.autonomousExtent < 0 || loaded.emptyZonedCount < 0) {
@@ -384,7 +454,7 @@ bool GameplaySessionSystem::load(
       }
     }
 
-    const std::string cityPath = root.value("citySnapshot", cityPathFor(sessionPath));
+    const std::string cityPath = snapshotPath(root, sessionPath);
     SnapshotLoadDiagnostics diagnostics;
     if (!SaveLoadSystem::loadFromFile(
           cityPath, map, roads, store, population, &diagnostics)) {
@@ -396,4 +466,79 @@ bool GameplaySessionSystem::load(
   } catch (const std::exception& e) {
     return fail(errorMessage, std::string("invalid gameplay session: ") + e.what());
   }
+}
+
+PlayableCityTickState GameplaySessionSystem::advance(
+  CityMap& map, RoadNetwork& roads, EntityStore& store,
+  PopulationStore& population, GameplaySessionState& session
+) {
+  PlayableCityTickState state;
+  state.tick = session.tick;
+  state.populationTarget = session.populationTarget;
+  state.migrationConditions = session.migrationConditions;
+  state.populationChange = session.populationChange;
+  state.demand = session.demand;
+  state.treasuryRevenue = session.treasuryRevenue;
+  state.treasuryExpenses = session.treasuryExpenses;
+  state.treasuryNet = session.treasuryNet;
+  state.treasuryDebt = session.treasuryDebt;
+  state.treasuryInterestRemainder = session.treasuryInterestRemainder;
+  state.laggedEducationCoverage = session.laggedEducationCoverage;
+  state.transitRoutes = session.transitRoutes;
+  state.disasters = session.disasters;
+  state.deathcareState = {session.fractionalDeaths, session.awaitingDisposition};
+  state.districtGrowthModifiers = session.growthModifiers;
+  DistrictSystem districts;
+  for (const auto& record : session.districts) {
+    const auto id = districts.createDistrict(record.name.empty() ? "DISTRICT" : record.name,
+                                             {record.x1, record.y1}, {record.x2, record.y2});
+    districts.setDistrictArchetype(id, static_cast<DistrictArchetype>(record.archetype));
+    districts.setDistrictServiceBudgetCap(id, record.serviceBudgetCap);
+  }
+  city_sim::ConstructionState construction;
+  construction.extent = session.autonomousExtent;
+  construction.emptyZonedCount = session.emptyZonedCount;
+  if (session.autonomousGrowth) {
+    state.demand = (store.getBuildingCount() > 0 || population.getTotalPopulation() > 0)
+      ? CitySimulator::evaluateDemand(store, population)
+      : Zoning::calculateDemand(1000u + state.tick * 17u);
+    static thread_local ThreadPool pool(std::max(1u,
+      std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() - 1 : 2u));
+    city_sim::ConstructionOptions constructionOptions;
+    constructionOptions.placeFacilities = true;
+    constructionOptions.includeUtilities = true;
+    constructionOptions.includeWasteDeathcare = true;
+    constructionOptions.districts = &districts;
+    city_sim::expandConstruction(map, roads, store, population, session.facilities,
+                                 state.transitRoutes, construction, pool,
+                                 state.demand, constructionOptions);
+  }
+  PlayableCityTickOptions options;
+  options.baseSeed = 1000u + session.simulationSeed - 98765u;
+  options.enableDisasters = session.enableDisasters;
+  options.districts = &districts;
+  playableCityTick(map, roads, store, population, session.facilities,
+                   state, session.funds, options);
+  if (session.autonomousGrowth)
+    city_sim::applyEmptyZonedDelta(construction,
+      static_cast<int64_t>(state.buildingsDemolished) - state.buildingsSpawned);
+  session.autonomousExtent = construction.extent;
+  session.emptyZonedCount = construction.emptyZonedCount;
+  session.tick = state.tick;
+  session.populationTarget = state.populationTarget;
+  session.migrationConditions = state.migrationConditions;
+  session.populationChange = state.populationChange;
+  session.demand = state.demand;
+  session.treasuryRevenue = state.treasuryRevenue;
+  session.treasuryExpenses = state.treasuryExpenses;
+  session.treasuryNet = state.treasuryNet;
+  session.treasuryDebt = state.treasuryDebt;
+  session.treasuryInterestRemainder = state.treasuryInterestRemainder;
+  session.laggedEducationCoverage = state.laggedEducationCoverage;
+  session.transitRoutes = state.transitRoutes;
+  session.disasters = state.disasters;
+  session.fractionalDeaths = state.deathcareState.fractionalDeaths;
+  session.awaitingDisposition = state.deathcareState.awaitingDisposition;
+  session.growthModifiers = state.districtGrowthModifiers;
+  return state;
 }

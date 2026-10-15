@@ -21,7 +21,7 @@ Last updated: October 10, 2026
 - Automated validation at the M16 close-out: 294 tests passing; regular,
   strict, ASan/UBSan, and TSan configurations verified. Live counts are in
   STATUS.md.
-- Phase 6 (M17–M22): M21 complete. M22 is next.
+- Phase 6 (M17–M22): implemented; local M22 verification is recorded in STATUS.md.
 
 ---
 
@@ -359,11 +359,9 @@ arterial lowers congestion on that corridor in the overlay.
 
 ### Milestone 22: Parks and one city on both hosts
 
-`ZoneType::Park` exists. `GrowthSystem` skips it. `ZoneTool` rejects it
-as an unsupported zone. Nothing places a park, and land value does not
-see one. Two host gaps are left after M17–M21: disasters run only inside
-`CitySimulator`, and municipal debt exists only on the playable treasury.
-`CitySimulator` is still cash-only.
+Implemented: park zoning and neighborhood benefits, opt-in playable disasters,
+shared municipal debt accounting, saved-city continuation on the headless
+host, and transit visualization. `docs/STATUS.md` records verification.
 
 - [x] The zone tool accepts Park on empty, non-road, non-water tiles.
       Zoning a park removes no buildings; occupied tiles still require
@@ -371,15 +369,15 @@ see one. Two host gaps are left after M17–M21: disasters run only inside
 - [x] A park raises land value and the happiness overlay in a short
       radius. Growth still never builds on a park tile. The autonomous
       loop does not auto-zone parks.
-- [ ] `playableCityTick` can run `FireSystem` and `NaturalDisasterSystem`
+- [x] `playableCityTick` can run `FireSystem` and `NaturalDisasterSystem`
       under the same `enableDisasters` default-off switch as
       `CitySimulator`. Burning tiles and disaster losses show on the HUD.
-- [ ] `CitySimulator` adopts `TreasurySystem`'s debt: unpaid shortfall
+- [x] `CitySimulator` adopts `TreasurySystem`'s debt: unpaid shortfall
       becomes principal, interest accrues, surplus cash repays it.
       Session fields already persist this for the playable path. The
       autonomous report prints `DEBT` the way the HUD does. Default tax
       and spending can still clear, so a balanced run stays at debt 0.
-- [ ] The visualizer draws the transit routes `playableCityTick` already
+- [x] The visualizer draws the transit routes `playableCityTick` already
       keeps on `PlayableCityTickState::transitRoutes`.
 
 **Deliverable:** A player can zone a park and see the land around it

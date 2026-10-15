@@ -8,6 +8,8 @@ using EntityId = uint32_t;
 namespace EntityIdUtils {
   // Generate a new unique entity ID
   EntityId generateEntityId();
+  // Imported IDs must never be reused by later construction/population groups.
+  void reserveThrough(EntityId id);
   
   // Check for invalid/null ID
   constexpr bool isValid(EntityId id) { return id != 0; }

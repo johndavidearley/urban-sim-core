@@ -7,10 +7,12 @@
 #include "src/systems/ServiceSystem.hpp"
 
 namespace visualizer {
+struct TransitMarks;
 
 void drawFilledRect(DrawList* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha = 255);
 void drawRectOutline(DrawList* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha = 255);
 bool hasRoadAt(const CityMap& map, Coord coord);
+void drawFireMarker(DrawList* renderer, Point center, int size);
 
 void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
                           const EntityStore &store,
@@ -41,7 +43,8 @@ void drawIsometricTile(
   const IsometricProjection& projection,
   Coord coord,
   const DistrictSystem* districts = nullptr,
-  DistrictId selectedDistrictId = 0
+  DistrictId selectedDistrictId = 0,
+  const TransitMarks* transitMarks = nullptr
 );
 
 void drawGradientBar(DrawList* renderer, int x, int y, int w, int h, OverlayMode mode);

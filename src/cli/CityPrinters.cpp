@@ -94,6 +94,8 @@ void printHelp() {
             << "  --simulate-no-transit     Disable auto-placed bus routes during --simulate (on by default)\n"
             << "  --simulate-district NAME X1 Y1 X2 Y2  Define a district (repeatable) whose service-budget fulfillment shapes growth pressure during --simulate\n"
             << "  --simulate-district-archetype NAME ARCHETYPE  Apply GENERAL|INDUSTRIAL|TECHHUB ordinance/priority preset to a --simulate-district by name\n"
+            << "  --simulate-session PATH  Continue a playable save with --simulate N (saved seed/rules)\n"
+            << "  --simulate-session-out PATH  Save continued playable state; input is unchanged by default\n"
             << "  --simulate-disasters      Enable fire ignition/spread and earthquake/flood events during --simulate (off by default; destructive)\n"
             << "  --simulate-fire-risk F    Scale fire ignition chance (default 1.0); only relevant with --simulate-disasters\n"
             << "  --simulate-earthquake-risk F  Scale earthquake chance per tick (default 1.0); only relevant with --simulate-disasters\n"

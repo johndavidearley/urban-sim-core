@@ -121,3 +121,18 @@ TEST(EntityStoreTests, TypeIndicesAndCapacityAggregates) {
   EXPECT_EQ(store.countOfType(BuildingType::Residential), 0u);
   EXPECT_TRUE(store.jobIds().empty());
 }
+
+TEST(EntityStoreTests, ImportedIdsRemainReservedForFutureEntities) {
+  EntityStore store;
+  const EntityId imported = EntityIdUtils::generateEntityId() + 1000;
+  Building building;
+  building.id = imported;
+  building.type = BuildingType::Residential;
+  building.position = {2, 2};
+  building.capacity = 8;
+  store.upsertBuilding(building);
+  const EntityId created = store.createBuilding(BuildingType::Commercial, {3, 2}, 8);
+  EXPECT_GT(created, imported);
+  EXPECT_EQ(store.getBuildingCount(), 2u);
+  EXPECT_EQ(store.getBuilding(imported)->type, BuildingType::Residential);
+}

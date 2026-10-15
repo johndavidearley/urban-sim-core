@@ -61,14 +61,16 @@ const char* overlayModeName(OverlayMode mode) {
       return "happiness";
     case OverlayMode::RouteHeatmap:
       return "route-heat";
+    case OverlayMode::Transit:
+      return "transit";
     default:
       return "unknown";
   }
 }
 
 
-const std::array<OverlayMode, 8>& overlayModes() {
-  static const std::array<OverlayMode, 8> modes = {
+const std::array<OverlayMode, 9>& overlayModes() {
+  static const std::array<OverlayMode, 9> modes = {
     OverlayMode::Zone,
     OverlayMode::LandValue,
     OverlayMode::Pollution,
@@ -77,6 +79,7 @@ const std::array<OverlayMode, 8>& overlayModes() {
     OverlayMode::Demand,
     OverlayMode::Happiness,
     OverlayMode::RouteHeatmap,
+    OverlayMode::Transit,
   };
   return modes;
 }

@@ -919,3 +919,39 @@ TEST(CitySimulatorTests,
   EXPECT_GT(run(true).freightTrucks, 0u);
   EXPECT_EQ(run(false).freightTrucks, 0u);
 }
+
+TEST(CitySimulatorTests, TreasuryCarriesShortfallInterestAndRepayment) {
+  CityMap map({24, 24});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  SimOptions options = fastOptions();
+  options.buildChance = 0.f;
+  map.getTile({11, 11}).zone = static_cast<int>(ZoneType::Park);
+  options.treasuryTickScale = 1.0;
+  options.initialFunds = 0;
+  options.initialDebt = {1000, 0.5};
+  options.treasuryInterestRate = 0.001;
+  const auto result = CitySimulator::run(map, roads, store, population, 42, 3, options);
+  ASSERT_EQ(result.rows.size(), 3u);
+  int64_t funds = options.initialFunds;
+  TreasuryDebt debt = options.initialDebt;
+  for (const auto& row : result.rows) {
+    // Feed the host's actual billed revenue/expenses through the shared ledger.
+    EconomyState billed;
+    billed.totalRevenue = row.treasury.revenue;
+    billed.totalExpenses = row.treasury.expenses;
+    const auto expected = TreasurySystem::applyEconomy(billed, funds, 1.0, 0, &debt, 0.001);
+    EXPECT_EQ(row.funds, funds);
+    EXPECT_EQ(row.treasury.outstandingDebt, debt.principal);
+    EXPECT_EQ(row.treasury.interestCharged, expected.interestCharged);
+    EXPECT_DOUBLE_EQ(row.treasuryInterestRemainder, debt.interestRemainder);
+  }
+  EXPECT_GT(result.finalDebt.principal, 1000);
+  EXPECT_GT(result.rows.front().treasury.debtIssued, 0);
+  options.initialFunds = 100000;
+  const auto solvent = CitySimulator::run(map, roads, store, population, 42, 1, options);
+  ASSERT_EQ(solvent.rows.size(), 1u);
+  EXPECT_EQ(solvent.finalDebt.principal, 0);
+  EXPECT_EQ(solvent.rows.front().treasury.debtRepaid, 1000);
+}

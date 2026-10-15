@@ -81,14 +81,15 @@ Rect hudControlRect(HudAction action, int windowWidth) {
     case HudAction::Fast: return {panelX + 188, y, 42, 24};
     case HudAction::Save: return {panelX + 10, y + 30, 106, 24};
     case HudAction::Load: return {panelX + 124, y + 30, 106, 24};
+    case HudAction::ToggleDisasters: return {panelX + 10, 322, 180, 24};
     default: return {0, 0, 0, 0};
   }
 }
 
 HudAction hudHitTest(int mouseX, int mouseY, int windowWidth) {
-  const std::array<HudAction, 6> actions = {
+  const std::array<HudAction, 7> actions = {
     HudAction::TogglePause, HudAction::Slow, HudAction::Normal, HudAction::Fast,
-    HudAction::Save, HudAction::Load
+    HudAction::Save, HudAction::Load, HudAction::ToggleDisasters
   };
   for (const HudAction action : actions) {
     const Rect rect = hudControlRect(action, windowWidth);
@@ -212,13 +213,22 @@ void drawGameplayHud(
                (freight.gateConnected ? " CONNECTED" : " NO ROAD"),
            {180, 200, 225}, 1);
 
-  const std::array<std::pair<HudAction, const char*>, 6> controls = {{
+  const auto& events = liveState.disasters;
+  drawText(renderer, x + 12, y + 340,
+           "FIRES " + std::to_string(events.fire.activeFires) +
+           " LOST FIRE " + std::to_string(events.buildingsLostToFire) +
+           " OTHER " + std::to_string(events.buildingsLostToDisaster), {255, 175, 110}, 1);
+  drawText(renderer, x + 210, y + 318,
+           events.disaster.earthquakeOccurred ? "EARTHQUAKE" :
+           (events.disaster.floodOccurred ? "FLOOD" : ""), {255, 145, 100}, 1);
+  const std::array<std::pair<HudAction, const char*>, 7> controls = {{
     {HudAction::TogglePause, paused ? "PLAY" : "PAUSE"},
     {HudAction::Slow, "1X"},
     {HudAction::Normal, "2X"},
     {HudAction::Fast, "3X"},
     {HudAction::Save, "F5 SAVE"},
     {HudAction::Load, "F9 LOAD"},
+    {HudAction::ToggleDisasters, liveState.enableDisasters ? "DISASTERS ON" : "DISASTERS OFF"},
   }};
   for (const auto& [action, label] : controls) {
     const Rect rect = hudControlRect(action, windowWidth);
@@ -226,7 +236,8 @@ void drawGameplayHud(
       && mouseY >= rect.y && mouseY < rect.y + rect.h;
     const bool active = (action == HudAction::Slow && tickIntervalMs == 700)
       || (action == HudAction::Normal && tickIntervalMs == 350)
-      || (action == HudAction::Fast && tickIntervalMs == 120);
+      || (action == HudAction::Fast && tickIntervalMs == 120)
+      || (action == HudAction::ToggleDisasters && liveState.enableDisasters);
     drawFilledRect(renderer, rect.x, rect.y, rect.w, rect.h,
                    active ? RGB{58, 92, 72} : (hovered ? RGB{55, 62, 75} : RGB{38, 42, 50}), 255);
     drawRectOutline(renderer, rect.x, rect.y, rect.w, rect.h,
@@ -240,9 +251,13 @@ void drawCompactGameplayHud(DrawList *renderer, int windowWidth, bool paused,
                             uint32_t population, int64_t funds,
                             const std::string &toolLabel,
                             const PopulationChange &change,
-                            const FreightSummary &freight) {
+                            const FreightSummary &freight,
+                            const CityDisasterState* disasters,
+                            bool enableDisasters) {
   constexpr int width = 330;
-  constexpr int height = 82;
+  const bool showDisasters = disasters && (enableDisasters ||
+    disasters->buildingsLostToFire > 0 || disasters->buildingsLostToDisaster > 0);
+  const int height = showDisasters ? 118 : 82;
   const int x = windowWidth - width - 12;
   constexpr int y = 12;
   drawFilledRect(renderer, x, y, width, height, {14, 17, 21}, 165);
@@ -262,6 +277,14 @@ void drawCompactGameplayHud(DrawList *renderer, int windowWidth, bool paused,
            "TRUCKS " + std::to_string(freight.trucks) + " UNROUTED " +
                std::to_string(freight.unroutedGoods),
            {175, 205, 235}, 1);
+  if (showDisasters) {
+    drawText(renderer, x + 10, y + 83,
+             std::string("DISASTERS ") + (enableDisasters ? "ON" : "OFF") +
+             " FIRES " + std::to_string(disasters->fire.activeFires), {255, 175, 110}, 1);
+    drawText(renderer, x + 10, y + 101,
+             "LOST FIRE " + std::to_string(disasters->buildingsLostToFire) +
+             " OTHER " + std::to_string(disasters->buildingsLostToDisaster), {255, 175, 110}, 1);
+  }
 }
 
 void drawToast(
@@ -701,6 +724,13 @@ void drawLegendPanel(
                            : (hovered ? RGB{185, 205, 235} : RGB{120, 130, 145}), 255);
 
     drawText(renderer, x + 22, keyY + 6, std::to_string(i + 1), {230, 232, 238}, 2);
+  }
+
+  if (overlayMode == OverlayMode::Transit) {
+    drawText(renderer, panelX + 12, panelY + 55, "CYAN BUS   GOLD RAIL   WHITE STOPS", {230, 240, 245}, 1);
+    drawText(renderer, panelX + 12, panelY + 85, "LINES FOLLOW CONNECTED ROADS", {205, 220, 225}, 1);
+    drawText(renderer, panelX + 12, panelY + 112, "ROUTES APPEAR AS YOUR CITY GROWS", {205, 220, 225}, 1);
+    return;
   }
 
   // Mid strip shows overlay-specific legend swatches.

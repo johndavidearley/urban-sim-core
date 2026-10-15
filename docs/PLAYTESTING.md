@@ -72,7 +72,7 @@ an isolated renderer check. This is a test override, not a registry repair.
 | `city` | New city (32/64/96), terrain, save/load, optional external save import. |
 | `time` | Explicit 1–100 ticks, pause, speed, deterministic/realtime mode. |
 | `tool` | Select/apply road, zoning, demolition, services, districts; district archetype/budget policies and deletion. |
-| `view` | Eight overlays, both projections, camera, focus, HUD and gameplay toggles. |
+| `view` | Nine overlays, both projections, camera, focus, HUD and gameplay toggles. |
 | `inspect` | Summary/UI, <=512 tiles, or paginated entities/facilities/districts/routes/roads. |
 | `coordinates` | Tile-center to screen and screen to tile under the active projection. |
 | `screenshot` | Next completed Vulkan frame as PNG image content plus metadata. |
@@ -238,7 +238,7 @@ The installed visualizer also passed all 16 graphics capture probes, with
 
 The MCP SDK client verified discovery, image responses, resources, prompts,
 invalid schemas, and disconnect cleanup. Rendered scenarios covered both
-projections and all eight overlays, road/zoning/service/district actions,
+projections and all nine overlays, road/zoning/service/district actions,
 save/load and imported saves, identical two-run replays, resize,
 minimize/restore, close while minimized, focus-loss cancellation, insufficient
 funds, and process-crash recovery.
@@ -269,3 +269,21 @@ Tile inspection uses existing zone and land-value fields. Save/load and
 record/replay retain parks as ordinary zone-4 tiles; no snapshot migration is
 needed. Placement costs $100/tile, upkeep $2/tile/tick. Benefits taper over
 four Manhattan tiles and use the nearest park rather than stacking.
+
+Transit overlay (`view` overlay 8, keyboard 9): cyan bus lines, gold rail
+lines, white stop markers, and network-wide ridership, demand, and capacity.
+Lines connect consecutive stops using shortest connected road paths; they are
+display guides, not a separate rail network or vehicle simulation.
+
+
+M22 adds `features.disasters`, `view toggle` name `disasters`, and state
+`disasters` with `enabled`, `active_fires`, `lost_fire`, `lost_disaster`,
+`earthquake`, and `flood`. Detailed HUD inspection exposes a `disasters`
+button. New sessions default off; disabling clears active flames and preserves
+cumulative loss counts. Save/load retains active fires and the simulation seed.
+
+The rendered M22 acceptance test continues one checkpoint with both the
+visualizer and `--simulate-session`, compares treasury/disaster/population
+state and semantic city snapshots, then reloads the CLI output in the renderer.
+Entity IDs are process-local; the comparison resolves tile references to
+building positions and compares population groups by contents.

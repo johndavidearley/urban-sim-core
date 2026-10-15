@@ -130,7 +130,8 @@ void refreshDerivedCityState(
           options.transitStopCoverageRadius, options.transitCapacityMultiplier
         );
       }
-      if (state.transitRoutes.size() != state.transitCache.builtForRouteCount) {
+      if (state.transitRoutes.size() != state.transitCache.builtForRouteCount ||
+          state.transitCache.topologyVersion != roads.getTopologyVersion()) {
         TransitSystem::buildCache(roads, state.transitRoutes, state.transitCache);
       }
       TransitOffload offload(state.transitRoutes, state.transitCache);
@@ -229,11 +230,16 @@ void playableCityTick(
 
   const std::vector<GrowthChanceModifier>* growthModifiers =
     state.districtGrowthModifiers.empty() ? nullptr : &state.districtGrowthModifiers;
-  const GrowthStats growth = GrowthSystem::runStep(
-    map, store, state.demand, tickSeed + 1u, options.growthChance,
-    growthModifiers, {-1, -1}, {-1, -1}, nullptr, options.requireUtilities,
-    &roads, &state.serviceCache
-  );
+  if (!options.enableDisasters) state.disasters.stopEvents();
+  GrowthStats growth;
+  {
+    BurningGrowthGuard burningGuard(map, state.disasters.burningTiles);
+    growth = GrowthSystem::runStep(
+      map, store, state.demand, tickSeed + 1u, options.growthChance,
+      growthModifiers, {-1, -1}, {-1, -1}, nullptr, options.requireUtilities,
+      &roads, &state.serviceCache
+    );
+  }
   state.buildingsSpawned = growth.totalSpawned();
   state.buildingsDemolished = growth.totalDemolished();
   state.constructionSpend = growth.constructionSpend;
@@ -265,6 +271,26 @@ void playableCityTick(
   refresh.transitCapacityMultiplier = options.transitCapacityMultiplier;
   refresh.transitStopCoverageRadius = options.transitStopCoverageRadius;
   refreshDerivedCityState(map, roads, store, population, facilities, state, refresh);
+
+  if (options.enableDisasters) {
+    auto& events = state.disasters;
+    events.fire = FireSystem::step(map, store, events.burningTiles,
+                                   state.serviceSummary.fireCoverage,
+                                   tickSeed + 6u, options.fireParams);
+    events.disaster = NaturalDisasterSystem::step(
+        map, store, tickSeed + 7u, options.disasterParams);
+    events.buildingsLostToFire += events.fire.buildingsDestroyed;
+    events.buildingsLostToDisaster += events.disaster.buildingsDestroyed;
+    const auto lost = events.fire.buildingsDestroyed + events.disaster.buildingsDestroyed;
+    state.buildingsDemolished += static_cast<int>(lost);
+    if (lost > 0) {
+      const auto before = population.getTotalPopulation();
+      PopulationSystem::allocate(store, population, before, tickSeed + 8u, educationNow);
+      state.populationChange.departures += before - population.getTotalPopulation();
+      refresh.placeTransit = false;
+      refreshDerivedCityState(map, roads, store, population, facilities, state, refresh);
+    }
+  }
 
   float tickResPollution = city_sim::averageResidentialPollution(map, store);
   state.waste = WasteSystem::evaluate(store, facilities, state.serviceSummary);

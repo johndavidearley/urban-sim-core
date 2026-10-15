@@ -31,6 +31,13 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   saved.treasuryNet = 500;
   saved.treasuryDebt = 250;
   saved.treasuryInterestRemainder = 0.4;
+  saved.simulationSeed = 123;
+  saved.enableDisasters = true;
+  saved.disasters.burningTiles = {{{3, 3}, 4}};
+  saved.disasters.fire = {1, 1, 1};
+  saved.disasters.buildingsLostToFire = 8;
+  saved.disasters.buildingsLostToDisaster = 3;
+  saved.disasters.disaster = {true, false, 2};
   saved.populationTarget = 900;
   saved.migrationConditions = {0.2f, 0.3f, 0.7f, 0.1f, 0.2f, 0.8f};
   saved.populationChange = {12, 3, 1, 8, 0.6f};
@@ -86,6 +93,14 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   EXPECT_EQ(loaded.treasuryNet, 500);
   EXPECT_EQ(loaded.treasuryDebt, 250);
   EXPECT_DOUBLE_EQ(loaded.treasuryInterestRemainder, 0.4);
+  EXPECT_EQ(loaded.simulationSeed, 123u);
+  EXPECT_TRUE(loaded.enableDisasters);
+  ASSERT_EQ(loaded.disasters.burningTiles.size(), 1u);
+  EXPECT_EQ(loaded.disasters.burningTiles.front().ticksRemaining, 4);
+  EXPECT_EQ(loaded.disasters.fire.activeFires, 1u);
+  EXPECT_EQ(loaded.disasters.buildingsLostToFire, 8u);
+  EXPECT_EQ(loaded.disasters.buildingsLostToDisaster, 3u);
+  EXPECT_TRUE(loaded.disasters.disaster.earthquakeOccurred);
   EXPECT_EQ(loaded.populationTarget, 900u);
   EXPECT_FLOAT_EQ(loaded.migrationConditions.congestion, 0.2f);
   EXPECT_FLOAT_EQ(loaded.migrationConditions.utilityAvailability, 0.8f);
@@ -190,6 +205,8 @@ TEST(GameplaySessionSystemTests, LegacySaveLoadsWithoutMigrationFields) {
   document.erase("populationChange");
   document.erase("laggedEducationCoverage");
   document.erase("growthModifiers");
+  document.erase("disasters");
+  document.erase("simulationSeed");
   {
     std::ofstream out(path);
     out << document;
@@ -198,6 +215,9 @@ TEST(GameplaySessionSystemTests, LegacySaveLoadsWithoutMigrationFields) {
   ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store,
                                           people, loaded));
   EXPECT_EQ(loaded.populationTarget, 272u);
+  EXPECT_FALSE(loaded.enableDisasters);
+  EXPECT_TRUE(loaded.disasters.burningTiles.empty());
+  EXPECT_EQ(loaded.simulationSeed, 98765u);
   EXPECT_EQ(loaded.populationChange.net, 0);
   EXPECT_FLOAT_EQ(loaded.migrationConditions.utilityAvailability, 1.0f);
   EXPECT_FLOAT_EQ(loaded.laggedEducationCoverage, 0.0f);
@@ -233,6 +253,39 @@ TEST(GameplaySessionSystemTests,
                                            people, loaded, &error));
   EXPECT_NE(error.find("migration conditions"), std::string::npos);
   EXPECT_EQ(loaded.funds, 123);
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
+}
+
+TEST(GameplaySessionSystemTests, InvalidBurningTilesDoNotMutateTheCity) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  GameplaySessionState saved;
+  const auto path = std::filesystem::temp_directory_path() / "urban_invalid_fires.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store, population, saved));
+  nlohmann::json original;
+  { std::ifstream in(path); in >> original; }
+  const auto burn = nlohmann::json{{"x", 3}, {"y", 3}, {"ticksRemaining", 4}};
+  for (int invalid = 0; invalid < 4; ++invalid) {
+    auto root = original;
+    root["disasters"]["enabled"] = true;
+    root["disasters"]["burningTiles"] = nlohmann::json::array({burn});
+    if (invalid == 0) root["disasters"]["burningTiles"][0]["x"] = 99;
+    if (invalid == 1) root["disasters"]["burningTiles"][0]["ticksRemaining"] = 0;
+    if (invalid == 2) root["disasters"]["burningTiles"].push_back(burn);
+    if (invalid == 3) root["disasters"]["buildingsLostToFire"] = -1;
+    { std::ofstream out(path); out << root; }
+    GameplaySessionState loaded;
+    loaded.funds = 123;
+    map.setZone({1, 1}, static_cast<int>(ZoneType::Park));
+    std::string error;
+    EXPECT_FALSE(GameplaySessionSystem::load(path.string(), map, roads, store, population, loaded, &error));
+    EXPECT_FALSE(error.empty());
+    EXPECT_EQ(loaded.funds, 123);
+    EXPECT_EQ(map.zone({1, 1}), static_cast<int>(ZoneType::Park));
+  }
   std::filesystem::remove(path);
   std::filesystem::remove(path.string() + ".city.json");
 }

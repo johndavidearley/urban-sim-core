@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include "src/gameplay/TreasurySystem.hpp"
+#include "src/systems/EconomySystem.hpp"
 #include <functional>
 #include <vector>
 
@@ -32,6 +34,9 @@ struct SimTickMetrics {
   uint32_t officeBuildings = 0;
   uint32_t roadTiles = 0;
   int64_t budgetBalance = 0;
+  int64_t funds = 0;
+  TreasuryFlow treasury;
+  double treasuryInterestRemainder = 0.0;
   float trafficCongestion = 0.0f;
   float avgPollution = 0.0f;   // mean pollution where residents live
   float serviceCoverage = 0.0f;
@@ -92,10 +97,16 @@ struct SimResult {
   std::vector<SimTickMetrics> rows;
   SimPhaseTimings timings;
   std::vector<DistrictMetrics> finalDistrictMetrics;  // one entry per district passed to run(), evaluated on the final tick
+  int64_t finalFunds = 50000;
+  TreasuryDebt finalDebt;
   CityMetrics finalMetrics;  // same collector as --print-city-summary, from the last tick's summaries
 };
 
 struct SimOptions {
+  int64_t initialFunds = 50000;
+  TreasuryDebt initialDebt;
+  double treasuryTickScale = 0.01;
+  double treasuryInterestRate = 0.001;
   int gridSpacing = 4;         // tiles between road grid lines
   int zoneBatchPerTick = 16;   // max tiles newly zoned per tick (paces demand-following land mix)
   float buildChance = 0.5f;    // GrowthSystem base spawn chance

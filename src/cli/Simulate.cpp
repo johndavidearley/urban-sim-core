@@ -13,6 +13,9 @@
 #include "src/entities/PopulationStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/CitySimulator.hpp"
+#include "src/systems/PlayableCityTick.hpp"
+#include "src/systems/CitySimSupport.hpp"
+#include "src/persistence/GameplaySessionSystem.hpp"
 #include "src/systems/MetricsSystem.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/TerrainGenerator.hpp"
@@ -37,7 +40,7 @@ static const char *kCSVHeader =
     "deaths_this_tick,deathcare_backlog,deathcare_happiness_penalty,"
     "power_supply_ratio,water_supply_ratio,freight_trucks,freight_domestic_"
     "goods,freight_imported_goods,freight_exported_goods,freight_unrouted_"
-    "goods\n";
+    "goods,funds,debt,debt_issued,debt_repaid,interest_charged,treasury_revenue,treasury_expenses,treasury_net\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -54,7 +57,8 @@ void printRow(const SimTickMetrics& row) {
             << " | " << std::setw(11) << row.budgetBalance
             << " | " << std::setprecision(2) << row.trafficCongestion
             << " | " << std::setw(3) << row.transitRoutes
-            << " " << std::setprecision(2) << (row.transitModalShare * 100.0f) << "%\n";
+            << " " << std::setprecision(2) << (row.transitModalShare * 100.0f) << "%"
+            << " | CASH " << row.funds << " DEBT " << row.treasury.outstandingDebt << "\n";
 }
 
 void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
@@ -81,7 +85,11 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.deathcareHappinessPenalty << "," << row.powerSupplyRatio << ","
       << row.waterSupplyRatio << "," << row.freightTrucks << ","
       << row.freightDomesticGoods << "," << row.freightImportedGoods << ","
-      << row.freightExportedGoods << "," << row.freightUnroutedGoods << "\n";
+      << row.freightExportedGoods << "," << row.freightUnroutedGoods << ","
+      << row.funds << "," << row.treasury.outstandingDebt << ","
+      << row.treasury.debtIssued << "," << row.treasury.debtRepaid << ","
+      << row.treasury.interestCharged << "," << row.treasury.revenue << ","
+      << row.treasury.expenses << "," << row.treasury.net << "\n";
 }
 
 bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
@@ -255,7 +263,7 @@ int runCitySimulation(
     const SimResult result = CitySimulator::run(map, roads, store, population, seed, ticks, options, districtsPtr);
 
     // Evolution table: print a bounded number of sampled rows plus the final tick.
-    std::cout << "\n  tick |  R    C    I    O  |     pop    empl |  res  com  ind  off | roads |     balance | cong | trn modal\n";
+    std::cout << "\n  tick |  R    C    I    O  |     pop    empl |  res  com  ind  off | roads |     balance | cong | trn modal | cash / debt\n";
     std::cout << "  -----+--------------------+-----------------+---------------------+-------+-------------+------+----------\n";
     if (!result.rows.empty()) {
       const size_t maxRows = 20;
@@ -336,7 +344,7 @@ int runCitySimulation(
     csvOut << kCSVHeader;
   }
 
-  std::cout << "\n  tick |  R    C    I    O  |     pop    empl |  res  com  ind  off | roads |     balance | cong | trn modal\n";
+  std::cout << "\n  tick |  R    C    I    O  |     pop    empl |  res  com  ind  off | roads |     balance | cong | trn modal | cash / debt\n";
   std::cout << "  -----+--------------------+-----------------+---------------------+-------+-------------+------+----------\n";
 
   const int printEvery = 10;
@@ -515,5 +523,103 @@ int runCitySimulationBenchmark(int mapSize, uint32_t seed, int ticks,
             << "  median=" << (medTotal / ticks)
             << "  max=" << (hiTotal / ticks) << "\n";
 
+  return 0;
+}
+
+int runGameplaySessionSimulation(const std::string& inputPath,
+  const std::string& outputPath, int ticks, const std::string& reportPath,
+  bool enableDisasters) {
+  int width = 0, height = 0;
+  std::string error;
+  if (!GameplaySessionSystem::readMapDimensions(inputPath, width, height, &error)) {
+    std::cerr << "Error: " << error << "\n";
+    return 1;
+  }
+  CityMap map({width, height});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  GameplaySessionState session;
+  if (!GameplaySessionSystem::load(inputPath, map, roads, store, population, session, &error)) {
+    std::cerr << "Error: " << error << "\n";
+    return 1;
+  }
+  if (enableDisasters) session.enableDisasters = true;
+  std::vector<SimTickMetrics> rows;
+  for (int tick = 0; tick < ticks; ++tick) {
+    const auto state = GameplaySessionSystem::advance(map, roads, store, population, session);
+    const auto cap = city_sim::summarize(store);
+    SimTickMetrics row;
+    row.tick = static_cast<int>(state.tick);
+    row.demandResidential = state.demand.residential;
+    row.demandCommercial = state.demand.commercial;
+    row.demandIndustrial = state.demand.industrial;
+    row.demandOffice = state.demand.office;
+    row.population = population.getTotalPopulation();
+    row.employed = population.getTotalEmployed();
+    row.residentialBuildings = cap.resBuildings;
+    row.commercialBuildings = cap.comBuildings;
+    row.industrialBuildings = cap.indBuildings;
+    row.officeBuildings = cap.officeBuildings;
+    row.roadTiles = static_cast<uint32_t>(roads.getRoadCount());
+    row.budgetBalance = state.economy.balance;
+    row.funds = session.funds;
+    row.treasury = {state.treasuryRevenue, state.treasuryExpenses, state.treasuryNet,
+                    state.treasuryShortfall, state.treasuryDebtIssued,
+                    state.treasuryDebtRepaid, state.treasuryInterestCharged,
+                    state.treasuryDebt};
+    row.treasuryInterestRemainder = state.treasuryInterestRemainder;
+    row.trafficCongestion = state.trafficSummary.maxEdgeCongestion;
+    row.avgPollution = city_sim::averageResidentialPollution(map, store);
+    row.serviceCoverage = state.serviceSummary.satisfaction;
+    row.sanitationCoverage = state.serviceSummary.sanitationCoverage;
+    row.serviceFacilities = static_cast<uint32_t>(session.facilities.size());
+    row.avgLandValue = state.economy.averageLandValue;
+    row.tradeBalance = state.economy.tradeBalance;
+    row.inflationMultiplier = state.economy.inflationMultiplier;
+    const auto& tr = state.transitSummary;
+    row.transitRoutes = tr.totalRoutes;
+    row.transitBusRoutes = tr.busRoutes;
+    row.transitRailRoutes = tr.railRoutes;
+    row.transitRidership = tr.ridership;
+    row.transitDemand = tr.demand;
+    row.transitModalShare = tr.modalShare;
+    row.activeFires = state.disasters.fire.activeFires;
+    row.buildingsLostToFire = state.disasters.buildingsLostToFire;
+    row.buildingsLostToDisaster = state.disasters.buildingsLostToDisaster;
+    row.earthquakeOccurred = state.disasters.disaster.earthquakeOccurred;
+    row.floodOccurred = state.disasters.disaster.floodOccurred;
+    row.crimeRate = state.crimeRate;
+    row.illnessRate = state.illnessRate;
+    row.wasteCollectionRate = state.waste.collectionRate;
+    row.wasteUncollected = state.waste.uncollected;
+    row.wastePollutionPenalty = state.waste.pollutionPenalty;
+    row.deathsThisTick = state.deathcare.deaths;
+    row.deathcareBacklog = state.deathcare.awaitingDisposition;
+    row.deathcareHappinessPenalty = state.deathcare.happinessPenalty;
+    row.powerSupplyRatio = state.serviceSummary.powerSupplyRatio;
+    row.waterSupplyRatio = state.serviceSummary.waterSupplyRatio;
+    const auto& freight = state.trafficSummary.freight;
+    row.freightTrucks = freight.trucks;
+    row.freightDomesticGoods = freight.domesticGoods;
+    row.freightImportedGoods = freight.importedGoods;
+    row.freightExportedGoods = freight.exportedGoods;
+    row.freightUnroutedGoods = freight.unroutedGoods;
+    if (!reportPath.empty()) rows.push_back(row);
+  }
+  std::cout << "TICK " << session.tick << " CASH " << session.funds
+            << " DEBT " << session.treasuryDebt << " FIRES "
+            << session.disasters.fire.activeFires << " LOST FIRE "
+            << session.disasters.buildingsLostToFire << " DISASTER "
+            << session.disasters.buildingsLostToDisaster << "\n";
+  if (!reportPath.empty() && !writeSimulationReportCSV(reportPath, rows)) {
+    std::cerr << "Error: cannot write simulation report\n";
+    return 1;
+  }
+  if (!outputPath.empty() && !GameplaySessionSystem::save(
+        outputPath, map, roads, store, population, session, &error)) {
+    std::cerr << "Error: " << error << "\n";
+    return 1;
+  }
   return 0;
 }

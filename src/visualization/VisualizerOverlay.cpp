@@ -461,6 +461,8 @@ RGB overlaySampleColor(OverlayMode mode, float value) {
       return demandColor(value);
     case OverlayMode::Happiness:
       return happinessColor(value);
+    case OverlayMode::Transit:
+      return {40, 195, 235};
     case OverlayMode::RouteHeatmap:
       return routeHeatColor(value);
     case OverlayMode::Zone:

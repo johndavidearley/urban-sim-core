@@ -73,6 +73,10 @@ int runCitySimulationBenchmark(
     float earthquakeRiskMultiplier = 1.0f, float floodRiskMultiplier = 1.0f,
     bool enableUtilities = false, bool enableFreight = true);
 
+int runGameplaySessionSimulation(const std::string& inputPath,
+  const std::string& outputPath, int ticks, const std::string& reportPath,
+  bool enableDisasters = false);
+
 // Writes a vector of per-tick simulation metrics to CSV in the same format
 // --simulate-report uses. Exposed for reuse by other CLI tools (e.g.
 // CommutePolicySweep) that produce SimTickMetrics rows of their own.

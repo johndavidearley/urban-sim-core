@@ -128,7 +128,8 @@ Controls:
 - `6`: demand overlay
 - `7`: happiness overlay
 - `8`: route heatmap overlay
-- Click buttons `1`–`8` in the legend to select the matching overlay directly
+- `9`: transit routes, stops, and network ridership/capacity
+- Click buttons `1`–`9` in the legend to select the matching overlay directly
 - `O`: cycle route heatmap origin filter (residential anchors)
 - `D`: cycle route heatmap destination filter (job anchors)
 - `C`: clear route heatmap filters
@@ -641,3 +642,41 @@ per local-road edge and 1.0 per arterial edge, encouraging modest arterial
 detours. Road-class changes invalidate cached commute paths immediately;
 reapplying the same class preserves the cache. Distance-only paths used for
 coverage, freight, and other spatial checks retain unit edge lengths.
+
+Transit overlay shows bus routes in cyan and rail routes in gold, with white
+stop markers in either projection. Consecutive stops follow shortest connected
+road paths. The totals report network ridership, eligible demand, and capacity;
+they do not represent per-line passenger counts or a separate rail network.
+
+
+### M22: disasters and saved cities on both hosts
+
+In the visualizer, press F4 for the detailed HUD and click **DISASTERS OFF**
+to enable fires, earthquakes, and floods. Events are off for new cities.
+Burning lots show flame markers and cannot rebuild until the blaze expires.
+The HUD reports active fires and cumulative fire/other disaster building losses.
+Disabling events extinguishes active fires and preserves loss totals. Building
+loss can displace residents; this model does not add direct disaster fatalities.
+The toggle, burning tiles, loss totals, and simulation seed survive save/load.
+Older saves load with events disabled and no fire history.
+
+Autonomous `--simulate` now tracks cash, municipal debt, fractional interest,
+and repayments using `TreasurySystem`. Each tick charges operating and growth
+construction costs; unpaid expenses become debt, cash repays principal, and
+remaining debt accrues 0.1% interest per tick. Its table prints CASH and DEBT;
+CSV adds treasury flow columns. Existing economic valuation is retained.
+
+Continue a playable save headlessly under the same rules and saved seed:
+
+```sh
+./build/bin/UrbanSimCore-cli --simulate 10 \
+  --simulate-session /path/to/urban_sim_session.json \
+  --simulate-session-out /path/to/continued.json \
+  --simulate-report /path/to/continued.csv
+```
+
+The input is unchanged unless explicitly chosen as the output. This finite
+session mode uses playable rules (including saved G-mode and disasters),
+rather than the autonomous simulator's valuation and construction policy.
+`--simulate-disasters` can additionally enable events for that continuation.
+Use the default session settings when comparing the visualizer and CLI.

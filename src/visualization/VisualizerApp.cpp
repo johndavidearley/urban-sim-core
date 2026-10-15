@@ -31,6 +31,8 @@
 #include "src/visualization/VisualizerHud.hpp"
 #include "src/visualization/VisualizerOverlay.hpp"
 #include "src/visualization/VisualizerRender.hpp"
+#include "src/visualization/TransitOverlay.hpp"
+#include <unordered_set>
 #include "src/visualization/VisualizerSession.hpp"
 #include "src/visualization/VisualizerTypes.hpp"
 
@@ -103,6 +105,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       facilities = std::move(session.facilities);
       initialFunds = session.funds;
       liveState.tick = session.tick;
+      liveState.simulationSeed = session.simulationSeed;
+      liveState.enableDisasters = session.enableDisasters;
+      liveState.disasters = session.disasters;
       liveState.paused = session.paused;
       liveState.tickIntervalMs = session.tickIntervalMs;
       liveState.demand = session.demand;
@@ -157,6 +162,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   bool cleanUiMode = false;
   int isometricCameraX = 0;
   int isometricCameraY = 0;
+  TransitOverlayCache transitOverlayCache;
   OverlayMode overlayMode = OverlayMode::Zone;
   bool showLegend = true;
   bool roadToolActive = false;
@@ -288,6 +294,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     GameplaySessionState session;
     session.funds = funds;
     session.tick = liveState.tick;
+    session.simulationSeed = liveState.simulationSeed;
+    session.enableDisasters = liveState.enableDisasters;
+    session.disasters = liveState.disasters;
     session.paused = liveState.paused;
     session.tickIntervalMs = liveState.tickIntervalMs;
     session.demand = liveState.demand;
@@ -331,6 +340,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
     funds = session.funds;
     liveState.tick = session.tick;
+    liveState.simulationSeed = session.simulationSeed;
+    liveState.enableDisasters = session.enableDisasters;
+    liveState.disasters = session.disasters;
     liveState.paused = session.paused;
     liveState.tickIntervalMs = session.tickIntervalMs;
     liveState.demand = session.demand;
@@ -545,6 +557,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"desirability", liveState.populationChange.desirability}}},
          {"funds", funds},
          {"paused", liveState.paused},
+         {"disasters", {{"enabled", liveState.enableDisasters},
+                         {"active_fires", liveState.disasters.fire.activeFires},
+                         {"lost_fire", liveState.disasters.buildingsLostToFire},
+                         {"lost_disaster", liveState.disasters.buildingsLostToDisaster},
+                         {"earthquake", liveState.disasters.disaster.earthquakeOccurred},
+                         {"flood", liveState.disasters.disaster.floodOccurred}}},
          {"dirty", sessionDirty},
          {"population", population.getTotalPopulation()},
          {"buildings", store.getBuildingCount()},
@@ -811,6 +829,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         case Key::Num7:
           overlayMode = OverlayMode::Happiness;
           break;
+        case Key::Num9:
+          overlayMode = OverlayMode::Transit;
+          break;
         case Key::Num8:
           overlayMode = OverlayMode::RouteHeatmap;
           break;
@@ -991,7 +1012,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         const bool overHud = mouseX >= windowWidth - kHudPanelWidth - 12 &&
                              mouseY >= 12 && mouseY < 12 + kHudPanelHeight;
         const bool overLegend = showLegend && mouseX >= 12 && mouseX < 532 &&
-                                mouseY >= 12 && mouseY < 158;
+                                mouseY >= 12 && mouseY < (overlayMode == OverlayMode::Transit ? 210 : 158);
         const bool overPalette =
             paletteHitTest(mouseX, mouseY, windowWidth, windowHeight) !=
             PaletteTool::None;
@@ -1076,6 +1097,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         case HudAction::Load:
           loadSession();
+          break;
+        case HudAction::ToggleDisasters:
+          liveState.enableDisasters = !liveState.enableDisasters;
+          if (!liveState.enableDisasters) liveState.disasters.stopEvents();
+          sessionDirty = true;
+          notify(liveState.enableDisasters ? "DISASTERS ON - BUILDINGS CAN BE LOST" : "DISASTERS OFF", true);
           break;
         case HudAction::None:
         default:
@@ -1239,6 +1266,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     setDrawColor(renderer, 91, 108, 91, 255);
     clearFrame(renderer);
 
+    std::unordered_set<Coord, Vec2Hash> burningCoords;
+    for (const auto& tile : liveState.disasters.burningTiles) burningCoords.insert(tile.position);
+    const auto& transitMarks = transitOverlayCache.update(roads, liveState.transitRoutes);
     if (isometricMode) {
       const IsometricProjection projection = isometricProjection();
       for (int depth = 0; depth <= (mapSize - 1) * 2; ++depth) {
@@ -1250,7 +1280,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                             liveState.routeHeatByTile,
                             liveState.waste.happinessPenalty +
                                 liveState.deathcare.happinessPenalty,
-                            overlayMode, projection, {x, y}, &districts, selectedDistrictId);
+                            overlayMode == OverlayMode::Transit ? OverlayMode::Zone : overlayMode, projection, {x, y}, &districts, selectedDistrictId,
+                            overlayMode == OverlayMode::Transit ? &transitMarks : nullptr);
+          if (burningCoords.count({x, y}) != 0) {
+            const auto top = projection.tileTop({x, y});
+            drawFireMarker(renderer, {top.x, top.y + projection.tileHeight() / 2}, projection.tileWidth());
+          }
           if (x == mapSize - 1 || y == mapSize - 1) {
             const ScreenPoint top = projection.tileTop({x, y});
             const RGB wall{67, 79, 68};
@@ -1278,7 +1313,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
             continue;
           }
 
-          const RGB color = tileColor(map, roads, store, coord, overlayMode,
+          const RGB color = tileColor(map, roads, store, coord, overlayMode == OverlayMode::Transit ? OverlayMode::Zone : overlayMode,
                                       facilities, liveState.routeHeatByTile,
                                       liveState.waste.happinessPenalty +
                                           liveState.deathcare.happinessPenalty);
@@ -1288,10 +1323,16 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                                 tilePixels};
           fillRect(renderer, &rect);
 
-          if (overlayMode == OverlayMode::Zone) {
+          if (overlayMode == OverlayMode::Zone || overlayMode == OverlayMode::Transit) {
             drawNormalTileDetail(renderer, map, store, facilities, coord,
                                  rect.x, rect.y, tilePixels, &roads);
           }
+          if (burningCoords.count(coord) != 0)
+            drawFireMarker(renderer, {rect.x + tilePixels / 2, rect.y + tilePixels / 2}, tilePixels);
+          if (overlayMode == OverlayMode::Transit && map.getTile(coord).hasRoad)
+            drawTransitTile(renderer, transitMarks, coord,
+                            {rect.x + tilePixels / 2, rect.y + tilePixels / 2},
+                            tilePixels, tilePixels, false);
         }
       }
     }
@@ -1306,13 +1347,26 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                            selectedDistrictId);
     }
 
+    if (overlayMode == OverlayMode::Transit && !cleanUiMode && showLegend) {
+      const auto& summary = liveState.transitSummary;
+      drawFilledRect(renderer, 12, 164, 520, 46, {14, 16, 20}, 220);
+      drawText(renderer, 24, 174, "BUS " + std::to_string(summary.busRoutes) +
+               " RAIL " + std::to_string(summary.railRoutes) +
+               " STOPS " + std::to_string(summary.totalStops), {235, 245, 250}, 1);
+      drawText(renderer, 24, 190, "RIDERS " + std::to_string(summary.ridership) +
+               " DEMAND " + std::to_string(summary.demand) +
+               " CAPACITY " + std::to_string(summary.totalCapacity), {235, 245, 250}, 1);
+    }
+
     const bool mouseOverHud =
         cleanUiMode
-            ? (mouseX >= windowWidth - 342 && mouseY >= 12 && mouseY < 58)
+            ? (mouseX >= windowWidth - 342 && mouseY >= 12 && mouseY <
+                ((liveState.enableDisasters || liveState.disasters.buildingsLostToFire > 0 ||
+                  liveState.disasters.buildingsLostToDisaster > 0) ? 130 : 94))
             : (mouseX >= windowWidth - kHudPanelWidth - 12 && mouseY >= 12 &&
                mouseY < 12 + kHudPanelHeight);
     const bool mouseOverLegend = !cleanUiMode && showLegend && mouseX >= 12 &&
-                                 mouseX < 532 && mouseY >= 12 && mouseY < 158;
+                                 mouseX < 532 && mouseY >= 12 && mouseY < (overlayMode == OverlayMode::Transit ? 210 : 158);
     const bool mouseOverPalette =
         paletteHitTest(mouseX, mouseY, windowWidth, windowHeight) !=
         PaletteTool::None;
@@ -1435,7 +1489,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       drawCompactGameplayHud(renderer, windowWidth, liveState.paused,
                              population.getTotalPopulation(), funds,
                              activeToolLabel, liveState.populationChange,
-                             liveState.trafficSummary.freight);
+                             liveState.trafficSummary.freight,
+                             &liveState.disasters, liveState.enableDisasters);
     } else {
       drawGameplayHud(renderer, windowWidth, population.getTotalPopulation(),
                       store.getBuildingCount(), funds, activeToolLabel,
@@ -1505,6 +1560,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       case HudAction::Load:
         uiHoverText = "LOAD: RESTORE THE DEFAULT SESSION";
         break;
+      case HudAction::ToggleDisasters:
+        uiHoverText = "DISASTERS: TOGGLE DESTRUCTIVE FIRES EARTHQUAKES AND FLOODS";
+        break;
       case HudAction::None:
       default:
         break;
@@ -1554,6 +1612,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         case OverlayMode::Happiness:
           uiHoverText = "HAPPINESS OVERLAY: LOCAL QUALITY OF LIFE";
+          break;
+        case OverlayMode::Transit:
+          uiHoverText = "TRANSIT: CYAN BUS GOLD RAIL WHITE STOP MARKERS";
           break;
         case OverlayMode::RouteHeatmap:
           uiHoverText = "ROUTE HEAT OVERLAY: MOST USED COMMUTE EDGES";

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "src/systems/MigrationSystem.hpp"
+#include "src/systems/CityDisasterState.hpp"
 #include <cstdint>
 #include <vector>
 
@@ -26,6 +27,7 @@
 // playable city sees the same environment model as `--simulate`.
 struct PlayableCityTickState {
   uint32_t tick = 0;
+  CityDisasterState disasters;
   // Last migration request, retained in saves for compatibility; not a cap.
   uint32_t populationTarget = 480;
   MigrationConditions migrationConditions;
@@ -72,6 +74,9 @@ struct PlayableCityTickState {
 };
 
 struct PlayableCityTickOptions {
+  bool enableDisasters = false;
+  FireParams fireParams;
+  DisasterParams disasterParams;
   float growthChance = 0.18f;
   bool requireUtilities = true;
   double treasuryTickScale = 0.01;

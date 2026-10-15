@@ -35,7 +35,7 @@ KEYS = [
     "F4",
     "F5",
     "F9",
-    *[f"Num{i}" for i in range(1, 9)],
+    *[f"Num{i}" for i in range(1, 10)],
     *list("ABCDFGHLNOPRSTZ"),
 ]
 
@@ -311,7 +311,7 @@ def create_server(session: Session) -> FastMCP:
     @server.tool(annotations=local)
     async def view(
         action: Literal["overlay", "projection", "camera", "focus", "toggle"],
-        overlay: Annotated[int, Field(ge=0, le=7)] | None = None,
+        overlay: Annotated[int, Field(ge=0, le=8)] | None = None,
         projection: Literal["isometric", "top_down"] | None = None,
         tile_pixels: Annotated[int, Field(ge=2, le=48)] | None = None,
         view_x: Coordinate | None = None,
@@ -320,7 +320,7 @@ def create_server(session: Session) -> FastMCP:
         offset_y: Annotated[int, Field(ge=-100000, le=100000)] | None = None,
         name: (
             Literal[
-                "legend", "compact_ui", "large_text", "onboarding", "autonomous_growth"
+                "legend", "compact_ui", "large_text", "onboarding", "autonomous_growth", "disasters"
             ]
             | None
         ) = None,
@@ -469,6 +469,7 @@ def create_server(session: Session) -> FastMCP:
                     "demand",
                     "happiness",
                     "route_heatmap",
+                    "transit",
                 ],
                 "start_screen": {"new": "Enter", "load": "L", "terrain": "T"},
                 "gameplay": {

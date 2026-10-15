@@ -1,3 +1,4 @@
+#include "src/visualization/TransitOverlay.hpp"
 #include "src/visualization/VisualizerOverlay.hpp"
 #include "src/visualization/DrawList.hpp"
 #include "src/visualization/VisualizerHud.hpp"
@@ -266,4 +267,44 @@ TEST(VisualizerGeometry, ParkHappinessTapersWithoutStackingAndBothViewsHaveDetai
                     IsometricProjection(32, 16), {4, 3});
   EXPECT_GT(top.vertices.size(), 30u);
   EXPECT_GT(iso.vertices.size(), 30u);
+}
+
+TEST(VisualizerGeometry, TransitFollowsRoadsAndInvalidatesAfterDemolition) {
+  CityMap map({16, 16});
+  RoadNetwork roads(map);
+  roads.buildRoad({2, 2}, {2, 3});
+  roads.buildRoad({2, 3}, {3, 3});
+  roads.buildRoad({3, 3}, {4, 3});
+  TransitRoute route;
+  route.stops = {{2, 2}, {4, 3}};
+  TransitOverlayCache cache;
+  const auto& marks = cache.update(roads, {route});
+  ASSERT_EQ(marks.count({3, 3}), 1u);
+  EXPECT_EQ(marks.count({3, 2}), 0u);
+  DrawList list;
+  drawTransitTile(&list, marks, {2, 2}, {100, 100}, 32, 16, true);
+  EXPECT_GT(area(list), 0.f);
+  list.clear();
+  drawTransitTile(&list, marks, {2, 2}, {100, 100}, 28, 28, false);
+  EXPECT_GT(area(list), 0.f);
+  roads.removeRoad({2, 3}, {3, 3});
+  const auto& disconnected = cache.update(roads, {route});
+  EXPECT_EQ(disconnected.count({3, 3}), 0u);
+  EXPECT_EQ(disconnected.size(), 2u); // Only stop markers remain.
+  route.mode = TransitMode::Rail;
+  const auto& rail = cache.update(roads, {route});
+  EXPECT_EQ(rail.at({2, 2}).front().mode, TransitMode::Rail);
+  list.clear();
+  drawTransitTile(&list, rail, {2, 2}, {100, 100}, 32, 16, true);
+  EXPECT_GT(area(list), 0.f);
+  EXPECT_TRUE(cache.update(roads, {}).empty());
+}
+
+TEST(VisualizerGeometry, TransitOverlayHasReachableNinthButton) {
+  ASSERT_EQ(overlayModes().size(), 9u);
+  OverlayMode mode = OverlayMode::Zone;
+  EXPECT_TRUE(overlayHitTest(kOverlayKeyStartX + 8 * (kOverlayKeyWidth + kOverlayKeyGap) + 1,
+                             kOverlayKeyY + 1, mode));
+  EXPECT_EQ(mode, OverlayMode::Transit);
+  EXPECT_STREQ(overlayModeName(mode), "transit");
 }

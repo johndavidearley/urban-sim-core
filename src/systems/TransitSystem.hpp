@@ -57,6 +57,7 @@ struct TransitCoverageCache {
   };
   std::vector<Entry> entries;  // aligned index-for-index with the routes vector it was built from
   size_t builtForRouteCount = 0;
+  uint64_t topologyVersion = static_cast<uint64_t>(-1);
 };
 
 // Sequential, stateful helper: tracks remaining per-route capacity as

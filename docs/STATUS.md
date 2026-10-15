@@ -2,9 +2,9 @@
 
 Last verified: October 14, 2026
 
-Priorities updated October 12, 2026. The work queue is Phase 6 (M17–M22)
-in `ROADMAP.md`. M21 local verification is recorded below; the most recent
-hosted strict and sanitizer run passed on commit `edc8d70` (before parks).
+Phase 6 (M17–M22) is implemented and locally verified; see `ROADMAP.md`.
+The last hosted strict and sanitizer run verified here passed on commit
+`edc8d70` (before parks). Hosted verification of M22 is pending.
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -22,14 +22,15 @@ replay verification, micro-traffic, metrics, CLI reporting, PPM rendering, and
 the optional GLFW/Vulkan visualizer.
 
 Phase 1 through Phase 5 milestone work recorded in the roadmap is complete.
-Phase 6 (M17–M22) is the active queue. M17 (utility shortage), M18
+Phase 6 (M17–M22) is implemented locally. M17 (utility shortage), M18
 (schools and the labor market), and M19 (density and land value) are
 implemented. Redevelopment chance follows land value, civic coverage,
 and road congestion. The map draws capacity tier. Playable migration now
 uses the same desirability calculation as the autonomous simulator, removing
 the shrinking fixed population target found during the hour-long playtest.
 M20 (neighborhood crime and illness) and M21 (freight and player road
-upgrades) are implemented. Next is M22, parks and shared-host gaps.
+upgrades) are implemented. M22 adds parks, playable disasters, shared debt
+accounting, saved-session headless continuation, and visible transit routes.
 
 ### Shared full-sim path (CLI + visualizer)
 
@@ -51,7 +52,9 @@ upgrades) are implemented. Next is M22, parks and shared-host gaps.
   CLI `budgetBalance`). Unpaid playable-tick shortfall becomes municipal debt
   (`DEBT $n`) with a small per-tick interest remainder; surplus cash repays it.
   Session save/load persists principal and interest remainder (older saves load
-  as debt 0). `CitySimulator` still uses cash-only treasury accounting.
+  as debt 0). `CitySimulator` now uses the same ledger, including principal,
+  fractional interest, and automatic repayment. Saved playable sessions can
+  continue under playable rules with `--simulate-session`.
 
 ### Playable migration correction (October 12, 2026)
 
@@ -308,3 +311,59 @@ Local strict build and 422 C++ tests passed, along with eight rendered tests,
 limitations are in `playtest-artifacts/parks-20261014/REPORT.md`. Hosted CI
 verification of parks remains pending. Other M22 host-parity work is still
 open; this does not add disasters or visible transit routes.
+
+
+### M22 transit visualization — implemented October 14, 2026
+
+Key 9 or the ninth legend button opens the transit overlay. Bus routes use
+cyan strokes, rail routes gold strokes, with white stop markers in both
+projections. The normal city remains visible; isometric routes are drawn in
+the ground layer before buildings. Consecutive stops use shortest connected
+road paths, cached until topology or stops change. Disconnected segments are
+omitted. These are route guides for the existing road-based transit model,
+not a separate rail network or per-route passenger simulation.
+
+The overlay reports network bus/rail route counts, stops, ridership, eligible
+demand, and total capacity. MCP accepts overlay 8 and Num9, and advertises
+`transit_overlay`. No save format or simulation rules change.
+
+Local warnings-as-errors build, 424 C++ tests, all eight rendered acceptance
+tests (including identical two-run replay), a final Num9 input check, and
+16 graphics capture checks passed. A 5,345-person saved city with four bus
+routes and one rail route was inspected in both projections. Evidence is in
+`playtest-artifacts/transit-mature-20261014/`. Hosted CI remains pending for
+this change.
+
+
+### M22 completion — October 14, 2026
+
+All M22 roadmap items are implemented. Playable ticks now run the existing
+fire and natural-disaster systems behind a default-off switch. The detailed
+HUD exposes the switch, both HUDs show active fires and cumulative losses,
+and map flames mark burning lots. Burning lots cannot redevelop. Disabling
+extinguishes flames while keeping loss totals. Destroyed buildings trigger
+population/derived-state refresh; displaced residents count as departures.
+Saves retain the switch, burning tiles, losses, and simulation seed. Older
+saves default to disabled. Malformed burning-state imports are rejected.
+
+`CitySimulator` now applies `TreasurySystem` to construction/service costs
+and its existing economy: unpaid expenses become principal, positive cash
+repays debt, and remaining principal accrues fractional interest at 0.1%
+per tick. CASH/DEBT and treasury CSV columns make that ledger inspectable.
+`--simulate-session PATH --simulate N` continues a playable save with its
+saved seed and rules; optional `--simulate-session-out PATH` writes the result.
+
+Continuation reserves imported entity IDs so later construction cannot reuse
+them. Transit coverage refreshes on road topology changes, which also keeps
+continuous and loaded G-mode consistent.
+
+Validation: strict local build and 431 C++ tests passed; all nine rendered
+acceptance cases passed, including identical two-run replay. The first full
+rendered run passed eight cases and hit a disk-full capture error in replay;
+that case passed after redundant raw captures were removed while retaining
+PNGs. Seven Python tests, GCC 16 strict syntax checks, and 16 graphics capture
+checks passed. Saved-city treasury/disaster/population and semantic city
+contents matched across hosts; a 5,345-person city also matched with G-mode
+active. A default 50-tick autonomous run retained debt 0. Evidence and preview:
+`playtest-artifacts/m22-20261014/REPORT.md`. Hosted CI has not run for these
+working-tree changes.

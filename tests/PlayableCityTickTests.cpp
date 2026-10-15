@@ -663,3 +663,100 @@ TEST(PlayableCityTickTests, ParksRaiseNearbyValueAndPayUpkeepWithoutGrowingBuild
   EXPECT_EQ(state.economy.parkTiles, 0);
   EXPECT_FLOAT_EQ(map.landValue({3, 3}), before);
 }
+
+TEST(PlayableCityTickTests, DisastersAreOptInAndFireLossesRefreshTheCity) {
+  CityMap map({24, 24});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  laySpine(map, roads);
+  for (int x = 5; x <= 8; ++x) {
+    auto& tile = map.getTile({x, 13});
+    tile.zone = static_cast<int>(ZoneType::Residential);
+    tile.buildingId = store.createBuilding(BuildingType::Residential, {x, 13}, 16);
+  }
+  PopulationSystem::allocate(store, population, 64, 1);
+  PlayableCityTickState state;
+  PlayableCityTickOptions options;
+  options.growthChance = 0.f;
+  options.requireUtilities = false;
+  options.fireParams.baseIgnitionChance = 1.f;
+  options.disasterParams.earthquakeChancePerTick = 0.f;
+  options.disasterParams.floodChancePerTick = 0.f;
+  int64_t funds = 50000;
+  playableCityTick(map, roads, store, population, {}, state, funds, options);
+  EXPECT_EQ(store.getBuildingCount(), 4u);
+  EXPECT_EQ(state.disasters.fire.activeFires, 0u);
+  options.enableDisasters = true;
+  playableCityTick(map, roads, store, population, {}, state, funds, options);
+  EXPECT_EQ(state.disasters.fire.activeFires, 4u);
+  EXPECT_EQ(state.disasters.buildingsLostToFire, 4u);
+  EXPECT_EQ(store.getBuildingCount(), 0u);
+  EXPECT_EQ(population.getTotalPopulation(), 0u);
+  EXPECT_EQ(state.economy.totalRevenue, 0);
+  EXPECT_EQ(state.buildingsDemolished, 4);
+  EXPECT_EQ(state.populationChange.net,
+            static_cast<int64_t>(state.populationChange.arrivals) -
+                state.populationChange.departures - state.populationChange.deaths);
+  options.growthChance = 1.f;
+  options.fireParams.baseIgnitionChance = 0.f;
+  playableCityTick(map, roads, store, population, {}, state, funds, options);
+  EXPECT_EQ(store.getBuildingCount(), 0u); // Burning lots cannot rebuild.
+  EXPECT_EQ(map.getTile({5, 13}).zone, static_cast<int>(ZoneType::Residential));
+  options.enableDisasters = false;
+  options.growthChance = 0.f;
+  playableCityTick(map, roads, store, population, {}, state, funds, options);
+  EXPECT_TRUE(state.disasters.burningTiles.empty());
+  EXPECT_EQ(state.disasters.buildingsLostToFire, 4u);
+}
+
+TEST(PlayableCityTickTests, EarthquakeAndFloodUseTheSameOptInSwitch) {
+  for (bool flood : {false, true}) {
+    CityMap map({24, 24});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    laySpine(map, roads);
+    auto& tile = map.getTile({7, 13});
+    tile.zone = static_cast<int>(ZoneType::Residential);
+    tile.buildingId = store.createBuilding(BuildingType::Residential, {7, 13}, 16);
+    map.getTile({7, 14}).type = 2;
+    PlayableCityTickState state;
+    PlayableCityTickOptions options;
+    options.growthChance = 0.f;
+    options.requireUtilities = false;
+    options.enableDisasters = true;
+    options.fireParams.baseIgnitionChance = 0.f;
+    options.disasterParams.earthquakeChancePerTick = flood ? 0.f : 1.f;
+    options.disasterParams.earthquakeDestructionChance = 1.f;
+    options.disasterParams.floodChancePerTick = flood ? 1.f : 0.f;
+    options.disasterParams.floodDestructionChance = 1.f;
+    int64_t funds = 50000;
+    playableCityTick(map, roads, store, population, {}, state, funds, options);
+    EXPECT_EQ(state.disasters.disaster.earthquakeOccurred, !flood);
+    EXPECT_EQ(state.disasters.disaster.floodOccurred, flood);
+    EXPECT_EQ(state.disasters.buildingsLostToDisaster, 1u);
+    EXPECT_EQ(store.getBuildingCount(), 0u);
+  }
+}
+
+TEST(PlayableCityTickTests, TransitCoverageRefreshesWhenRoadsExpand) {
+  CityMap map({12, 12});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  roads.buildRoad({1, 5}, {2, 5});
+  PlayableCityTickState state;
+  TransitRoute route;
+  route.stops = {{1, 5}};
+  route.stopCoverageRadius = 10;
+  state.transitRoutes.push_back(route);
+  refreshDerivedCityState(map, roads, store, population, {}, state);
+  ASSERT_EQ(state.transitCache.entries.size(), 1u);
+  EXPECT_EQ(state.transitCache.entries.front().distanceField.count({4, 5}), 0u);
+  roads.buildRoad({2, 5}, {3, 5});
+  roads.buildRoad({3, 5}, {4, 5});
+  refreshDerivedCityState(map, roads, store, population, {}, state);
+  EXPECT_EQ(state.transitCache.entries.front().distanceField.count({4, 5}), 1u);
+  EXPECT_EQ(state.transitCache.topologyVersion, roads.getTopologyVersion());
+}

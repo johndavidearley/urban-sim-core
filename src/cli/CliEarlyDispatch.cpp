@@ -119,6 +119,17 @@ std::optional<int> tryEarlyCliDispatch(CliOptions& opts) {
       return runPhase5Benchmark(opts.mapSize, opts.seed, opts.benchmarkPhase5Ticks, opts.benchmarkPhase5Focus);
     }
 
+    if (!opts.simulateSessionPath.empty() || !opts.simulateSessionOutPath.empty()) {
+      if (opts.simulateSessionPath.empty() || opts.simulateTicks < 0 ||
+          opts.simulateInfinite || opts.simulateBenchmarkTrials >= 2) {
+        std::cerr << "Error: --simulate-session requires finite --simulate N (no benchmark).\n";
+        return 1;
+      }
+      return runGameplaySessionSimulation(opts.simulateSessionPath,
+        opts.simulateSessionOutPath, opts.simulateTicks, opts.simulateReportPath,
+        opts.simulateDisasters);
+    }
+
     if (opts.simulateTicks >= 0 && opts.simulateBenchmarkTrials >= 2) {
       const int gridSpacing = (opts.gridSpacingOverride > 0) ? opts.gridSpacingOverride : 4;
       return runCitySimulationBenchmark(

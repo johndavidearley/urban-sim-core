@@ -32,7 +32,9 @@ Json playtestCapabilities() {
       {"inspection_version", 3},
       {"features",
        {{"parks", true},
+        {"disasters", true},
         {"freight", true},
+        {"transit_overlay", true},
         {"road_classes", true},
         {"population_flow", true},
         {"neighborhood_rates", true},
@@ -186,7 +188,7 @@ void PlaytestBridge::begin(
               K(Minus),  K(Left),  K(Right), K(Up),     K(Down),  K(F1),
               K(F2),     K(F3),    K(F4),    K(F5),     K(F9),    K(Num1),
               K(Num2),   K(Num3),  K(Num4),  K(Num5),   K(Num6),  K(Num7),
-              K(Num8),   K(A),     K(B),     K(C),      K(D),     K(F),
+              K(Num8), K(Num9),   K(A),     K(B),     K(C),      K(D),     K(F),
               K(G),      K(H),     K(L),     K(N),      K(O),     K(P),
               K(R),      K(S),     K(T),     K(Z)
 #undef K

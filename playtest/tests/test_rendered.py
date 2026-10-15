@@ -27,6 +27,90 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_m22_saved_city_debt_and_disasters_match_headless(self):
+        s = self.session
+        await s.city("new", 32)
+        self.assertFalse(s.last_state["disasters"]["enabled"])
+        await s.request("view", {"action": "toggle", "name": "compact_ui", "enabled": False})
+        # Exercise the visible opt-in control as well as the semantic toggle.
+        layout = await s.request("inspect", {"section": "ui"})
+        button = next(b for b in layout["controls"] if b["name"] == "disasters")
+        x, y = button["x"] + 4, button["y"] + 4
+        await s.request("input", {"events": [{"type": "down", "x": x, "y": y},
+                                                {"type": "up", "x": x, "y": y}]})
+        self.assertTrue(s.last_state["disasters"]["enabled"])
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "service", "service": "power", "x1": 15, "y1": 15})
+        await s.request("tool", {"action": "apply", "name": "service", "service": "water", "x1": 17, "y1": 15})
+        await s.request("tool", {"action": "apply", "name": "zone", "zone": "residential", "x1": 6, "y1": 15, "x2": 13, "y2": 15})
+        await s.request("tool", {"action": "apply", "name": "zone", "zone": "commercial", "x1": 6, "y1": 17, "x2": 13, "y2": 17})
+        await s.request("time", {"action": "step", "ticks": 20})
+        await s.city("save")
+        saved = json.loads(s.artifact("urban_sim_session.json").read_text())
+        saved.update(funds=0, treasuryDebt=250, treasuryInterestRemainder=0.75,
+                     simulationSeed=12345)
+        saved["disasters"] = {"enabled": True,
+            "burningTiles": [{"x": 14, "y": 17, "ticksRemaining": 4}],
+            "buildingsLostToFire": 3, "buildingsLostToDisaster": 2}
+        fixture = s.artifact("m22-input.json")
+        fixture.write_text(json.dumps(saved))
+        await s.city("load", import_path=str(fixture))
+        self.assertEqual(s.last_state["debt"], 250)
+        self.assertEqual(s.last_state["disasters"]["active_fires"], 1)
+        await s.city("save")
+        # Preserve exactly the same starting checkpoint for both hosts.
+        checkpoint = s.artifact("m22-checkpoint.json")
+        frozen = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core_copy = s.artifact("m22-checkpoint.city.json")
+        core_copy.write_bytes(Path(frozen["citySnapshot"]).read_bytes())
+        frozen["citySnapshot"] = str(core_copy)
+        checkpoint.write_text(json.dumps(frozen))
+        await s.request("time", {"action": "step", "ticks": 2})
+        expected = s.last_state.copy()
+        await s.city("save")
+        gui = json.loads(s.artifact("urban_sim_session.json").read_text())
+        gui_core = json.loads(Path(gui["citySnapshot"]).read_text())
+        cli = Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest", "-cli"))
+        output = s.artifact("m22-headless.json")
+        process = await asyncio.create_subprocess_exec(str(cli), "--simulate", "2",
+            "--simulate-session", str(checkpoint), "--simulate-session-out", str(output),
+            "--simulate-report", str(s.artifact("m22.csv")),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+        self.assertEqual(process.returncode, 0, stderr.decode())
+        self.assertIn("DEBT", stdout.decode())
+        headless = json.loads(output.read_text())
+        for field in ("funds", "tick", "treasuryDebt", "treasuryInterestRemainder", "disasters",
+                      "populationChange", "migrationConditions"):
+            self.assertEqual(headless[field], gui[field], field)
+        def city_contents(core):
+            # IDs are process-local; compare all semantic city data, including
+            # each tile's building reference resolved to its position.
+            positions = {b["id"]: b["position"] for b in core["buildings"]}
+            for building in core["buildings"]:
+                building.pop("id")
+            for group in core["populationGroups"]:
+                group.pop("id")
+            for tile in core["tiles"]:
+                tile["buildingId"] = positions.get(tile["buildingId"])
+            for key in ("buildings", "populationGroups", "roads", "tiles"):
+                core[key].sort(key=lambda value: json.dumps(value, sort_keys=True))
+            return core
+        self.assertEqual(city_contents(json.loads(Path(headless["citySnapshot"]).read_text())),
+                         city_contents(gui_core))
+        await s.city("load", import_path=str(output))
+        for field in ("funds", "debt", "tick", "population", "disasters"):
+            self.assertEqual(s.last_state[field], expected[field], field)
+        await s.request("input", {"events": [{"type": "move", "x": 0, "y": 0}]})
+        for projection in ("isometric", "top_down"):
+            await s.request("view", {"action": "projection", "projection": projection})
+            await s.request("view", {"action": "focus"})
+            await s.screenshot("m22-disasters-" + projection)
+        await s.request("view", {"action": "toggle", "name": "disasters", "enabled": False})
+        self.assertFalse(s.last_state["disasters"]["enabled"])
+        self.assertEqual(s.last_state["disasters"]["active_fires"], 0)
+        self.assertGreaterEqual(s.last_state["disasters"]["lost_fire"], 3)
+
     async def test_focus_centers_developed_area_in_both_projections(self):
         s = self.session
         await s.city("new", 64)
@@ -132,7 +216,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("load")
         for projection in ("top_down", "isometric"):
             await s.request("view", {"action": "projection", "projection": projection})
-            for overlay in range(8):
+            for overlay in range(9):
                 await s.request("view", {"action": "overlay", "overlay": overlay})
                 result = await s.screenshot(f"{projection}-{overlay}")
                 with Image.open(result["png"]) as image:
@@ -160,6 +244,9 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_input_parity_coordinates_and_focus_loss(self):
         s = self.session
         await s.city("new", 64)
+        await s.request("input", {"events": [{"type": "key", "key": "Num9"}]})
+        self.assertEqual(s.last_state["overlay"], 8)
+        await s.request("view", {"action": "overlay", "overlay": 0})
         await s.request("view", {"action": "projection", "projection": "top_down"})
         await s.request(
             "view", {"action": "toggle", "name": "compact_ui", "enabled": True}
@@ -543,6 +630,14 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             "view", {"action": "toggle", "name": "compact_ui", "enabled": False}
         )
         await s.screenshot("migration-population-hud")
+        await s.request("view", {"action": "overlay", "overlay": 8})
+        for projection in ("isometric", "top_down"):
+            await s.request("view", {"action": "projection", "projection": projection})
+            await s.request("view", {"action": "focus"})
+            await s.screenshot("transit-" + projection)
+        await s.request("view", {"action": "projection", "projection": "isometric"})
+        await s.request("view", {"action": "overlay", "overlay": 0})
+
         await s.request(
             "view", {"action": "toggle", "name": "compact_ui", "enabled": True}
         )

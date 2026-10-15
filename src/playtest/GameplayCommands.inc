@@ -32,10 +32,10 @@ if (command == "inspect") {
                             windowHeight));
     else {
       if (!cleanUiMode)
-        for (int i = 1; i <= 6; ++i)
-          rect(std::array<std::string, 6>{"pause", "speed_1", "speed_2",
+        for (int i = 1; i <= 7; ++i)
+          rect(std::array<std::string, 7>{"pause", "speed_1", "speed_2",
                                           "speed_3", "save",
-                                          "load"}[static_cast<size_t>(i - 1)],
+                                          "load", "disasters"}[static_cast<size_t>(i - 1)],
                hudControlRect(static_cast<HudAction>(i), windowWidth));
       for (int i = 0; i < 5; ++i)
         rect(std::array<std::string, 5>{"road", "zone", "bulldoze", "service",
@@ -46,7 +46,7 @@ if (command == "inspect") {
           rect("district_" + std::to_string(i),
                districtPanelButtonRect(static_cast<DistrictPanelAction>(i)));
       if (!cleanUiMode && showLegend)
-        for (int i = 0; i < 8; ++i)
+        for (int i = 0; i < 9; ++i)
           rect("overlay_" + std::to_string(i),
                {kOverlayKeyStartX + i * (kOverlayKeyWidth + kOverlayKeyGap),
                 kOverlayKeyY, kOverlayKeyWidth, kOverlayKeyHeight});
@@ -225,8 +225,8 @@ if (command == "view") {
   const auto action = args.at("action").get<std::string>();
   if (action == "overlay") {
     const int value = args.at("overlay");
-    if (value < 0 || value > 7)
-      throw std::runtime_error("Overlay must be 0..7");
+    if (value < 0 || value > 8)
+      throw std::runtime_error("Overlay must be 0..8");
     overlayMode = static_cast<OverlayMode>(value);
   } else if (action == "projection") {
     const auto value = args.at("projection").get<std::string>();
@@ -267,7 +267,11 @@ if (command == "view") {
       gReadableUiText = enabled;
     else if (name == "onboarding")
       showOnboarding = enabled;
-    else if (name == "autonomous_growth") {
+    else if (name == "disasters") {
+      liveState.enableDisasters = enabled;
+      if (!enabled) liveState.disasters.stopEvents();
+      sessionDirty = true;
+    } else if (name == "autonomous_growth") {
       liveState.autonomousGrowth = enabled;
       sessionDirty = true;
     } else

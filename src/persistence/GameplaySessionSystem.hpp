@@ -1,6 +1,7 @@
 #pragma once
 
 #include "src/systems/MigrationSystem.hpp"
+#include "src/systems/CityDisasterState.hpp"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -16,6 +17,9 @@ class PopulationStore;
 class RoadNetwork;
 
 struct GameplaySessionState {
+  bool enableDisasters = false;
+  CityDisasterState disasters;
+  uint32_t simulationSeed = 98765;
   int64_t funds = 50000;
   uint32_t tick = 0;
   bool paused = false;
@@ -54,8 +58,15 @@ struct GameplaySessionState {
   std::vector<DistrictRecord> districts;
 };
 
+struct PlayableCityTickState;
+
 class GameplaySessionSystem {
 public:
+  // Continue a saved playable city using the same tick/options as the visualizer.
+  // No autonomous construction unless the session's G-mode flag is enabled.
+  static PlayableCityTickState advance(
+    CityMap& map, RoadNetwork& roads, EntityStore& store,
+    PopulationStore& population, GameplaySessionState& session);
   static bool readMapDimensions(
     const std::string& sessionPath,
     int& width,

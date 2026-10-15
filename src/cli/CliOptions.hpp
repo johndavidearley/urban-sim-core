@@ -43,6 +43,8 @@ struct CliOptions {
   bool simulateInfinite = false;
   int simulateBenchmarkTrials = 0;  // 0 = off; >=2 dispatches to runCitySimulationBenchmark instead
   std::string simulateReportPath;
+  std::string simulateSessionPath;
+  std::string simulateSessionOutPath;
   bool simulateNoTraffic = false;
   double simulateSpeed = 0.0;
   int simulateTrafficInterval = 1;

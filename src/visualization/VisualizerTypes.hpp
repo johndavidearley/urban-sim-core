@@ -1,6 +1,7 @@
 #pragma once
 
 #include "src/systems/MigrationSystem.hpp"
+#include "src/systems/CityDisasterState.hpp"
 #include <array>
 #include <cstdint>
 #include <string>
@@ -44,6 +45,7 @@ enum class OverlayMode {
   Demand = 5,
   Happiness = 6,
   RouteHeatmap = 7,
+  Transit = 8,
 };
 
 enum class PaletteTool {
@@ -63,6 +65,7 @@ enum class HudAction {
   Fast,
   Save,
   Load,
+  ToggleDisasters,
 };
 
 enum class QuitAction {
@@ -73,6 +76,8 @@ enum class QuitAction {
 };
 
 struct LiveSimulationState {
+  bool enableDisasters = false;
+  CityDisasterState disasters;
   uint32_t simulationSeed = 98765;
   uint32_t tick = 0;
   bool paused = false;
@@ -135,7 +140,7 @@ struct StartScreenResult {
 };
 
 const char* overlayModeName(OverlayMode mode);
-const std::array<OverlayMode, 8>& overlayModes();
+const std::array<OverlayMode, 9>& overlayModes();
 bool overlayHitTest(int mouseX, int mouseY, OverlayMode& outMode);
 
 ZoneType nextPlayableZone(ZoneType zone);
@@ -159,7 +164,7 @@ constexpr int kOverlayPanelX = 12;
 constexpr int kOverlayPanelY = 12;
 constexpr int kOverlayKeyStartX = kOverlayPanelX + 10;
 constexpr int kOverlayKeyY = kOverlayPanelY + 10;
-constexpr int kOverlayKeyWidth = 52;
+constexpr int kOverlayKeyWidth = 46;
 constexpr int kOverlayKeyHeight = 20;
 constexpr int kOverlayKeyGap = 8;
 

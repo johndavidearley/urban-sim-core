@@ -235,6 +235,10 @@ std::optional<int> parseCliArgs(int argc, char* argv[], CliOptions& opts) {
       opts.verifyReplayGrowthSteps = std::atoi(argv[++i]);
     } else if (arg == "--simulate" && i + 1 < argc) {
       opts.simulateTicks = std::atoi(argv[++i]);
+    } else if (arg == "--simulate-session" && i + 1 < argc) {
+      opts.simulateSessionPath = argv[++i];
+    } else if (arg == "--simulate-session-out" && i + 1 < argc) {
+      opts.simulateSessionOutPath = argv[++i];
     } else if (arg == "--simulate-infinite") {
       opts.simulateInfinite = true;
     } else if (arg == "--simulate-benchmark-trials" && i + 1 < argc) {

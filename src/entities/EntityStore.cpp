@@ -94,6 +94,7 @@ void EntityStore::clear() {
 }
 
 void EntityStore::upsertBuilding(const Building& building) {
+  EntityIdUtils::reserveThrough(building.id);
   const auto it = buildings.find(building.id);
   if (it != buildings.end()) {
     indexErase(it->second);

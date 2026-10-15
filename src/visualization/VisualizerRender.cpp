@@ -1,3 +1,4 @@
+#include "src/visualization/TransitOverlay.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -39,6 +40,19 @@
 
 
 namespace visualizer {
+void drawFireMarker(DrawList* renderer, Point center, int size) {
+  const int radius = std::max(3, size / 6);
+  setDrawColor(renderer, 245, 90, 25, 255);
+  renderer->polygon({{center.x - radius, center.y},
+                     {center.x - radius / 2, center.y - radius * 2},
+                     {center.x + radius, center.y},
+                     {center.x, center.y + radius / 2}});
+  setDrawColor(renderer, 255, 220, 70, 255);
+  renderer->triangle(static_cast<float>(center.x - radius / 2), static_cast<float>(center.y),
+                      static_cast<float>(center.x), static_cast<float>(center.y - radius),
+                      static_cast<float>(center.x + radius / 2), static_cast<float>(center.y));
+}
+
 
 void drawFilledRect(DrawList* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha) {
   setDrawColor(renderer, color.r, color.g, color.b, alpha);
@@ -396,7 +410,8 @@ void drawIsometricTile(
   const IsometricProjection& projection,
   Coord coord,
   const DistrictSystem* districts,
-  DistrictId selectedDistrictId
+  DistrictId selectedDistrictId,
+  const TransitMarks* transitMarks
 ) {
   const Tile& tile = map.getTile(coord);
   const ScreenPoint top = projection.tileTop(coord);
@@ -513,6 +528,11 @@ void drawIsometricTile(
                          {tree.x - crown, tree.y - lift},
                          {tree.x - crown, tree.y - lift - crown}});
     }
+  }
+
+  if (transitMarks && tile.hasRoad) {
+    drawTransitTile(renderer, *transitMarks, coord,
+                    {top.x, top.y + height / 2}, width, height, true);
   }
 
   // District boundaries belong to the ground layer, before walls and roofs.

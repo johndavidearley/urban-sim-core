@@ -61,6 +61,7 @@ void TransitSystem::buildCache(
     cache.entries.push_back({route.id, std::move(distField)});
   }
   cache.builtForRouteCount = routes.size();
+  cache.topologyVersion = roads.getTopologyVersion();
 }
 
 TransitOffload::TransitOffload(const std::vector<TransitRoute>& routes, const TransitCoverageCache& cache)
