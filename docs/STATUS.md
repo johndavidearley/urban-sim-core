@@ -2,9 +2,9 @@
 
 Last verified: October 14, 2026
 
-Phase 6 (M17–M22) is implemented and locally verified; see `ROADMAP.md`.
+Phases 6–7 (M17–M23) are implemented and locally verified; see `ROADMAP.md`.
 The last hosted strict and sanitizer run verified here passed on commit
-`edc8d70` (before parks). Hosted verification of M22 is pending.
+`edc8d70` (before parks). Hosted verification of the current M22/M23 tree is pending.
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -367,3 +367,58 @@ contents matched across hosts; a 5,345-person city also matched with G-mode
 active. A default 50-tick autonomous run retained debt 0. Evidence and preview:
 `playtest-artifacts/m22-20261014/REPORT.md`. Hosted CI has not run for these
 working-tree changes.
+
+
+### M23 first slice — budget controls and treasury breakdown
+
+The first M23 slice added tax controls. F6 or the detailed HUD budget button opens a modal panel
+with citywide residential/commercial/industrial/office/income tax controls.
+Whole percentages range from 0 to 20; reset restores the unchanged defaults
+5/8/6/9/10. Paused edits recompute the estimate without a tick, cash movement,
+or changes to the last recorded transaction. Taxes currently affect revenue;
+no migration or zoning-demand response to tax levels is modeled.
+
+The next-tick estimate itemizes six revenue and five expense categories.
+Rounding is apportioned cumulatively so displayed categories reconcile to
+the treasury totals. The estimate excludes new building growth and debt
+flows. A separate last-tick ledger records actual billings, growth cost,
+borrowing, repayment, interest, and before/after cash/debt. Immediate tool
+purchases remain outside simulation-tick totals and are labeled as such.
+
+Policy and immutable ledger history persist in saves and headless playable
+continuation. Legacy saves retain default rates and start history next tick.
+Invalid tax policies and inconsistent ledger imports are rejected before
+city mutation. MCP adds `budget` actions and structured preview/history.
+
+The first slice left service funding for the completion work recorded below.
+
+Validation for the M23 first slice: local strict build and 436 C++ tests
+passed; all 11 rendered acceptance cases passed, including two identical
+budget-policy replays, save/load, custom-policy CLI parity, and minimum-window
+UI checks. The initial SDK test expected 16 tools and was updated for the
+new seventeenth budget tool, then passed with real budget calls. Seven Python
+tests, GCC 16 strict checks, and 16 graphics capture checks passed. Evidence:
+`playtest-artifacts/m23-20261014/REPORT.md`. Hosted CI remains pending.
+
+
+### M23 completion — service funding (October 14, 2026)
+
+M23 is complete locally. F6 → Services exposes all eleven departments with
+0–100% funding, per-tick operating cost and road-reachable building coverage.
+Native controls use 25-point steps; MCP accepts integer percentages. Cuts
+reduce reach, utility supply and processing quality; zero suspends operation
+without removing facilities. Restoring funding recovers original ratings.
+Taxes and service funding have independent reset controls.
+
+Paused funding changes refresh derived service state without advancing time,
+charging cash or rewriting the last-tick ledger. Raw installed facilities
+remain unchanged. Both simulation hosts share funding rules; saves retain
+policy and legacy saves default to 100%. Invalid funding imports are rejected
+before city mutation. Coverage is road reach, distinct from utility capacity.
+
+Validation: warnings-as-errors build, 440/440 C++ tests, 12/12 rendered
+acceptance cases, 7/7 Python unit tests, GCC 16 strict syntax checks and
+16 graphics capture checks passed. Rendered tests exercise native controls,
+minimum-window layout, paused edits, persistence, replay and GUI/headless
+continuation parity. Evidence: `playtest-artifacts/m23-funding-20261014/REPORT.md`.
+Hosted CI has not been run for these uncommitted changes.

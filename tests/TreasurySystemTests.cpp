@@ -82,3 +82,30 @@ TEST(TreasurySystemTests, AdditionalOperatingCostsJoinExpensesWithoutScaling) {
   EXPECT_EQ(flow.net, 25);
   EXPECT_EQ(funds, 525);
 }
+
+TEST(TreasurySystemTests, BreakdownReconcilesRoundedCategoriesToChargedTotals) {
+  EconomyState economy;
+  economy.residentialTaxRevenue = 49;
+  economy.commercialTaxRevenue = 49;
+  economy.industrialTaxRevenue = 49;
+  economy.officeTaxRevenue = 49;
+  economy.incomeTaxRevenue = 49;
+  economy.exportRevenue = 49;
+  economy.totalRevenue = 294;
+  economy.totalMaintenance = 49;
+  economy.parkMaintenance = 24;
+  economy.importCost = 49;
+  economy.totalExpenses = 98;
+  const auto breakdown = TreasurySystem::breakdown(economy, 0.01, 13, 27);
+  int64_t funds = 1000;
+  const auto flow = TreasurySystem::applyEconomy(economy, funds, 0.01, 40);
+  EXPECT_EQ(breakdown.totalRevenue, flow.revenue);
+  EXPECT_EQ(breakdown.totalExpenses, flow.expenses);
+  int64_t revenue = 0, expenses = 0;
+  for (auto value : breakdown.revenue) { EXPECT_GE(value, 0); revenue += value; }
+  for (auto value : breakdown.expenses) { EXPECT_GE(value, 0); expenses += value; }
+  EXPECT_EQ(revenue, flow.revenue);
+  EXPECT_EQ(expenses, flow.expenses);
+  EXPECT_EQ(breakdown.expenses[3], 13);
+  EXPECT_EQ(breakdown.expenses[4], 27);
+}

@@ -1,4 +1,6 @@
 #pragma once
+#include "src/gameplay/BudgetPolicy.hpp"
+#include "src/gameplay/TreasurySystem.hpp"
 
 #include "src/systems/MigrationSystem.hpp"
 #include "src/systems/CityDisasterState.hpp"
@@ -66,6 +68,7 @@ enum class HudAction {
   Save,
   Load,
   ToggleDisasters,
+  Budget,
 };
 
 enum class QuitAction {
@@ -76,6 +79,8 @@ enum class QuitAction {
 };
 
 struct LiveSimulationState {
+  BudgetPolicy budgetPolicy;
+  TreasuryLedger treasuryLedger;
   bool enableDisasters = false;
   CityDisasterState disasters;
   uint32_t simulationSeed = 98765;

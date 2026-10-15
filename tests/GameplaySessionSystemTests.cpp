@@ -7,6 +7,7 @@
 #include "gtest/gtest.h"
 
 #include "src/persistence/GameplaySessionSystem.hpp"
+#include "src/systems/PlayableCityTick.hpp"
 #include "src/systems/TransitSystem.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/networks/RoadNetwork.hpp"
@@ -32,6 +33,22 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   saved.treasuryDebt = 250;
   saved.treasuryInterestRemainder = 0.4;
   saved.simulationSeed = 123;
+  saved.budgetPolicy.taxPercent = {{7, 9, 11, 13, 15}};
+  saved.budgetPolicy.servicePercent[0] = 50;
+  saved.budgetPolicy.servicePercent[4] = 0;
+  saved.treasuryLedger.valid = true;
+  saved.treasuryLedger.tick = 77;
+  saved.treasuryLedger.breakdown.revenue[0] = 80;
+  saved.treasuryLedger.breakdown.expenses[0] = 30;
+  saved.treasuryLedger.breakdown.totalRevenue = 80;
+  saved.treasuryLedger.breakdown.totalExpenses = 30;
+  saved.treasuryLedger.flow.revenue = 80;
+  saved.treasuryLedger.flow.expenses = 30;
+  saved.treasuryLedger.flow.net = 50;
+  saved.treasuryLedger.flow.outstandingDebt = 10;
+  saved.treasuryLedger.fundsBefore = 100;
+  saved.treasuryLedger.fundsAfter = 150;
+  saved.treasuryLedger.debtBefore = 10;
   saved.enableDisasters = true;
   saved.disasters.burningTiles = {{{3, 3}, 4}};
   saved.disasters.fire = {1, 1, 1};
@@ -94,6 +111,12 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   EXPECT_EQ(loaded.treasuryDebt, 250);
   EXPECT_DOUBLE_EQ(loaded.treasuryInterestRemainder, 0.4);
   EXPECT_EQ(loaded.simulationSeed, 123u);
+  EXPECT_EQ(loaded.budgetPolicy.taxPercent, saved.budgetPolicy.taxPercent);
+  EXPECT_EQ(loaded.budgetPolicy.servicePercent, saved.budgetPolicy.servicePercent);
+  EXPECT_TRUE(loaded.treasuryLedger.valid);
+  EXPECT_EQ(loaded.treasuryLedger.tick, 77u);
+  EXPECT_EQ(loaded.treasuryLedger.fundsAfter, 150);
+  EXPECT_EQ(loaded.treasuryLedger.breakdown.totalRevenue, 80);
   EXPECT_TRUE(loaded.enableDisasters);
   ASSERT_EQ(loaded.disasters.burningTiles.size(), 1u);
   EXPECT_EQ(loaded.disasters.burningTiles.front().ticksRemaining, 4);
@@ -207,6 +230,9 @@ TEST(GameplaySessionSystemTests, LegacySaveLoadsWithoutMigrationFields) {
   document.erase("growthModifiers");
   document.erase("disasters");
   document.erase("simulationSeed");
+  document.erase("budgetTaxPercent");
+  document.erase("budgetServicePercent");
+  document.erase("treasuryLedger");
   {
     std::ofstream out(path);
     out << document;
@@ -218,6 +244,9 @@ TEST(GameplaySessionSystemTests, LegacySaveLoadsWithoutMigrationFields) {
   EXPECT_FALSE(loaded.enableDisasters);
   EXPECT_TRUE(loaded.disasters.burningTiles.empty());
   EXPECT_EQ(loaded.simulationSeed, 98765u);
+  EXPECT_EQ(loaded.budgetPolicy.taxPercent, BudgetPolicy{}.taxPercent);
+  EXPECT_EQ(loaded.budgetPolicy.servicePercent, BudgetPolicy{}.servicePercent);
+  EXPECT_FALSE(loaded.treasuryLedger.valid);
   EXPECT_EQ(loaded.populationChange.net, 0);
   EXPECT_FLOAT_EQ(loaded.migrationConditions.utilityAvailability, 1.0f);
   EXPECT_FLOAT_EQ(loaded.laggedEducationCoverage, 0.0f);
@@ -288,4 +317,88 @@ TEST(GameplaySessionSystemTests, InvalidBurningTilesDoNotMutateTheCity) {
   }
   std::filesystem::remove(path);
   std::filesystem::remove(path.string() + ".city.json");
+}
+
+TEST(GameplaySessionSystemTests, RejectsInvalidTaxPolicyWithoutMutatingTheCity) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  GameplaySessionState saved;
+  const auto path = std::filesystem::temp_directory_path() / "urban_invalid_budget.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store, population, saved));
+  nlohmann::json original;
+  { std::ifstream in(path); in >> original; }
+  for (const auto& values : {nlohmann::json::array({5, 8, 6, 9}),
+                            nlohmann::json::array({-1, 8, 6, 9, 10}),
+                            nlohmann::json::array({21, 8, 6, 9, 10}),
+                            nlohmann::json::array({5.5, 8, 6, 9, 10})}) {
+    auto root = original;
+    root["budgetTaxPercent"] = values;
+    { std::ofstream out(path); out << root; }
+    GameplaySessionState loaded;
+    loaded.funds = 123;
+    map.setZone({1, 1}, static_cast<int>(ZoneType::Park));
+    std::string error;
+    EXPECT_FALSE(GameplaySessionSystem::load(path.string(), map, roads, store, population, loaded, &error));
+    EXPECT_EQ(loaded.funds, 123);
+    EXPECT_EQ(map.zone({1, 1}), static_cast<int>(ZoneType::Park));
+  }
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
+}
+
+TEST(GameplaySessionSystemTests, RejectsCorruptTreasuryLedgerWithoutMutatingTheCity) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  GameplaySessionState saved;
+  GameplaySessionSystem::advance(map, roads, store, population, saved);
+  const auto path = std::filesystem::temp_directory_path() / "urban_invalid_ledger.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store, population, saved));
+  nlohmann::json original;
+  { std::ifstream in(path); in >> original; }
+  for (int invalid = 0; invalid < 3; ++invalid) {
+    auto root = original;
+    if (invalid == 0) root["treasuryLedger"]["totalRevenue"] = 1;
+    if (invalid == 1) root["treasuryLedger"]["fundsAfter"] = 0;
+    if (invalid == 2) root["treasuryLedger"]["revenue"].push_back(0);
+    { std::ofstream out(path); out << root; }
+    GameplaySessionState loaded;
+    loaded.funds = 123;
+    map.setZone({1, 1}, static_cast<int>(ZoneType::Park));
+    std::string error;
+    EXPECT_FALSE(GameplaySessionSystem::load(path.string(), map, roads, store, population, loaded, &error));
+    EXPECT_NE(error.find("ledger"), std::string::npos);
+    EXPECT_EQ(loaded.funds, 123);
+    EXPECT_EQ(map.zone({1, 1}), static_cast<int>(ZoneType::Park));
+  }
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
+}
+
+TEST(GameplaySessionSystemTests, InvalidServiceFundingDoesNotMutateCityOrPolicy) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore population;
+  GameplaySessionState saved;
+  const auto path = std::filesystem::temp_directory_path() / "urban_invalid_funding.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(),map,roads,store,population,saved));
+  nlohmann::json original;
+  { std::ifstream input(path); input >> original; }
+  for (int invalid = 0; invalid < 4; ++invalid) {
+    auto root = original;
+    if (invalid == 0) root["budgetServicePercent"].erase(0);
+    if (invalid == 1) root["budgetServicePercent"][0] = -1;
+    if (invalid == 2) root["budgetServicePercent"][0] = 101;
+    if (invalid == 3) root["budgetServicePercent"][0] = 50.5;
+    { std::ofstream output(path); output << root; }
+    GameplaySessionState loaded; loaded.funds = 123;
+    map.setZone({1,1},static_cast<int>(ZoneType::Park));
+    std::string error;
+    EXPECT_FALSE(GameplaySessionSystem::load(path.string(),map,roads,store,population,loaded,&error));
+    EXPECT_EQ(loaded.funds,123);
+    EXPECT_EQ(loaded.budgetPolicy.servicePercent,BudgetPolicy{}.servicePercent);
+    EXPECT_EQ(map.zone({1,1}),static_cast<int>(ZoneType::Park));
+  }
+  std::filesystem::remove(path); std::filesystem::remove(path.string()+".city.json");
 }

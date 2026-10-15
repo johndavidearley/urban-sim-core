@@ -4,7 +4,7 @@ For the authoritative current validation baseline and active priorities, see
 [STATUS.md](STATUS.md). This document retains detailed milestone history and
 future ideas.
 
-Last updated: October 10, 2026
+Last updated: October 14, 2026
 
 ## Current Status Snapshot
 
@@ -387,6 +387,39 @@ shortfall.
 
 ---
 
+## Phase 7: Player fiscal controls (M23)
+
+### Milestone 23: Budget controls and treasury breakdown
+
+City taxes, service funding, and treasury history are exposed in one budget
+panel. Service policy uses the same rules on both hosts.
+
+- [x] An F6 budget panel exposes citywide residential, commercial, industrial,
+      office, and income tax rates. Integer percentages range from 0 to 20;
+      defaults remain 5/8/6/9/10, with a reset action.
+- [x] The next-tick estimate separates tax sources, exports, building/park
+      upkeep, imports, and civic operation. Category rounding reconciles to
+      the charged totals. It excludes future building growth and debt flows.
+- [x] A separate last-tick ledger records actual revenue, expenses, building
+      construction, borrowing, repayment, interest, and cash/debt changes.
+      Paused policy edits leave that history and current cash untouched.
+- [x] Policies and the last ledger survive save/load and headless playable
+      continuation. Older saves retain the existing default tax rates.
+      Invalid policies and inconsistent ledger imports are rejected.
+- [x] Per-service funding controls change both operating expense and delivered
+      coverage/quality, with explicit previews of the tradeoff.
+- [x] Verify service-funding effects and persistence on both hosts before
+      closing M23.
+
+**Deliverable:** A player can explain last tick's cash movement,
+change taxes and department funding while paused, see revenue, cost and service
+coverage respond, and continue
+the saved policy on either host. Taxes currently change revenue; no migration
+or demand response to tax levels is modeled. Tool purchases are immediate
+cash transactions outside the simulation-tick ledger.
+
+---
+
 ## Timeline
 
 | Phase | Milestones | Est. Duration |
@@ -396,10 +429,11 @@ shortfall.
 | 3 | M7–M8 | 3–4 weeks |
 | 4 | M9–M10 | 4–6 weeks |
 | 5 | M11+ | 12+ weeks |
-| 6 | M17–M22 | not started |
+| 6 | M17–M22 | complete |
+| 7 | M23 | complete |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
-**Phase 6** is the active queue.
+**Phase 7 (M23):** implemented and locally verified.
 
 ---
 
@@ -410,12 +444,12 @@ with the autonomous simulator. Population responds to housing, jobs, services,
 utilities and quality of life instead of a fixed target that shrinks after
 mortality. Last-tick arrivals/departures/deaths/net are visible in the HUD and
 MCP. Session inputs survive save/load, and a rendered regression grows an
-ordinary zoned city above 1,200 residents and unlocks bus transit. M20 and M21 are now complete; M22 remains
-next; economy balancing and player road upgrades remain future work.
+ordinary zoned city above 1,200 residents and unlocks bus transit. M20–M22 and the initial economy/road tuning are complete; M23 budget
+controls are complete and locally verified.
 
 ## Next Targets (Post-Backlog)
 
-Finished. The active queue is Phase 6 (M17–M22) above. This list is the
+Finished through Phase 7 (M23). No later milestone is defined yet. This list is the
 record of work that landed after M16.
 
 1. ~~District-level service policies and budget controls~~ - already done,

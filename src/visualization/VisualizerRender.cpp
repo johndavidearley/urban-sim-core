@@ -711,6 +711,8 @@ std::array<uint8_t, 5> glyphRows(char c) {
     case '7': return {0b111, 0b001, 0b001, 0b001, 0b001};
     case '8': return {0b111, 0b101, 0b111, 0b101, 0b111};
     case '9': return {0b111, 0b101, 0b111, 0b001, 0b110};
+    case '+': return {0b000, 0b010, 0b111, 0b010, 0b000};
+    case '%': return {0b101, 0b001, 0b010, 0b100, 0b101};
     case '-': return {0b000, 0b000, 0b111, 0b000, 0b000};
     case ':': return {0b000, 0b010, 0b000, 0b010, 0b000};
     case '$': return {0b010, 0b111, 0b110, 0b011, 0b010};

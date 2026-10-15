@@ -98,10 +98,11 @@ void refreshDerivedCityState(
   RoadNetwork& roads,
   EntityStore& store,
   PopulationStore& population,
-  const std::vector<ServiceFacility>& facilities,
+  const std::vector<ServiceFacility>& baseFacilities,
   PlayableCityTickState& state,
   const DerivedCityRefreshOptions& options
 ) {
+  const auto facilities = state.budgetPolicy.fundedFacilities(baseFacilities);
   ThreadPool& pool = playablePool();
   int ax0 = 0, ay0 = 0, ax1 = 0, ay1 = 0;
   activeBounds(map, ax0, ay0, ax1, ay1);
@@ -184,7 +185,7 @@ void refreshDerivedCityState(
   lvBounds.x1 = ax1;
   lvBounds.y1 = ay1;
   state.economy = EconomySystem::calculateEconomy(
-    store, population, TaxRates{}, &map, TradeRates{}, 1.0f, lvBounds, EconomyValuation::playable());
+    store, population, state.budgetPolicy.rates(), &map, TradeRates{}, 1.0f, lvBounds, EconomyValuation::playable());
 
   if (options.preserveCheckpoint) {
     const auto local = NeighborhoodSystem::summarize(store);
@@ -200,11 +201,12 @@ void playableCityTick(
   RoadNetwork& roads,
   EntityStore& store,
   PopulationStore& population,
-  const std::vector<ServiceFacility>& facilities,
+  const std::vector<ServiceFacility>& baseFacilities,
   PlayableCityTickState& state,
   int64_t& funds,
   const PlayableCityTickOptions& options
 ) {
+  const auto facilities = state.budgetPolicy.fundedFacilities(baseFacilities);
   const uint32_t populationBefore = population.getTotalPopulation();
   const uint32_t tickSeed = options.baseSeed + (state.tick * 31u);
   const float educationNow = state.laggedEducationCoverage;
@@ -270,7 +272,7 @@ void playableCityTick(
   refresh.seed = tickSeed + 3u;
   refresh.transitCapacityMultiplier = options.transitCapacityMultiplier;
   refresh.transitStopCoverageRadius = options.transitStopCoverageRadius;
-  refreshDerivedCityState(map, roads, store, population, facilities, state, refresh);
+  refreshDerivedCityState(map, roads, store, population, baseFacilities, state, refresh);
 
   if (options.enableDisasters) {
     auto& events = state.disasters;
@@ -288,7 +290,7 @@ void playableCityTick(
       PopulationSystem::allocate(store, population, before, tickSeed + 8u, educationNow);
       state.populationChange.departures += before - population.getTotalPopulation();
       refresh.placeTransit = false;
-      refreshDerivedCityState(map, roads, store, population, facilities, state, refresh);
+      refreshDerivedCityState(map, roads, store, population, baseFacilities, state, refresh);
     }
   }
 
@@ -315,10 +317,14 @@ void playableCityTick(
   refreshDistrictGrowthModifiers(
     options.districts, map, store, population, roads, facilities, state);
 
-  int64_t serviceOperatingCosts = 0;
-  for (const ServiceFacility& facility : facilities) {
-    serviceOperatingCosts += ServiceTool::operatingCostPerTick(facility.type);
-  }
+  int64_t serviceOperatingCosts = state.budgetPolicy.serviceCost(baseFacilities);
+  state.treasuryLedger = {};
+  state.treasuryLedger.valid = true;
+  state.treasuryLedger.tick = state.tick + 1;
+  state.treasuryLedger.breakdown = TreasurySystem::breakdown(
+    state.economy, options.treasuryTickScale, serviceOperatingCosts, growth.constructionSpend);
+  state.treasuryLedger.fundsBefore = funds;
+  state.treasuryLedger.debtBefore = state.treasuryDebt;
   serviceOperatingCosts += growth.constructionSpend;
   TreasuryDebt debt;
   debt.principal = state.treasuryDebt;
@@ -327,6 +333,8 @@ void playableCityTick(
     state.economy, funds, options.treasuryTickScale, serviceOperatingCosts,
     &debt, options.treasuryInterestRate
   );
+  state.treasuryLedger.flow = flow;
+  state.treasuryLedger.fundsAfter = funds;
   state.treasuryRevenue = flow.revenue;
   state.treasuryExpenses = flow.expenses;
   state.treasuryNet = flow.net;

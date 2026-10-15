@@ -12,6 +12,7 @@
 #include <exception>
 #include <fstream>
 #include <limits>
+#include <numeric>
 #include <set>
 
 #include <nlohmann/json.hpp>
@@ -229,7 +230,21 @@ bool GameplaySessionSystem::save(
                         {"earthquakeOccurred", events.disaster.earthquakeOccurred},
                         {"floodOccurred", events.disaster.floodOccurred},
                         {"disasterBuildingsDestroyed", events.disaster.buildingsDestroyed}};
+  const auto& ledger = session.treasuryLedger;
+  const auto& flow = ledger.flow;
+  const json ledgerJson = {{"valid", ledger.valid}, {"tick", ledger.tick},
+    {"revenue", ledger.breakdown.revenue}, {"expenses", ledger.breakdown.expenses},
+    {"totalRevenue", ledger.breakdown.totalRevenue},
+    {"totalExpenses", ledger.breakdown.totalExpenses},
+    {"fundsBefore", ledger.fundsBefore}, {"fundsAfter", ledger.fundsAfter},
+    {"debtBefore", ledger.debtBefore}, {"net", flow.net},
+    {"shortfall", flow.shortfall}, {"debtIssued", flow.debtIssued},
+    {"debtRepaid", flow.debtRepaid}, {"interestCharged", flow.interestCharged},
+    {"outstandingDebt", flow.outstandingDebt}};
   json root = {{"version", kGameplaySessionVersion},
+               {"budgetTaxPercent", session.budgetPolicy.taxPercent},
+               {"budgetServicePercent", session.budgetPolicy.servicePercent},
+               {"treasuryLedger", ledgerJson},
                {"simulationSeed", session.simulationSeed},
                {"disasters", disasterState},
                {"citySnapshot", std::filesystem::absolute(cityPathFor(sessionPath)).string()},
@@ -346,6 +361,84 @@ bool GameplaySessionSystem::load(
     }
     loaded.funds = root.at("funds").get<int64_t>();
     loaded.tick = root.at("tick").get<uint32_t>();
+    if (root.contains("budgetTaxPercent")) {
+      const auto& values = root.at("budgetTaxPercent");
+      if (!values.is_array() || values.size() != 5)
+        return fail(errorMessage, "gameplay session has invalid tax policy");
+      for (size_t i = 0; i < 5; ++i) {
+        if (!values[i].is_number_integer())
+          return fail(errorMessage, "gameplay session has invalid tax policy");
+        const auto value = values[i].get<int64_t>();
+        if (value < 0 || value > 20)
+          return fail(errorMessage, "gameplay session has invalid tax policy");
+        loaded.budgetPolicy.taxPercent[i] = static_cast<int>(value);
+      }
+    }
+    if (root.contains("budgetServicePercent")) {
+      const auto& values = root.at("budgetServicePercent");
+      if (!values.is_array() || values.size() != kServiceTypeCount)
+        return fail(errorMessage, "gameplay session has invalid service funding");
+      for (size_t i = 0; i < kServiceTypeCount; ++i) {
+        if (!values[i].is_number_integer())
+          return fail(errorMessage, "gameplay session has invalid service funding");
+        const auto value = values[i].get<int64_t>();
+        if (value < 0 || value > 100)
+          return fail(errorMessage, "gameplay session has invalid service funding");
+        loaded.budgetPolicy.servicePercent[i] = static_cast<int>(value);
+      }
+    }
+    if (root.contains("treasuryLedger")) {
+      const auto& item = root.at("treasuryLedger");
+      auto& ledger = loaded.treasuryLedger;
+      ledger.valid = item.at("valid").get<bool>();
+      if (ledger.valid) {
+        const int64_t tick = item.at("tick").get<int64_t>();
+        if (tick < 0 || tick > loaded.tick)
+          return fail(errorMessage, "gameplay session has invalid ledger tick");
+        ledger.tick = static_cast<uint32_t>(tick);
+        if (!item.at("revenue").is_array() || item.at("revenue").size() != 6 ||
+            !item.at("expenses").is_array() || item.at("expenses").size() != 5)
+          return fail(errorMessage, "gameplay session has invalid ledger categories");
+        for (const auto& values : {item.at("revenue"), item.at("expenses")})
+          for (const auto& value : values)
+            if (!value.is_number_integer())
+              return fail(errorMessage, "gameplay session has invalid ledger category amount");
+        ledger.breakdown.revenue = item.at("revenue").get<std::array<int64_t, 6>>();
+        ledger.breakdown.expenses = item.at("expenses").get<std::array<int64_t, 5>>();
+        ledger.breakdown.totalRevenue = item.at("totalRevenue").get<int64_t>();
+        ledger.breakdown.totalExpenses = item.at("totalExpenses").get<int64_t>();
+        ledger.fundsBefore = item.at("fundsBefore").get<int64_t>();
+        ledger.fundsAfter = item.at("fundsAfter").get<int64_t>();
+        ledger.debtBefore = item.at("debtBefore").get<int64_t>();
+        ledger.flow.revenue = ledger.breakdown.totalRevenue;
+        ledger.flow.expenses = ledger.breakdown.totalExpenses;
+        ledger.flow.net = item.at("net").get<int64_t>();
+        ledger.flow.shortfall = item.at("shortfall").get<int64_t>();
+        ledger.flow.debtIssued = item.at("debtIssued").get<int64_t>();
+        ledger.flow.debtRepaid = item.at("debtRepaid").get<int64_t>();
+        ledger.flow.interestCharged = item.at("interestCharged").get<int64_t>();
+        ledger.flow.outstandingDebt = item.at("outstandingDebt").get<int64_t>();
+        bool valid = true;
+        for (auto value : ledger.breakdown.revenue) valid = valid && value >= 0;
+        for (auto value : ledger.breakdown.expenses) valid = valid && value >= 0;
+        const auto& flow = ledger.flow;
+        for (auto value : {ledger.fundsBefore, ledger.fundsAfter, ledger.debtBefore,
+                          flow.revenue, flow.expenses, flow.shortfall,
+                          flow.debtIssued, flow.debtRepaid, flow.interestCharged,
+                          flow.outstandingDebt}) valid = valid && value >= 0;
+        valid = valid && std::accumulate(ledger.breakdown.revenue.begin(),
+          ledger.breakdown.revenue.end(), 0.L) == flow.revenue;
+        valid = valid && std::accumulate(ledger.breakdown.expenses.begin(),
+          ledger.breakdown.expenses.end(), 0.L) == flow.expenses;
+        valid = valid && flow.net == ledger.fundsAfter - ledger.fundsBefore;
+        valid = valid && flow.shortfall == flow.debtIssued;
+        valid = valid && static_cast<long double>(ledger.fundsBefore) + flow.revenue -
+          flow.expenses + flow.debtIssued - flow.debtRepaid == ledger.fundsAfter;
+        valid = valid && static_cast<long double>(ledger.debtBefore) + flow.debtIssued +
+          flow.interestCharged - flow.debtRepaid == flow.outstandingDebt;
+        if (!valid) return fail(errorMessage, "gameplay session has inconsistent treasury ledger");
+      }
+    }
     loaded.paused = root.at("paused").get<bool>();
     loaded.tickIntervalMs = root.at("tickIntervalMs").get<uint32_t>();
     loaded.treasuryRevenue = root.value("treasuryRevenue", int64_t{0});
@@ -474,6 +567,8 @@ PlayableCityTickState GameplaySessionSystem::advance(
 ) {
   PlayableCityTickState state;
   state.tick = session.tick;
+  state.budgetPolicy = session.budgetPolicy;
+  state.treasuryLedger = session.treasuryLedger;
   state.populationTarget = session.populationTarget;
   state.migrationConditions = session.migrationConditions;
   state.populationChange = session.populationChange;
@@ -525,6 +620,8 @@ PlayableCityTickState GameplaySessionSystem::advance(
   session.autonomousExtent = construction.extent;
   session.emptyZonedCount = construction.emptyZonedCount;
   session.tick = state.tick;
+  session.budgetPolicy = state.budgetPolicy;
+  session.treasuryLedger = state.treasuryLedger;
   session.populationTarget = state.populationTarget;
   session.migrationConditions = state.migrationConditions;
   session.populationChange = state.populationChange;

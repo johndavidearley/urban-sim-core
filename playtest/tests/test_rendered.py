@@ -27,6 +27,170 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_service_funding_controls_coverage_bills_and_continuation(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        for service, x in (("power", 15), ("water", 17)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
+        for zone, y in (("residential", 15), ("commercial", 17)):
+            await s.request("tool", {"action": "apply", "name": "zone", "zone": zone, "x1": 6, "y1": y, "x2": 13, "y2": y})
+        await s.request("time", {"action": "step", "ticks": 20})
+        await s.request("tool", {"action": "apply", "name": "service", "service": "fire", "x1": 22, "y1": 15})
+        before = s.last_state.copy()
+        self.assertGreater(before["budget"]["service_coverage"][0], 0)
+        await s.request("budget", {"action": "services"})
+        layout = await s.request("inspect", {"section": "ui"})
+        button = next(c for c in layout["controls"] if c["name"] == "funding_0_minus")
+        for _ in range(2):
+            await s.request("input", {"events": [{"type": "down", "x": button["x"]+2, "y": button["y"]+2},
+                                                 {"type": "up", "x": button["x"]+2, "y": button["y"]+2}]})
+        self.assertEqual(s.last_state["budget"]["service_percent"][0], 50)
+        self.assertEqual(s.last_state["budget"]["service_costs"][0], 13)
+        self.assertLess(s.last_state["budget"]["service_coverage"][0], before["budget"]["service_coverage"][0])
+        for key in ("funds", "tick", "population", "debt"):
+            self.assertEqual(s.last_state[key], before[key], key)
+        self.assertEqual(s.last_state["budget"]["last_tick"], before["budget"]["last_tick"])
+        taxes = [7,9,8,10,11]
+        await s.request("budget", {"action": "set_taxes", "tax_percent": taxes})
+        self.assertEqual(s.last_state["budget"]["service_percent"][0], 50)
+        funding = [50,100,100,100,0,100,100,100,100,100,100]
+        await s.request("budget", {"action": "set_funding", "service_percent": funding})
+        self.assertEqual(s.last_state["budget"]["tax_percent"], taxes)
+        self.assertEqual(s.last_state["budget"]["service_costs"][4], 0)
+        self.assertEqual(s.last_state["budget"]["service_coverage"][4], 0)
+        self.assertEqual(s.last_state["metrics"]["power_supply_mw"], 0)
+        self.assertEqual(s.last_state["facilities"], 3)
+        for invalid in ([100]*10, [101]*11, [-1]*11, [50.5]*11):
+            with self.assertRaises(PlaytestError):
+                await s.request("budget", {"action": "set_funding", "service_percent": invalid})
+        await s.request("input", {"events": [{"type": "move", "x": 0, "y": 0}]})
+        await s.screenshot("funding-services")
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        await s.screenshot("funding-minimum-window")
+        await s.city("save")
+        frozen = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core_copy = s.artifact("funding-checkpoint.city.json")
+        core_copy.write_bytes(Path(frozen["citySnapshot"]).read_bytes())
+        frozen["citySnapshot"] = str(core_copy)
+        checkpoint = s.artifact("funding-checkpoint.json")
+        checkpoint.write_text(json.dumps(frozen))
+        await s.request("time", {"action": "step", "ticks": 2})
+        self.assertEqual(s.last_state["budget"]["last_tick"]["expenses"][3], 41)
+        await s.city("save")
+        gui = json.loads(s.artifact("urban_sim_session.json").read_text())
+        output = s.artifact("funding-headless.json")
+        cli = Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest", "-cli"))
+        process = await asyncio.create_subprocess_exec(str(cli), "--simulate", "2",
+            "--simulate-session", str(checkpoint), "--simulate-session-out", str(output),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+        self.assertEqual(process.returncode, 0, stderr.decode())
+        headless = json.loads(output.read_text())
+        for key in ("funds", "tick", "treasuryDebt", "treasuryLedger", "budgetTaxPercent", "budgetServicePercent", "migrationConditions", "populationChange"):
+            self.assertEqual(headless[key], gui[key], key)
+        await s.city("load", import_path=str(output))
+        self.assertEqual(s.last_state["budget"]["service_percent"], funding)
+        self.assertEqual(s.last_state["metrics"]["power_supply_mw"], 0)
+        await s.request("budget", {"action": "reset_funding"})
+        self.assertEqual(s.last_state["budget"]["tax_percent"], taxes)
+        self.assertEqual(s.last_state["budget"]["service_percent"], [100]*11)
+        self.assertEqual(s.last_state["metrics"]["power_supply_mw"], 100)
+        self.assertEqual(s.last_state["budget"]["service_coverage"][0], 1)
+        self.assertEqual(s.last_state["facilities"], 3)
+
+    async def test_budget_policy_records_and_replays(self):
+        s = self.session
+        await record(s, "start")
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "zone", "zone": "park", "x1": 8, "y1": 12})
+        await s.request("budget", {"action": "open"})
+        await s.request("budget", {"action": "set_taxes", "tax_percent": [12, 8, 6, 9, 10]})
+        await s.request("time", {"action": "step", "ticks": 2})
+        await s.request("budget", {"action": "reset"})
+        await s.request("budget", {"action": "set_taxes", "tax_percent": [7, 9, 8, 10, 11]})
+        await s.request("budget", {"action": "close"})
+        await s.city("save")
+        await s.city("load")
+        await s.request("budget", {"action": "set_funding", "service_percent": [50]*11})
+        await assert_state(s, "state.budget.service_percent.0", "eq", 50)
+        await assert_state(s, "state.budget.tax_percent.0", "eq", 7)
+        await assert_state(s, "state.budget.last_tick.tick", "eq", 2)
+        scenario = await record(s, "stop", "budget-policy")
+        self.assertTrue((await replay(s, scenario["scenario"], 2))["identical"])
+
+    async def test_m23_budget_controls_preview_history_and_headless(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        for service, x in (("power", 15), ("water", 17)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
+        for zone, y in (("residential", 15), ("commercial", 17)):
+            await s.request("tool", {"action": "apply", "name": "zone", "zone": zone, "x1": 6, "y1": y, "x2": 13, "y2": y})
+        await s.request("time", {"action": "step", "ticks": 20})
+        initial = s.last_state.copy()
+        self.assertGreater(initial["population"], 0)
+        self.assertTrue(initial["budget"]["last_tick"]["valid"])
+        await s.request("input", {"events": [{"type": "key", "key": "F6"}]})
+        self.assertTrue(s.last_state["ui"]["budget"])
+        layout = await s.request("inspect", {"section": "ui"})
+        plus = next(c for c in layout["controls"] if c["name"] == "tax_0_plus")
+        await s.request("input", {"events": [{"type": "down", "x": plus["x"] + 4, "y": plus["y"] + 4},
+                                             {"type": "up", "x": plus["x"] + 4, "y": plus["y"] + 4}]})
+        self.assertEqual(s.last_state["budget"]["tax_percent"], [6, 8, 6, 9, 10])
+        for key in ("funds", "tick", "debt", "population"):
+            self.assertEqual(s.last_state[key], initial[key], key)
+        self.assertEqual(s.last_state["budget"]["last_tick"], initial["budget"]["last_tick"])
+        await s.request("budget", {"action": "set_taxes", "tax_percent": [0, 0, 0, 0, 0]})
+        self.assertEqual(s.last_state["budget"]["preview"]["total_revenue"], 0)
+        await s.request("budget", {"action": "set_taxes", "tax_percent": [20, 20, 20, 20, 20]})
+        self.assertGreater(s.last_state["budget"]["preview"]["total_revenue"], 0)
+        preview = s.last_state["budget"]["preview"]
+        self.assertEqual(sum(preview["revenue"]), preview["total_revenue"])
+        self.assertEqual(sum(preview["expenses"]), preview["total_expenses"])
+        self.assertEqual(preview["expenses"][4], 0)
+        for invalid in ([21, 8, 6, 9, 10], [-1, 8, 6, 9, 10], [5, 8]):
+            with self.assertRaises(PlaytestError):
+                await s.request("budget", {"action": "set_taxes", "tax_percent": invalid})
+        await s.request("input", {"events": [{"type": "move", "x": 0, "y": 0}]})
+        await s.screenshot("budget-normal")
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        await s.screenshot("budget-minimum-window")
+        await s.city("save")
+        await s.city("load")
+        self.assertEqual(s.last_state["budget"]["tax_percent"], [20] * 5)
+        self.assertEqual(s.last_state["budget"]["last_tick"], initial["budget"]["last_tick"])
+        await s.city("save")
+        frozen = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core_copy = s.artifact("budget-checkpoint.city.json")
+        core_copy.write_bytes(Path(frozen["citySnapshot"]).read_bytes())
+        frozen["citySnapshot"] = str(core_copy)
+        checkpoint = s.artifact("budget-checkpoint.json")
+        checkpoint.write_text(json.dumps(frozen))
+        await s.request("time", {"action": "step", "ticks": 1})
+        await s.city("save")
+        gui = json.loads(s.artifact("urban_sim_session.json").read_text())
+        ledger = s.last_state["budget"]["last_tick"]
+        self.assertEqual(ledger["funds_before"] + ledger["total_revenue"] -
+            ledger["total_expenses"] + ledger["borrowed"] - ledger["repaid"], ledger["funds_after"])
+        self.assertEqual(sum(ledger["revenue"]), ledger["total_revenue"])
+        self.assertEqual(sum(ledger["expenses"]), ledger["total_expenses"])
+        cli = Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest", "-cli"))
+        output = s.artifact("budget-headless.json")
+        process = await asyncio.create_subprocess_exec(str(cli), "--simulate", "1",
+            "--simulate-session", str(checkpoint), "--simulate-session-out", str(output),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+        self.assertEqual(process.returncode, 0, stderr.decode())
+        headless = json.loads(output.read_text())
+        for key in ("funds", "tick", "treasuryDebt", "treasuryLedger", "budgetTaxPercent"):
+            self.assertEqual(headless[key], gui[key], key)
+        await s.request("budget", {"action": "open"})
+        await s.request("budget", {"action": "reset"})
+        self.assertEqual(s.last_state["budget"]["tax_percent"], [5, 8, 6, 9, 10])
+        await s.request("input", {"events": [{"type": "key", "key": "Escape"}]})
+        self.assertFalse(s.last_state["ui"]["budget"])
+
     async def test_m22_saved_city_debt_and_disasters_match_headless(self):
         s = self.session
         await s.city("new", 32)
@@ -791,7 +955,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         async with stdio_client(parameters) as (read, write):
             async with ClientSession(read, write) as client:
                 await client.initialize()
-                self.assertEqual(len((await client.list_tools()).tools), 16)
+                self.assertEqual(len((await client.list_tools()).tools), 17)
                 self.assertEqual(len((await client.list_prompts()).prompts), 2)
                 self.assertEqual(len((await client.list_resources()).resources), 5)
                 launch = await client.call_tool("launch", {})
@@ -810,6 +974,14 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                 )
 
                 await client.call_tool("city", {"action": "new", "size": 32})
+                changed = await client.call_tool("budget", {
+                    "action": "set_taxes", "tax_percent": [6, 8, 6, 9, 10]})
+                self.assertFalse(changed.isError)
+                self.assertEqual(changed.structuredContent["tax_percent"], [6, 8, 6, 9, 10])
+                funded = await client.call_tool("budget", {"action": "set_funding", "service_percent": [50]*11})
+                self.assertFalse(funded.isError)
+                self.assertEqual(funded.structuredContent["service_percent"], [50]*11)
+                self.assertFalse((await client.call_tool("budget", {"action": "reset"})).isError)
                 summary = await client.call_tool("inspect", {"section": "summary"})
                 self.assertFalse(summary.isError)
                 self.assertEqual(

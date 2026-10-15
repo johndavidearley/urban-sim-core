@@ -680,3 +680,50 @@ session mode uses playable rules (including saved G-mode and disasters),
 rather than the autonomous simulator's valuation and construction policy.
 `--simulate-disasters` can additionally enable events for that continuation.
 Use the default session settings when comparing the visualizer and CLI.
+
+
+### M23: city budget controls
+
+Press **F6**, or click **F6 BUDGET** in the detailed HUD, to inspect the city
+budget. Change residential, commercial, industrial, office, and income taxes
+with the minus/plus buttons (0–20%, in whole percentage points). **Reset
+default taxes** restores 5/8/6/9/10. Tax edits refresh the estimate immediately
+without advancing time, spending cash, or changing the last completed ledger.
+Taxes currently affect revenue; they do not alter migration or zoning demand.
+
+The panel separates the **next tick estimate** from the **last completed
+tick**. The estimate itemizes taxes, exports, building/park upkeep, imports,
+and service operation, excluding new building growth and debt flows. The last
+tick records actual income, expenses, building growth costs, borrowing,
+repayment, interest, and before/after cash and debt. Road, zone, and service
+purchases are paid immediately, outside that simulation-tick ledger.
+Displayed category amounts reconcile to totals after currency rounding.
+
+F6 or Escape closes the panel; Space toggles pause, N or period steps a paused
+city, and F5 saves while the panel is open. Policy and ledger history persist
+in playable saves and `--simulate-session` continuation. Older saves retain
+the default rates and begin recording ledger history on their next tick.
+The Services tab adds per-service funding controls (described below).
+
+
+In **F6 → Services**, adjust any of the 11 departments from 0–100% in
+25-point steps. All start at 100%. The table shows funding, operating cost
+per tick, and road-reachable building coverage. **Restore full funding**
+restores services without changing taxes; the Taxes tab's reset preserves
+service funding.
+
+Cuts reduce each facility's road-hop reach, along with power/water supply and
+waste/deathcare processing quality and capacity. Coverage depends on the road
+network and building positions, so it need not fall in proportion to funding.
+At 0% a department stops operating and incurs no operating expense; its
+facilities remain installed and can resume when funding is restored. The
+original facility ratings are preserved, so repeated cuts/restoration never
+compound. Construction prices and park upkeep are unchanged.
+
+Paused funding edits refresh coverage, utility connectivity, land value and
+the budget estimate without advancing time, charging cash, processing waste
+or deaths, or changing the last-tick ledger. Consequences for growth,
+migration, schooling, waste and mortality occur through normal subsequent
+ticks. Utility capacity and reach are separate constraints; the coverage
+column shows road reach, while utility supply/shortage is reported in the HUD.
+Funding persists with the city and is honored by both simulation hosts.

@@ -760,3 +760,104 @@ TEST(PlayableCityTickTests, TransitCoverageRefreshesWhenRoadsExpand) {
   EXPECT_EQ(state.transitCache.entries.front().distanceField.count({4, 5}), 1u);
   EXPECT_EQ(state.transitCache.topologyVersion, roads.getTopologyVersion());
 }
+
+TEST(PlayableCityTickTests, CitywideTaxesChangeRevenueAndLedgerWithoutChangingDefaultRates) {
+  const TaxRates defaults;
+  const auto policyDefaults = BudgetPolicy{}.rates();
+  EXPECT_FLOAT_EQ(defaults.residentialRate, policyDefaults.residentialRate);
+  EXPECT_FLOAT_EQ(defaults.commercialRate, policyDefaults.commercialRate);
+  EXPECT_FLOAT_EQ(defaults.industrialRate, policyDefaults.industrialRate);
+  EXPECT_FLOAT_EQ(defaults.officeRate, policyDefaults.officeRate);
+  EXPECT_FLOAT_EQ(defaults.incomeRate, policyDefaults.incomeRate);
+  CityMap map({24, 24});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  laySpine(map, roads);
+  auto& tile = map.getTile({7, 13});
+  tile.zone = static_cast<int>(ZoneType::Residential);
+  tile.buildingId = store.createBuilding(BuildingType::Residential, {7, 13}, 80);
+  PopulationSystem::allocate(store, population, 80, 1);
+  PlayableCityTickState state;
+  refreshDerivedCityState(map, roads, store, population, {}, state);
+  const auto originalRevenue = state.economy.residentialTaxRevenue;
+  state.budgetPolicy.taxPercent[0] = 20;
+  refreshDerivedCityState(map, roads, store, population, {}, state);
+  EXPECT_GE(state.economy.residentialTaxRevenue, originalRevenue * 4);
+  PlayableCityTickOptions options;
+  options.growthChance = 0.f;
+  options.requireUtilities = false;
+  int64_t funds = 0;
+  state.treasuryDebt = 1000;
+  playableCityTick(map, roads, store, population, {}, state, funds, options);
+  const auto& ledger = state.treasuryLedger;
+  EXPECT_TRUE(ledger.valid);
+  EXPECT_EQ(ledger.tick, state.tick);
+  EXPECT_EQ(ledger.breakdown.totalRevenue, state.treasuryRevenue);
+  EXPECT_EQ(ledger.breakdown.totalExpenses, state.treasuryExpenses);
+  EXPECT_EQ(ledger.fundsAfter, funds);
+  EXPECT_EQ(ledger.debtBefore + ledger.flow.debtIssued + ledger.flow.interestCharged -
+            ledger.flow.debtRepaid, state.treasuryDebt);
+}
+
+TEST(PlayableCityTickTests, FundingChangesReachCapacityAndBillsWithoutMutatingFacilities) {
+  CityMap map({32, 32});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  laySpine(map, roads);
+  for (const Coord c : {Coord{3,17}, Coord{23,17}}) {
+    map.getTile(c).zone = static_cast<int>(ZoneType::Residential);
+    map.getTile(c).buildingId = store.createBuilding(BuildingType::Residential, c, 40);
+  }
+  PopulationSystem::allocate(store, population, 40, 1);
+  const std::vector<ServiceFacility> facilities{
+    {ServiceType::Fire, {4,15}, 24, 1.f}, {ServiceType::Power, {14,15}, 30, 1.f},
+    {ServiceType::Water, {15,15}, 30, 1.f}, {ServiceType::Garbage, {6,15}, 24, 1.f},
+    {ServiceType::Cemetery, {7,15}, 24, 1.f}};
+  PlayableCityTickState state;
+  DerivedCityRefreshOptions refresh;
+  refresh.runTraffic = false;
+  refreshDerivedCityState(map, roads, store, population, facilities, state, refresh);
+  EXPECT_FLOAT_EQ(state.serviceSummary.fireCoverage, 1.f);
+  EXPECT_FLOAT_EQ(state.serviceSummary.powerGenerationMW, 100.f);
+  state.budgetPolicy.servicePercent[0] = 50;
+  state.budgetPolicy.servicePercent[4] = 25;
+  state.budgetPolicy.servicePercent[5] = 50;
+  state.budgetPolicy.servicePercent[7] = 50;
+  state.budgetPolicy.servicePercent[9] = 50;
+  refreshDerivedCityState(map, roads, store, population, facilities, state, refresh);
+  EXPECT_FLOAT_EQ(state.serviceSummary.fireCoverage, .5f);
+  EXPECT_FLOAT_EQ(state.serviceSummary.powerGenerationMW, 25.f);
+  EXPECT_FLOAT_EQ(state.serviceSummary.waterSupply, 50.f);
+  const auto funded = state.budgetPolicy.fundedFacilities(facilities);
+  EXPECT_FLOAT_EQ(funded.front().quality, .5f);
+  EXPECT_EQ(funded.front().maxTravelDistance, 12);
+  EXPECT_FLOAT_EQ(facilities.front().quality, 1.f);
+  EXPECT_EQ(facilities.front().maxTravelDistance, 24);
+  const auto waste = WasteSystem::evaluate(store, funded, state.serviceSummary);
+  EXPECT_EQ(waste.collectionCapacity, 200);
+  DeathcareState backlog;
+  backlog.awaitingDisposition = 100;
+  const auto deathcare = DeathcareSystem::step(population, funded, state.serviceSummary, 0, 0, backlog);
+  EXPECT_EQ(deathcare.capacity, 25u);
+  EXPECT_LT(deathcare.processed, 50u);
+  int64_t funds = 50000;
+  PlayableCityTickOptions options;
+  options.growthChance = 0;
+  options.requireUtilities = false;
+  playableCityTick(map, roads, store, population, facilities, state, funds, options);
+  EXPECT_EQ(state.treasuryLedger.breakdown.expenses[3], state.budgetPolicy.serviceCost(facilities));
+  state.budgetPolicy.servicePercent.fill(0);
+  refreshDerivedCityState(map, roads, store, population, facilities, state, refresh);
+  EXPECT_FLOAT_EQ(state.serviceSummary.fireCoverage, 0.f);
+  EXPECT_FLOAT_EQ(state.serviceSummary.powerGenerationMW, 0.f);
+  EXPECT_FALSE(map.getTile({3,17}).connectedToPower);
+  EXPECT_TRUE(state.budgetPolicy.fundedFacilities(facilities).empty());
+  EXPECT_EQ(state.budgetPolicy.serviceCost(facilities), 0);
+  state.budgetPolicy.servicePercent.fill(100);
+  refreshDerivedCityState(map, roads, store, population, facilities, state, refresh);
+  EXPECT_FLOAT_EQ(state.serviceSummary.fireCoverage, 1.f);
+  EXPECT_FLOAT_EQ(state.serviceSummary.powerGenerationMW, 100.f);
+  EXPECT_TRUE(map.getTile({3,17}).connectedToPower);
+}

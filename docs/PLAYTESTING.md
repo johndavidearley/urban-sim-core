@@ -287,3 +287,39 @@ visualizer and `--simulate-session`, compares treasury/disaster/population
 state and semantic city snapshots, then reloads the CLI output in the renderer.
 Entity IDs are process-local; the comparison resolves tile references to
 building positions and compares population groups by contents.
+
+
+M23 adds `features.budget_controls`, F6, and the `budget` command/tool:
+`inspect`, `open`, `close`, `reset`, and `set_taxes`. `set_taxes` accepts
+`tax_percent` as exactly five integers in 0..20, ordered residential,
+commercial, industrial, office, income. Invalid requests are rejected before
+mutation. Detailed HUD inspection exposes `budget`; an open panel exposes
+`budget_close`, `budget_reset`, and `tax_0_minus`/`tax_0_plus` through index 4.
+
+State `budget` contains `tax_percent`, `preview`, and `last_tick`.
+Revenue arrays are ordered residential, commercial, industrial, office,
+income, exports. Expense arrays are building upkeep, park upkeep, imports,
+service operation, building growth. Preview growth is zero; only completed
+ticks know actual new growth costs. `last_tick.valid` distinguishes old saves
+or a fresh city from a recorded transaction. `ui.budget` is the panel state.
+Opening or editing the panel does not advance time or alter recorded history.
+
+
+The completed M23 budget API adds `set_funding` with `service_percent`:
+exactly 11 integer percentages in 0..100, ordered Fire, Police, Health,
+Education, Power, Water, Sanitation, Garbage, Recycling, Cemetery, Crematorium.
+Defaults are all 100. `set_taxes` preserves funding; `set_funding` preserves
+taxes. `reset` restores the whole policy, while `reset_funding` preserves taxes.
+`services` and `taxes` open the appropriate budget tab; `open` keeps the
+current tab. State adds `budget.service_percent`, `service_costs`, and
+`service_coverage` (road-reachable building fractions), with `ui.budget_services`
+for the selected tab. Funding is saved in `budgetServicePercent`; older saves
+omit it and load all services at 100%.
+
+Open-panel UI inspection adds `budget_taxes`, `budget_services`, and
+`funding_0_minus`/`funding_0_plus` through index 10 on the Services tab.
+The UI uses 25-point steps; semantic commands accept any whole percentage.
+Operating costs are summed and rounded to dollars per department, using the
+same function for preview and billing. Invalid arrays/rates are rejected
+before policy or city mutation. Effective facilities are derived from original
+ratings each refresh; raw facility inspection and saves retain installed ratings.

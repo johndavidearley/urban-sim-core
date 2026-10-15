@@ -308,3 +308,41 @@ TEST(VisualizerGeometry, TransitOverlayHasReachableNinthButton) {
   EXPECT_EQ(mode, OverlayMode::Transit);
   EXPECT_STREQ(overlayModeName(mode), "transit");
 }
+
+TEST(VisualizerGeometry, BudgetControlsStayInsideTheMinimumWindow) {
+  const auto panel = budgetPanelRect(800, 640);
+  EXPECT_GE(panel.x, 0);
+  EXPECT_GE(panel.y, 0);
+  EXPECT_LE(panel.x + panel.w, 800);
+  EXPECT_LE(panel.y + panel.h, 640);
+  for (int action = 0; action < 12; ++action) {
+    const auto control = budgetControlRect(action, 800, 640);
+    EXPECT_GE(control.x, panel.x);
+    EXPECT_GE(control.y, panel.y);
+    EXPECT_LE(control.x + control.w, panel.x + panel.w);
+    EXPECT_LE(control.y + control.h, panel.y + panel.h);
+    EXPECT_EQ(budgetHitTest(control.x + 1, control.y + 1, 800, 640), action);
+  }
+  EXPECT_EQ(budgetHitTest(0, 0, 800, 640), -1);
+  DrawList list;
+  BudgetPolicy policy;
+  policy.taxPercent[0] = 20;
+  drawBudgetPanel(&list, 800, 640, policy, {}, {}, 50000, 0, 0, 0);
+  EXPECT_GT(area(list), 0.f);
+}
+
+TEST(VisualizerGeometry, ServiceFundingControlsFitTheMinimumWindowAndTabsDoNotOverlap) {
+  const auto panel = budgetPanelRect(800,640);
+  for (int action = 0; action < 36; ++action) {
+    if (action >= 2 && action < 12) continue;
+    const auto r = budgetControlRect(action,800,640,true);
+    EXPECT_GE(r.x, panel.x);
+    EXPECT_GE(r.y, panel.y);
+    EXPECT_LE(r.x+r.w, panel.x+panel.w);
+    EXPECT_LE(r.y+r.h, panel.y+panel.h);
+    EXPECT_EQ(budgetHitTest(r.x+1,r.y+1,800,640,true),action);
+  }
+  DrawList list;
+  drawBudgetPanel(&list,800,640,{}, {}, {},50000,0,0,0,true);
+  EXPECT_GT(area(list),0.f);
+}

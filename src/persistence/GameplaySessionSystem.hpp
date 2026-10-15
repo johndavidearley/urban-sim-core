@@ -1,4 +1,6 @@
 #pragma once
+#include "src/gameplay/BudgetPolicy.hpp"
+#include "src/gameplay/TreasurySystem.hpp"
 
 #include "src/systems/MigrationSystem.hpp"
 #include "src/systems/CityDisasterState.hpp"
@@ -17,6 +19,8 @@ class PopulationStore;
 class RoadNetwork;
 
 struct GameplaySessionState {
+  BudgetPolicy budgetPolicy;
+  TreasuryLedger treasuryLedger;
   bool enableDisasters = false;
   CityDisasterState disasters;
   uint32_t simulationSeed = 98765;

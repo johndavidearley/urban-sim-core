@@ -70,6 +70,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
                     "time",
                     "tool",
                     "view",
+                    "budget",
                     "inspect",
                     "coordinates",
                     "screenshot",

@@ -1,4 +1,5 @@
 #pragma once
+#include "src/gameplay/BudgetPolicy.hpp"
 
 #include <cstdint>
 #include "src/gameplay/TreasurySystem.hpp"
@@ -103,6 +104,7 @@ struct SimResult {
 };
 
 struct SimOptions {
+  BudgetPolicy budgetPolicy;
   int64_t initialFunds = 50000;
   TreasuryDebt initialDebt;
   double treasuryTickScale = 0.01;

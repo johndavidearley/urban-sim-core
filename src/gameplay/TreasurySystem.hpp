@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 
 struct EconomyState;
 
@@ -22,8 +23,30 @@ struct TreasuryDebt {
   double interestRemainder = 0.0;
 };
 
+// Display amounts in treasury dollars, with rounding reconciled to the total.
+struct TreasuryBreakdown {
+  // Residential, commercial, industrial, office, income, exports.
+  std::array<int64_t, 6> revenue{};
+  // Buildings, parks, imports, service operation, growth construction.
+  std::array<int64_t, 5> expenses{};
+  int64_t totalRevenue = 0;
+  int64_t totalExpenses = 0;
+};
+
+struct TreasuryLedger {
+  bool valid = false;
+  uint32_t tick = 0;
+  TreasuryBreakdown breakdown;
+  TreasuryFlow flow;
+  int64_t fundsBefore = 0;
+  int64_t fundsAfter = 0;
+  int64_t debtBefore = 0;
+};
+
 class TreasurySystem {
 public:
+  static TreasuryBreakdown breakdown(const EconomyState& economy,
+    double tickScale = 0.01, int64_t serviceCosts = 0, int64_t constructionCosts = 0);
   static TreasuryFlow applyEconomy(
     const EconomyState& economy,
     int64_t& funds,

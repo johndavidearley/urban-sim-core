@@ -13,6 +13,7 @@ struct EconomyState {
   int64_t industrialTaxRevenue = 0;
   int64_t officeTaxRevenue = 0;
   int64_t totalTaxRevenue = 0;
+  int64_t incomeTaxRevenue = 0;
 
   // Expenses
   int64_t residentialMaintenance = 0;

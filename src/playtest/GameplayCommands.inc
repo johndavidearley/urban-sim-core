@@ -11,6 +11,49 @@ if (command == "stop") {
   running = false;
   return Json::object();
 }
+if (command == "budget") {
+  const auto action = args.value("action", "inspect");
+  if (action == "set_taxes") {
+    const auto& values = args.at("tax_percent");
+    if (!values.is_array() || values.size() != 5)
+      throw std::runtime_error("Provide five tax percentages from 0 to 20");
+    auto policy = liveState.budgetPolicy;
+    for (size_t i = 0; i < 5; ++i) {
+      if (!values[i].is_number_integer())
+        throw std::runtime_error("Tax percentages must be integers from 0 to 20");
+      const auto value = values[i].get<int64_t>();
+      if (value < 0 || value > 20)
+        throw std::runtime_error("Tax percentages must be integers from 0 to 20");
+      policy.taxPercent[i] = static_cast<int>(value);
+    }
+    setBudgetPolicy(policy);
+  } else if (action == "set_funding") {
+    const auto& values = args.at("service_percent");
+    if (!values.is_array() || values.size() != kServiceTypeCount)
+      throw std::runtime_error("Provide eleven service funding percentages from 0 to 100");
+    auto policy = liveState.budgetPolicy;
+    for (size_t i = 0; i < kServiceTypeCount; ++i) {
+      if (!values[i].is_number_integer())
+        throw std::runtime_error("Service funding must be integer percentages from 0 to 100");
+      const auto value = values[i].get<int64_t>();
+      if (value < 0 || value > 100)
+        throw std::runtime_error("Service funding must be integer percentages from 0 to 100");
+      policy.servicePercent[i] = static_cast<int>(value);
+    }
+    setBudgetPolicy(policy);
+  } else if (action == "reset_funding") {
+    auto policy = liveState.budgetPolicy;
+    policy.servicePercent = BudgetPolicy{}.servicePercent;
+    setBudgetPolicy(policy);
+  } else if (action == "services" || action == "taxes") {
+    budgetServices = action == "services";
+    showBudgetPanel = true; toolDragging = false; cameraPanning = false;
+  } else if (action == "reset") setBudgetPolicy(BudgetPolicy{});
+  else if (action == "open") { showBudgetPanel = true; toolDragging = false; cameraPanning = false; }
+  else if (action == "close") showBudgetPanel = false;
+  else if (action != "inspect") throw std::runtime_error("Unknown budget action");
+  return budgetStatus();
+}
 if (command == "inspect") {
   const auto section = args.value("section", "summary");
   if (section == "summary")
@@ -30,12 +73,21 @@ if (command == "inspect") {
                                         "cancel"}[static_cast<size_t>(i - 1)],
              quitButtonRect(static_cast<QuitAction>(i), windowWidth,
                             windowHeight));
-    else {
+    else if (showBudgetPanel) {
+      for (int i = 0; i < 36; ++i) {
+        if ((i >= 2 && i < 12 && budgetServices) || (i >= 14 && !budgetServices)) continue;
+        rect(i == 0 ? "budget_close" : (i == 1 ? "budget_reset" :
+          (i == 12 ? "budget_taxes" : (i == 13 ? "budget_services" :
+            (i >= 14 ? "funding_" + std::to_string((i - 14) / 2) : "tax_" + std::to_string((i - 2) / 2)) +
+              (i % 2 == 0 ? "_minus" : "_plus")))),
+          budgetControlRect(i, windowWidth, windowHeight, budgetServices));
+      }
+    } else {
       if (!cleanUiMode)
-        for (int i = 1; i <= 7; ++i)
-          rect(std::array<std::string, 7>{"pause", "speed_1", "speed_2",
+        for (int i = 1; i <= 8; ++i)
+          rect(std::array<std::string, 8>{"pause", "speed_1", "speed_2",
                                           "speed_3", "save",
-                                          "load", "disasters"}[static_cast<size_t>(i - 1)],
+                                          "load", "disasters", "budget"}[static_cast<size_t>(i - 1)],
                hudControlRect(static_cast<HudAction>(i), windowWidth));
       for (int i = 0; i < 5; ++i)
         rect(std::array<std::string, 5>{"road", "zone", "bulldoze", "service",

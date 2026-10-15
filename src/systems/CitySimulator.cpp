@@ -219,14 +219,16 @@ SimResult CitySimulator::run(
     const bool serviceActive = (tick % std::max(1, options.serviceInterval) == 0);
     const bool trafficActive = options.runTraffic && (tick % std::max(1, options.trafficInterval) == 0);
 
+    auto fundedFacilities = options.budgetPolicy.fundedFacilities(facilities);
     // Service prep: facility placement and BFS cache rebuild are state-mutating
     // and must complete before the concurrent evaluation starts.
     if (serviceActive) {
       const auto t0 = Clock::now();
       city_sim::placeFacilitiesIfNeeded(map, facilities, population.getTotalPopulation(), center, extent, serviceRadius,
                               options.enableUtilities, /*includeWasteDeathcare=*/true);
-      if (!ServiceSystem::isCacheValid(roads, facilities, coverageCache)) {
-        ServiceSystem::buildCache(roads, facilities, coverageCache);
+      fundedFacilities = options.budgetPolicy.fundedFacilities(facilities);
+      if (!ServiceSystem::isCacheValid(roads, fundedFacilities, coverageCache)) {
+        ServiceSystem::buildCache(roads, fundedFacilities, coverageCache);
       }
       if (options.enableUtilities) {
         city_sim::updateUtilityConnectivity(
@@ -357,7 +359,7 @@ SimResult CitySimulator::run(
       lvBounds.x1 = ax1;
       lvBounds.y1 = ay1;
       economy = EconomySystem::calculateEconomy(
-        store, population, TaxRates{}, &map, TradeRates{}, inflationMultiplier, lvBounds);
+        store, population, options.budgetPolicy.rates(), &map, TradeRates{}, inflationMultiplier, lvBounds);
       result.timings.economyMs += elapsedMs(t0, Clock::now());
     }
 
@@ -408,7 +410,7 @@ SimResult CitySimulator::run(
     WasteSummary waste;
     {
       const auto t0 = Clock::now();
-      waste = WasteSystem::evaluate(store, facilities, service);
+      waste = WasteSystem::evaluate(store, fundedFacilities, service);
       if (waste.pollutionPenalty > 0.0f) {
         city_sim::applyWastePollution(map, waste.pollutionPenalty, ax0, ay0, ax1, ay1);
         tickResPollution = city_sim::averageResidentialPollution(map, store);
@@ -420,7 +422,7 @@ SimResult CitySimulator::run(
     {
       const auto t0 = Clock::now();
       deathcare = DeathcareSystem::step(
-        population, facilities, service, health.illnessRate, tickResPollution, deathcareState
+        population, fundedFacilities, service, health.illnessRate, tickResPollution, deathcareState
       );
       // applyDeaths already shrunk PopulationStore; re-sync building occupancy
       // to the new total so the next allocate/growth pass sees consistent stock.
@@ -446,7 +448,7 @@ SimResult CitySimulator::run(
         (tick % std::max(1, options.districtInterval) == 0)) {
       const auto t0 = Clock::now();
       const std::vector<DistrictMetrics> districtMetrics =
-        districts->evaluateAllDistricts(map, store, population, &roads, &facilities);
+        districts->evaluateAllDistricts(map, store, population, &roads, &fundedFacilities);
       const std::vector<District>& allDistricts = districts->getDistricts();
       districtGrowthModifiers.clear();
       districtGrowthModifiers.reserve(districtMetrics.size());
@@ -459,8 +461,7 @@ SimResult CitySimulator::run(
     }
 
     int64_t operatingCosts = constructionSpend;
-    for (const auto& facility : facilities)
-      operatingCosts += ServiceTool::operatingCostPerTick(facility.type);
+    operatingCosts += options.budgetPolicy.serviceCost(facilities);
     const auto treasury = TreasurySystem::applyEconomy(
         economy, funds, options.treasuryTickScale, operatingCosts,
         &debt, options.treasuryInterestRate);

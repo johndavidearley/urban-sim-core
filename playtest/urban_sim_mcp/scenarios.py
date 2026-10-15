@@ -129,6 +129,7 @@ async def replay(session: Session, path: str, repeats=1):
         "time",
         "tool",
         "view",
+        "budget",
         "inspect",
         "coordinates",
         "screenshot",

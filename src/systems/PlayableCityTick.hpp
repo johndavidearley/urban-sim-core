@@ -1,4 +1,6 @@
 #pragma once
+#include "src/gameplay/BudgetPolicy.hpp"
+#include "src/gameplay/TreasurySystem.hpp"
 
 #include "src/systems/MigrationSystem.hpp"
 #include "src/systems/CityDisasterState.hpp"
@@ -26,6 +28,8 @@
 // treasury. Optional phases (pollution emitters, land value) default on so a
 // playable city sees the same environment model as `--simulate`.
 struct PlayableCityTickState {
+  BudgetPolicy budgetPolicy;
+  TreasuryLedger treasuryLedger;
   uint32_t tick = 0;
   CityDisasterState disasters;
   // Last migration request, retained in saves for compatibility; not a cap.

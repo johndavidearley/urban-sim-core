@@ -955,3 +955,28 @@ TEST(CitySimulatorTests, TreasuryCarriesShortfallInterestAndRepayment) {
   EXPECT_EQ(solvent.finalDebt.principal, 0);
   EXPECT_EQ(solvent.rows.front().treasury.debtRepaid, 1000);
 }
+
+TEST(CitySimulatorTests, ServiceFundingAppliesToAutonomousUtilitySupply) {
+  for (const int funding : {0, 100}) {
+    CityMap map({32,32});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    for (int x = 2; x < 29; ++x) roads.buildRoad({x,16}, {x+1,16});
+    for (const Coord c : {Coord{17,17}, Coord{17,15}}) {
+      const auto type = c.y == 17 ? BuildingType::Residential : BuildingType::Commercial;
+      map.getTile(c).zone = c.y == 17 ? 1 : 2;
+      map.getTile(c).buildingId = store.createBuilding(type, c, 80);
+    }
+    PopulationSystem::allocate(store, population, 80, 1);
+    SimOptions options = fastOptions();
+    options.buildChance = 0;
+    options.zoneBatchPerTick = 0;
+    options.enableUtilities = true;
+    options.budgetPolicy.servicePercent.fill(funding);
+    const auto result = CitySimulator::run(map, roads, store, population, 42, 3, options);
+    ASSERT_EQ(result.rows.size(), 3u);
+    if (funding == 0) EXPECT_FLOAT_EQ(result.rows.back().powerSupplyRatio, 0.f);
+    else EXPECT_FLOAT_EQ(result.rows.back().powerSupplyRatio, 1.f);
+  }
+}

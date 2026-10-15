@@ -54,6 +54,8 @@ namespace {
 PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   PlayableCityTickState tickState;
   tickState.tick = liveState.tick;
+  tickState.budgetPolicy = liveState.budgetPolicy;
+  tickState.treasuryLedger = liveState.treasuryLedger;
   tickState.populationTarget = liveState.populationTarget;
   tickState.migrationConditions = liveState.migrationConditions;
   tickState.populationChange = liveState.populationChange;
@@ -90,6 +92,8 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
 
 void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tickState) {
   liveState.tick = tickState.tick;
+  liveState.budgetPolicy = tickState.budgetPolicy;
+  liveState.treasuryLedger = tickState.treasuryLedger;
   liveState.populationTarget = tickState.populationTarget;
   liveState.migrationConditions = tickState.migrationConditions;
   liveState.populationChange = tickState.populationChange;
@@ -124,10 +128,7 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
 }
 
 void projectTreasuryHud(LiveSimulationState& liveState, const std::vector<ServiceFacility>& facilities) {
-  int64_t serviceOperatingCosts = 0;
-  for (const ServiceFacility& facility : facilities) {
-    serviceOperatingCosts += ServiceTool::operatingCostPerTick(facility.type);
-  }
+  const auto serviceOperatingCosts = liveState.budgetPolicy.serviceCost(facilities);
   liveState.treasuryExpenses = static_cast<int64_t>(std::llround(
     static_cast<double>(liveState.economy.totalExpenses) * 0.01)) + serviceOperatingCosts;
 }

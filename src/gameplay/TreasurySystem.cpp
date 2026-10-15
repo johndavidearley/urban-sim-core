@@ -60,3 +60,32 @@ TreasuryFlow TreasurySystem::applyEconomy(
   }
   return flow;
 }
+
+TreasuryBreakdown TreasurySystem::breakdown(const EconomyState& economy,
+  double tickScale, int64_t serviceCosts, int64_t constructionCosts) {
+  TreasuryBreakdown result;
+  const double scale = std::max(0.0, tickScale);
+  const auto allocate = [scale](const auto& raw, auto& output) {
+    int64_t cumulative = 0, previous = 0;
+    for (size_t i = 0; i < raw.size(); ++i) {
+      cumulative += raw[i];
+      const auto rounded = static_cast<int64_t>(std::llround(static_cast<double>(cumulative) * scale));
+      output[i] = rounded - previous;
+      previous = rounded;
+    }
+    return previous;
+  };
+  result.totalRevenue = allocate(std::array<int64_t, 6>{{
+    economy.residentialTaxRevenue, economy.commercialTaxRevenue,
+    economy.industrialTaxRevenue, economy.officeTaxRevenue,
+    economy.incomeTaxRevenue, economy.exportRevenue}}, result.revenue);
+  std::array<int64_t, 3> expenses{};
+  result.totalExpenses = allocate(std::array<int64_t, 3>{{
+    economy.totalMaintenance - economy.parkMaintenance,
+    economy.parkMaintenance, economy.importCost}}, expenses);
+  std::copy(expenses.begin(), expenses.end(), result.expenses.begin());
+  result.expenses[3] = std::max<int64_t>(0, serviceCosts);
+  result.expenses[4] = std::max<int64_t>(0, constructionCosts);
+  result.totalExpenses += result.expenses[3] + result.expenses[4];
+  return result;
+}

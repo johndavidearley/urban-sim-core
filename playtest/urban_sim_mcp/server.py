@@ -34,6 +34,7 @@ KEYS = [
     "F3",
     "F4",
     "F5",
+    "F6",
     "F9",
     *[f"Num{i}" for i in range(1, 10)],
     *list("ABCDFGHLNOPRSTZ"),
@@ -307,6 +308,29 @@ def create_server(session: Session) -> FastMCP:
                 budget_cap=budget_cap,
             ),
         )
+
+    @server.tool(annotations=local)
+    async def budget(
+        action: Literal["inspect", "set_taxes", "set_funding", "reset_funding", "reset", "open", "close", "services", "taxes"] = "inspect",
+        tax_percent: Annotated[
+            list[Annotated[int, Field(ge=0, le=20)]], Field(min_length=5, max_length=5)
+        ] | None = None,
+        service_percent: Annotated[
+            list[Annotated[int, Field(ge=0, le=100)]], Field(min_length=11, max_length=11)
+        ] | None = None,
+    ) -> dict[str, Any]:
+        """Inspect/open the city budget or set integer tax percentages (R,C,I,O,income).
+
+        Defaults are [5,8,6,9,10]; allowed range is 0..20. Taxes affect revenue.
+        The next-tick estimate excludes new growth and debt flows. Last-tick
+        ledger is immutable until the next simulation tick. Service funding is
+        ordered Fire, Police, Health, Education, Power, Water, Sanitation,
+        Garbage, Recycling, Cemetery, Crematorium; 0..100%, default all 100.
+        Cuts reduce reach, utility supply, and processing capacity; zero closes
+        operation without removing facilities. reset restores the entire budget;
+        reset_funding preserves taxes. services/taxes select the panel tab.
+        """
+        return await session.request("budget", compact(action=action, tax_percent=tax_percent, service_percent=service_percent))
 
     @server.tool(annotations=local)
     async def view(

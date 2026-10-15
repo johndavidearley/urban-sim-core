@@ -125,6 +125,7 @@ EconomyState EconomySystem::calculateEconomy(
   const uint32_t employedPopulation = population.getTotalEmployed();
   int64_t populationIncomeTax = static_cast<int64_t>(static_cast<double>(populationWealth) * rates.incomeRate);
 
+  state.incomeTaxRevenue = populationIncomeTax;
   state.totalTaxRevenue = state.residentialTaxRevenue + state.commercialTaxRevenue +
                           state.industrialTaxRevenue + state.officeTaxRevenue + populationIncomeTax;
 
