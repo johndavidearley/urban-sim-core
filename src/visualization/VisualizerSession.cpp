@@ -58,6 +58,7 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   tickState.treasuryLedger = liveState.treasuryLedger;
   tickState.history = liveState.history;
   tickState.alerts = liveState.alerts;
+  tickState.transitReport = liveState.transitReport;
   tickState.populationTarget = liveState.populationTarget;
   tickState.migrationConditions = liveState.migrationConditions;
   tickState.populationChange = liveState.populationChange;
@@ -98,6 +99,7 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
   liveState.treasuryLedger = tickState.treasuryLedger;
   liveState.history = tickState.history;
   liveState.alerts = tickState.alerts;
+  liveState.transitReport = tickState.transitReport;
   liveState.populationTarget = tickState.populationTarget;
   liveState.migrationConditions = tickState.migrationConditions;
   liveState.populationChange = tickState.populationChange;
@@ -131,13 +133,13 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
   liveState.districtGrowthModifiers = std::move(tickState.districtGrowthModifiers);
 }
 
+}  // namespace
+
 void projectTreasuryHud(LiveSimulationState& liveState, const std::vector<ServiceFacility>& facilities) {
-  const auto serviceOperatingCosts = liveState.budgetPolicy.serviceCost(facilities);
+  const auto serviceOperatingCosts = liveState.budgetPolicy.serviceCost(facilities) + TransitSystem::operatingCost(liveState.transitRoutes);
   liveState.treasuryExpenses = static_cast<int64_t>(std::llround(
     static_cast<double>(liveState.economy.totalExpenses) * 0.01)) + serviceOperatingCosts;
 }
-
-}  // namespace
 
 void updatePlayableUtilityConnectivity(
   CityMap& map,

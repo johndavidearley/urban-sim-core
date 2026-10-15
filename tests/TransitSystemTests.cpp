@@ -5,6 +5,7 @@
 #include "src/entities/EntityStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/TransitSystem.hpp"
+#include "src/persistence/TransitReportJson.hpp"
 #include "src/systems/CitySimSupport.hpp"
 #include "src/world/CityMap.hpp"
 
@@ -220,4 +221,47 @@ TEST(TransitSystemTests, RailPlacementStartsAtPopulationThreshold) {
   store.getBuilding(home)->occupancy = 4000;
   city_sim::placeTransitRoutesIfNeeded(roads, store, routes, 4000, 4, 1.0f);
   EXPECT_EQ(railCount(), 1);
+}
+
+TEST(TransitManagementTests, PerRouteAssignmentPreservesOffloadAndDoesNotDoubleCount) {
+  CityMap map({16,4}); RoadNetwork roads(map); buildStraightRoad(roads,16);
+  const std::vector<TransitRoute> routes{makeRoute(1,{{0,0},{15,0}},1,30,20),makeRoute(2,{{0,0},{15,0}},2,30,20)};
+  TransitCoverageCache cache; TransitSystem::buildCache(roads,routes,cache);
+  TransitOffload offload(routes,cache);
+  EXPECT_EQ(offload.offload({0,0},{15,0},50),30u);
+  EXPECT_EQ(offload.offload({0,0},{15,0},40),40u);
+  EXPECT_EQ(offload.offload({0,0},{15,0},100),20u);
+  EXPECT_EQ(offload.offload({0,0},{15,0},10),0u);
+  const auto summary=TransitSystem::summarize(routes,offload,200);
+  ASSERT_EQ(summary.routeUsage.size(),2u);
+  EXPECT_EQ(summary.routeUsage[0].demand+summary.routeUsage[1].demand,summary.demand);
+  EXPECT_EQ(summary.routeUsage[0].ridership+summary.routeUsage[1].ridership,90u);
+  EXPECT_EQ(summary.demand,200u);
+  EXPECT_EQ(TransitSystem::operatingCost(routes),6);
+  TransitReport report{true,1,200,summary.routeUsage};
+  EXPECT_EQ(transitReportJson(parseTransitReport(transitReportJson(report),1)),transitReportJson(report));
+}
+
+TEST(TransitManagementTests, ZeroFleetKeepsCoverageAndDemandWithoutRidersOrCost) {
+  CityMap map({16,4}); RoadNetwork roads(map); buildStraightRoad(roads,16);
+  const std::vector<TransitRoute> routes{makeRoute(1,{{0,0},{15,0}},0,30,20)};
+  TransitCoverageCache cache; TransitSystem::buildCache(roads,routes,cache);
+  TransitOffload offload(routes,cache);
+  EXPECT_EQ(offload.offload({0,0},{15,0},50),0u);
+  EXPECT_EQ(offload.totalDemand(),50u);
+  EXPECT_EQ(TransitSystem::operatingCost(routes),0);
+  EXPECT_EQ(cache.entries.size(),1u);
+}
+
+TEST(TransitManagementTests, RejectsInconsistentImportedUsage) {
+  const auto good=transitReportJson({true,1,50,{{1,30,50,30}}});
+  for (int invalid=0;invalid<5;++invalid) {
+    auto bad=good;
+    if (invalid==0) bad["routes"][0]["ridership"]=31;
+    if (invalid==1) bad["routes"][0]["demand"]=51;
+    if (invalid==2) bad["routes"].push_back(bad["routes"][0]);
+    if (invalid==3) bad["tick"]=2;
+    if (invalid==4) bad["routes"][0]["capacity"]=1.5;
+    EXPECT_THROW(parseTransitReport(bad,1),std::exception);
+  }
 }

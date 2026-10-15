@@ -375,3 +375,63 @@ TEST(VisualizerGeometry, AlertActionsFitAndHidePolicyControls) {
   drawBudgetPanel(&list,800,640,{}, {}, {},50000,0,0,0,false,{}, {},false,{},true,{});
   EXPECT_GT(area(list),0.f);
 }
+
+TEST(VisualizerGeometry, ExpandedDiagnosticsInspectorFitsTheMinimumWindow) {
+  CityMap map({12,12}); RoadNetwork roads(map); EntityStore store;
+  const auto diagnostics = BuildingDiagnostics::evaluate(map,roads,store,{4,4},{},{});
+  DrawList list;
+  drawTileInspector(&list,map,roads,store,{}, {4,4},nullptr,&diagnostics,.25f);
+  ASSERT_FALSE(list.vertices.empty());
+  for (const auto& v : list.vertices) {
+    EXPECT_GE(v.x,0.f); EXPECT_GE(v.y,0.f);
+    EXPECT_LT(v.x,388.f); EXPECT_LT(v.y,560.f);
+  }
+}
+
+TEST(VisualizerGeometry, TransportControlsAndPanelFitTheMinimumWindow) {
+  for (int i=0;i<7;++i) {
+    const auto r=transportControlRect(i,800,640);
+    EXPECT_EQ(transportHitTest(r.x+1,r.y+1,800,640),i);
+  }
+  TransitRoute route;route.id=1;route.stops={{1,1},{10,1}};route.vehicleCount=3;
+  DrawList list;
+  drawTransportPanel(&list,800,640,{route},0,{true,1,100,{{1,90,100,90}}},.9f);
+  for (const auto& v:list.vertices) {EXPECT_GE(v.x,0.f);EXPECT_GE(v.y,0.f);EXPECT_LE(v.x,800.f);EXPECT_LE(v.y,640.f);}
+}
+
+TEST(ManagementUiTests, ChartInspectionMapsTicksAndSurvivesHistoryRollover) {
+  CityHistory history;
+  BudgetPolicy policy;
+  history.append({10,100,{},20,30,1000,0,policy});
+  policy.taxPercent[0]=12;policy.servicePercent[0]=50;
+  history.append({11,105,{},30,30,1000,0,policy});
+  history.append({12,106,{},30,30,1000,0,policy});
+  const auto r=trendChartRect(0,800,640);
+  EXPECT_EQ(trendHitTick(r.x,r.y+1,800,640,history),10u);
+  EXPECT_EQ(trendHitTick(r.x+r.w/2,r.y+1,800,640,history),11u);
+  EXPECT_EQ(trendHitTick(r.x+r.w-1,r.y+1,800,640,history),12u);
+  EXPECT_EQ(trendHitTick(0,0,800,640,history),0u);
+  EXPECT_EQ(trendSampleIndex(history,0),2u);
+  EXPECT_EQ(trendSampleIndex(history,1),0u);
+  EXPECT_EQ(trendSampleIndex(history,500),2u);
+  EXPECT_NE(trendTaxDetail(history,1).find("5 TO 12"),std::string::npos);
+  EXPECT_NE(trendFundingDetail(history,1).find("100 TO 50"),std::string::npos);
+  DrawList list;
+  drawBudgetPanel(&list,800,640,policy,{}, {},1000,0,0,0,false,{}, {},true,history,false,{},36,11);
+  for (const auto& v:list.vertices) {EXPECT_GE(v.x,0.f);EXPECT_GE(v.y,0.f);EXPECT_LE(v.x,800.f);EXPECT_LE(v.y,640.f);}
+}
+
+TEST(ManagementUiTests, DisabledControlsAreExcludedFromKeyboardActions) {
+  BudgetPolicy policy;policy.taxPercent[0]=20;
+  EXPECT_FALSE(budgetControlEnabled(3,policy,false,false,false));
+  EXPECT_TRUE(budgetControlEnabled(2,policy,false,false,false));
+  EXPECT_FALSE(budgetControlEnabled(2,policy,false,true,false));
+  EXPECT_FALSE(budgetControlEnabled(-1,policy,false,false,false));
+  EXPECT_TRUE(transportControlEnabled(0,{},0));
+  EXPECT_FALSE(transportControlEnabled(4,{},0));
+  TransitRoute route;route.vehicleCount=20;
+  EXPECT_FALSE(transportControlEnabled(4,{route},0));
+  EXPECT_TRUE(transportControlEnabled(3,{route},0));
+  route.mode=TransitMode::Rail;
+  EXPECT_FALSE(transportControlEnabled(3,{route},0));
+}

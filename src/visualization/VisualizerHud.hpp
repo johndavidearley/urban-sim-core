@@ -1,4 +1,6 @@
 #pragma once
+#include "src/visualization/ManagementUi.hpp"
+#include "src/gameplay/BuildingDiagnostics.hpp"
 
 #include "src/visualization/VisualizerTypes.hpp"
 #include "src/visualization/VisualizerRender.hpp"
@@ -41,6 +43,7 @@ void drawToolPalette(
 Rect budgetPanelRect(int windowWidth, int windowHeight);
 // 0 close, 1 reset, then decrease/increase pairs for the five taxes.
 bool budgetControlVisible(int action, bool services, bool trends, bool alerts = false);
+bool budgetControlEnabled(int action,const BudgetPolicy& policy,bool services,bool trends,bool alerts);
 Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool services = false, bool trends = false, bool alerts = false);
 int budgetHitTest(int x, int y, int windowWidth, int windowHeight, bool services = false, bool trends = false, bool alerts = false);
 void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
@@ -49,8 +52,13 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   bool services = false, const std::array<int64_t, kServiceTypeCount>& serviceCosts = {},
   const std::array<float, kServiceTypeCount>& serviceCoverage = {},
   bool trends = false, const CityHistory& history = {},
-  bool alerts = false, const CityAlerts& diagnostics = {});
+  bool alerts = false, const CityAlerts& diagnostics = {}, int focus = -1, uint32_t inspectedTick = 0);
 
+bool transportControlEnabled(int action,const std::vector<TransitRoute>& routes,size_t selected);
+Rect transportControlRect(int action,int width,int height);
+int transportHitTest(int x,int y,int width,int height);
+void drawTransportPanel(DrawList* renderer,int width,int height,const std::vector<TransitRoute>& routes,
+  size_t selected,const TransitReport& report,float peakCongestion,int linkedStops = -1,int focus = -1);
 Rect hudControlRect(HudAction action, int windowWidth);
 HudAction hudHitTest(int mouseX, int mouseY, int windowWidth);
 void drawDemandBar(DrawList* renderer, int x, int y, float demand, RGB color, const char* label);
@@ -121,7 +129,8 @@ void drawTileInspector(
   const EntityStore& store,
   const std::vector<ServiceFacility>& facilities,
   Coord coord,
-  const DistrictSystem* districts = nullptr
+  const DistrictSystem* districts = nullptr,
+  const BuildingDiagnostics* diagnostics = nullptr, float cityJoblessness = 0.f, bool pinned = false
 );
 
 Rect quitButtonRect(QuitAction action, int windowWidth, int windowHeight);

@@ -415,6 +415,42 @@ float roadCongestionAt(const RoadNetwork* roads, Coord pos) {
 }
 } // namespace
 
+GrowthSiteDiagnostics GrowthSystem::diagnoseSite(
+  const CityMap& map, const RoadNetwork& roads, const EntityStore& store,
+  Coord pos, const ZoneDemand& demand, const ServiceCoverageCache* services,
+  bool requireUtilities, bool burning, const std::vector<GrowthChanceModifier>* modifiers) {
+  GrowthSiteDiagnostics d;
+  if (!map.isValid(pos)) { d.blockers.push_back("outside_map"); return d; }
+  const auto& tile = map.getTile(pos);
+  const auto zone = static_cast<ZoneType>(tile.zone);
+  const auto* building = store.getBuilding(tile.buildingId);
+  d.occupied = building != nullptr;
+  d.roadAccess = hasRoadAccess(map, pos);
+  d.power = tile.connectedToPower; d.water = tile.connectedToWater;
+  d.demand = demandForZone(zone, demand);
+  d.civicCoverage = civicCoverageAt(&roads, services, pos);
+  d.congestion = roadCongestionAt(&roads, pos);
+  d.locationFactor = redevelopmentLocationFactor(map.landValue(pos), d.civicCoverage, d.congestion);
+  if (burning) d.blockers.push_back("burning");
+  if (zone != ZoneType::Residential && zone != ZoneType::Commercial &&
+      zone != ZoneType::Industrial && zone != ZoneType::Office) {
+    d.blockers.push_back("not_developable_zone"); return d;
+  }
+  if (!d.occupied) {
+    if (tile.type == 2) d.blockers.push_back("water_terrain");
+    if (!d.roadAccess) d.blockers.push_back("no_road");
+    if (requireUtilities && !d.power) d.blockers.push_back("no_power");
+    if (requireUtilities && !d.water) d.blockers.push_back("no_water");
+    if (d.demand < kConstructionDemandFloor) d.blockers.push_back("low_demand");
+    if (chanceModifierForCoord(pos, modifiers) <= 0) d.blockers.push_back("district_growth_disabled");
+  } else {
+    if (d.demand < kRedevelopmentDemandFloor) d.blockers.push_back("low_redevelopment_demand");
+    if (building->capacity >= defaultCapacity(zone) * 64) d.blockers.push_back("density_cap");
+    if (d.locationFactor <= 0) d.blockers.push_back("zero_location_factor");
+  }
+  return d;
+}
+
 GrowthStats GrowthSystem::runStep(
   CityMap& map,
   EntityStore& store,
@@ -538,7 +574,7 @@ GrowthStats GrowthSystem::runStep(
           const Building* existing = store.getBuilding(tile.buildingId);
           if (existing != nullptr) {
             const float demandWeight = demandForZone(zone, demand);
-            if (demandWeight >= 0.10f) {
+            if (demandWeight >= kRedevelopmentDemandFloor) {
               const int maxCap = defaultCapacity(zone) * 64;
               if (existing->capacity < maxCap) {
                 const int   zoned      = zonedCountForZone(balance, zone);
@@ -573,7 +609,7 @@ GrowthStats GrowthSystem::runStep(
         ++stats.evaluatedTiles;
 
         const float demandWeight = demandForZone(zone, demand);
-        if (demandWeight < 0.05f) continue;
+        if (demandWeight < kConstructionDemandFloor) continue;
 
         const float pressure = coveragePressure(zone, balance, demand);
         if (pressure <= 0.0f) continue;

@@ -13,7 +13,14 @@ if (command == "stop") {
 }
 if (command == "budget") {
   const auto action = args.value("action", "inspect");
-  if (action == "view_alert") {
+  if (action=="transport") {showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;}
+  else if (action=="set_route_vehicles") {
+    if (!args.at("route_id").is_number_integer() || !args.at("vehicles").is_number_integer())
+      throw std::runtime_error("Route ID and vehicles must be integers");
+    const auto id=args.at("route_id").get<int64_t>(), vehicles=args.at("vehicles").get<int64_t>();
+    if (id<0 || id>UINT32_MAX || vehicles<0 || vehicles>20) throw std::runtime_error("Invalid bus fleet policy");
+    setTransitVehicles(static_cast<TransitRouteId>(id),static_cast<int>(vehicles));
+  } else if (action == "view_alert") {
     if (!args.at("alert_index").is_number_integer()) throw std::runtime_error("Alert index must be integer 0 to 4");
     const auto index = args.at("alert_index").get<int64_t>();
     if (index < 0 || index > 4) throw std::runtime_error("Alert index must be 0 to 4");
@@ -51,13 +58,14 @@ if (command == "budget") {
     policy.servicePercent = BudgetPolicy{}.servicePercent;
     setBudgetPolicy(policy);
   } else if (action == "services" || action == "taxes" || action == "trends" || action == "alerts") {
+    showTransportPanel=false;
     budgetServices = action == "services";
     budgetTrends = action == "trends";
     budgetAlerts = action == "alerts";
     showBudgetPanel = true; toolDragging = false; cameraPanning = false;
   } else if (action == "reset") setBudgetPolicy(BudgetPolicy{});
-  else if (action == "open") { showBudgetPanel = true; toolDragging = false; cameraPanning = false; }
-  else if (action == "close") showBudgetPanel = false;
+  else if (action == "open") { showTransportPanel=false; showBudgetPanel = true; toolDragging = false; cameraPanning = false; }
+  else if (action == "close") {showBudgetPanel=false;showTransportPanel=false;}
   else if (action != "inspect") throw std::runtime_error("Unknown budget action");
   return budgetStatus();
 }
@@ -80,6 +88,12 @@ if (command == "inspect") {
                                         "cancel"}[static_cast<size_t>(i - 1)],
              quitButtonRect(static_cast<QuitAction>(i), windowWidth,
                             windowHeight));
+    else if (showTransportPanel) {
+      const char* names[]={"transport_close","route_prev","route_next","vehicles_minus","vehicles_plus","route_coverage","route_bottleneck"};
+      for (int i=0;i<7;++i) {rect(names[i],transportControlRect(i,windowWidth,windowHeight));
+        controls.back()["enabled"]=transportControlEnabled(i,liveState.transitRoutes,selectedTransitRoute);
+        controls.back()["focused"]=i==transportFocus;}
+    }
     else if (showBudgetPanel) {
       for (int i = 0; i < 43; ++i) {
         if (!budgetControlVisible(i, budgetServices, budgetTrends, budgetAlerts)) continue;
@@ -93,10 +107,10 @@ if (command == "inspect") {
       }
     } else {
       if (!cleanUiMode)
-        for (int i = 1; i <= 9; ++i)
-          rect(std::array<std::string, 9>{"pause", "speed_1", "speed_2",
+        for (int i = 1; i <= 10; ++i)
+          rect(std::array<std::string, 10>{"pause", "speed_1", "speed_2",
                                           "speed_3", "save",
-                                          "load", "disasters", "budget", "alerts"}[static_cast<size_t>(i - 1)],
+                                          "load", "disasters", "budget", "alerts", "transport"}[static_cast<size_t>(i - 1)],
                hudControlRect(static_cast<HudAction>(i), windowWidth));
       for (int i = 0; i < 5; ++i)
         rect(std::array<std::string, 5>{"road", "zone", "bulldoze", "service",
@@ -112,12 +126,45 @@ if (command == "inspect") {
                {kOverlayKeyStartX + i * (kOverlayKeyWidth + kOverlayKeyGap),
                 kOverlayKeyY, kOverlayKeyWidth, kOverlayKeyHeight});
     }
-    return {{"controls", controls}};
+    if (showBudgetPanel && !showTransportPanel && !showQuitDialog) for (auto& c:controls) {
+      const int action=budgetHitTest(c["x"].get<int>()+1,c["y"].get<int>()+1,windowWidth,windowHeight,budgetServices,budgetTrends,budgetAlerts);
+      c["enabled"]=budgetControlEnabled(action,liveState.budgetPolicy,budgetServices,budgetTrends,budgetAlerts);
+      c["focused"]=action==budgetFocus;
+    }
+    Json charts=Json::array();
+    if (showBudgetPanel && budgetTrends && !budgetAlerts && !showQuitDialog) for (int i=0;i<6;++i) {
+      const auto r=trendChartRect(i,windowWidth,windowHeight);
+      charts.push_back({{"index",i},{"x",r.x},{"y",r.y},{"width",r.w},{"height",r.h}});
+    }
+    return {{"controls", controls},{"charts",charts}};
   }
   const int offset = args.value("offset", 0), limit = args.value("limit", 128);
   if (offset < 0 || limit < 1 || limit > 512)
     throw std::runtime_error("Page requires offset >= 0 and limit 1..512");
   Json items = Json::array();
+  if (section == "diagnostics") {
+    const Coord pos{args.value("x",0),args.value("y",0)};
+    if (!map.isValid(pos)) throw std::runtime_error("Diagnostic coordinate must be inside the map");
+    const bool burning = std::any_of(liveState.disasters.burningTiles.begin(),liveState.disasters.burningTiles.end(),
+      [&](const auto& tile) { return tile.position == pos; });
+    const auto d = BuildingDiagnostics::evaluate(map,roads,store,pos,liveState.demand,liveState.serviceCache,
+      burning,&liveState.districtGrowthModifiers);
+    const auto& n = d.neighborhood;
+    Json advice = Json::array();
+    for (const auto& code : d.growth.blockers) advice.push_back(BuildingDiagnostics::advice(code));
+    return {{"x",pos.x},{"y",pos.y},{"tick",liveState.tick},
+      {"growth",{{"occupied",d.growth.occupied},{"blockers",d.growth.blockers},{"advice",advice},
+        {"road_access",d.growth.roadAccess},{"power",d.growth.power},{"water",d.growth.water},
+        {"demand",d.growth.demand},{"civic_coverage",d.growth.civicCoverage},
+        {"congestion",d.growth.congestion},{"location_factor",d.growth.locationFactor},
+        {"scope","local gates; city balance and seeded chance still apply"}}},
+      {"building",{{"capacity",d.capacity},{"occupancy",d.occupancy},{"residential",d.residential}}},
+      {"services_mask",d.services},
+      {"neighborhood",{{"radius",n.radius},{"tiles",n.tiles},{"buildings",n.buildings},
+        {"residents",n.residents},{"housing_capacity",n.housingCapacity},{"filled_jobs",n.filledJobs},
+        {"job_capacity",n.jobCapacity},{"crime_rate",n.crime},{"illness_rate",n.illness},
+        {"service_coverage",n.serviceCoverage}}}};
+  }
   if (section == "tiles") {
     const int x = args.value("x", 0), y = args.value("y", 0),
               w = args.value("width", 1), h = args.value("height", 1);
@@ -205,6 +252,9 @@ if (command == "inspect") {
       items.push_back({{"id", r.id},
                        {"mode", static_cast<int>(r.mode)},
                        {"capacity", r.totalCapacity()},
+                       {"vehicle_count",r.vehicleCount},{"capacity_per_vehicle",r.capacityPerVehicle},
+                       {"operating_cost",TransitSystem::operatingCost(r)},
+                       {"coverage_peak_congestion",routePeak(static_cast<size_t>(&r-liveState.transitRoutes.data())).first},
                        {"stops", stops}});
     }
   } else

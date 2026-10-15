@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <climits>
 #include "src/persistence/CityHistoryJson.hpp"
+#include "src/persistence/TransitReportJson.hpp"
 #include "src/persistence/CityAlertsJson.hpp"
 #include <array>
 #include <cmath>
@@ -111,6 +113,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       liveState.treasuryLedger = session.treasuryLedger;
       liveState.history = session.history;
       liveState.alerts = session.alerts;
+      liveState.transitReport = session.transitReport;
       liveState.simulationSeed = session.simulationSeed;
       liveState.enableDisasters = session.enableDisasters;
       liveState.disasters = session.disasters;
@@ -166,6 +169,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   int viewY = 0;
   bool isometricMode = true;
   bool showBudgetPanel = false;
+  bool showTransportPanel = false;
+  size_t selectedTransitRoute = 0;
+  int budgetFocus=-1,transportFocus=-1;
+  uint32_t inspectedTrendTick=0;
+  Coord pinnedInspector{-1,-1};
   bool budgetServices = false;
   bool budgetTrends = false;
   bool budgetAlerts = false;
@@ -310,6 +318,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     session.treasuryLedger = liveState.treasuryLedger;
     session.history = liveState.history;
     session.alerts = liveState.alerts;
+    session.transitReport = liveState.transitReport;
     session.simulationSeed = liveState.simulationSeed;
     session.enableDisasters = liveState.enableDisasters;
     session.disasters = liveState.disasters;
@@ -360,6 +369,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.treasuryLedger = session.treasuryLedger;
     liveState.history = session.history;
     liveState.alerts = session.alerts;
+    liveState.transitReport = session.transitReport;
     liveState.simulationSeed = session.simulationSeed;
     liveState.enableDisasters = session.enableDisasters;
     liveState.disasters = session.disasters;
@@ -392,6 +402,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.transitRoutes = std::move(session.transitRoutes);
     liveState.transitCache = TransitCoverageCache{};
     liveState.transitSummary = TransitSummary{};
+    pinnedInspector={-1,-1};inspectedTrendTick=0;budgetFocus=transportFocus=-1;selectedTransitRoute=0;
     liveState.serviceCache = ServiceCoverageCache{};
     facilities = std::move(session.facilities);
     applySessionDistricts(districts, session);
@@ -577,6 +588,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   };
   auto viewCityAlert = [&](size_t index) {
     if (index >= 5) throw std::runtime_error("Alert index must be 0 to 4");
+    showTransportPanel=false;
     budgetAlerts = false; budgetTrends = false;
     toolDragging = false; cameraPanning = false;
     activatePaletteTool(PaletteTool::None);
@@ -584,16 +596,80 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     else {
       showBudgetPanel = false;
       overlayMode = index == 2 ? OverlayMode::Demand : OverlayMode::ServiceCoverage;
+      std::vector<EntityId> ids;
+      for (const auto& item:store.getBuildings()) ids.push_back(item.first);
+      std::sort(ids.begin(),ids.end());
+      const Building* target=nullptr; int best=-1;
+      for (const auto id:ids) {
+        const auto* b=store.getBuilding(id); const auto& tile=map.getTile(b->position);
+        int score=-1;
+        if (index==0 && !tile.connectedToPower) score=1;
+        if (index==1 && !tile.connectedToWater) score=1;
+        if (index==2 && b->type!=BuildingType::Residential) score=std::max(0,b->capacity-b->occupancy);
+        if (index==3) {
+          const auto mask=BuildingDiagnostics::serviceMask(roads,liveState.serviceCache,b->position);
+          score=4; for (int bit=0;bit<4;++bit) if (mask&(1u<<bit)) --score;
+        }
+        if (score>best) {best=score;target=b;}
+      }
+      pinnedInspector=target ? target->position : Coord{-1,-1};
+      if (target) {isometricMode=false;viewX=std::max(0,target->position.x-5);viewY=std::max(0,target->position.y-8);}
     }
   };
   auto budgetPreview = [&]() {
-    const auto serviceCosts = liveState.budgetPolicy.serviceCost(facilities);
+    const auto serviceCosts = liveState.budgetPolicy.serviceCost(facilities) + TransitSystem::operatingCost(liveState.transitRoutes);
     return TreasurySystem::breakdown(liveState.economy, 0.01, serviceCosts);
+  };
+  auto routePeak = [&](size_t index) -> std::pair<float,Coord> {
+    if (liveState.transitRoutes.empty()) return {0.f,{0,0}};
+    index=std::min(index,liveState.transitRoutes.size()-1);
+    const auto& route=liveState.transitRoutes[index];
+    Coord target=route.stops.empty() ? Coord{0,0} : route.stops.front();
+    float peak=0;
+    const auto entry=std::find_if(liveState.transitCache.entries.begin(),liveState.transitCache.entries.end(),
+      [&](const auto& e){return e.routeId==route.id;});
+    if (entry!=liveState.transitCache.entries.end()) for (const auto& edge:roads.getAllEdgeTraffic()) {
+      if (entry->distanceField.count(edge.from) && entry->distanceField.count(edge.to) && edge.congestion>peak) {
+        peak=edge.congestion; target=edge.from;
+      }
+    }
+    return {peak,target};
+  };
+  auto setTransitVehicles = [&](TransitRouteId id,int vehicles) {
+    if (vehicles<0 || vehicles>20) throw std::runtime_error("Bus fleet must be 0 to 20 vehicles");
+    const auto found=std::find_if(liveState.transitRoutes.begin(),liveState.transitRoutes.end(),[&](const auto& r){return r.id==id;});
+    if (found==liveState.transitRoutes.end() || found->mode!=TransitMode::Bus)
+      throw std::runtime_error("Choose an existing bus route");
+    if (static_cast<int64_t>(vehicles)*found->capacityPerVehicle>INT_MAX) throw std::runtime_error("Fleet capacity exceeds supported range");
+    found->vehicleCount=vehicles;
+    projectTreasuryHud(liveState,facilities);
+    sessionDirty=true;
+  };
+  auto transportAction = [&](int action) {
+    if (action==0) {showTransportPanel=false;return;}
+    if (liveState.transitRoutes.empty()) return;
+    selectedTransitRoute=std::min(selectedTransitRoute,liveState.transitRoutes.size()-1);
+    if (action==1) selectedTransitRoute=(selectedTransitRoute+liveState.transitRoutes.size()-1)%liveState.transitRoutes.size();
+    if (action==2) selectedTransitRoute=(selectedTransitRoute+1)%liveState.transitRoutes.size();
+    const auto& route=liveState.transitRoutes[selectedTransitRoute];
+    if ((action==3 || action==4) && route.mode==TransitMode::Bus) {
+      const int vehicles=static_cast<int>(std::clamp(static_cast<int64_t>(route.vehicleCount)+(action==3?-1:1),int64_t{0},int64_t{20}));
+      if (static_cast<int64_t>(vehicles)*route.capacityPerVehicle<=INT_MAX) setTransitVehicles(route.id,vehicles);
+    }
+    if ((action==5 || action==6) && !route.stops.empty()) {
+      const Coord target=action==6 ? routePeak(selectedTransitRoute).second : route.stops.front();
+      showTransportPanel=false; showBudgetPanel=false;
+      overlayMode=action==6 ? OverlayMode::TrafficCongestion : OverlayMode::Transit;
+      isometricMode=false; viewX=std::max(0,target.x-5); viewY=std::max(0,target.y-8);
+      activatePaletteTool(PaletteTool::None);
+    }
   };
   auto budgetStatus = [&]() -> Json {
     const auto preview = budgetPreview();
     const auto& ledger = liveState.treasuryLedger;
     return {{"tax_percent", liveState.budgetPolicy.taxPercent},
+      {"transit_cost",TransitSystem::operatingCost(liveState.transitRoutes)},
+      {"transit_report",transitReportJson(liveState.transitReport)},
       {"history", cityHistoryJson(liveState.history)},
       {"alerts", cityAlertsJson(liveState.alerts)},
       {"tax_attraction", liveState.budgetPolicy.taxAttraction()},
@@ -609,6 +685,47 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         {"debt_before", ledger.debtBefore}, {"debt_after", ledger.flow.outstandingDebt},
         {"borrowed", ledger.flow.debtIssued}, {"repaid", ledger.flow.debtRepaid},
         {"interest", ledger.flow.interestCharged}, {"net", ledger.flow.net}}}};
+  };
+  auto activateBudgetAction = [&](int action) {
+    if (!budgetControlEnabled(action,liveState.budgetPolicy,budgetServices,budgetTrends,budgetAlerts)) return;
+          if (action == 0) showBudgetPanel = false;
+          if (action == 12) { budgetServices = false; budgetTrends = false; budgetAlerts = false; }
+          if (action == 13) { budgetServices = true; budgetTrends = false; budgetAlerts = false; }
+          if (action == 36) { budgetTrends = true; budgetAlerts = false; }
+          if (action == 37) { budgetAlerts = true; budgetTrends = false; }
+          if (action >= 38 && action < 43) viewCityAlert(static_cast<size_t>(action - 38));
+          if (action == 1) {
+            auto policy = liveState.budgetPolicy;
+            if (budgetServices) policy.servicePercent = BudgetPolicy{}.servicePercent;
+            else policy.taxPercent = BudgetPolicy{}.taxPercent;
+            setBudgetPolicy(policy);
+          }
+          if (action >= 14 && action < 36) {
+            auto policy = liveState.budgetPolicy;
+            const size_t index = static_cast<size_t>((action - 14) / 2);
+            policy.servicePercent[index] = std::clamp(policy.servicePercent[index] + (action % 2 == 0 ? -25 : 25), 0, 100);
+            setBudgetPolicy(policy);
+          }
+          if (action >= 2 && action < 12) {
+            auto policy = liveState.budgetPolicy;
+            const size_t index = static_cast<size_t>((action - 2) / 2);
+            policy.taxPercent[index] = std::clamp(policy.taxPercent[index] + (action % 2 == 0 ? -1 : 1), 0, 20);
+            setBudgetPolicy(policy);
+          }
+  };
+  auto cycleBudgetFocus = [&](int direction) {
+    int candidate=budgetFocus<0 ? (direction>0?-1:0) : budgetFocus;
+    for (int i=0;i<43;++i) {
+      candidate=(candidate+direction+43)%43;
+      if (budgetControlEnabled(candidate,liveState.budgetPolicy,budgetServices,budgetTrends,budgetAlerts)) {budgetFocus=candidate;return;}
+    }
+  };
+  auto cycleTransportFocus = [&](int direction) {
+    int candidate=transportFocus<0 ? (direction>0?-1:0) : transportFocus;
+    for (int i=0;i<7;++i) {
+      candidate=(candidate+direction+7)%7;
+      if (transportControlEnabled(candidate,liveState.transitRoutes,selectedTransitRoute)) {transportFocus=candidate;return;}
+    }
   };
   bool running = true;
   bool suspended = false;
@@ -746,6 +863,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           {{"legend", showLegend},
            {"compact", cleanUiMode},
            {"budget", showBudgetPanel},
+           {"transport",showTransportPanel},
+           {"budget_focus",budgetFocus},{"transport_focus",transportFocus},
+           {"trends_tick",liveState.history.samples.empty() ? 0 : liveState.history.samples[trendSampleIndex(liveState.history,inspectedTrendTick)].tick},
+           {"pinned_tile",{pinnedInspector.x,pinnedInspector.y}},
            {"budget_services", budgetServices},
            {"budget_trends", budgetTrends},
            {"budget_alerts", budgetAlerts},
@@ -826,7 +947,42 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         }
         continue;
       }
+      if (showTransportPanel) {
+        if (event.type==EventType::Quit) showQuitDialog=true;
+        if (event.type==EventType::KeyDown) {
+          if (event.key.sym==Key::F2) gReadableUiText=!gReadableUiText;
+          if (event.key.sym==Key::Tab || event.key.sym==Key::Down) cycleTransportFocus(1);
+          if (event.key.sym==Key::Up) cycleTransportFocus(-1);
+          if (event.key.sym==Key::Enter && transportControlEnabled(transportFocus,liveState.transitRoutes,selectedTransitRoute)) transportAction(transportFocus);
+          if (event.key.sym==Key::Left) transportAction(1);
+          if (event.key.sym==Key::Right) transportAction(2);
+          if (event.key.sym==Key::Escape || event.key.sym==Key::F8) showTransportPanel=false;
+          if (event.key.sym==Key::F6 || event.key.sym==Key::F7) {showTransportPanel=false;showBudgetPanel=true;budgetAlerts=event.key.sym==Key::F7;budgetTrends=false;}
+          if (event.key.sym==Key::Space) {liveState.paused=!liveState.paused;sessionDirty=true;}
+          if (liveState.paused && (event.key.sym==Key::N || event.key.sym==Key::Period)) executeSimulationTick();
+          if (event.key.sym==Key::F5) saveSession();
+        }
+        if (event.type==EventType::MouseMotion) {mouseX=event.motion.x;mouseY=event.motion.y;}
+        if (event.type==EventType::MouseDown && event.button.button==MouseButton::Left)
+          {transportFocus=transportHitTest(event.button.x,event.button.y,windowWidth,windowHeight);if (transportFocus>=0) transportAction(transportFocus);}
+        continue;
+      }
       if (showBudgetPanel) {
+        if (event.type==EventType::KeyDown) {
+          if (event.key.sym==Key::F2) gReadableUiText=!gReadableUiText;
+          if (event.key.sym==Key::Tab || event.key.sym==Key::Down) cycleBudgetFocus(1);
+          if (event.key.sym==Key::Up) cycleBudgetFocus(-1);
+          if (event.key.sym==Key::Enter && budgetFocus>=0) activateBudgetAction(budgetFocus);
+          if (budgetTrends && !liveState.history.samples.empty()) {
+            auto index=trendSampleIndex(liveState.history,inspectedTrendTick);
+            if (event.key.sym==Key::Left && index) --index;
+            if (event.key.sym==Key::Right) index=std::min(index+1,liveState.history.samples.size()-1);
+            if (event.key.sym==Key::Home) index=0;
+            if (event.key.sym==Key::End) inspectedTrendTick=0;
+            else if (event.key.sym==Key::Left || event.key.sym==Key::Right || event.key.sym==Key::Home) inspectedTrendTick=liveState.history.samples[index].tick;
+          }
+        }
+        if (event.type==EventType::KeyDown && event.key.sym==Key::F8) {showBudgetPanel=false;showTransportPanel=true;continue;}
         if (event.type == EventType::Quit) showQuitDialog = true;
         if (event.type == EventType::KeyDown &&
             (event.key.sym == Key::Escape || event.key.sym == Key::F6 || (event.key.sym == Key::F7 && budgetAlerts))) showBudgetPanel = false;
@@ -842,33 +998,13 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         if (event.type == EventType::KeyDown && event.key.sym == Key::F5) saveSession();
         if (event.type == EventType::MouseMotion) {
           mouseX = event.motion.x; mouseY = event.motion.y;
+          if (budgetTrends && !budgetAlerts) {const auto tick=trendHitTick(mouseX,mouseY,windowWidth,windowHeight,liveState.history);if (tick) inspectedTrendTick=tick;}
         }
         if (event.type == EventType::MouseDown && event.button.button == MouseButton::Left) {
           const int action = budgetHitTest(event.button.x, event.button.y, windowWidth, windowHeight, budgetServices, budgetTrends, budgetAlerts);
-          if (action == 0) showBudgetPanel = false;
-          if (action == 12) { budgetServices = false; budgetTrends = false; budgetAlerts = false; }
-          if (action == 13) { budgetServices = true; budgetTrends = false; budgetAlerts = false; }
-          if (action == 36) { budgetTrends = true; budgetAlerts = false; }
-          if (action == 37) { budgetAlerts = true; budgetTrends = false; }
-          if (action >= 38 && action < 43) viewCityAlert(static_cast<size_t>(action - 38));
-          if (action == 1) {
-            auto policy = liveState.budgetPolicy;
-            if (budgetServices) policy.servicePercent = BudgetPolicy{}.servicePercent;
-            else policy.taxPercent = BudgetPolicy{}.taxPercent;
-            setBudgetPolicy(policy);
-          }
-          if (action >= 14 && action < 36) {
-            auto policy = liveState.budgetPolicy;
-            const size_t index = static_cast<size_t>((action - 14) / 2);
-            policy.servicePercent[index] = std::clamp(policy.servicePercent[index] + (action % 2 == 0 ? -25 : 25), 0, 100);
-            setBudgetPolicy(policy);
-          }
-          if (action >= 2 && action < 12) {
-            auto policy = liveState.budgetPolicy;
-            const size_t index = static_cast<size_t>((action - 2) / 2);
-            policy.taxPercent[index] = std::clamp(policy.taxPercent[index] + (action % 2 == 0 ? -1 : 1), 0, 20);
-            setBudgetPolicy(policy);
-          }
+          budgetFocus=action;
+          if (action<0 && budgetTrends) {const auto tick=trendHitTick(event.button.x,event.button.y,windowWidth,windowHeight,liveState.history);if (tick) inspectedTrendTick=tick;}
+          activateBudgetAction(action);
         }
         continue;
       }
@@ -877,7 +1013,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         showQuitDialog = true;
       } else if (event.type == EventType::KeyDown) {
         switch (event.key.sym) {
+        case Key::I:
+          if (map.isValid(pinnedInspector)) pinnedInspector={-1,-1};
+          else {pinnedInspector=tileAtScreen(mouseX,mouseY);activatePaletteTool(PaletteTool::None);}
+          break;
         case Key::Escape:
+          if (map.isValid(pinnedInspector)) {pinnedInspector={-1,-1};break;}
           if (toolDragging || roadToolActive || zoneToolActive ||
               bulldozeToolActive || serviceToolActive || districtToolActive) {
             toolDragging = false;
@@ -997,6 +1138,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                      ? "AUTONOMOUS GROWTH ON (CITYSIM ROADS/ZONES/SERVICES)"
                      : "AUTONOMOUS GROWTH OFF (PLAYER BUILD ONLY)",
                  true);
+          break;
+        case Key::F8:
+          showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;
           break;
         case Key::F7:
           showBudgetPanel = true; budgetAlerts = true; budgetTrends = false;
@@ -1224,6 +1368,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         case HudAction::Load:
           loadSession();
+          break;
+        case HudAction::Transport:
+          showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;
           break;
         case HudAction::Alerts:
           showBudgetPanel = true; budgetAlerts = true; budgetTrends = false;
@@ -1515,10 +1662,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     const bool mouseOverGuide =
         !cleanUiMode && showOnboarding && mouseX >= 14 && mouseX < 364 &&
         mouseY >= windowHeight - 154 && mouseY < windowHeight - 62;
-    const Coord hoveredTile = tileAtScreen(mouseX, mouseY);
-    const bool inspectMap = !showBudgetPanel && !mouseOverHud && !mouseOverLegend &&
-                            !mouseOverPalette && !mouseOverDistrictPanel &&
-                            !mouseOverGuide && map.isValid(hoveredTile);
+    const Coord hoveredTile = map.isValid(pinnedInspector) ? pinnedInspector : tileAtScreen(mouseX, mouseY);
+    const bool inspectMap = !showTransportPanel && !showBudgetPanel &&
+      (map.isValid(pinnedInspector) || (!mouseOverHud && !mouseOverLegend && !mouseOverPalette && !mouseOverDistrictPanel && !mouseOverGuide)) && map.isValid(hoveredTile);
     if (inspectMap) {
       if (isometricMode) {
         const IsometricProjection projection = isometricProjection();
@@ -1600,8 +1746,14 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                       mouseY);
     }
     if (!cleanUiMode && inspectMap) {
+      const bool burning = std::any_of(liveState.disasters.burningTiles.begin(), liveState.disasters.burningTiles.end(),
+        [&](const auto& tile) { return tile.position == hoveredTile; });
+      const auto diagnostics = BuildingDiagnostics::evaluate(map,roads,store,hoveredTile,liveState.demand,
+        liveState.serviceCache,burning,&liveState.districtGrowthModifiers);
+      const auto residents = population.getTotalPopulation();
+      const float joblessness = residents ? static_cast<float>(residents-std::min(residents,population.getTotalEmployed()))/residents : 0.f;
       drawTileInspector(renderer, map, roads, store, deliveredFacilities, hoveredTile,
-                        &districts);
+                        &districts, &diagnostics, joblessness,map.isValid(pinnedInspector));
     }
     if (!cleanUiMode) {
       if (const District *selected =
@@ -1697,6 +1849,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         break;
       case HudAction::Load:
         uiHoverText = "LOAD: RESTORE THE DEFAULT SESSION";
+        break;
+      case HudAction::Transport:
+        uiHoverText = "TRANSIT: ROUTE UTILIZATION, BUS FLEETS AND OPERATING COST";
         break;
       case HudAction::Alerts:
         uiHoverText = "ALERTS: MEASURED CITY PROBLEMS AND RELEVANT ACTIONS";
@@ -1805,7 +1960,14 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       drawBudgetPanel(renderer, windowWidth, windowHeight, liveState.budgetPolicy,
                       budgetPreview(), liveState.treasuryLedger, funds,
                       liveState.treasuryDebt, mouseX, mouseY, budgetServices,
-                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary), budgetTrends, liveState.history, budgetAlerts, liveState.alerts);
+                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary), budgetTrends, liveState.history, budgetAlerts, liveState.alerts,budgetFocus,inspectedTrendTick);
+    if (showTransportPanel)
+      drawTransportPanel(renderer,windowWidth,windowHeight,liveState.transitRoutes,selectedTransitRoute,
+        liveState.transitReport,routePeak(selectedTransitRoute).first,
+        liveState.transitRoutes.empty() ? 0 : static_cast<int>(std::count_if(
+          liveState.transitRoutes[std::min(selectedTransitRoute,liveState.transitRoutes.size()-1)].stops.begin(),
+          liveState.transitRoutes[std::min(selectedTransitRoute,liveState.transitRoutes.size()-1)].stops.end(),
+          [&](Coord stop){return roads.getNode(stop)!=nullptr;})),transportFocus);
     if (showQuitDialog) {
       drawQuitDialog(renderer, windowWidth, windowHeight, mouseX, mouseY,
                      sessionDirty);

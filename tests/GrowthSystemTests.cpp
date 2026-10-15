@@ -5,6 +5,7 @@
 #include "src/entities/EntityStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/GrowthSystem.hpp"
+#include "src/gameplay/BuildingDiagnostics.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/world/Zoning.hpp"
 
@@ -557,4 +558,75 @@ TEST(GrowthSystemTests, LowDemandCanStillRetireVacantStock) {
   for (uint32_t seed = 1; seed <= 200 && store.getBuilding(id); ++seed)
     GrowthSystem::runStep(map, store, noDemand, seed, 0.f);
   EXPECT_EQ(store.getBuilding(id), nullptr);
+}
+
+TEST(GrowthDiagnosticsTests, ReportsRealLocalGatesWithoutMutatingTheCity) {
+  CityMap map({12,12}); RoadNetwork roads(map); EntityStore store;
+  const Coord pos{4,5}; map.getTile(pos).zone = 1;
+  map.getTile(pos).connectedToPower = map.getTile(pos).connectedToWater = false;
+  ZoneDemand demand{1,1,1,1};
+  auto diagnose = [&]() { return GrowthSystem::diagnoseSite(map,roads,store,pos,demand); };
+  auto d = diagnose();
+  EXPECT_NE(std::find(d.blockers.begin(),d.blockers.end(),"no_road"),d.blockers.end());
+  EXPECT_NE(std::find(d.blockers.begin(),d.blockers.end(),"no_power"),d.blockers.end());
+  roads.buildRoad({3,4},{4,4});
+  map.getTile(pos).connectedToPower = map.getTile(pos).connectedToWater = true;
+  d = diagnose();
+  EXPECT_TRUE(d.blockers.empty());
+  demand.residential = kConstructionDemandFloor - .001f;
+  EXPECT_EQ(diagnose().blockers.front(),"low_demand");
+  demand.residential = kConstructionDemandFloor;
+  EXPECT_TRUE(diagnose().blockers.empty());
+  std::vector<GrowthChanceModifier> stopped{{{0,0},{11,11},0.f}};
+  d = GrowthSystem::diagnoseSite(map,roads,store,pos,demand,nullptr,true,false,&stopped);
+  EXPECT_EQ(d.blockers.front(),"district_growth_disabled");
+  EXPECT_EQ(store.getBuildingCount(),0u);
+  EXPECT_EQ(map.getTile(pos).zone,1);
+}
+
+TEST(GrowthDiagnosticsTests, RedevelopmentDoesNotInventNewConstructionGates) {
+  CityMap map({12,12}); RoadNetwork roads(map); EntityStore store;
+  const Coord pos{4,5}; auto& tile = map.getTile(pos); tile.zone = 1;
+  tile.connectedToPower = tile.connectedToWater = false;
+  tile.buildingId = store.createBuilding(BuildingType::Residential,pos,8);
+  map.landValue(pos) = 100.f;
+  ZoneDemand demand{1,1,1,1};
+  auto d = GrowthSystem::diagnoseSite(map,roads,store,pos,demand);
+  EXPECT_TRUE(d.occupied);
+  EXPECT_TRUE(d.blockers.empty());
+  store.getBuilding(tile.buildingId)->capacity = 512;
+  d = GrowthSystem::diagnoseSite(map,roads,store,pos,demand);
+  EXPECT_EQ(d.blockers.front(),"density_cap");
+  d = GrowthSystem::diagnoseSite(map,roads,store,pos,demand,nullptr,true,true);
+  EXPECT_EQ(d.blockers.front(),"burning");
+  demand.residential = 0;
+  d = GrowthSystem::diagnoseSite(map,roads,store,pos,demand);
+  EXPECT_EQ(d.blockers.front(),"low_redevelopment_demand");
+}
+
+TEST(BuildingDiagnosticsTests, NeighborhoodIsBoundedAndUsesMeasuredOccupancyWeights) {
+  CityMap map({12,12}); RoadNetwork roads(map); EntityStore store;
+  for (int x = 0; x < 10; ++x) roads.buildRoad({x,4},{x+1,4});
+  for (const Coord pos : {Coord{1,5},Coord{7,5},Coord{9,5}}) {
+    const auto id = store.createBuilding(BuildingType::Residential,pos,100);
+    map.getTile(pos).buildingId = id;
+    auto* b = store.getBuilding(id);
+    b->occupancy = pos.x == 1 ? 10 : 30;
+    b->crimeRate = pos.x == 1 ? .2f : .6f;
+    b->illnessRate = pos.x == 1 ? .1f : .5f;
+  }
+  const auto job = store.createBuilding(BuildingType::Commercial,{4,5},20);
+  map.getTile({4,5}).buildingId = job; store.getBuilding(job)->occupancy = 5;
+  ServiceCoverageCache cache;
+  ServiceSystem::buildCache(roads,{{ServiceType::Fire,{2,3},20,1.f}},cache);
+  const auto d = BuildingDiagnostics::evaluate(map,roads,store,{4,4},{},cache);
+  EXPECT_EQ(d.neighborhood.tiles,81u);
+  EXPECT_EQ(d.neighborhood.buildings,3u);
+  EXPECT_EQ(d.neighborhood.residents,40);
+  EXPECT_EQ(d.neighborhood.filledJobs,5);
+  EXPECT_EQ(d.neighborhood.jobCapacity,20);
+  EXPECT_NEAR(d.neighborhood.crime,.5f,.0001f);
+  EXPECT_NEAR(d.neighborhood.illness,.4f,.0001f);
+  EXPECT_FLOAT_EQ(d.neighborhood.serviceCoverage[0],1.f);
+  EXPECT_EQ(BuildingDiagnostics::evaluate(map,roads,store,{0,0},{},cache).neighborhood.tiles,25u);
 }

@@ -8,6 +8,46 @@
 
 using nlohmann::json;
 
+TEST(SaveLoadSystemTests, RestoresAllocatorIncludingRemovedEntitiesAndLegacyFallback) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  const auto live = store.createBuilding(BuildingType::Residential,{2,2},40);
+  const auto removed = store.createBuilding(BuildingType::Commercial,{3,2},20);
+  store.removeBuilding(removed);
+  auto snapshot = SaveLoadSystem::captureSnapshot(map,roads,store,people);
+  const auto expected = snapshot.nextEntityId;
+  people.createGroup(10,0);
+  ASSERT_TRUE(SaveLoadSystem::applySnapshot(snapshot,map,roads,store,people));
+  EXPECT_EQ(people.createGroup(10,0),expected);
+  // Invalid counters must reject before replacing the destination world.
+  snapshot.nextEntityId = live;
+  EXPECT_FALSE(SaveLoadSystem::applySnapshot(snapshot,map,roads,store,people));
+  EXPECT_EQ(people.getGroupCount(),1u);
+  snapshot.nextEntityId = 0;
+  ASSERT_TRUE(SaveLoadSystem::applySnapshot(snapshot,map,roads,store,people));
+  EXPECT_EQ(people.createGroup(10,0),static_cast<uint64_t>(live)+1);
+}
+
+TEST(SaveLoadSystemTests, AllocatorCounterPersistsAndRejectsMalformedFiles) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  store.createBuilding(BuildingType::Residential,{2,2},40);
+  const auto path = std::filesystem::temp_directory_path()/"urban_allocator_checkpoint.json";
+  ASSERT_TRUE(SaveLoadSystem::saveToFile(path.string(),map,roads,store,people));
+  json root; { std::ifstream input(path); input >> root; }
+  CitySnapshot snapshot;
+  ASSERT_TRUE(SaveLoadSystem::loadSnapshotFromFile(path.string(),snapshot));
+  EXPECT_EQ(snapshot.nextEntityId,EntityIdUtils::nextEntityId());
+  for (const json& value : {json(0),json(-1),json(1.5),json("2"),json(4294967297ULL),json(1)}) {
+    root["nextEntityId"]=value;
+    { std::ofstream output(path); output << root; }
+    EXPECT_FALSE(SaveLoadSystem::loadSnapshotFromFile(path.string(),snapshot));
+  }
+  root.erase("nextEntityId");
+  { std::ofstream output(path); output << root; }
+  ASSERT_TRUE(SaveLoadSystem::loadSnapshotFromFile(path.string(),snapshot));
+  EXPECT_EQ(snapshot.nextEntityId,0u);
+  std::filesystem::remove(path);
+}
+
 TEST(SaveLoadSystemTests, SaveAndLoadRoundTripPreservesCoreState) {
   CityMap map({8, 8});
   RoadNetwork roads(map);

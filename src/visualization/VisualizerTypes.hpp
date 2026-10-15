@@ -72,6 +72,7 @@ enum class HudAction {
   ToggleDisasters,
   Budget,
   Alerts,
+  Transport,
 };
 
 enum class QuitAction {
@@ -86,6 +87,7 @@ struct LiveSimulationState {
   TreasuryLedger treasuryLedger;
   CityHistory history;
   CityAlerts alerts;
+  TransitReport transitReport;
   bool enableDisasters = false;
   CityDisasterState disasters;
   uint32_t simulationSeed = 98765;

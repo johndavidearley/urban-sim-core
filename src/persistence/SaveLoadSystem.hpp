@@ -38,6 +38,8 @@ struct CitySnapshot {
   std::vector<Building> buildings;
   std::vector<PopulationGroup> populationGroups;
   std::vector<SerializedRoad> roads;
+  // Zero is legacy/unspecified: derive from the greatest live ID on restore.
+  uint64_t nextEntityId = 0;
 };
 
 struct SnapshotLoadDiagnostics {

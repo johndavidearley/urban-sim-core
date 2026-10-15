@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <algorithm>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
@@ -32,11 +34,27 @@ struct TransitRoute {
   int stopCoverageRadius = 4;   // road-hops a stop covers (walk-to-stop distance)
 
   int totalCapacity() const {
-    return vehicleCount * capacityPerVehicle;
+    return static_cast<int>(std::clamp(static_cast<int64_t>(vehicleCount) * capacityPerVehicle,
+      int64_t{0}, static_cast<int64_t>(std::numeric_limits<int>::max())));
   }
 };
 
+struct TransitRouteUsage {
+  TransitRouteId id = 0;
+  uint32_t capacity = 0;
+  uint32_t demand = 0;
+  uint32_t ridership = 0;
+};
+struct TransitReport {
+  bool valid = false;
+  uint32_t tick = 0;
+  uint32_t commuters = 0;
+  std::vector<TransitRouteUsage> routes;
+};
+
 struct TransitSummary {
+  std::vector<TransitRouteUsage> routeUsage;
+
   uint32_t totalRoutes = 0;
   uint32_t busRoutes = 0;
   uint32_t railRoutes = 0;
@@ -76,17 +94,26 @@ public:
 
   uint32_t totalRidership() const { return ridership_; }
   uint32_t totalDemand() const { return demand_; }
+  const std::vector<TransitRouteUsage>& routeUsage() const { return usage_; }
 
 private:
   const std::vector<TransitRoute>& routes_;
   const TransitCoverageCache& cache_;
   std::vector<uint32_t> remainingCapacity_;
+  std::vector<TransitRouteUsage> usage_;
   uint32_t ridership_ = 0;
   uint32_t demand_ = 0;
 };
 
 class TransitSystem {
 public:
+  // Bus fleets cost $2 per assigned vehicle per completed tick. Rail unchanged.
+  static int64_t operatingCost(const TransitRoute& route) {
+    return route.mode == TransitMode::Bus ? 2LL * std::max(0,route.vehicleCount) : 0;
+  }
+  static int64_t operatingCost(const std::vector<TransitRoute>& routes) {
+    int64_t cost = 0; for (const auto& route : routes) cost += operatingCost(route); return cost;
+  }
   // Rebuild the BFS distance fields (call only when the route list changes).
   static void buildCache(
     const RoadNetwork& roads,

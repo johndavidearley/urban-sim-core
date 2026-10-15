@@ -359,3 +359,90 @@ counts, ranges, timestamps and inconsistent states reject before city mutation.
 Both playable hosts update alerts after the actual treasury and population
 results, and GUI/headless saved alert state is identical. Paused refreshes and
 save/load do not evaluate alerts or emit notices.
+
+
+M27 adds `inspect(section="diagnostics", x, y)` for a single valid tile.
+It returns `growth` local gate blockers/advice, road access, delivered utility
+flags, last evaluated demand, civic reach, congestion and redevelopment location
+factor; `building` occupancy/capacity; `services_mask` in ServiceType bit order;
+and a radius-4 `neighborhood`. Neighborhood crime/illness are resident-weighted
+(0 when there are no residents), service reach is building-weighted, and counts
+are clipped to valid tiles. Local job occupancy is not local unemployment.
+A clear blocker list does not promise growth: city balance, zone saturation,
+district effects and seeded chance still matter. Read-only queries do not
+advance ticks, spend cash, rewrite history or create saved diagnostic state.
+
+
+M28 adds F8, HUD `transport`, `budget(action="transport")`, and
+`budget(action="set_route_vehicles", route_id, vehicles=0..20)` for existing bus
+routes. Native transport controls are `transport_close`, `route_prev`,
+`route_next`, `vehicles_minus`, `vehicles_plus`, `route_coverage` and
+`route_bottleneck`. `ui.transport` identifies the modal. `inspect(routes)` adds
+vehicle_count, capacity_per_vehicle, operating_cost and coverage_peak_congestion.
+`budget.transit_cost` is the next-tick total bus operating cost, and
+`budget.transit_report` is completed-tick state: valid, tick, commuters, and
+per-route id/capacity/demand/ridership. Utilization uses sampled capacity, not
+a subsequently edited fleet. Covered demand is attributed once by existing
+route order; commuters minus summed assigned demand is outside route reach.
+Civic expense category 3 equals civic operation plus bus operation ($2 per
+assigned vehicle). Zero vehicles retains stops/cache/reach and costs zero.
+
+Fleet configuration uses existing saved transitRoutes fields; optional
+transitReport retains usage independently from paused tool refreshes. Invalid
+fleet numbers, overflowed capacities, duplicate route IDs or inconsistent
+report totals reject before city mutation. Report absence starts unmeasured.
+Replay and headless continuation use the same policy, billing and report rules.
+
+
+### M29: management navigation and inspection
+
+In Budget (F6/F7) and Transport (F8), use **Tab/Down** to advance focus,
+**Up** to go back and **Enter** to activate. A white outline marks focus;
+unavailable controls are skipped. **F2** switches readable/compact labels
+inside either panel. Transport also supports **Left/Right** route browsing.
+
+In Trends, hover or click a plot to inspect a retained tick across all six
+charts. **Left/Right** steps samples, **Home** selects the oldest and **End**
+follows the latest. Readouts show that sample's values, migration and deaths.
+Policy details compare it with the previous retained sample: tax changes list
+old/new values; funding shows the first changed department plus a count of
+additional changes. The oldest row is a baseline when no earlier sample remains.
+
+On the map, **I** pins the hovered tile's inspector; **I/Escape** releases it.
+Alert View actions center and pin a relevant building when available: missing
+power/water, missing civic reach, or unfilled job capacity. These are measured
+selection hints, not historical causal claims. Budget alerts open Taxes.
+Inspection and navigation do not advance the simulation or change saved policy.
+
+MCP UI inspection exposes `budget_focus`, `transport_focus`, effective
+`trends_tick` and `pinned_tile` ([-1,-1] when unpinned). Management controls
+include `enabled` and `focused`; Trends adds six plot rectangles in `charts`.
+Native Tab, Home, End and I keys are accepted by the playtest bridge.
+
+
+M30 sustained deterministic scenarios are retained in
+`playtest/examples/phase8_stabilization.py`. For example:
+
+```sh
+VK_DRIVER_FILES=/usr/local/opt/molten-vk/etc/vulkan/icd.d/MoltenVK_icd.json \
+.venv/bin/python playtest/examples/phase8_stabilization.py \
+  --executable build/bin/UrbanSimCore-playtest \
+  --legacy-save playtest-artifacts/hour-continuation-20261012/city-save/urban_sim_session.json \
+  --artifacts playtest-artifacts/m30-repeat
+```
+
+Use the Vulkan driver configuration appropriate to your platform. Each scenario
+runs 1,000 growth ticks, 200 ticks with power funding disabled, 500 recovery
+ticks and 20 continuation ticks. The older save is imported into run-local files;
+source files and funds are preserved. Exact GUI/headless continuation includes
+the session, city tiles, buildings, population and allocator counter, with
+unordered entity arrays compared by ID. Each recorded scenario is replayed twice.
+Measurements include command/IPC time per completed tick; they are neither
+renderer FPS nor wall-clock endurance results. These scenarios keep the normal
+window size; the separate rendered regression suite still checks minimum size.
+
+Core snapshots now optionally contain `nextEntityId` (1 through UINT32_MAX+1).
+New saves preserve consumed/deleted IDs for continuation parity. Missing legacy
+counters derive from live entity IDs; malformed, overflowing or colliding
+counters reject before city mutation. Loading a complete city replaces the
+process-global allocator state, just as it replaces that active city's entities.

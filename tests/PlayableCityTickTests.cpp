@@ -929,3 +929,22 @@ TEST(PlayableCityTickTests, AlertsUseCompletedLedgerAndIgnorePausedRefresh) {
   EXPECT_FALSE(state.alerts.records[4].active);
   EXPECT_EQ(state.alerts.checkedTick,5u);
 }
+
+TEST(PlayableCityTickTests, BusFleetCostsAreBilledAndUsageIsCompletedTickState) {
+  CityMap map({24,24}); RoadNetwork roads(map); EntityStore store; PopulationStore population;
+  laySpine(map,roads);
+  PlayableCityTickState state; PlayableCityTickOptions options; options.growthChance=0;
+  TransitRoute route;route.id=1;route.stops={{4,12},{18,12}};route.vehicleCount=3;
+  state.transitRoutes.push_back(route);
+  int64_t funds=10000;
+  playableCityTick(map,roads,store,population,{},state,funds,options);
+  EXPECT_EQ(state.treasuryLedger.breakdown.expenses[3],6);
+  EXPECT_EQ(state.transitReport.tick,1u);
+  ASSERT_EQ(state.transitReport.routes.size(),1u);
+  EXPECT_EQ(state.transitReport.routes[0].capacity,90u);
+  state.transitRoutes[0].vehicleCount=0;
+  EXPECT_EQ(state.transitReport.routes[0].capacity,90u);
+  playableCityTick(map,roads,store,population,{},state,funds,options);
+  EXPECT_EQ(state.treasuryLedger.breakdown.expenses[3],0);
+  EXPECT_EQ(state.transitReport.routes[0].capacity,0u);
+}

@@ -14,6 +14,8 @@ class WindowHost;
 class PlaytestBridge;
 class VulkanRenderer;
 
+void projectTreasuryHud(LiveSimulationState& liveState,const std::vector<ServiceFacility>& facilities);
+
 void updatePlayableUtilityConnectivity(
   CityMap& map,
   const RoadNetwork& roads,

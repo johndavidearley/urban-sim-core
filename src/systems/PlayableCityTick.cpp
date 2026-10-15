@@ -320,7 +320,7 @@ void playableCityTick(
   refreshDistrictGrowthModifiers(
     options.districts, map, store, population, roads, facilities, state);
 
-  int64_t serviceOperatingCosts = state.budgetPolicy.serviceCost(baseFacilities);
+  int64_t serviceOperatingCosts = state.budgetPolicy.serviceCost(baseFacilities) + TransitSystem::operatingCost(state.transitRoutes);
   state.treasuryLedger = {};
   state.treasuryLedger.valid = true;
   state.treasuryLedger.tick = state.tick + 1;
@@ -367,6 +367,7 @@ void playableCityTick(
   state.laggedEducationCoverage = state.serviceSummary.educationCoverage;
 
   ++state.tick;
+  state.transitReport = {true,state.tick,state.trafficSummary.commutingPopulation,state.transitSummary.routeUsage};
   const uint32_t residents = population.getTotalPopulation();
   state.alerts.update(state.tick, {store.getBuildingCount() > 0, residents > 0, options.requireUtilities,
     state.serviceSummary.powerCoverage, state.serviceSummary.powerSupplyRatio,

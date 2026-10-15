@@ -151,7 +151,12 @@ Not thread-safe. Mutation stays on the tick's sequential phases.
 
 IDs come from a process-global `EntityIdUtils::generateEntityId()`.
 `clear()` does not reset the generator. Buildings and population groups
-share the ID space.
+share the ID space. Full-world snapshots preserve `nextEntityId`, including
+IDs consumed by entities that were later removed. Applying a snapshot restores
+that process-global counter after validation; only one active world may create
+entities at a time. Legacy snapshots derive the counter from the greatest live
+ID. Their discarded-ID history cannot be recovered, but subsequent saves retain
+the counter for exact GUI/headless continuation.
 
 ### PopulationStore (`src/entities/`)
 

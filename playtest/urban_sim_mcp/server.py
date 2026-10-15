@@ -20,6 +20,10 @@ Coordinate = Annotated[int, Field(ge=0, le=16384)]
 KEYS = [
     "Escape",
     "Enter",
+    "Tab",
+    "Home",
+    "End",
+    "I",
     "Space",
     "Period",
     "Equal",
@@ -58,8 +62,12 @@ def compact(**values):
 
 INSPECTION_REFERENCE = {
     "inspection_version": 3,
+    "diagnostics": {"scope": "Current local growth gates, last evaluated demand, and a radius-4 (up to 9x9) neighborhood",
+        "weights": "crime/illness resident-weighted; service reach building-weighted",
+        "limits": "No local unemployment inference or guaranteed growth; utility flags are delivered connectivity, services_mask is road reach"},
     "sections": [
         "summary",
+        "diagnostics",
         "ui",
         "tiles",
         "entities",
@@ -311,8 +319,10 @@ def create_server(session: Session) -> FastMCP:
 
     @server.tool(annotations=local)
     async def budget(
-        action: Literal["inspect", "set_taxes", "set_funding", "reset_funding", "reset", "open", "close", "services", "taxes", "trends", "alerts", "view_alert"] = "inspect",
+        action: Literal["inspect", "set_taxes", "set_funding", "reset_funding", "reset", "open", "close", "services", "taxes", "trends", "alerts", "view_alert", "transport", "set_route_vehicles"] = "inspect",
         alert_index: Annotated[int, Field(ge=0, le=4)] | None = None,
+        route_id: Annotated[int, Field(ge=0, le=4294967295)] | None = None,
+        vehicles: Annotated[int, Field(ge=0, le=20)] | None = None,
         tax_percent: Annotated[
             list[Annotated[int, Field(ge=0, le=20)]], Field(min_length=5, max_length=5)
         ] | None = None,
@@ -333,8 +343,11 @@ def create_server(session: Session) -> FastMCP:
         240 completed ticks, including the policy used for each sample.
         alerts opens completed-tick diagnostics; view_alert follows its action
         (index 0 power, 1 water, 2 unemployment, 3 services, 4 budget).
+        transport opens route management. set_route_vehicles edits a bus route
+        fleet (0..20), with $2 per assigned vehicle per tick; completed usage
+        remains immutable until stepping.
         """
-        return await session.request("budget", compact(action=action, alert_index=alert_index, tax_percent=tax_percent, service_percent=service_percent))
+        return await session.request("budget", compact(action=action, alert_index=alert_index, route_id=route_id, vehicles=vehicles, tax_percent=tax_percent, service_percent=service_percent))
 
     @server.tool(annotations=local)
     async def view(
@@ -375,6 +388,7 @@ def create_server(session: Session) -> FastMCP:
     async def inspect(
         section: Literal[
             "summary",
+            "diagnostics",
             "ui",
             "tiles",
             "entities",
@@ -390,7 +404,7 @@ def create_server(session: Session) -> FastMCP:
         width: Annotated[int, Field(ge=1, le=96)] = 1,
         height: Annotated[int, Field(ge=1, le=96)] = 1,
     ) -> dict[str, Any]:
-        """Read summary state (including last-tick population_change and city metrics), UI bounds, <=512 tiles or paginated collections. Residential tiles/entities expose crime_rate and illness_rate. See urban-sim://inspection for units, weighting and timing."""
+        """Read summary state (including last-tick population_change and city metrics), UI bounds, <=512 tiles or paginated collections. Residential tiles/entities expose crime_rate and illness_rate. diagnostics at x/y reports local growth gates and a radius-4 neighborhood; it does not predict seeded growth or local employment. See urban-sim://inspection for units, weighting and timing."""
         return await session.request(
             "inspect",
             dict(
@@ -462,6 +476,7 @@ def create_server(session: Session) -> FastMCP:
         expected: Any,
         section: Literal[
             "summary",
+            "diagnostics",
             "ui",
             "tiles",
             "entities",

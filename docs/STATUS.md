@@ -1,10 +1,13 @@
 # Project Status
 
-Last verified: October 14, 2026
+Last verified: October 15, 2026
 
-Phases 6–7 (M17–M26) are implemented and locally verified; see `ROADMAP.md`.
-The last hosted strict and sanitizer run verified here passed on commit
-`edc8d70` (before parks). Hosted verification of the current working tree is pending.
+Phases 6–7 (M17–M26) are implemented and locally verified. Phase 8
+(M27–M30) is underway: M27 diagnostics, M28 transport management and M29 UI
+polish are locally verified. M30 local stabilization checks are complete;
+hosted verification of a commit containing these changes remains pending. See `ROADMAP.md`.
+The latest hosted strict and sanitizer run verified here passed on commit
+`ecd7547` (M26). Hosted verification of the current working tree is pending.
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -488,3 +491,113 @@ GUI/headless equality passed. One intermediate test run overlapped relinking
 and could not launch three tests; the final complete rerun passed 454/454.
 Evidence: `playtest-artifacts/m26-20261014/REPORT.md`. Hosted CI remains unrun
 for this working tree.
+
+
+### Phase 8 / M27 — building and neighborhood diagnostics (October 15, 2026)
+
+Phase 8 now defines M27 diagnostics, M28 transport management, M29 management UI
+polish and M30 stabilization, each with acceptance criteria and exclusions.
+M27 is implemented and locally verified; M28–M30 remain planned.
+
+The hover inspector and MCP single-tile diagnostic query show measured local
+growth gates, delivered utilities, civic road reach, demand, congestion and
+building vacancy. New-construction and redevelopment rules are distinguished;
+clear local gates do not guarantee growth. Neighborhood radius 4 is bounded
+to at most 81 tiles, with occupancy totals, resident-weighted crime/illness and
+building-weighted service reach. City joblessness is explicitly not local;
+nearby job slots cannot establish which residents hold those jobs. Diagnostics
+reuse growth helpers, read funded service caches, add no saved state and do
+not advance time or mutate the city.
+
+Validation passed: warnings-as-errors build, 458 C++ tests, all 16 rendered
+playtests, 7 Python unit tests and GCC 16 strict checks. Save/load diagnostic
+values match, queries leave tick/funds/population/history unchanged, and normal
+and minimum-window inspector captures were inspected. The new test's protocol
+metadata comparison and camera fixture were corrected, and the inspection
+reference section ordering was synchronized with tool discovery. No failures
+remain. Evidence: `playtest-artifacts/m27-20261015/REPORT.md`. Hosted CI remains
+unrun for the working-tree changes.
+
+
+### Phase 8 / M28 — transport management (October 15, 2026)
+
+F8 / the Transit HUD button opens route management. Routes expose stops and
+road-linked stop count, reach, per-vehicle and total capacity, current coverage
+congestion, and separately labeled completed-tick usage. Bus fleets support
+0–20 vehicles and cost $2 per assigned vehicle per tick. Zero retains routes
+and coverage while suspending carrying capacity and operating expense. Rail
+remains inspect-only with prior cost behavior. Existing saved bus fleets acquire
+the new operating cost on continuation. Budget expense category 3 now includes
+civic and bus operation; both hosts and paused previews use the same cost helper.
+
+Per-route demand follows existing route-order selection without double-counting
+or changing offload matching. Usage reports preserve sampled capacity separately
+from paused policy edits and persist through optional transitReport save data.
+Uncovered city commuters are separate from unmet assigned demand. View actions
+open transit coverage or congestion near the selected route's covered roads.
+Invalid numeric fleets, overflowing capacities, duplicate IDs and inconsistent
+report imports are rejected before mutation. No time, cash or completed history
+is changed by a paused fleet edit.
+
+
+M28 validation passed: warnings-as-errors build, 464 C++ tests, all 17 rendered
+playtests, 7 Python unit tests and GCC 16 strict checks. Transport coverage
+includes native F8/fleet/bottleneck actions, zero-fleet demand retention, actual
+billing, unchanged paused history/cash, save/load, GUI/headless equality and two
+identical fleet-policy replays. Normal, empty and minimum-window panels were
+inspected. The new geometry assertion was corrected to allow fullscreen dimmer
+vertices on the window boundary. Evidence:
+`playtest-artifacts/m28-20261015/REPORT.md`. Hosted CI remains unrun for the
+working-tree changes. M29 UI polish is next planned in Phase 8.
+
+
+### Phase 8 / M29 — management UI polish (October 15, 2026)
+
+Budget and transport panels now support visible keyboard focus, enabled-control
+navigation and Enter activation. Trends supports mouse and keyboard sample
+inspection, a synchronized cursor and tax/funding policy details. Minimum-size
+layout and F2 readability switching work inside management panels.
+
+Inspectors can be pinned with I and released with I/Escape. Utility/service and
+employment alert actions select a relevant measured building where available,
+center the map and pin its inspector; budget alerts open Taxes. Employment
+selection identifies unfilled job capacity, not inferred local unemployment.
+Navigation and inspection introduce no saved state or simulation changes.
+
+Validation passed: warnings-as-errors build, 466 C++ tests, 18 rendered tests,
+7 Python unit tests, and strict GCC syntax checks for the changed HUD and
+geometry tests. Native screenshots were reviewed at normal and minimum sizes.
+Evidence: `playtest-artifacts/m29-20261015/REPORT.md`. Hosted strict/sanitizer
+verification of these working-tree changes remains pending. M30 is next planned.
+
+
+### Phase 8 / M30 — local stabilization (October 15, 2026)
+
+Retained scenarios exercise fresh 32-tile growth and an imported 96-tile mature
+city for 1,000 growth ticks, 200 zero-power-funding ticks, 500 recovery ticks and
+20 continuation ticks each. Each scenario passes two identical recorded replays
+and exact GUI/headless comparison of persisted session and city state. The
+older source save and its funds were preserved; tests use run-local copies.
+
+Stress reduced mature-city population from 6,277 to 82; restored funding recovered
+it to 6,937 (6,941 after continuation). Power alerts cleared on recovery. The
+small starter fixture recovered from zero to 26 residents but accumulated debt;
+it is not evidence of a financially balanced starting layout. No rates were
+tuned from this limited fixture. Median growth command time was about 0.58 ms
+per tick for the starter and 6.04 ms for the mature city. These include IPC,
+were measured under local workload, and do not establish renderer FPS or a
+cross-platform performance guarantee.
+
+The scenario uncovered ID drift after save/load: deleted entities left the GUI
+allocator ahead of a fresh CLI process. Core snapshots now preserve the next
+entity ID. Full-world restore validates and restores that counter; legacy saves
+derive it from live entities. Regression tests cover removed IDs, serialization,
+legacy fallback and invalid counters rejecting before mutation.
+
+Warnings-as-errors build, 468 C++ tests, 18 rendered tests, 7 Python unit tests
+and strict GCC checks passed. Local ASan/UBSan headless testing passed 466/466 tests (native tests excluded;
+macOS leak detection disabled). All evidence is in
+`playtest-artifacts/m30-final-20261015/REPORT.md`. Hosted run 38742990099 passed
+Linux/macOS/Windows strict, ASan/UBSan and TSan for `ecd7547`, which does not
+contain the uncommitted Phase 8 work. M30 and Phase 8 remain open until required
+hosted CI passes on a commit containing the reviewed changes.

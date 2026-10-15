@@ -82,6 +82,12 @@ bool budgetControlVisible(int action, bool services, bool trends, bool alerts) {
   if (trends) return false;
   return !((action >= 2 && action < 12 && services) || (action >= 14 && !services));
 }
+bool budgetControlEnabled(int action,const BudgetPolicy& policy,bool services,bool trends,bool alerts) {
+  if (action<0 || action>=43 || !budgetControlVisible(action,services,trends,alerts)) return false;
+  if (action>=2 && action<12) {const int v=policy.taxPercent[(action-2)/2];return action%2 ? v<20 : v>0;}
+  if (action>=14 && action<36) {const int v=policy.servicePercent[(action-14)/2];return action%2 ? v<100 : v>0;}
+  return true;
+}
 Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool services, bool, bool) {
   const auto panel = budgetPanelRect(windowWidth, windowHeight);
   if (action == 0) return {panel.x + 664, panel.y + 12, 40, 26};
@@ -111,7 +117,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   const TreasuryLedger& ledger, int64_t funds, int64_t debt, int mouseX, int mouseY,
   bool services, const std::array<int64_t, kServiceTypeCount>& serviceCosts,
   const std::array<float, kServiceTypeCount>& serviceCoverage,
-  bool trends, const CityHistory& history, bool alerts, const CityAlerts& diagnostics) {
+  bool trends, const CityHistory& history, bool alerts, const CityAlerts& diagnostics,int focus,uint32_t inspectedTick) {
   drawFilledRect(renderer, 0, 0, windowWidth, windowHeight, {5, 10, 18}, 195);
   const auto panel = budgetPanelRect(windowWidth, windowHeight);
   const int x = panel.x, y = panel.y;
@@ -120,6 +126,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   drawText(renderer, x + 24, y + 18, "CITY BUDGET", {240, 245, 250}, 2);
   drawText(renderer, x + 24, y + 50,
     "CASH $" + std::to_string(funds) + "   DEBT $" + std::to_string(debt), {255, 220, 130}, 1);
+  drawText(renderer,x+360,y+50,"TAB/UP/DOWN FOCUS. ENTER SELECT.",{165,185,205},1);
   const std::array<const char*, 5> taxNames{{"RESIDENTIAL", "COMMERCIAL", "INDUSTRIAL", "OFFICE", "INCOME"}};
   if (!services && !trends && !alerts) for (size_t i = 0; i < taxNames.size(); ++i) {
     drawText(renderer, x + 24, y + 121 + static_cast<int>(i) * 30, taxNames[i], {205, 220, 235}, 1);
@@ -148,7 +155,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       drawText(renderer, x + 360, row, "$" + std::to_string(serviceCosts[i]), {255, 195, 135}, 1);
       drawText(renderer, x + 520, row, std::to_string(static_cast<int>(serviceCoverage[i] * 100.f)) + "%", {135, 225, 175}, 1);
     }
-    drawText(renderer, x + 360, y + 346, "TOTAL $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
+    drawText(renderer, x + 360, y + 346, "CIVIC + TRANSIT $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
   }
   for (int action = 0; action < 43; ++action) {
     if (!budgetControlVisible(action, services, trends, alerts)) continue;
@@ -165,6 +172,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     }
     drawFilledRect(renderer, r.x, r.y, r.w, r.h,
                    disabled ? RGB{28, 32, 40} : (hovered ? RGB{65, 90, 115} : RGB{42, 58, 75}));
+    if (action==focus) drawRectOutline(renderer,r.x-2,r.y-2,r.w+4,r.h+4,{235,245,255});
     const bool activeTab = (action == 12 && !services && !trends && !alerts) || (action == 13 && services && !trends && !alerts) || (action == 36 && trends && !alerts) || (action == 37 && alerts);
     drawRectOutline(renderer, r.x, r.y, r.w, r.h, activeTab ? RGB{255, 225, 110} :
                     (disabled ? RGB{65, 70, 80} : RGB{135, 165, 190}));
@@ -217,7 +225,8 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       drawText(renderer, x + 24, y + 164, "HISTORY STARTS WITH THE NEXT SIMULATION TICK.", {165, 185, 205}, 1);
       return;
     }
-    const auto& latest = history.samples.back();
+    const size_t selected=trendSampleIndex(history,inspectedTick);
+    const auto& latest = history.samples[selected];
     const char* names[] = {"POPULATION", "NET POP CHANGE", "REVENUE", "EXPENSES", "CASH", "DEBT"};
     auto value = [](const CityHistorySample& s, int chart) -> int64_t {
       switch (chart) {
@@ -256,14 +265,16 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       setDrawColor(renderer, 120, 215, 240, 255);
       for (size_t i = 1; i < history.samples.size(); ++i)
         drawLine(renderer, px(i - 1), py(value(history.samples[i - 1], chart)), px(i), py(value(history.samples[i], chart)));
-      drawFilledRect(renderer, px(history.samples.size() - 1) - 1, py(value(latest, chart)) - 1, 3, 3, {120, 215, 240});
+      setDrawColor(renderer,235,245,255,255);
+      drawLine(renderer,px(selected),top,px(selected),bottom);
+      drawFilledRect(renderer, px(selected) - 1, py(value(latest, chart)) - 1, 3, 3, {235,245,255});
     }
-    drawText(renderer, x + 24, y + 450, "TICKS " + std::to_string(history.samples.front().tick) + " TO " + std::to_string(latest.tick) +
-      "  LAST " + std::to_string(history.samples.size()) + "/240", {165, 185, 205}, 1);
-    drawText(renderer, x + 24, y + 468, "GOLD: CHANGED POLICY FIRST APPLIED. EACH CHART HAS ITS OWN SCALE.", {230, 195, 105}, 1);
-    drawText(renderer, x + 24, y + 486, "LAST TICK: IN " + std::to_string(latest.migration.arrivals) + " OUT " +
-      std::to_string(latest.migration.departures) + " DEATHS " + std::to_string(latest.migration.deaths), {185, 205, 220}, 1);
-    drawText(renderer, x + 24, y + 512, "COMPLETED TICKS. NET CHANGE INCLUDES DEATHS. CASH INCLUDES TOOL SPEND.", {165, 185, 205}, 1);
+    drawText(renderer,x+24,y+450,"TICKS " + std::to_string(history.samples.front().tick)+" TO "+std::to_string(history.samples.back().tick)+
+      "  INSPECT "+std::to_string(latest.tick)+" IN "+std::to_string(latest.migration.arrivals)+
+      " OUT "+std::to_string(latest.migration.departures)+" DEATHS "+std::to_string(latest.migration.deaths),{135,215,240},1);
+    drawText(renderer,x+24,y+468,trendTaxDetail(history,selected),{230,195,105},1);
+    drawText(renderer,x+24,y+486,trendFundingDetail(history,selected),{230,195,105},1);
+    drawText(renderer,x+24,y+512,"HOVER/ARROWS: INSPECT. HOME/END: FIRST/LATEST. NET INCLUDES DEATHS.",{165,185,205},1);
     return;
   }
   if (!services && !trends && !alerts) {
@@ -276,7 +287,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     drawText(renderer, x + 360, row, revenueNames[i], {185, 205, 220}, 1);
     drawText(renderer, x + 580, row, "+$" + std::to_string(preview.revenue[i]), {120, 225, 155}, 1);
   }
-  const std::array<const char*, 5> costNames{{"BUILDING UPKEEP", "PARK UPKEEP", "IMPORTS", "SERVICE OPERATION", "BUILDING GROWTH"}};
+  const std::array<const char*, 5> costNames{{"BUILDING UPKEEP", "PARK UPKEEP", "IMPORTS", "CIVIC AND TRANSIT", "BUILDING GROWTH"}};
   for (size_t i = 0; i < costNames.size(); ++i) {
     const int row = y + 204 + static_cast<int>(i) * 16;
     drawText(renderer, x + 360, row, costNames[i], {185, 205, 220}, 1);
@@ -306,6 +317,85 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     " TO $" + std::to_string(ledger.flow.outstandingDebt), {230, 240, 245}, 1);
 }
 
+bool transportControlEnabled(int action,const std::vector<TransitRoute>& routes,size_t selected) {
+  if (action<0 || action>=7) return false;
+  if (action==0) return true;
+  if (routes.empty()) return false;
+  if (action==1 || action==2) return routes.size()>1;
+  const auto& route=routes[std::min(selected,routes.size()-1)];
+  if (action==3) return route.mode==TransitMode::Bus && route.vehicleCount>0;
+  if (action==4) return route.mode==TransitMode::Bus && route.vehicleCount<20 &&
+    static_cast<int64_t>(route.vehicleCount+1)*route.capacityPerVehicle<=INT32_MAX;
+  return !route.stops.empty();
+}
+Rect transportControlRect(int action,int width,int height) {
+  const auto p=budgetPanelRect(width,height);
+  switch (action) {
+    case 0: return {p.x+664,p.y+12,40,26};
+    case 1: return {p.x+24,p.y+64,90,26};
+    case 2: return {p.x+126,p.y+64,90,26};
+    case 3: return {p.x+220,p.y+142,40,26};
+    case 4: return {p.x+270,p.y+142,40,26};
+    case 5: return {p.x+24,p.y+438,220,30};
+    case 6: return {p.x+260,p.y+438,220,30};
+    default: return {};
+  }
+}
+int transportHitTest(int x,int y,int width,int height) {
+  for (int i=0;i<7;++i) { const auto r=transportControlRect(i,width,height);
+    if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) return i;
+  }
+  return -1;
+}
+void drawTransportPanel(DrawList* renderer,int width,int height,const std::vector<TransitRoute>& routes,
+  size_t selected,const TransitReport& report,float peakCongestion,int linkedStops,int focus) {
+  drawFilledRect(renderer,0,0,width,height,{5,10,18},195);
+  const auto p=budgetPanelRect(width,height); const int x=p.x,y=p.y;
+  drawFilledRect(renderer,x,y,p.w,p.h,{22,28,37},255);
+  drawRectOutline(renderer,x,y,p.w,p.h,{125,170,200});
+  drawText(renderer,x+24,y+18,"TRANSPORT MANAGEMENT",{240,245,250},2);
+  drawText(renderer,x+24,y+48,"TAB/UP/DOWN FOCUS. ENTER SELECT. LEFT/RIGHT ROUTES.",{165,185,205},1);
+  const char* labels[]={"X","PREV","NEXT","-","+","VIEW COVERAGE","VIEW BOTTLENECK"};
+  for (int i=0;i<7;++i) {
+    const auto r=transportControlRect(i,width,height);
+    const bool disabled=!transportControlEnabled(i,routes,selected);
+    if (i==focus) drawRectOutline(renderer,r.x-2,r.y-2,r.w+4,r.h+4,{235,245,255});
+    drawFilledRect(renderer,r.x,r.y,r.w,r.h,disabled ? RGB{28,32,40} : RGB{42,58,75});
+    drawRectOutline(renderer,r.x,r.y,r.w,r.h,{135,165,190});
+    drawText(renderer,r.x+10,r.y+7,labels[i],disabled ? RGB{95,100,110} : RGB{235,245,250},1);
+  }
+  drawText(renderer,x+24,y+490,"BUS FLEETS COST $2/VEHICLE/TICK. RAIL IS INSPECT ONLY.",{165,185,205},1);
+  drawText(renderer,x+24,y+512,"PAUSED EDITS CHANGE NEXT-TICK CAPACITY AND COST. F8 OR ESC CLOSES.",{165,185,205},1);
+  if (routes.empty()) {
+    drawText(renderer,x+24,y+118,"NO ROUTES YET. BUS ROUTES UNLOCK AT 1200 RESIDENTS.",{185,205,220},1);
+    if (report.valid) {
+      uint64_t covered=0; for (const auto& row:report.routes) covered+=row.demand;
+      drawText(renderer,x+24,y+164,"LAST TICK COMMUTERS OUTSIDE ROUTE REACH " +
+        std::to_string(report.commuters-static_cast<uint32_t>(std::min<uint64_t>(covered,report.commuters))),{205,220,235},1);
+    } else drawText(renderer,x+24,y+164,"NO COMPLETED-TICK USAGE YET",{165,185,205},1);
+    return;
+  }
+  const auto& route=routes[std::min(selected,routes.size()-1)];
+  drawText(renderer,x+240,y+72,"ROUTE " + std::to_string(route.id) + (route.mode==TransitMode::Bus ? " BUS" : " RAIL"),{135,215,240},1);
+  drawText(renderer,x+24,y+112,"STOPS " + std::to_string(route.stops.size()) + "  ROAD LINKED " + (linkedStops<0 ? "?" : std::to_string(linkedStops)) + "  REACH " + std::to_string(route.stopCoverageRadius) + " ROAD HOPS",{205,220,235},1);
+  drawText(renderer,x+24,y+148,"VEHICLES " + std::to_string(route.vehicleCount),{235,240,250},1);
+  drawText(renderer,x+24,y+184,"NEXT CAPACITY " + std::to_string(route.totalCapacity()) + "  COST $" + std::to_string(TransitSystem::operatingCost(route)) + "/TICK",{255,220,130},1);
+  drawText(renderer,x+24,y+210,"ALL BUS ROUTES $" + std::to_string(TransitSystem::operatingCost(routes)) + "/TICK IN CIVIC/TRANSIT EXPENSES",{165,185,205},1);
+  if (!route.stops.empty()) drawText(renderer,x+24,y+232,"ENDS " + std::to_string(route.stops.front().x) + "," +
+    std::to_string(route.stops.front().y) + " TO " + std::to_string(route.stops.back().x) + "," + std::to_string(route.stops.back().y),{165,185,205},1);
+  const auto used=std::find_if(report.routes.begin(),report.routes.end(),[&](const auto& u){return u.id==route.id;});
+  if (report.valid && used!=report.routes.end()) {
+    drawText(renderer,x+24,y+252,"LAST COMPLETED TICK " + std::to_string(report.tick),{135,215,240},1);
+    drawText(renderer,x+24,y+276,"RIDERS " + std::to_string(used->ridership) + "  ASSIGNED DEMAND " + std::to_string(used->demand) + "  CAPACITY " + std::to_string(used->capacity),{205,220,235},1);
+    const auto utilization=used->capacity ? static_cast<uint32_t>(100.0*used->ridership/used->capacity) : 0;
+    drawText(renderer,x+24,y+300,"UTILIZATION " + std::to_string(utilization) + "%  UNMET ASSIGNED " + std::to_string(used->demand-used->ridership),{205,220,235},1);
+    uint64_t covered=0; for (const auto& row:report.routes) covered+=row.demand;
+    drawText(renderer,x+24,y+324,"CITY COMMUTERS OUTSIDE ROUTE REACH " + std::to_string(report.commuters-static_cast<uint32_t>(std::min<uint64_t>(covered,report.commuters))),{205,220,235},1);
+  } else drawText(renderer,x+24,y+260,"NO COMPLETED-TICK USAGE FOR THIS ROUTE",{185,205,220},1);
+  drawText(renderer,x+24,y+364,"CURRENT COVERAGE PEAK CONGESTION " + std::to_string(static_cast<int>(peakCongestion*100)) + "%",{235,180,135},1);
+  drawText(renderer,x+24,y+394,"OVERLAPS USE EXISTING ROUTE ORDER. DEMAND IS NOT DOUBLE COUNTED.",{165,185,205},1);
+}
+
 Rect hudControlRect(HudAction action, int windowWidth) {
   const int panelX = windowWidth - kHudPanelWidth - 12;
   constexpr int y = 158;
@@ -317,6 +407,7 @@ Rect hudControlRect(HudAction action, int windowWidth) {
     case HudAction::Save: return {panelX + 10, y + 30, 106, 24};
     case HudAction::Load: return {panelX + 124, y + 30, 106, 24};
     case HudAction::ToggleDisasters: return {panelX + 10, 322, 180, 24};
+    case HudAction::Transport: return {panelX + 242, y, 128, 24};
     case HudAction::Alerts: return {panelX + 242, y + 30, 128, 24};
     case HudAction::Budget: return {panelX + 210, 322, 160, 24};
     default: return {0, 0, 0, 0};
@@ -324,9 +415,9 @@ Rect hudControlRect(HudAction action, int windowWidth) {
 }
 
 HudAction hudHitTest(int mouseX, int mouseY, int windowWidth) {
-  const std::array<HudAction, 9> actions = {
+  const std::array<HudAction, 10> actions = {
     HudAction::TogglePause, HudAction::Slow, HudAction::Normal, HudAction::Fast,
-    HudAction::Save, HudAction::Load, HudAction::ToggleDisasters, HudAction::Budget, HudAction::Alerts
+    HudAction::Save, HudAction::Load, HudAction::ToggleDisasters, HudAction::Budget, HudAction::Alerts, HudAction::Transport
   };
   for (const HudAction action : actions) {
     const Rect rect = hudControlRect(action, windowWidth);
@@ -458,7 +549,7 @@ void drawGameplayHud(
   drawText(renderer, x + 210, y + 302,
            events.disaster.earthquakeOccurred ? "EARTHQUAKE" :
            (events.disaster.floodOccurred ? "FLOOD" : ""), {255, 145, 100}, 1);
-  const std::array<std::pair<HudAction, const char*>, 9> controls = {{
+  const std::array<std::pair<HudAction, const char*>, 10> controls = {{
     {HudAction::TogglePause, paused ? "PLAY" : "PAUSE"},
     {HudAction::Slow, "1X"},
     {HudAction::Normal, "2X"},
@@ -467,6 +558,7 @@ void drawGameplayHud(
     {HudAction::Load, "F9 LOAD"},
     {HudAction::Budget, "F6 BUDGET"},
     {HudAction::Alerts, "F7 ALERTS"},
+    {HudAction::Transport, "F8 TRANSIT"},
     {HudAction::ToggleDisasters, liveState.enableDisasters ? "DISASTERS ON" : "DISASTERS OFF"},
   }};
   for (const auto& [action, label] : controls) {
@@ -716,23 +808,24 @@ void drawTileInspector(
   const EntityStore& store,
   const std::vector<ServiceFacility>& facilities,
   Coord coord,
-  const DistrictSystem* districts
+  const DistrictSystem* districts, const BuildingDiagnostics* diagnostics, float cityJoblessness,bool pinned
 ) {
   if (!map.isValid(coord)) {
     return;
   }
   constexpr int x = 14;
   constexpr int y = 170;
-  constexpr int width = 390;
-  constexpr int height = 132;
+  constexpr int width = 360;
+  const int height = diagnostics ? 326 : 132;
   drawFilledRect(renderer, x, y, width, height, {14, 17, 22}, 185);
   drawRectOutline(renderer, x, y, width, height, {150, 160, 175}, 240);
 
   const Tile& tile = map.getTile(coord);
   const char* terrain = tile.type == 2 ? "WATER" : (tile.type == 1 ? "ROUGH" : "LAND");
   drawText(renderer, x + 10, y + 9,
-           "TILE " + std::to_string(coord.x) + " " + std::to_string(coord.y),
+           std::string(pinned ? "PINNED TILE " : "TILE ") + std::to_string(coord.x) + " " + std::to_string(coord.y),
            {120, 205, 255}, 2);
+  drawText(renderer,x+240,y+13,pinned ? "I/ESC UNPIN" : "I PIN",{165,185,205},1);
   std::string zoneLine = std::string(terrain) + "  ZONE " + Zoning::zoneToString(map.zone(coord));
   if (districts != nullptr) {
     const District* containing = nullptr;
@@ -806,6 +899,34 @@ void drawTileInspector(
       break;
     }
   }
+  if (diagnostics) {
+    const auto& d = *diagnostics;
+    auto pct = [](float value) { return std::to_string(static_cast<int>(std::lround(value * 100.f))) + "%"; };
+    const std::string reason = d.growth.blockers.empty() ? "local_gates_pass" : d.growth.blockers.front();
+    std::string label = reason;
+    std::replace(label.begin(),label.end(),'_',' ');
+    drawText(renderer,x+10,y+132,"GROWTH " + label,{135,215,240},1);
+    drawText(renderer,x+10,y+148,BuildingDiagnostics::advice(reason),{235,195,145},1);
+    drawText(renderer,x+10,y+164,"DEMAND " + pct(d.growth.demand) + " CIVIC " + pct(d.growth.civicCoverage) +
+      " CONGEST " + pct(d.growth.congestion),{190,205,220},1);
+    std::string coverage = "REACH F/P/H/E ";
+    for (int i = 0; i < 4; ++i) coverage += (d.services & (1u << i)) ? "Y " : "N ";
+    drawText(renderer,x+10,y+180,coverage,{190,205,220},1);
+    if (d.growth.occupied) {
+      drawText(renderer,x+10,y+196,std::string(d.residential ? "VACANT HOUSING SLOTS " : "UNFILLED JOBS ") +
+        std::to_string(std::max(0,d.capacity-d.occupancy)),{220,225,210},1);
+      drawText(renderer,x+10,y+212,d.residential ? "CHECK JOBS, UTILITIES AND TAX ATTRACTION." :
+        "CHECK CITY WORKFORCE, EDUCATION AND UTILITIES.",{165,185,205},1);
+    }
+    const auto& n = d.neighborhood;
+    drawText(renderer,x+10,y+232,"NEARBY R4: " + std::to_string(n.buildings) + " BUILDINGS",{135,215,240},1);
+    drawText(renderer,x+10,y+248,"RES " + std::to_string(n.residents) + "/" + std::to_string(n.housingCapacity) +
+      " JOBS " + std::to_string(n.filledJobs) + "/" + std::to_string(n.jobCapacity),{190,205,220},1);
+    drawText(renderer,x+10,y+264,"RES-WEIGHTED CRIME " + pct(n.crime) + " ILL " + pct(n.illness),{210,190,165},1);
+    drawText(renderer,x+10,y+280,"CITY JOBLESS " + pct(cityJoblessness) + " - NOT LOCAL",{165,185,205},1);
+    drawText(renderer,x+10,y+302,"LOCAL GATES ONLY. GROWTH IS PROBABILISTIC.",{165,185,205},1);
+  }
+
 }
 
 

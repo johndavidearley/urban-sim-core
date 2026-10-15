@@ -444,6 +444,71 @@ state is introduced; paused edits do not advance population or construction.
 - [x] Persist debounce, recovery and cooldown state on both playable hosts.
 - [x] Verify native actions, saved cooldowns, recovery, legacy saves and replay.
 
+## Phase 8: City management and usability (M27–M30)
+
+Make the existing simulation easier to understand and manage before expanding
+its systems. M27–M29 are locally verified; M30 local stabilization is verified,
+with exact-commit hosted CI still pending. Completion requires observable behavior and
+validation, rather than a feature checklist alone.
+
+### Milestone 27: Building and neighborhood diagnostics
+
+- [x] Inspect local construction/redevelopment gates using the growth system's
+      road, demand, density and location rules; distinguish blockers from influences.
+- [x] Show delivered utilities, civic road reach and measured building vacancy.
+- [x] Summarize a bounded nearby area with housing/jobs occupancy and correctly
+      weighted health/crime/service measurements; label citywide joblessness separately.
+- [x] Expose the same read-only diagnosis through MCP inspection.
+- [x] Verify blocked and eligible sites, neighborhood boundaries/weights, native
+      minimum-window layout, unchanged simulation state and regression replay.
+
+**Acceptance:** A player can inspect a tile or building and identify local
+blockers or measured factors to check next. No explanation claims a guaranteed
+next-tick growth event or infers neighborhood unemployment from nearby job slots.
+Diagnostics introduce no saved state or simulation mutation.
+**Excluded:** individual citizen/job matching, historical causal attribution,
+new growth rules, a new workforce model and neighborhood policy editing.
+
+### Milestone 28: Transport management
+
+- [x] Inspect routes, stops, assigned capacity, utilization and uncovered demand.
+- [x] Add deliberate capacity controls with operating-cost feedback.
+- [x] Link congestion diagnostics to relevant roads/routes and overlays.
+- [x] Verify edits, save/load, deterministic replay and playable host parity.
+
+**Acceptance:** A player can locate a measured transport bottleneck, change a
+supported capacity setting and see the cost and subsequent utilization results.
+**Excluded:** new rail systems, new vehicle classes, road geometry redesign and timetable simulation.
+
+### Milestone 29: Management UI polish
+
+- [x] Improve navigation between inspectors, alerts, overlays and budget views.
+- [x] Add chart inspection and clearer policy-marker details.
+- [x] Improve alert targeting and keyboard/readability behavior at minimum size.
+- [x] Run native interaction and layout regression checks.
+
+**Acceptance:** Common diagnosis-to-action flows work with mouse and keyboard,
+with readable labels, visible focus and no overlapping controls at supported sizes.
+**Excluded:** renderer replacement, a complete visual redesign and new simulation systems.
+
+### Milestone 30: Stabilization and balance
+
+- [x] Run sustained playtests across startup, growth, mature-city stress and recovery.
+- [x] Record performance, tune demonstrated balance problems and retain scenarios.
+- [x] Check older saves, continuation parity and deterministic replay.
+- [ ] Verify hosted strict/sanitizer CI for the reviewed commit.
+
+**Acceptance:** Published scenarios reproduce expected outcomes, performance
+limits and remaining issues are documented, compatible saves continue correctly,
+and required hosted CI passes on the exact reviewed commit.
+**Excluded:** speculative optimization, unmeasured balance changes and feature expansion.
+
+Local evidence: `playtest-artifacts/m30-final-20261015/REPORT.md`. Two retained
+1,720-tick scenarios cover fresh growth and an older mature city, utility stress,
+recovery, exact GUI/headless continuation and two-run replay. An entity allocator
+checkpoint bug was fixed; no speculative balance parameters changed. Hosted CI
+remains required on a commit containing these changes.
+
 ---
 
 ## Timeline
@@ -457,9 +522,11 @@ state is introduced; paused edits do not advance population or construction.
 | 5 | M11+ | 12+ weeks |
 | 6 | M17–M22 | complete |
 | 7 | M23–M26 | complete |
+| 8 | M27–M30 | in progress (M27–M29 complete; M30 local checks complete, hosted CI pending) |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.
+**Phase 8 (M27–M30):** active; M27–M29 locally verified; M30 local stabilization verified, exact-commit hosted CI pending.
 
 ---
 
@@ -475,7 +542,7 @@ controls are complete and locally verified.
 
 ## Next Targets (Post-Backlog)
 
-Finished through Phase 7 (M26). This list is the
+Finished through Phase 7 (M26). Phase 8 is the active queue above. This list is the
 record of work that landed after M16.
 
 1. ~~District-level service policies and budget controls~~ - already done,

@@ -790,3 +790,84 @@ Paused edits do not run checks, change past measurements or emit notices;
 load does not reissue a toast. The panel labels its last checked tick, and
 only completed ticks update it. Advice identifies useful checks rather than
 claiming a single proven cause.
+
+
+### Phase 8 / M27: building and neighborhood diagnostics
+
+Hover a map tile for an expanded inspector. It shows local growth blockers,
+measured zone demand, civic road reach and road congestion, plus vacant housing
+or unfilled job slots. Advice identifies a useful next check. A clear local
+site can still wait for citywide balance and seeded construction/redevelopment
+chance. Existing buildings follow redevelopment rules; utility/road requirements
+for new construction are not falsely presented as redevelopment gates.
+
+The nearby summary covers radius 4 (up to 9×9 tiles, clipped at map edges).
+It totals residents/housing and filled/available job slots; crime and illness
+are resident-weighted. City joblessness is labeled citywide: nearby job slots
+cannot establish which nearby residents are employed. Service reach is based
+on funded facilities and road anchors, distinct from delivered utility supply.
+Demand is the last evaluated growth demand; paused tool refreshes may update
+connectivity and services without advancing that demand or simulation time.
+
+MCP `inspect(section="diagnostics", x=..., y=...)` exposes all blocker codes,
+checks, measured local factors, service mask and neighborhood coverage by
+service type. These read-only diagnostics add no save fields. The roadmap
+tracks M28 transport management, M29 UI polish and M30 stabilization.
+
+
+### M28: transport management
+
+Press **F8** or click **F8 TRANSIT** in the detailed HUD. Browse routes with
+Prev/Next, inspect stop endpoints, road-linked stops and reach, then adjust a
+bus fleet from 0–20 vehicles. Capacity is vehicles × capacity per vehicle;
+zero suspends carrying riders but keeps the route and stops. Each assigned bus
+vehicle costs $2 per completed tick, including buses on uncovered or idle
+routes. This cost is part of the budget's **Civic and transit** expense category.
+Existing saved bus fleets acquire this operating cost when continued. Rail is
+inspect-only, with its existing cost behavior unchanged.
+
+Configured capacity/cost are next-tick policy; the usage section is the last
+completed tick's immutable report, including ridership, assigned demand,
+utilization and unmet assigned demand. City commuters outside all route reach
+are separate from riders turned away by capacity. Overlapping routes retain
+the existing route-order assignment; per-route demand is attributed to the
+route chosen for a batch, or the first covering route when all are full. It
+is not double-counted, and increasing one route's capacity can change which
+route receives later demand. This does not add transfers or change matching.
+
+**View coverage** opens the transit overlay near the selected route's first
+stop. **View bottleneck** opens congestion near its busiest covered road edge;
+this is current road congestion in the coverage area, not proof that transit
+capacity alone caused it. Fleet edits do not advance time, charge cash or
+rewrite usage/treasury history. Fleet policy and completed-tick usage survive
+save/load and headless playable continuation. New and legacy saves without a
+usage report start unmeasured. F8/Escape closes; Space pauses, N/period steps,
+and F5 saves while the panel is open.
+
+
+### M29: management navigation and inspection
+
+In Budget (F6/F7) and Transport (F8), use **Tab/Down** to advance focus,
+**Up** to go back and **Enter** to activate. A white outline marks focus;
+unavailable controls are skipped. **F2** switches readable/compact labels
+inside either panel. Transport also supports **Left/Right** route browsing.
+
+In Trends, hover or click a plot to inspect a retained tick across all six
+charts. **Left/Right** steps samples, **Home** selects the oldest and **End**
+follows the latest. Readouts show that sample's values, migration and deaths.
+Policy details compare it with the previous retained sample: tax changes list
+old/new values; funding shows the first changed department plus a count of
+additional changes. The oldest row is a baseline when no earlier sample remains.
+
+On the map, **I** pins the hovered tile's inspector; **I/Escape** releases it.
+Alert View actions center and pin a relevant building when available: missing
+power/water, missing civic reach, or unfilled job capacity. These are measured
+selection hints, not historical causal claims. Budget alerts open Taxes.
+Inspection and navigation do not advance the simulation or change saved policy.
+
+
+M30 stabilization adds retained growth, utility stress/recovery, legacy-save and
+exact continuation scenarios in `playtest/examples/phase8_stabilization.py`.
+New snapshots preserve the entity allocator counter so continuing in the GUI
+and headless CLI assigns identical new IDs, including after removed entities.
+Older snapshots remain supported. See `docs/PLAYTESTING.md` for reproduction.

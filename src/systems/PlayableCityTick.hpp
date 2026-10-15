@@ -34,6 +34,7 @@ struct PlayableCityTickState {
   TreasuryLedger treasuryLedger;
   CityHistory history;
   CityAlerts alerts;
+  TransitReport transitReport;
   uint32_t tick = 0;
   CityDisasterState disasters;
   // Last migration request, retained in saves for compatibility; not a cap.

@@ -1,8 +1,10 @@
 #include "src/persistence/GameplaySessionSystem.hpp"
 #include "src/persistence/CityHistoryJson.hpp"
+#include "src/persistence/TransitReportJson.hpp"
 #include "src/persistence/CityAlertsJson.hpp"
 
 #include <cmath>
+#include <climits>
 #include <algorithm>
 #include <stdexcept>
 #include <filesystem>
@@ -132,9 +134,17 @@ bool parseTransitRoutes(
   std::vector<TransitRoute>& out,
   std::string* errorMessage
 ) {
+  if (!items.is_array() || items.size()>4096) return fail(errorMessage,"invalid transit route count");
+  std::set<TransitRouteId> routeIds;
   for (const json& item : items) {
+    for (const char* key : {"id","mode","vehicleCount","capacityPerVehicle","stopCoverageRadius"}) {
+      if (item.contains(key) && (!item.at(key).is_number_integer() || item.at(key).get<double>()<0 ||
+          item.at(key).get<double>()>(std::string(key)=="id" ? static_cast<double>(UINT32_MAX) : static_cast<double>(INT_MAX))))
+        return fail(errorMessage,"invalid transit integer");
+    }
     TransitRoute route;
     route.id = item.value("id", uint32_t{0});
+    if (!routeIds.insert(route.id).second) return fail(errorMessage,"duplicate transit route ID");
     const int mode = item.value("mode", 0);
     if (!validTransitMode(mode)) {
       return fail(errorMessage, "gameplay session contains an invalid transit mode");
@@ -143,7 +153,8 @@ bool parseTransitRoutes(
     route.vehicleCount = item.value("vehicleCount", 2);
     route.capacityPerVehicle = item.value("capacityPerVehicle", 30);
     route.stopCoverageRadius = item.value("stopCoverageRadius", 4);
-    if (route.vehicleCount < 0 || route.capacityPerVehicle < 0 || route.stopCoverageRadius < 0) {
+    if (route.vehicleCount < 0 || route.capacityPerVehicle < 0 || route.stopCoverageRadius < 0 ||
+        static_cast<int64_t>(route.vehicleCount) * route.capacityPerVehicle > INT_MAX) {
       return fail(errorMessage, "gameplay session contains invalid transit parameters");
     }
     for (const json& stop : item.at("stops")) {
@@ -249,6 +260,7 @@ bool GameplaySessionSystem::save(
                {"treasuryLedger", ledgerJson},
                {"cityHistory", cityHistoryJson(session.history)},
                {"cityAlerts", cityAlertsJson(session.alerts)},
+               {"transitReport", transitReportJson(session.transitReport)},
                {"simulationSeed", session.simulationSeed},
                {"disasters", disasterState},
                {"citySnapshot", std::filesystem::absolute(cityPathFor(sessionPath)).string()},
@@ -365,6 +377,7 @@ bool GameplaySessionSystem::load(
     }
     loaded.funds = root.at("funds").get<int64_t>();
     loaded.tick = root.at("tick").get<uint32_t>();
+    if (root.contains("transitReport")) loaded.transitReport = parseTransitReport(root.at("transitReport"),loaded.tick);
     if (root.contains("cityAlerts")) loaded.alerts = parseCityAlerts(root.at("cityAlerts"), loaded.tick);
     if (root.contains("cityHistory")) loaded.history = parseCityHistory(root.at("cityHistory"), loaded.tick);
     if (root.contains("budgetTaxPercent")) {
@@ -577,6 +590,7 @@ PlayableCityTickState GameplaySessionSystem::advance(
   state.treasuryLedger = session.treasuryLedger;
   state.history = session.history;
   state.alerts = session.alerts;
+  state.transitReport = session.transitReport;
   state.populationTarget = session.populationTarget;
   state.migrationConditions = session.migrationConditions;
   state.populationChange = session.populationChange;
@@ -632,6 +646,7 @@ PlayableCityTickState GameplaySessionSystem::advance(
   session.treasuryLedger = state.treasuryLedger;
   session.history = state.history;
   session.alerts = state.alerts;
+  session.transitReport = state.transitReport;
   session.populationTarget = state.populationTarget;
   session.migrationConditions = state.migrationConditions;
   session.populationChange = state.populationChange;

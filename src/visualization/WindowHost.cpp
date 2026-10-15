@@ -17,6 +17,10 @@ WindowHost &host(GLFWwindow *w) {
 } // namespace
 Key translateGLFWKey(int code, int mods) {
   switch (code) {
+  case GLFW_KEY_TAB: return Key::Tab;
+  case GLFW_KEY_HOME: return Key::Home;
+  case GLFW_KEY_END: return Key::End;
+  case GLFW_KEY_I: return Key::I;
   case GLFW_KEY_ESCAPE:
     return Key::Escape;
   case GLFW_KEY_ENTER:
@@ -49,6 +53,8 @@ Key translateGLFWKey(int code, int mods) {
     return Key::F3;
   case GLFW_KEY_F4:
     return Key::F4;
+  case GLFW_KEY_F8:
+    return Key::F8;
   case GLFW_KEY_F7:
     return Key::F7;
   case GLFW_KEY_F6:

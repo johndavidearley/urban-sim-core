@@ -8,6 +8,7 @@
 
 #include "src/persistence/GameplaySessionSystem.hpp"
 #include "src/persistence/CityHistoryJson.hpp"
+#include "src/persistence/TransitReportJson.hpp"
 #include "src/persistence/CityAlertsJson.hpp"
 #include "src/systems/PlayableCityTick.hpp"
 #include "src/systems/TransitSystem.hpp"
@@ -26,6 +27,7 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   GameplaySessionState saved;
   saved.funds = 12345;
   saved.tick = 77;
+  saved.transitReport = {true,77,200,{{3,160,200,140}}};
   CityAlertInputs alertInputs; alertInputs.expenses = 50;
   for (uint32_t tick = 1; tick <= 77; ++tick) saved.alerts.update(tick, alertInputs);
   saved.history.append({76, 100, {}, 40, 30, 12000, 250, {}});
@@ -118,6 +120,7 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   EXPECT_DOUBLE_EQ(loaded.treasuryInterestRemainder, 0.4);
   EXPECT_EQ(loaded.simulationSeed, 123u);
   EXPECT_EQ(cityAlertsJson(loaded.alerts), cityAlertsJson(saved.alerts));
+  EXPECT_EQ(transitReportJson(loaded.transitReport),transitReportJson(saved.transitReport));
   EXPECT_EQ(cityHistoryJson(loaded.history), cityHistoryJson(saved.history));
   EXPECT_EQ(loaded.budgetPolicy.taxPercent, saved.budgetPolicy.taxPercent);
   EXPECT_EQ(loaded.budgetPolicy.servicePercent, saved.budgetPolicy.servicePercent);
@@ -242,6 +245,7 @@ TEST(GameplaySessionSystemTests, LegacySaveLoadsWithoutMigrationFields) {
   document.erase("budgetServicePercent");
   document.erase("cityHistory");
   document.erase("cityAlerts");
+  document.erase("transitReport");
   document.erase("treasuryLedger");
   {
     std::ofstream out(path);
@@ -256,6 +260,7 @@ TEST(GameplaySessionSystemTests, LegacySaveLoadsWithoutMigrationFields) {
   EXPECT_EQ(loaded.simulationSeed, 98765u);
   EXPECT_TRUE(loaded.history.samples.empty());
   EXPECT_EQ(loaded.alerts.checkedTick, 0u);
+  EXPECT_FALSE(loaded.transitReport.valid);
   EXPECT_EQ(loaded.budgetPolicy.taxPercent, BudgetPolicy{}.taxPercent);
   EXPECT_EQ(loaded.budgetPolicy.servicePercent, BudgetPolicy{}.servicePercent);
   EXPECT_FALSE(loaded.treasuryLedger.valid);
@@ -558,4 +563,29 @@ TEST(GameplaySessionSystemTests, InvalidAlertStateDoesNotMutateCityOrSession) {
   EXPECT_EQ(loaded.alerts.checkedTick,0u);
   EXPECT_EQ(map.zone({1,1}),static_cast<int>(ZoneType::Park));
   std::filesystem::remove(path); std::filesystem::remove(path.string()+".city.json");
+}
+
+TEST(GameplaySessionSystemTests, InvalidTransitImportsDoNotMutateCity) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore population;
+  GameplaySessionState saved;
+  TransitRoute bus;bus.id=1;bus.stops={{1,1},{2,1}};saved.transitRoutes.push_back(bus);
+  const auto path=std::filesystem::temp_directory_path()/"urban_invalid_transit_management.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(),map,roads,store,population,saved));
+  nlohmann::json original;
+  {std::ifstream input(path);input>>original;}
+  for (int invalid=0;invalid<4;++invalid) {
+    auto root=original;
+    if (invalid==0) root["transitRoutes"][0]["vehicleCount"]=1.5;
+    if (invalid==1) root["transitRoutes"][0]["capacityPerVehicle"]=INT32_MAX;
+    if (invalid==2) root["transitRoutes"].push_back(root["transitRoutes"][0]);
+    if (invalid==3) {root["transitReport"]["valid"]=true;root["transitReport"]["tick"]=1;}
+    {std::ofstream output(path);output<<root;}
+    GameplaySessionState loaded;loaded.funds=123;
+    map.setZone({1,1},static_cast<int>(ZoneType::Park));
+    std::string error;
+    EXPECT_FALSE(GameplaySessionSystem::load(path.string(),map,roads,store,population,loaded,&error));
+    EXPECT_EQ(loaded.funds,123);
+    EXPECT_EQ(map.zone({1,1}),static_cast<int>(ZoneType::Park));
+  }
+  std::filesystem::remove(path);std::filesystem::remove(path.string()+".city.json");
 }

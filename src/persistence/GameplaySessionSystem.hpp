@@ -25,6 +25,7 @@ struct GameplaySessionState {
   TreasuryLedger treasuryLedger;
   CityHistory history;
   CityAlerts alerts;
+  TransitReport transitReport;
   bool enableDisasters = false;
   CityDisasterState disasters;
   uint32_t simulationSeed = 98765;

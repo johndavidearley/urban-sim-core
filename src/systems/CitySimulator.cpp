@@ -462,7 +462,7 @@ SimResult CitySimulator::run(
     }
 
     int64_t operatingCosts = constructionSpend;
-    operatingCosts += options.budgetPolicy.serviceCost(facilities);
+    operatingCosts += options.budgetPolicy.serviceCost(facilities) + TransitSystem::operatingCost(transitRoutes);
     const auto treasury = TreasurySystem::applyEconomy(
         economy, funds, options.treasuryTickScale, operatingCosts,
         &debt, options.treasuryInterestRate);

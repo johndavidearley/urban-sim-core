@@ -1,6 +1,8 @@
 #include "SaveLoadSystem.hpp"
 
 #include <cmath>
+#include <algorithm>
+#include <limits>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
@@ -175,6 +177,16 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
     }
   }
 
+  uint64_t minimumNext = 1;
+  for (const auto& building : snapshot.buildings)
+    minimumNext = std::max(minimumNext, static_cast<uint64_t>(building.id) + 1);
+  for (const auto& group : snapshot.populationGroups)
+    minimumNext = std::max(minimumNext, static_cast<uint64_t>(group.id) + 1);
+  if (snapshot.nextEntityId != 0 &&
+      (snapshot.nextEntityId < minimumNext || snapshot.nextEntityId >
+       static_cast<uint64_t>(std::numeric_limits<EntityId>::max()) + 1))
+    return fail("snapshot has invalid next entity ID");
+
   for (const SerializedTile& tile : snapshot.tiles) {
     if (!isInBounds(tile.x, tile.y, snapshot.width, snapshot.height)) {
       return fail("tile position is outside the map");
@@ -273,6 +285,7 @@ CitySnapshot SaveLoadSystem::captureSnapshot(
 ) {
   CitySnapshot snapshot;
   snapshot.version = kCurrentSnapshotVersion;
+  snapshot.nextEntityId = EntityIdUtils::nextEntityId();
   const glm::ivec2 dims = map.getDimensions();
   snapshot.width = dims.x;
   snapshot.height = dims.y;
@@ -381,6 +394,16 @@ bool SaveLoadSystem::applySnapshot(
     roads.updateConnectivity(snapshot.roads.front().from);
   }
 
+  uint64_t next = snapshot.nextEntityId;
+  if (next == 0) {
+    next = 1;
+    for (const auto& building : snapshot.buildings)
+      next = std::max(next, static_cast<uint64_t>(building.id) + 1);
+    for (const auto& group : snapshot.populationGroups)
+      next = std::max(next, static_cast<uint64_t>(group.id) + 1);
+  }
+  EntityIdUtils::restoreNextEntityId(next);
+
   return true;
 }
 
@@ -395,6 +418,7 @@ bool SaveLoadSystem::saveToFile(
 
   json root;
   root["version"] = snapshot.version;
+  root["nextEntityId"] = snapshot.nextEntityId;
   root["map"] = {
     {"width", snapshot.width},
     {"height", snapshot.height}
@@ -490,6 +514,13 @@ bool SaveLoadSystem::loadSnapshotFromFile(
 
     snapshot = CitySnapshot{};
     snapshot.version = root.value("version", kCurrentSnapshotVersion);
+    if (root.contains("nextEntityId")) {
+      const auto& next = root.at("nextEntityId");
+      if (!next.is_number_integer() || next.get<int64_t>() <= 0 ||
+          next.get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<EntityId>::max()) + 1)
+        throw std::runtime_error("invalid next entity ID");
+      snapshot.nextEntityId = next.get<uint64_t>();
+    }
     snapshot.width = root.at("map").at("width").get<int>();
     snapshot.height = root.at("map").at("height").get<int>();
 

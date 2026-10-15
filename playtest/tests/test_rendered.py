@@ -254,6 +254,193 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(s.last_state["budget"]["alerts"]["records"][0]["active"])
         self.assertFalse(s.last_state["budget"]["alerts"]["records"][1]["active"])
 
+    async def test_building_diagnostics_are_read_only_and_survive_load(self):
+        s = self.session
+        await s.city("new",32)
+        await s.request("tool", {"action":"apply","name":"zone","zone":"residential","x1":6,"y1":15})
+        blocked = await s.request("inspect", {"section":"diagnostics","x":6,"y":15})
+        self.assertIn("no_road",blocked["growth"]["blockers"])
+        await s.request("tool", {"action":"apply","name":"road","x1":6,"y1":16,"x2":22,"y2":16})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool", {"action":"apply","name":"service","service":service,"x1":x,"y1":15})
+        for zone,y in (("residential",15),("commercial",17)):
+            await s.request("tool", {"action":"apply","name":"zone","zone":zone,"x1":6,"y1":y,"x2":13,"y2":y})
+        await s.request("time", {"action":"step","ticks":20})
+        entities = (await s.request("inspect", {"section":"entities"}))["items"]
+        home = next(b for b in entities if b["type"] == 1)
+        args = {"section":"diagnostics","x":home["x"],"y":home["y"]}
+        before = s.last_state.copy()
+        diagnosis = await s.request("inspect",args)
+        self.assertTrue(diagnosis["growth"]["occupied"])
+        self.assertEqual(diagnosis["building"]["occupancy"],home["occupancy"])
+        self.assertGreater(diagnosis["neighborhood"]["buildings"],0)
+        self.assertEqual(diagnosis["neighborhood"]["tiles"],81)
+        for field in ("tick","funds","population","budget"):
+            self.assertEqual(s.last_state[field],before[field],field)
+        with self.assertRaises(PlaytestError):
+            await s.request("inspect", {"section":"diagnostics","x":-1,"y":0})
+        await s.city("save")
+        await s.city("load")
+        restored = await s.request("inspect",args)
+        for field in ("x","y","tick","growth","building","services_mask","neighborhood"):
+            self.assertEqual(restored[field],diagnosis[field],field)
+        await s.request("view", {"action":"projection","projection":"top_down"})
+        await s.request("view", {"action":"camera","tile_pixels":48,
+            "view_x":max(0,home["x"]-6),"view_y":max(0,home["y"]-8)})
+        point = await s.request("coordinates", {"direction":"tile_to_screen","x":home["x"],"y":home["y"]})
+        await s.request("input", {"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
+        await s.screenshot("diagnostics-normal")
+        await s.request("window", {"action":"resize","width":800,"height":640})
+        await s.screenshot("diagnostics-minimum-window")
+
+    async def test_transport_fleets_billing_usage_replay_and_continuation(self):
+        s=self.session
+        await record(s,"start")
+        await s.city("new",32)
+        await s.request("budget",{"action":"transport"})
+        await s.screenshot("transport-empty")
+        await s.request("budget",{"action":"close"})
+        await s.request("tool",{"action":"apply","name":"road","x1":6,"y1":16,"x2":22,"y2":16})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
+        for zone,y in (("residential",15),("commercial",17)):
+            await s.request("tool",{"action":"apply","name":"zone","zone":zone,"x1":6,"y1":y,"x2":13,"y2":y})
+        await s.request("time",{"action":"step","ticks":20})
+        await s.city("save")
+        fixture=json.loads(s.artifact("urban_sim_session.json").read_text())
+        fixture["transitRoutes"]=[{"id":99,"mode":0,"vehicleCount":2,"capacityPerVehicle":30,
+            "stopCoverageRadius":24,"stops":[{"x":6,"y":16},{"x":22,"y":16}]}]
+        injected=s.artifact("transport-fixture.json")
+        injected.write_text(json.dumps(fixture))
+        await s.city("load",import_path=str(injected))
+        await s.request("time",{"action":"step","ticks":1})
+        prior=s.last_state.copy()
+        report=prior["budget"]["transit_report"]
+        self.assertGreater(report["routes"][0]["ridership"],0)
+        await s.request("input",{"events":[{"type":"key","key":"F8"}]})
+        self.assertTrue(s.last_state["ui"]["transport"])
+        controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+        button=next(c for c in controls if c["name"]=="vehicles_plus")
+        await s.request("input",{"events":[{"type":"down","x":button["x"]+2,"y":button["y"]+2},
+                                            {"type":"up","x":button["x"]+2,"y":button["y"]+2}]})
+        route=(await s.request("inspect",{"section":"routes"}))["items"][0]
+        self.assertEqual(route["vehicle_count"],3)
+        self.assertEqual(route["operating_cost"],6)
+        self.assertEqual(s.last_state["budget"]["transit_report"],report)
+        self.assertEqual(s.last_state["funds"],prior["funds"])
+        await s.screenshot("transport-normal")
+        await s.request("window",{"action":"resize","width":800,"height":640})
+        await s.screenshot("transport-minimum-window")
+        controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+        button=next(c for c in controls if c["name"]=="route_bottleneck")
+        await s.request("input",{"events":[{"type":"down","x":button["x"]+2,"y":button["y"]+2},
+                                            {"type":"up","x":button["x"]+2,"y":button["y"]+2}]})
+        self.assertEqual(s.last_state["overlay"],4)
+        self.assertFalse(s.last_state["ui"]["transport"])
+        for invalid in (-1,21,1.5):
+            with self.assertRaises(PlaytestError):
+                await s.request("budget",{"action":"set_route_vehicles","route_id":99,"vehicles":invalid})
+        await s.request("budget",{"action":"set_route_vehicles","route_id":99,"vehicles":0})
+        await s.request("time",{"action":"step","ticks":1})
+        usage=s.last_state["budget"]["transit_report"]["routes"][0]
+        self.assertEqual(usage["ridership"],0)
+        self.assertGreater(usage["demand"],0)
+        self.assertEqual(s.last_state["budget"]["last_tick"]["expenses"][3],sum(s.last_state["budget"]["service_costs"]))
+        await s.request("budget",{"action":"set_route_vehicles","route_id":99,"vehicles":3})
+        await s.city("save")
+        frozen=json.loads(s.artifact("urban_sim_session.json").read_text())
+        core=s.artifact("transport-checkpoint.city.json")
+        core.write_bytes(Path(frozen["citySnapshot"]).read_bytes());frozen["citySnapshot"]=str(core)
+        checkpoint=s.artifact("transport-checkpoint.json");checkpoint.write_text(json.dumps(frozen))
+        await s.request("time",{"action":"step","ticks":2})
+        self.assertEqual(s.last_state["budget"]["last_tick"]["expenses"][3],sum(s.last_state["budget"]["service_costs"])+6)
+        await s.city("save")
+        gui=json.loads(s.artifact("urban_sim_session.json").read_text())
+        cli=Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"))
+        output=s.artifact("transport-headless.json")
+        process=await asyncio.create_subprocess_exec(str(cli),"--simulate","2","--simulate-session",str(checkpoint),
+            "--simulate-session-out",str(output),stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        stdout,stderr=await process.communicate()
+        self.assertEqual(process.returncode,0,stderr.decode())
+        headless=json.loads(output.read_text())
+        for key in ("transitRoutes","transitReport","treasuryLedger","funds","cityHistory"):
+            self.assertEqual(headless[key],gui[key],key)
+        await s.city("load",import_path=str(output))
+        self.assertEqual((await s.request("inspect",{"section":"routes"}))["items"][0]["vehicle_count"],3)
+        scenario=await record(s,"stop","transport-fleet")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+
+    async def test_management_keyboard_chart_details_and_alert_targeting(self):
+        s=self.session
+        async def key(name):
+            await s.request("input",{"events":[{"type":"key","key":name}]})
+        async def focus(name):
+            for _ in range(60):
+                controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+                if any(c["name"]==name and c.get("focused") for c in controls):return
+                await key("Tab")
+            self.fail("Could not focus "+name)
+        await s.city("new",32)
+        await s.request("tool",{"action":"apply","name":"road","x1":6,"y1":16,"x2":22,"y2":16})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
+        for zone,y in (("residential",15),("commercial",17)):
+            await s.request("tool",{"action":"apply","name":"zone","zone":zone,"x1":6,"y1":y,"x2":13,"y2":y})
+        await s.request("time",{"action":"step","ticks":20})
+        await s.request("budget",{"action":"set_taxes","tax_percent":[12,8,6,9,10]})
+        await s.request("budget",{"action":"set_funding","service_percent":[50]+[100]*10})
+        await s.request("time",{"action":"step","ticks":3})
+        before=s.last_state.copy()
+        await key("F6")
+        await focus("budget_trends");await key("Enter")
+        self.assertTrue(s.last_state["ui"]["budget_trends"])
+        charts=(await s.request("inspect",{"section":"ui"}))["charts"]
+        self.assertEqual(len(charts),6)
+        c=charts[0]
+        x=c["x"]+round(20*(c["width"]-1)/22)
+        await s.request("input",{"events":[{"type":"move","x":x,"y":c["y"]+20}]})
+        self.assertEqual(s.last_state["ui"]["trends_tick"],21)
+        await s.screenshot("management-trend-detail")
+        await s.request("window",{"action":"resize","width":800,"height":640})
+        await s.screenshot("management-minimum-window")
+        large=s.last_state["ui"]["large_text"]
+        await key("F2");self.assertNotEqual(s.last_state["ui"]["large_text"],large)
+        await key("F2");self.assertEqual(s.last_state["ui"]["large_text"],large)
+        await key("Home");self.assertEqual(s.last_state["ui"]["trends_tick"],1)
+        await key("End");self.assertEqual(s.last_state["ui"]["trends_tick"],23)
+        await key("Left");self.assertEqual(s.last_state["ui"]["trends_tick"],22)
+        for field in ("tick","funds","population","budget"):
+            self.assertEqual(s.last_state[field],before[field],field)
+        await key("Escape")
+        await s.city("save")
+        fixture=json.loads(s.artifact("urban_sim_session.json").read_text())
+        fixture["transitRoutes"]=[{"id":99,"mode":0,"vehicleCount":2,"capacityPerVehicle":30,
+            "stopCoverageRadius":24,"stops":[{"x":6,"y":16},{"x":22,"y":16}]}]
+        path=s.artifact("management-fixture.json");path.write_text(json.dumps(fixture))
+        await s.city("load",import_path=str(path))
+        await key("F8")
+        await focus("vehicles_plus");await key("Enter")
+        self.assertEqual((await s.request("inspect",{"section":"routes"}))["items"][0]["vehicle_count"],3)
+        await s.screenshot("management-transport-focus")
+        await key("F7")
+        self.assertTrue(s.last_state["ui"]["budget_alerts"])
+        funding=[100]*11;funding[4]=0
+        await s.request("budget",{"action":"set_funding","service_percent":funding})
+        await s.request("time",{"action":"step","ticks":3})
+        await focus("alert_view_0");await key("Enter")
+        target=s.last_state["ui"]["pinned_tile"]
+        self.assertNotEqual(target,[-1,-1])
+        self.assertEqual(s.last_state["overlay"],3)
+        diagnosis=await s.request("inspect",{"section":"diagnostics","x":target[0],"y":target[1]})
+        self.assertFalse(diagnosis["growth"]["power"])
+        await s.screenshot("management-alert-target")
+        await key("I");self.assertEqual(s.last_state["ui"]["pinned_tile"],[-1,-1])
+        point=await s.request("coordinates",{"direction":"tile_to_screen","x":target[0],"y":target[1]})
+        await s.request("input",{"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
+        await key("I");self.assertEqual(s.last_state["ui"]["pinned_tile"],target)
+        await key("Escape");self.assertEqual(s.last_state["ui"]["pinned_tile"],[-1,-1])
+        self.assertEqual(s.last_state["phase"],"gameplay")
+
     async def test_budget_policy_records_and_replays(self):
         s = self.session
         await record(s, "start")

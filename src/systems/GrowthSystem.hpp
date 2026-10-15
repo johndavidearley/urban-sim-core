@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <string>
 
 #include "src/core/ThreadPool.hpp"
 #include "src/entities/EntityStore.hpp"
@@ -79,8 +80,27 @@ constexpr float kRedevelopmentLandValueCeiling = 300.0f;
 // weight so a valuable downtown can still densify slowly.
 float redevelopmentLocationFactor(float landValue, float civicCoverage, float roadCongestion);
 
+struct GrowthSiteDiagnostics {
+  bool occupied = false;
+  bool roadAccess = false;
+  bool power = false;
+  bool water = false;
+  float demand = 0.f;
+  float civicCoverage = 0.f;
+  float congestion = 0.f;
+  float locationFactor = 0.f;
+  std::vector<std::string> blockers;
+};
+constexpr float kConstructionDemandFloor = .05f;
+constexpr float kRedevelopmentDemandFloor = .10f;
+
 class GrowthSystem {
 public:
+  // Local gates only: citywide balance and seeded chance still govern growth.
+  static GrowthSiteDiagnostics diagnoseSite(const CityMap& map, const RoadNetwork& roads,
+    const EntityStore& store, Coord position, const ZoneDemand& demand,
+    const ServiceCoverageCache* services = nullptr, bool requireUtilities = true,
+    bool burning = false, const std::vector<GrowthChanceModifier>* modifiers = nullptr);
   // activeMin/activeMax optionally clamp the tile scan to the city's current
   // developed extent. Pass {-1,-1}/{-1,-1} (default) to scan the full map.
   // If pool is non-null, the read-only zone balance scan is fanned out across
