@@ -13,6 +13,8 @@
 #include "src/systems/GrowthSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/systems/TransitSystem.hpp"
+#include "src/systems/RegionalConnectionSystem.hpp"
+#include "src/systems/RegionalAccounting.hpp"
 #include "src/world/Zoning.hpp"
 
 class CityMap;
@@ -26,6 +28,10 @@ struct GameplaySessionState {
   CityHistory history;
   CityAlerts alerts;
   TransitReport transitReport;
+  std::vector<regional::Connection> regionalConnections;
+  regional::Settlement regionalSettlement;
+  bool regionalLogisticsEnabled = false;
+  uint64_t nextRegionalConnectionId = 1;
   bool enableDisasters = false;
   CityDisasterState disasters;
   uint32_t simulationSeed = 98765;

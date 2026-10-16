@@ -435,3 +435,16 @@ TEST(ManagementUiTests, DisabledControlsAreExcludedFromKeyboardActions) {
   route.mode=TransitMode::Rail;
   EXPECT_FALSE(transportControlEnabled(3,{route},0));
 }
+
+TEST(VisualizerGeometry, PortObjectsKeepGeometryAndShadowsWithinTheirTile) {
+  for (const bool iso:{false,true}) for (const auto kind:{regional::Kind::CargoPort,regional::Kind::PassengerTerminal}) {
+    DrawList list;
+    drawPortTile(&list,{100,100},48,iso ? 24 : 48,iso,kind,true,true);
+    ASSERT_FALSE(list.vertices.empty());
+    for (const auto& v:list.vertices) {
+      EXPECT_GE(v.x,iso ? 76 : 100); EXPECT_LE(v.x,148);
+      EXPECT_GE(v.y,76); EXPECT_LE(v.y,148);
+      EXPECT_GT(v.a,0.f); EXPECT_LE(v.a,1.f);
+    }
+  }
+}

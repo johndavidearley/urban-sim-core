@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <set>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -11,13 +13,14 @@ struct Stock {
   int64_t remaining;
 };
 std::vector<Stock> stocks(const CityMap &map, const EntityStore &store,
-                          BuildingType type, double goodsPerWorker) {
+                          BuildingType type, double goodsPerWorker, bool requireWater) {
   std::vector<Stock> result;
   if (!std::isfinite(goodsPerWorker) || goodsPerWorker < 0.0)
     return result;
   for (auto id : store.idsByBuildingType(type)) {
     const auto *building = store.getBuilding(id);
     if (!map.getTile(building->position).connectedToPower ||
+        (requireWater && !map.getTile(building->position).connectedToWater) ||
         building->occupancy <= 0)
       continue;
     result.push_back({building, 0});
@@ -50,15 +53,29 @@ std::vector<Stock> stocks(const CityMap &map, const EntityStore &store,
 FreightSummary FreightSystem::simulate(const CityMap &map, RoadNetwork &roads,
                                        const EntityStore &store,
                                        FreightRouteCache *cache,
-                                       const TradeRates &rates) {
+                                       const TradeRates &rates,
+                                       const std::vector<FreightGateway>* gateways) {
   FreightSummary summary;
+  if (gateways) {
+    if (gateways->size()>4097) throw std::invalid_argument("too many freight gateways");
+    std::set<uint32_t> ids;
+    for (const auto& gateway:*gateways) {
+      if (!gateway.id || !ids.insert(gateway.id).second || gateway.goodsPerTick<0 ||
+          !map.isValid(gateway.position))
+        throw std::invalid_argument("invalid freight gateway");
+      summary.gateways.push_back({gateway,0,0});
+    }
+    std::sort(summary.gateways.begin(),summary.gateways.end(),[](const auto& a,const auto& b) {
+      return a.gateway.id<b.gateway.id;
+    });
+  }
   summary.gate = {0, map.getDimensions().y / 2};
   Coord gateAnchor;
   summary.gateConnected = roads.resolveRoadAnchor(summary.gate, gateAnchor);
   auto producers = stocks(map, store, BuildingType::Industrial,
-                          rates.goodsPerIndustrialWorker);
+                          rates.goodsPerIndustrialWorker,gateways!=nullptr);
   auto consumers = stocks(map, store, BuildingType::Commercial,
-                          rates.goodsPerCommercialWorker);
+                          rates.goodsPerCommercialWorker,gateways!=nullptr);
   for (const auto &producer : producers)
     summary.goodsProduced += producer.remaining;
   for (const auto &consumer : consumers)
@@ -70,12 +87,12 @@ FreightSummary FreightSystem::simulate(const CityMap &map, RoadNetwork &roads,
     cache->storeVersion = store.getMutationVersion();
   }
   const auto ship = [&](Coord from, Coord to, int64_t goods,
-                        int64_t &delivered) {
+                        int64_t &delivered, bool countFailure = true) {
     Coord origin, destination;
     if (!roads.resolveRoadAnchor(from, origin) ||
         !roads.resolveRoadAnchor(to, destination)) {
-      summary.unroutedGoods += goods;
-      return;
+      if (countFailure) summary.unroutedGoods += goods;
+      return false;
     }
     Pathfinding::Path path;
     const RoadNetwork::EdgeKey key{origin, destination};
@@ -93,8 +110,8 @@ FreightSummary FreightSystem::simulate(const CityMap &map, RoadNetwork &roads,
       path = Pathfinding::findShortestPath(roads, origin, destination);
     }
     if (!path.found) {
-      summary.unroutedGoods += goods;
-      return;
+      if (countFailure) summary.unroutedGoods += goods;
+      return false;
     }
     delivered += goods;
     ++summary.routes;
@@ -105,6 +122,28 @@ FreightSummary FreightSystem::simulate(const CityMap &map, RoadNetwork &roads,
     for (size_t i = 1; i < path.waypoints.size(); ++i)
       roads.addFreightLoad(path.waypoints[i - 1], path.waypoints[i],
                            static_cast<float>(trucks));
+    return true;
+  };
+  const auto external = [&](Coord local,int64_t goods,bool importing,int64_t& delivered) {
+    if (!gateways) {
+      ship(importing ? summary.gate : local,importing ? local : summary.gate,goods,delivered);
+      return;
+    }
+    int64_t remaining=goods;
+    for (auto& usage:summary.gateways) {
+      if (!remaining) break;
+      if (!usage.gateway.enabled) continue;
+      const int64_t available=usage.gateway.goodsPerTick-usage.importedGoods-usage.exportedGoods;
+      const int64_t batch=std::min(remaining,available);
+      if (!batch) continue;
+      int64_t confirmed=0;
+      if (!ship(importing ? usage.gateway.position : local,
+                importing ? local : usage.gateway.position,batch,confirmed,false)) continue;
+      remaining-=confirmed; delivered+=confirmed;
+      if (importing) usage.importedGoods+=confirmed;
+      else usage.exportedGoods+=confirmed;
+    }
+    summary.unroutedGoods+=remaining;
   };
   // Industrial sites receive outside restocking before forwarding goods to
   // retailers. Split the net deficit by capacity and proximity to the gate.
@@ -133,7 +172,7 @@ FreightSummary FreightSystem::simulate(const CityMap &map, RoadNetwork &roads,
       if (goods == 0)
         continue;
       int64_t delivered = 0;
-      ship(summary.gate, producers[i].building->position, goods, delivered);
+      external(producers[i].building->position,goods,true,delivered);
       summary.importedGoods += delivered;
       producers[i].remaining += delivered;
     }
@@ -167,14 +206,12 @@ FreightSummary FreightSystem::simulate(const CityMap &map, RoadNetwork &roads,
       best->remaining -= goods;
     }
     if (producer.remaining > 0)
-      ship(producer.building->position, summary.gate, producer.remaining,
-           summary.exportedGoods);
+      external(producer.building->position,producer.remaining,false,summary.exportedGoods);
   }
   // Imports restock commercial demand. Without an industrial base they still
   // travel gate -> retailer instead of disappearing from the road model.
   for (const auto &consumer : consumers)
     if (producers.empty() && consumer.remaining > 0)
-      ship(summary.gate, consumer.building->position, consumer.remaining,
-           summary.importedGoods);
+      external(consumer.building->position,consumer.remaining,true,summary.importedGoods);
   return summary;
 }

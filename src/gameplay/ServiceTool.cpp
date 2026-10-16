@@ -78,6 +78,10 @@ ServicePlan ServiceTool::plan(
   }
 
   const Tile& tile = map.getTile(position);
+  if (tile.regionalConnectionId) {
+    result.error = "site is reserved by a regional terminal";
+    return result;
+  }
   if (tile.type == 2) {
     result.error = "cannot build on water";
     return result;

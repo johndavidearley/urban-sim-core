@@ -151,8 +151,14 @@ void refreshDerivedCityState(
   }
 
   if (options.runTraffic && options.enableFreight) {
-    state.trafficSummary.freight =
-        FreightSystem::simulate(map, roads, store, &state.freightRouteCache);
+    if (state.regionalLogisticsEnabled) {
+      const auto plan=regional::planLogistics(map,roads,state.regionalConnections);
+      state.trafficSummary.freight=FreightSystem::simulate(
+        map,roads,store,&state.freightRouteCache,{},&plan.gateways);
+    } else {
+      state.trafficSummary.freight =
+          FreightSystem::simulate(map, roads, store, &state.freightRouteCache);
+    }
     TrafficSystem::refreshCongestion(roads, state.trafficSummary);
   }
   if (options.preserveCheckpoint && options.runTraffic) {
@@ -187,6 +193,22 @@ void refreshDerivedCityState(
   state.economy = EconomySystem::calculateEconomy(
     store, population, state.budgetPolicy.rates(), &map, TradeRates{}, 1.0f, lvBounds, EconomyValuation::playable());
 
+  if (state.regionalLogisticsEnabled) {
+    if (!options.runTraffic && options.enableFreight) {
+      // Refresh an economic projection after utility/tool edits without adding
+      // a second freight pass to the live road loads.
+      auto projectionRoads=roads;
+      const auto plan=regional::planLogistics(map,projectionRoads,state.regionalConnections);
+      state.trafficSummary.freight=FreightSystem::simulate(
+        map,projectionRoads,store,&state.freightRouteCache,{},&plan.gateways);
+    } else if (!options.enableFreight) {
+      state.trafficSummary.freight={};
+      state.trafficSummary.freight.goodsProduced=state.economy.goodsProduced;
+      state.trafficSummary.freight.goodsConsumed=state.economy.goodsConsumed;
+    }
+    regional::applyFulfilledTrade(state.economy,state.trafficSummary.freight);
+  }
+
   if (options.preserveCheckpoint) {
     const auto local = NeighborhoodSystem::summarize(store);
     state.illnessRate = local.illnessRate;
@@ -206,6 +228,10 @@ void playableCityTick(
   int64_t& funds,
   const PlayableCityTickOptions& options
 ) {
+  // Only actual cargo construction opts in; passenger/airport configuration
+  // and read-only refresh never activate the irreversible logistics transition.
+  state.regionalLogisticsEnabled = state.regionalLogisticsEnabled ||
+    regional::hasConstructedCargoPort(state.regionalConnections);
   const auto facilities = state.budgetPolicy.fundedFacilities(baseFacilities);
   const uint32_t populationBefore = population.getTotalPopulation();
   const uint32_t tickSeed = options.baseSeed + (state.tick * 31u);
@@ -320,7 +346,7 @@ void playableCityTick(
   refreshDistrictGrowthModifiers(
     options.districts, map, store, population, roads, facilities, state);
 
-  int64_t serviceOperatingCosts = state.budgetPolicy.serviceCost(baseFacilities) + TransitSystem::operatingCost(state.transitRoutes);
+  int64_t serviceOperatingCosts = state.budgetPolicy.serviceCost(baseFacilities) + TransitSystem::operatingCost(state.transitRoutes) + regional::portOperatingCost(state.regionalConnections);
   state.treasuryLedger = {};
   state.treasuryLedger.valid = true;
   state.treasuryLedger.tick = state.tick + 1;
@@ -364,6 +390,12 @@ void playableCityTick(
                       state.serviceSummary.powerSupplyRatio,
                       state.serviceSummary.waterSupplyRatio})
           : 1.0f};
+  if (state.regionalLogisticsEnabled && options.enableFreight) {
+    state.migrationConditions.serviceSatisfaction *= 0.5f+0.5f*state.economy.goodsAvailability;
+    state.regionalSettlement=regional::measureLogistics(state.tick+1,
+      regional::planLogistics(map,roads,state.regionalConnections),state.trafficSummary.freight,
+      options.treasuryTickScale,regional::portOperatingCost(state.regionalConnections));
+  }
   state.laggedEducationCoverage = state.serviceSummary.educationCoverage;
 
   ++state.tick;

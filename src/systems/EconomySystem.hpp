@@ -46,6 +46,7 @@ struct EconomyState {
   // Inflation: the multiplier actually applied this call (echoed back for
   // reporting). See calculateEconomy's inflationMultiplier parameter.
   float inflationMultiplier = 1.0f;
+  float goodsAvailability = 1.0f; // Fulfilled retailer goods in explicit logistics mode.
 };
 
 // Tax rates (percentage of building/population value)

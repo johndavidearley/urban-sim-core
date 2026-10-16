@@ -21,4 +21,7 @@ struct Tile {
   bool connectedToPower = true;   // Stub: true for MVP
   bool connectedToWater = true;   // Stub: true for MVP
   uint32_t buildingId = 0;        // 0 = no building
+  // Derived from constructed regional records in a gameplay session, not a
+  // building ID and not duplicated in the core snapshot JSON.
+  uint32_t regionalConnectionId = 0;
 };

@@ -4,7 +4,7 @@ For the authoritative current validation baseline and active priorities, see
 [STATUS.md](STATUS.md). This document retains detailed milestone history and
 future ideas.
 
-Last updated: October 14, 2026
+Last updated: October 15, 2026
 
 ## Current Status Snapshot
 
@@ -447,8 +447,8 @@ state is introduced; paused edits do not advance population or construction.
 ## Phase 8: City management and usability (M27–M30)
 
 Make the existing simulation easier to understand and manage before expanding
-its systems. M27–M29 are locally verified; M30 local stabilization is verified,
-with exact-commit hosted CI still pending. Completion requires observable behavior and
+its systems. M27–M30 are verified; hosted strict/sanitizer CI passed on
+`7902ddf` (run 38777408741). Completion requires observable behavior and
 validation, rather than a feature checklist alone.
 
 ### Milestone 27: Building and neighborhood diagnostics
@@ -496,7 +496,7 @@ with readable labels, visible focus and no overlapping controls at supported siz
 - [x] Run sustained playtests across startup, growth, mature-city stress and recovery.
 - [x] Record performance, tune demonstrated balance problems and retain scenarios.
 - [x] Check older saves, continuation parity and deterministic replay.
-- [ ] Verify hosted strict/sanitizer CI for the reviewed commit.
+- [x] Verify hosted strict/sanitizer CI for the reviewed commit.
 
 **Acceptance:** Published scenarios reproduce expected outcomes, performance
 limits and remaining issues are documented, compatible saves continue correctly,
@@ -507,7 +507,127 @@ Local evidence: `playtest-artifacts/m30-final-20261015/REPORT.md`. Two retained
 1,720-tick scenarios cover fresh growth and an older mature city, utility stress,
 recovery, exact GUI/headless continuation and two-run replay. An entity allocator
 checkpoint bug was fixed; no speculative balance parameters changed. Hosted CI
-remains required on a commit containing these changes.
+passed on `7902ddf` in [run 38777408741](https://github.com/johndavidearley/urban-sim-core/actions/runs/38777408741).
+
+---
+
+## Phase 9: Regional connections, trade and tourism (M31–M35)
+
+**Active: M31 locally complete; M32 routing work underway; M33–M35 planned.** Add sea and air access
+with measurable economic and visitor effects. Detailed rules and dependencies
+are in [PHASE9.md](PHASE9.md). The M30 hosted CI gate passed on `7902ddf`.
+Existing bus/rail commute behavior remains the baseline.
+
+### Milestone 31: Regional connection foundations
+
+- [x] Define road, sea and air connection records, explicit passenger/cargo units,
+      deterministic allocation and completed-tick reports.
+- [x] Add shared terminal footprint, placement, road/utility access and removal
+      validation; expose precise inactive reasons.
+- [x] Separate requested, admitted, delivered and unmet flows; establish treasury
+      accounting and prevent duplicate trade/visitor credits.
+- [x] Add optional validated persistence, inspection and host-parity fixtures;
+      legacy cities without new facilities retain existing behavior.
+
+**Progress (October 15):** M31 foundations are locally complete. Core records,
+site/sea-access diagnostics, deterministic allocation, atomic registry placement
+and removal, confirmed-delivery settlement, validated persistence and native-backed
+MCP inspection are implemented. Verification passed 485 C++ tests, 19 rendered
+tests, 7 Python tests, strict GCC checks and 483 headless ASan/UBSan tests.
+Evidence: `playtest-artifacts/m31-transactions-20261015/REPORT.md`.
+M32 must wire registry reservations into world edits/growth and book fulfilled
+trade exactly once before exposing physical port placement. M31 exposes no
+player terminal tools and creates no new sea/air benefit.
+
+**Acceptance:** A disconnected or disabled connection admits no new traffic;
+capacity is respected and reports reconcile. Save/load, replay and GUI/headless
+continuation preserve connection state. No new sea/air benefit exists yet.
+**Excluded:** simulated neighboring cities, individual travelers, ship/aircraft agents.
+
+### Milestone 32: Ports and maritime trade
+
+- [x] Place cargo ports and passenger terminals on valid shore sites connected
+      by water to the map boundary and by road to the city.
+- [x] Add explicit construction/upkeep and separate cargo/passenger capacities.
+- [x] Allocate external freight across the existing road gateway and cargo ports;
+      route only port-side truck legs over city roads and reconcile trade once.
+- [x] Show terminal access, cargo use, passenger readiness, costs and blocked flows;
+      verify inland water, disconnection, demolition and save compatibility.
+
+**Completed locally (October 16):** Native `V`/Ports controls now place paid
+cargo/passenger terminals, remove whole ports, toggle operation and adjust bounded
+capacity. Shore, road, utility, occupancy and funds checks are shared with preview
+and revalidated at execution. Port edits invalidate autonomous zoning caches.
+Persistent regional IDs survive demolition and empty registries without reuse.
+
+Both projections show distinct cargo/passenger yards in tile depth order. The
+panel explains costs, upkeep and the immediate first-cargo logistics transition,
+then shows current access and last completed flow/unmet trade. Cargo construction
+persists the mode before any tick; removing the last port keeps it. Shared freight
+and treasury routing uses ready ports and the finite 100-goods road gateway,
+prices only fulfilled trade once and bills enabled cargo/passenger upkeep at
+$20/$10 per tick. Passenger terminals remain readiness-only until M34.
+
+Verified: 514 C++ tests, 21 rendered tests, 7 Python tests, strict GCC checks and
+512 headless ASan/UBSan tests. Native coverage includes all five actions, prices,
+paused activation/removal, ID nonreuse, save/load, exact GUI/headless continuation,
+replay and minimum-window layout. Evidence:
+`playtest-artifacts/m32-controls-20261016/REPORT.md`. Hosted Phase 9 CI remains
+pending for the uncommitted working tree. M33 airports is next.
+
+**Acceptance:** A valid cargo port carries measured external goods and changes
+truck origins/destinations and its ledger entries. An isolated pond or disconnected
+port carries none. Passenger capacity is inspectable but creates no visitors
+until M34 supplies visitor demand.
+**Excluded:** waterway construction, ship navigation, intercity ferries and timetables.
+
+### Milestone 33: Airports and passenger access
+
+- [ ] Place an airport with a validated land footprint and road/utility access.
+- [ ] Add operating capacity controls with construction and upkeep feedback.
+- [ ] Feed passenger capacity into the shared connection report and expose
+      inactive reasons, utilization and local access diagnostics.
+- [ ] Verify capacity limits, edits, demolition, persistence and host parity.
+
+**Acceptance:** A player can build and fund a valid airport and inspect its
+available passenger capacity and cost. Invalid or disconnected facilities admit
+no arrivals; actual tourism arrivals become available in M34.
+**Excluded:** air cargo, runway/flight simulation, airline scheduling and noise contours.
+
+### Milestone 34: Tourism, attractions and hotels
+
+- [ ] Add bounded visitor demand driven by inspectable attraction and city-quality
+      inputs, with road, sea and air access sharing one allocation.
+- [ ] Track day visitors and overnight cohorts separately from residents;
+      add placeable hotels with finite beds, costs and existing-model job accounting.
+- [ ] Add aggregate visitor access/attraction trips using roads and available
+      transit capacity after resident commuters; report both populations separately.
+- [ ] Show visitor demand, arrivals, stays, departures, bed occupancy, unmet demand
+      and municipal tourism revenue/costs without counting private spending as city cash.
+- [ ] Verify cohort conservation, hotel/connection closures, saturation, treasury
+      reconciliation, save/load, replay and host parity.
+
+**Acceptance:** An accessible attractive city gains bounded visitors. Overnight
+stays require beds, tourists never inflate resident population or migration, and
+transport/hotel constraints produce explicit unmet demand. Port/airport capacity
+can increase served visitors when access is the limiting factor.
+**Excluded:** individual itineraries, events/seasons, a new hotel zoning type and city branding.
+
+### Milestone 35: Regional management, integration and balance
+
+- [ ] Finish a unified Connections/Tourism management view, overlays, alerts,
+      keyboard navigation, native assets and MCP inspection/editing.
+- [ ] Retain road-only, port, airport, mixed-access and closure/recovery scenarios;
+      measure trade, treasury, visitors, resident travel and performance.
+- [ ] Tune only demonstrated capacity/cost problems; verify older saves and
+      deterministic continuation across both hosts.
+- [ ] Run sustained rendered playtests and exact-commit hosted strict/sanitizer CI.
+
+**Acceptance:** A player can diagnose an access, cargo or hotel bottleneck, change
+its setting, and see the subsequent measured effect and cost. Published evidence
+shows no double-counted flows or ledger income, no resident/transit regression,
+and passing required CI on the reviewed commit.
+**Excluded:** a renderer replacement, physical ship/aircraft simulation and further feature expansion.
 
 ---
 
@@ -522,11 +642,13 @@ remains required on a commit containing these changes.
 | 5 | M11+ | 12+ weeks |
 | 6 | M17–M22 | complete |
 | 7 | M23–M26 | complete |
-| 8 | M27–M30 | in progress (M27–M29 complete; M30 local checks complete, hosted CI pending) |
+| 8 | M27–M30 | complete; hosted CI verified on 7902ddf |
+| 9 | M31–M35 | active (M31 locally complete; M32 in progress) |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.
-**Phase 8 (M27–M30):** active; M27–M29 locally verified; M30 local stabilization verified, exact-commit hosted CI pending.
+**Phase 8 (M27–M30):** complete; local stabilization and hosted CI verified on `7902ddf`.
+**Phase 9 (M31–M35):** active; M31 locally verified, M32 port routing in progress.
 
 ---
 
@@ -542,7 +664,7 @@ controls are complete and locally verified.
 
 ## Next Targets (Post-Backlog)
 
-Finished through Phase 7 (M26). Phase 8 is the active queue above. This list is the
+Finished through Phase 8 (M30). Phase 9 is active above. This list is the
 record of work that landed after M16.
 
 1. ~~District-level service policies and budget controls~~ - already done,

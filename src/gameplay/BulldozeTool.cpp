@@ -42,6 +42,10 @@ BulldozePlan BulldozeTool::plan(
       const Coord coord{x, y};
       result.tiles.push_back(coord);
       const Tile& tile = map.getTile(coord);
+      if (tile.regionalConnectionId) {
+        result.error = "remove the regional terminal before bulldozing its site";
+        return result;
+      }
       result.buildings += tile.buildingId != 0 ? 1 : 0;
       result.zonedTiles += map.zone(coord) != static_cast<int>(ZoneType::None) ? 1 : 0;
       for (const ServiceFacility& facility : facilities) {

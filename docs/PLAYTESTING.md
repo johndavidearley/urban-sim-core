@@ -446,3 +446,227 @@ New saves preserve consumed/deleted IDs for continuation parity. Missing legacy
 counters derive from live entity IDs; malformed, overflowing or colliding
 counters reject before city mutation. Loading a complete city replaces the
 process-global allocator state, just as it replaces that active city's entities.
+
+
+### M31 regional configuration persistence
+
+`inspect(section="regional_connections")` returns paginated configuration rows
+sorted by connection ID: `id`, `kind` (`road_gateway`, `cargo_port`,
+`passenger_terminal`, `airport`), `origin` [x,y], `width`, `height`, `entrance`
+[x,y], `enabled`, `passengers_per_tick` and `goods_per_tick`. These capacities
+are separate units; imports and exports share the goods capacity. Inspection
+is read-only. These records are configuration foundations, not active terminals
+or a completed-tick usage/delivery report. There is no placement/editing tool yet.
+
+Optional gameplay-session `regionalConnections` stores the configuration using
+`RegionalConnectionsJson.hpp`. Missing legacy data clears to an empty list.
+Records have unique nonzero uint32 IDs, bounded footprints, adjacent entrances
+(road gateways have an entrance inside the footprint at the map boundary),
+boolean enabled flags and nonnegative uint32 capacities compatible with mode.
+Up to 4,096 records are accepted. Overlapping footprints and entrances swallowed
+by another footprint reject. Saved order is canonical by ID. Structural validation
+happens before loading the core snapshot, and save validates before writing it.
+Terrain, roads and utility readiness are derived access checks, not persisted
+claims of operation. Configuration alone does not reserve tiles, charge funds,
+produce goods, admit visitors or modify existing road-gateway trade.
+
+The rendered regional-configuration case checks native loading, pagination,
+read-only inspection, rejection without live-state mutation, save/load, full
+session GUI/headless continuation, legacy clearing and two identical replays.
+
+
+### M31 placement and settlement contracts
+
+`RegionalConnectionTool` provides internal atomic registry placement/removal.
+Placement checks current site/access, duplicate IDs, civic sites, footprints and
+reserved entrances before reserving or charging the supplied construction price.
+Sea reachability is rebuilt at execution. Funds must cover a nonnegative cost;
+removal needs no working access, charges its explicit cost and creates no refund.
+Registry reservations are the shared footprint data for the future terminal
+integration; these APIs do not manufacture building IDs or edit terrain.
+
+`regional::settle` finalizes an allocation at most once per strictly increasing
+nonzero tick. Per-connection confirmed deliveries cannot exceed admitted flow,
+and duplicate/unknown confirmations reject. Requested = admitted + unmet;
+admitted = delivered + undelivered. Fees and export amounts use delivered units;
+imports plus operation form expense. Prices are nonnegative integer treasury
+dollars per delivered unit; operation is an explicit total. Overflow and invalid
+reports reject without replacing the previous settlement. Facility milestones
+supply pricing policy; no new default rates or city cash flow are enabled here.
+
+`inspect(section="regional_report")` returns the last finalized report:
+`valid`, `allocation` (tick, requested/admitted/unmet, connection rows),
+`deliveries`, delivered/undelivered totals, prices, revenue and expenses.
+These reconciled amounts are retained accounting data, not an extra cash deposit.
+A valid report may precede the current city tick or reference a removed terminal;
+it is historical data. Read-only inspection and loading do not finalize it again.
+
+Optional `regionalSettlement` persistence reconstructs and validates the settlement,
+including monetary totals, confirmation references and timestamps, before world
+mutation. Legacy absence starts unmeasured. The saved tick guard survives reload,
+so the same tick cannot be finalized again. Live terminal activation, enforcement
+of registry reservations by world-edit/growth tools and one-time integration with
+the existing trade/treasury loop belong to M32/M33, before player placement tools
+are exposed. M31 itself introduces no new sea/air benefit.
+
+
+### M32 external freight gateway backend
+
+`FreightSystem::simulate` takes an optional final
+`const std::vector<FreightGateway>*` argument. Null preserves the original fixed
+west-edge gateway and unchanged restocking rules. An explicit list uses only its
+gateways, including when it is empty. Each gateway has nonzero unique `id`, valid
+map `position`, nonnegative `goodsPerTick` and `enabled`. Malformed lists reject
+before traffic/cache mutation. Facilities will supply these derived routing
+inputs after their access checks; this API does not validate a shore or build a port.
+
+The backend sorts gateways by ID and spends shared import/export capacity only
+on actual reachable delivery. Failed candidates add no truck load and no separate
+unrouted count; remaining undelivered goods are counted once after alternatives.
+Gateway usage resets every tick. `FreightSummary.gateways` reports each configured
+gateway and actual imports/exports; legacy calls leave this new vector empty.
+Existing `gate`/`gateConnected` remain diagnostics of the fixed road gate, so an
+explicit gateway can deliver while `gateConnected` is false. Domestic supply and
+producer-restocking policy retain their existing order and weighting.
+
+Seven core cases verify capacity splits and per-edge loads, domestic-first exports,
+capacity shared across producer restocking, disabled/unreachable fallback, empty
+explicit access versus legacy defaults, stable ordering, changed capacity/topology
+with cached paths and invalid configurations rejecting before traffic changes.
+This routing slice does not activate facilities or reprice city trade.
+
+
+### M32 constructed port reservations
+
+The internal `PortTool` API builds fixed 2x1 maritime footprints on land with
+current road/destination/utility and edge-connected shore access. Initial policy:
+cargo construction $15,000 with 200 goods/tick; passenger construction $10,000
+with 60 passengers/tick; demolition $500 with no implicit refund. These are
+backend policies, not exposed player controls yet. Operation and traffic activation
+remain pending M32 integration. Passenger demand still belongs to M34.
+
+`regionalConnections` now saves optional boolean `constructed`, default false
+for legacy/planned records. Only cargo/passenger 2x1 records may be constructed
+in the current build. Constructed records are authoritative; tile
+`regionalConnectionId` is a derived index, deliberately absent from core JSON.
+Gameplay load checks conflicts against tile metadata, building records, road
+edges and civic positions before changing the destination city, then rebuilds
+ownership. Loading legacy data clears old ownership. A historical terminal may
+be disconnected or lose access without invalidating its saved physical footprint.
+
+MCP `regional_connections` rows add `constructed`; tile inspection adds
+`regional_connection_id` (zero outside a physical reservation). Registry-only
+placement/removal cannot bypass the physical tool lifecycle. Normal road, zoning,
+service and bulldoze tools recheck ownership when applying stale plans. Direct
+road/zoning operations and growth also protect the index.
+
+Six core cases cover charges/capacities, stale plans and ordinary tools,
+autonomous road/growth guards, failed/successful removal, reservation rebuilding
+and legacy clearing, plus conflicting tile/edge/building records rejecting before
+world mutation. A native constructed-port fixture checks edit rejection, saved
+conflicts, exact GUI/headless session continuation, legacy clearing and identical
+replays. The fixture represents an already-paid historical port; actual payment
+and removal are verified through the C++ API. Native placement/rendering and
+freight/treasury activation are not claimed by these tests.
+
+### M32 operational site diagnostics
+
+`inspect(section="regional_connections")` also returns `site_access`. This is a
+read-only, current site check, not a completed-tick delivery measurement. It
+checks physical ownership, the adjacent road entrance, delivered power and water,
+and (for maritime terminals) shoreline contact with boundary-connected water.
+Built terminals accept their own tile reservations; missing or foreign ownership
+fails closed. Dormant configuration returns `not constructed` even if its proposed
+site would otherwise be valid. Disabled terminals cannot admit operational flow.
+
+Site readiness checks the entrance itself. It does not require a road to the
+legacy external gateway, and `ready` does not promise a road path to every local
+customer. `regional::diagnoseOperation` can separately test a specific destination;
+freight still confirms actual delivery before consuming gateway capacity. Site
+inspection does not advance time, add traffic, charge upkeep or book trade.
+`NotConstructed` is appended as access value 9; existing persisted status values
+keep their meaning. Settlement validation allows it only with zero admitted flow.
+Native port controls and live logistics activation remain pending.
+
+### M32 shared live logistics
+
+A completed gameplay tick containing a constructed cargo port opts into
+`regionalLogisticsEnabled`. The boolean is saved independently of the registry,
+so removing the last port does not restore unlimited legacy trade. Missing legacy
+state defaults to false. Dormant configuration, passenger terminals, airports and
+read-only refreshes do not activate this mode. Native cargo construction now sets this mode immediately, before any tick;
+the shared tick also handles already-constructed older fixtures.
+
+In the new mode, ready cargo ports supply their configured goods capacity; a
+fixed west-edge road gateway supplies 100 goods/tick. Imports and exports share
+each gateway's capacity. The road gateway uses the highest uint32 ID not in the
+registry, avoiding collisions with historical configuration. Gateways route in
+ascending ID order and consume capacity only on confirmed city-side delivery.
+Disabled or blocked cargo ports carry no goods. Existing cities outside this mode
+retain legacy routing and forecast trade pricing.
+
+Enabled constructed cargo ports cost $20/tick and passenger terminals $10/tick,
+including when temporarily disconnected; disabled terminals cost zero. Upkeep is
+billed once in the civic/transit/ports expense category. Passenger terminals do not
+create passengers or tourists. Fulfilled imports and exports replace forecast
+trade in the shared economy, then treasury scales and rounds the combined amounts
+once. Goods reaching retailers determine commercial tax receipts and economic
+health; shortages also lower the next tick's migration attraction. No expense is
+charged for an import that never arrived.
+
+`state.metrics` adds `regional_logistics_enabled`, `port_operating_cost`,
+`goods_availability` (0..1) and `regional_gateways`. Each gateway exposes `id`,
+`entrance`, `goods_per_tick`, `enabled`, `imports` and `exports`. These metrics are
+current derived projections; `regional_report` remains the last completed tick.
+Its local routing confirms admission and delivery together. Unreachable flow is
+unmet rather than capacity reserved at the wrong gateway. Allocation includes
+zero-flow passenger/dormant rows and the finite road gateway (up to 4097 rows).
+
+New measured reports attach `amountScale` (normally 0.01) for converting their raw
+quote prices, revenue and expenses to city dollars, plus `operatingExpense` in
+city dollars. Older reports omit these fields and retain scale 1 / zero separate
+upkeep. Quote expenses exclude the separate `operatingExpense`. These amounts
+explain the tick; they are never deposited a second time. The treasury ledger is
+authoritative for final category rounding, debt and total cash flow. Paused tax,
+utility and tool refreshes reprice forecasts without finalizing reports or adding
+a second freight pass to live road loads.
+
+
+### M32 native port controls
+
+`V` or the inspectable `ports` button cycles Cargo, Passenger, Remove, On/Off and
+Capacity. Left-click places/manages a port; right-click or Escape cancels. The
+read-only preview chooses a road entrance with a reachable civic road destination
+and validates the full 2x1 shore footprint. Execution rechecks the current map,
+roads, utilities, reservations and funds. Clicking the informational panel does
+not place anything behind it. Both projections render distinct cargo containers
+and passenger sheds in tile depth order; reserved yards suppress vegetation.
+
+Cargo placement pays $15,000, creates 200 goods/tick and immediately persists the
+logistics transition. Passenger placement pays $10,000 and creates 60 passengers/
+tick without activating cargo or inventing visitor demand. The panel explains
+prices/upkeep, the delivered-trade transition and persistent 100-goods road limit
+before cargo purchase. Removal releases the whole owned footprint for $500, with
+no refund. On/Off toggles access and upkeep. Capacity cycles 50/100/200 goods or
+15/30/60 passengers, bounded by design capacity. Upkeep is fixed for enabled ports;
+reducing capacity alone does not suspend it. Hover a port to see current access,
+capacity/upkeep and the last completed port flow plus citywide unmet external
+trade. A new port has no completed measurement until its next simulation tick.
+
+The existing `tool` MCP action accepts `name="port"`, uses `x1/y1`, and supports
+`port_action="cargo"|"passenger"|"remove"|"toggle"|"capacity"`. The default is
+cargo. For capacity, an optional integer `capacity` sets 0..200 goods or 0..60
+passengers; omission cycles the native presets. Unsupported actions, noninteger
+or out-of-range capacities, occupied sites and failed payments reject without
+charging or consuming IDs. The native and semantic paths share the same action
+closure. Inspection version remains 3 (additive fields); tool count remains 17.
+Capabilities advertise `ports`.
+
+Gameplay saves add `nextRegionalConnectionId` (1..4294967296, with the final value
+meaning exhausted). It survives removal of every port. Old/stale counters are
+normalized above all registry IDs on save/load. Invalid types/ranges reject before
+world replacement. Successful construction advances it; failed placement does
+not. IDs do not reuse a demolished port's ID under the saved counter. Construction
+and removal invalidate the autonomous zoning candidate cache so reserved land is
+excluded and released land becomes eligible again. Full session continuation and
+recorded native replay retain IDs, settings, mode, money and reports.

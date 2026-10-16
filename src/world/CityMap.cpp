@@ -63,5 +63,6 @@ int CityMap::zone(Coord coord) const {
 }
 
 void CityMap::setZone(Coord coord, int zoneValue) {
+  if (getTile(coord).regionalConnectionId && zoneValue!=0) return;
   getTile(coord).zone = zoneValue;
 }

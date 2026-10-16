@@ -155,7 +155,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       drawText(renderer, x + 360, row, "$" + std::to_string(serviceCosts[i]), {255, 195, 135}, 1);
       drawText(renderer, x + 520, row, std::to_string(static_cast<int>(serviceCoverage[i] * 100.f)) + "%", {135, 225, 175}, 1);
     }
-    drawText(renderer, x + 360, y + 346, "CIVIC + TRANSIT $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
+    drawText(renderer, x + 360, y + 346, "CIVIC/TRANSIT/PORTS $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
   }
   for (int action = 0; action < 43; ++action) {
     if (!budgetControlVisible(action, services, trends, alerts)) continue;
@@ -287,7 +287,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     drawText(renderer, x + 360, row, revenueNames[i], {185, 205, 220}, 1);
     drawText(renderer, x + 580, row, "+$" + std::to_string(preview.revenue[i]), {120, 225, 155}, 1);
   }
-  const std::array<const char*, 5> costNames{{"BUILDING UPKEEP", "PARK UPKEEP", "IMPORTS", "CIVIC AND TRANSIT", "BUILDING GROWTH"}};
+  const std::array<const char*, 5> costNames{{"BUILDING UPKEEP", "PARK UPKEEP", "IMPORTS", "CIVIC/TRANSIT/PORTS", "BUILDING GROWTH"}};
   for (size_t i = 0; i < costNames.size(); ++i) {
     const int row = y + 204 + static_cast<int>(i) * 16;
     drawText(renderer, x + 360, row, costNames[i], {185, 205, 220}, 1);

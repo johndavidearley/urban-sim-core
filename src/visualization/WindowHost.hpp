@@ -63,6 +63,7 @@ enum class Key {
   R,
   S,
   T,
+  V,
   Z
 };
 Key translateGLFWKey(int code, int mods);

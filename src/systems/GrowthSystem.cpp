@@ -422,6 +422,7 @@ GrowthSiteDiagnostics GrowthSystem::diagnoseSite(
   GrowthSiteDiagnostics d;
   if (!map.isValid(pos)) { d.blockers.push_back("outside_map"); return d; }
   const auto& tile = map.getTile(pos);
+  if (tile.regionalConnectionId) d.blockers.push_back("regional_terminal");
   const auto zone = static_cast<ZoneType>(tile.zone);
   const auto* building = store.getBuilding(tile.buildingId);
   d.occupied = building != nullptr;
@@ -544,6 +545,7 @@ GrowthStats GrowthSystem::runStep(
   for (int y = y0; y <= y1; ++y) {
     for (int x = x0; x <= x1; ++x) {
       Tile& tile = map.getTile({x, y});
+      if (tile.regionalConnectionId) continue;
       const ZoneType zone = static_cast<ZoneType>(tile.zone);
 
       if (tile.buildingId != EntityIdUtils::NullEntity) {

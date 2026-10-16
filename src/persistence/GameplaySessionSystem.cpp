@@ -1,6 +1,9 @@
 #include "src/persistence/GameplaySessionSystem.hpp"
 #include "src/persistence/CityHistoryJson.hpp"
 #include "src/persistence/TransitReportJson.hpp"
+#include "src/persistence/RegionalConnectionsJson.hpp"
+#include "src/persistence/RegionalSettlementJson.hpp"
+#include "src/persistence/RegionalReservations.hpp"
 #include "src/persistence/CityAlertsJson.hpp"
 
 #include <cmath>
@@ -210,6 +213,18 @@ bool GameplaySessionSystem::save(
   const GameplaySessionState& session,
   std::string* errorMessage
 ) {
+  try {
+    if (!session.nextRegionalConnectionId || session.nextRegionalConnectionId>static_cast<uint64_t>(UINT32_MAX)+1)
+      throw std::runtime_error("Invalid next regional connection ID");
+    parseRegionalConnections(regionalConnectionsJson(session.regionalConnections),map);
+    parseRegionalSettlement(regionalSettlementJson(session.regionalSettlement),session.tick);
+    std::vector<Coord> civicSites;
+    for (const auto& facility:session.facilities) civicSites.push_back(facility.position);
+    if (!validateRegionalReservations(SaveLoadSystem::captureSnapshot(map,roads,store,population),
+          session.regionalConnections,civicSites,errorMessage)) return false;
+  } catch (const std::exception& e) {
+    return fail(errorMessage,std::string("invalid regional configuration: ")+e.what());
+  }
   if (!SaveLoadSystem::saveToFile(cityPathFor(sessionPath), map, roads, store, population)) {
     return fail(errorMessage, "unable to save core city snapshot");
   }
@@ -296,6 +311,14 @@ bool GameplaySessionSystem::save(
                {"autonomousExtent", session.autonomousExtent},
                {"emptyZonedCount", session.emptyZonedCount},
                {"transitRoutes", serializeTransitRoutes(session.transitRoutes)},
+               {"regionalConnections", regionalConnectionsJson(session.regionalConnections)},
+               {"regionalSettlement", regionalSettlementJson(session.regionalSettlement)},
+               {"regionalLogisticsEnabled",session.regionalLogisticsEnabled},
+               {"nextRegionalConnectionId",[&]() {
+                 uint64_t next=std::max<uint64_t>(1,session.nextRegionalConnectionId);
+                 for (const auto& c:session.regionalConnections) next=std::max(next,static_cast<uint64_t>(c.id)+1);
+                 return next;
+               }()},
                {"districts", serializeDistricts(session.districts)},
                {"demand",
                 {{"residential", session.demand.residential},
@@ -560,6 +583,25 @@ bool GameplaySessionSystem::load(
       }
     }
 
+    if (root.contains("regionalLogisticsEnabled")) {
+      if (!root.at("regionalLogisticsEnabled").is_boolean())
+        throw std::runtime_error("Invalid regional logistics mode");
+      loaded.regionalLogisticsEnabled=root.at("regionalLogisticsEnabled").get<bool>();
+    }
+    if (root.contains("regionalConnections"))
+      loaded.regionalConnections=parseRegionalConnections(root.at("regionalConnections"),map);
+    if (root.contains("nextRegionalConnectionId")) {
+      const auto& value=root.at("nextRegionalConnectionId");
+      if (!value.is_number_integer() || (!value.is_number_unsigned() && value.get<int64_t>()<1) ||
+          value.get<uint64_t>()<1 || value.get<uint64_t>()>static_cast<uint64_t>(UINT32_MAX)+1)
+        throw std::runtime_error("Invalid next regional connection ID");
+      loaded.nextRegionalConnectionId=value.get<uint64_t>();
+    }
+    for (const auto& c:loaded.regionalConnections)
+      loaded.nextRegionalConnectionId=std::max(loaded.nextRegionalConnectionId,static_cast<uint64_t>(c.id)+1);
+    if (root.contains("regionalSettlement"))
+      loaded.regionalSettlement=parseRegionalSettlement(root.at("regionalSettlement"),loaded.tick);
+
     if (root.contains("districts")) {
       if (!parseDistricts(root.at("districts"), map, loaded.districts, errorMessage)) {
         return false;
@@ -568,11 +610,16 @@ bool GameplaySessionSystem::load(
 
     const std::string cityPath = snapshotPath(root, sessionPath);
     SnapshotLoadDiagnostics diagnostics;
-    if (!SaveLoadSystem::loadFromFile(
-          cityPath, map, roads, store, population, &diagnostics)) {
+    CitySnapshot snapshot;
+    if (!SaveLoadSystem::loadSnapshotFromFile(cityPath,snapshot,&diagnostics)) {
       return fail(errorMessage, diagnostics.errorMessage.empty()
         ? "unable to load core city snapshot" : diagnostics.errorMessage);
     }
+    std::vector<Coord> civicSites;
+    for (const auto& facility:loaded.facilities) civicSites.push_back(facility.position);
+    if (!validateRegionalReservations(snapshot,loaded.regionalConnections,civicSites,errorMessage)) return false;
+    if (!SaveLoadSystem::applySnapshot(snapshot,map,roads,store,population,errorMessage)) return false;
+    rebuildRegionalReservations(map,loaded.regionalConnections);
     session = std::move(loaded);
     return true;
   } catch (const std::exception& e) {
@@ -590,6 +637,9 @@ PlayableCityTickState GameplaySessionSystem::advance(
   state.treasuryLedger = session.treasuryLedger;
   state.history = session.history;
   state.alerts = session.alerts;
+  state.regionalConnections = session.regionalConnections;
+  state.regionalSettlement = session.regionalSettlement;
+  state.regionalLogisticsEnabled = session.regionalLogisticsEnabled;
   state.transitReport = session.transitReport;
   state.populationTarget = session.populationTarget;
   state.migrationConditions = session.migrationConditions;
@@ -646,6 +696,9 @@ PlayableCityTickState GameplaySessionSystem::advance(
   session.treasuryLedger = state.treasuryLedger;
   session.history = state.history;
   session.alerts = state.alerts;
+  session.regionalConnections = state.regionalConnections;
+  session.regionalSettlement = state.regionalSettlement;
+  session.regionalLogisticsEnabled = state.regionalLogisticsEnabled;
   session.transitReport = state.transitReport;
   session.populationTarget = state.populationTarget;
   session.migrationConditions = state.migrationConditions;

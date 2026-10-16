@@ -41,7 +41,7 @@ KEYS = [
     "F6",
     "F9",
     *[f"Num{i}" for i in range(1, 10)],
-    *list("ABCDFGHLNOPRSTZ"),
+    *list("ABCDFGHLNOPRSTVZ"),
 ]
 
 
@@ -74,6 +74,8 @@ INSPECTION_REFERENCE = {
         "facilities",
         "districts",
         "routes",
+        "regional_connections",
+        "regional_report",
         "roads",
     ],
     "summary": {
@@ -285,7 +287,7 @@ def create_server(session: Session) -> FastMCP:
     async def tool(
         action: Literal["select", "apply", "district_policy", "district_delete"],
         name: (
-            Literal["road", "zone", "bulldoze", "service", "district", "none"] | None
+            Literal["road", "zone", "bulldoze", "service", "district", "port", "none"] | None
         ) = None,
         x1: Coordinate = 0,
         y1: Coordinate = 0,
@@ -297,8 +299,10 @@ def create_server(session: Session) -> FastMCP:
         road_class: Literal["local", "arterial"] | None = None,
         id: UInt32 | None = None,
         budget_cap: int | None = None,
+        port_action: Literal["cargo", "passenger", "remove", "toggle", "capacity"] | None = None,
+        capacity: Annotated[int, Field(ge=0, le=200)] | None = None,
     ) -> dict[str, Any]:
-        """Use gameplay tools with normal plans, costs and validation. Endpoints are tile coordinates; services use x1/y1. Road class local/arterial supports build or upgrade. Policies support archetype and budget cap."""
+        """Use gameplay tools with normal plans, costs and validation. Endpoints are tile coordinates; services use x1/y1. Road class local/arterial supports build or upgrade. Policies support archetype and budget cap. Ports use x1/y1 and port_action cargo/passenger/remove/toggle/capacity. Optional capacity is goods (0..200) or passengers (0..60); omission cycles capacity."""
         return await session.request(
             "tool",
             compact(
@@ -314,6 +318,8 @@ def create_server(session: Session) -> FastMCP:
                 road_class=road_class,
                 id=id,
                 budget_cap=budget_cap,
+                port_action=port_action,
+                capacity=capacity,
             ),
         )
 
@@ -395,6 +401,8 @@ def create_server(session: Session) -> FastMCP:
             "facilities",
             "districts",
             "routes",
+            "regional_connections",
+            "regional_report",
             "roads",
         ] = "summary",
         offset: Annotated[int, Field(ge=0)] = 0,
@@ -483,6 +491,8 @@ def create_server(session: Session) -> FastMCP:
             "facilities",
             "districts",
             "routes",
+            "regional_connections",
+            "regional_report",
             "roads",
         ] = "summary",
         query: dict | None = None,
@@ -522,6 +532,7 @@ def create_server(session: Session) -> FastMCP:
                     "bulldoze": "B",
                     "service": "S",
                     "district": "P",
+                    "ports": "V cycles cargo/passenger/remove/on-off/capacity; click a site; Escape cancels",
                     "pause": "Space",
                     "step": "Period",
                     "save": "F5",

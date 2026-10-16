@@ -21,6 +21,9 @@ add_library(urban_sim_core
   systems/TrafficMicroSim.cpp
   systems/LandValueSystem.cpp
   systems/TransitSystem.cpp
+  systems/RegionalConnectionSystem.cpp
+  systems/RegionalAccounting.cpp
+  systems/RegionalLogistics.cpp
   systems/FireSystem.cpp
   systems/CrimeSystem.cpp
   systems/HealthSystem.cpp
@@ -31,6 +34,8 @@ add_library(urban_sim_core
   gameplay/ZoneTool.cpp
   gameplay/BulldozeTool.cpp
   gameplay/ServiceTool.cpp
+  gameplay/RegionalConnectionTool.cpp
+  gameplay/PortTool.cpp
   gameplay/DistrictTool.cpp
   gameplay/TreasurySystem.cpp
   world/CityMap.cpp

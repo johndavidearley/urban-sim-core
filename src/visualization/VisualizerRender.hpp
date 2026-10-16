@@ -12,6 +12,8 @@ struct TransitMarks;
 void drawFilledRect(DrawList* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha = 255);
 void drawRectOutline(DrawList* renderer, int x, int y, int w, int h, RGB color, uint8_t alpha = 255);
 bool hasRoadAt(const CityMap& map, Coord coord);
+void drawPortTile(DrawList* renderer,ScreenPoint top,int width,int height,bool isometric,
+                  regional::Kind kind,bool enabled,bool first);
 void drawFireMarker(DrawList* renderer, Point center, int size);
 
 void drawNormalTileDetail(DrawList *renderer, const CityMap &map,

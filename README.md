@@ -113,6 +113,13 @@ Controls:
   right-click a district to delete it. Industrial bans housing/office growth
   under G-mode; Tech Hub bans industry. The selected district is highlighted;
   the tile inspector shows the district name.
+- `V` or **V PORTS**: cycle Cargo, Passenger, Remove, On/Off, and Capacity.
+  Click a valid 2x1 shore site to build, or an existing port to manage it.
+  Cargo costs $15,000 + $20/tick; passenger terminals $10,000 + $10/tick;
+  whole-port demolition costs $500. Disabled ports have no upkeep or flow.
+  The first cargo port enables fulfilled-trade rules and a 100-goods road-gateway
+  limit; removing it retains those rules. Passenger service remains inactive.
+  The port panel shows access, capacity, costs and the last completed cargo flow.
 - Left-drag: preview and build an x-then-y road while the road tool is active
 - Right-click: cancel the current road drag
 - Arrow keys: pan viewport

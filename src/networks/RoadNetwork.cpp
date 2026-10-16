@@ -31,6 +31,7 @@ void RoadNetwork::buildRoad(glm::ivec2 from, glm::ivec2 to) {
   if (!isValidCoord(from) || !isValidCoord(to)) {
     return;
   }
+  if (cityMap.getTile(from).regionalConnectionId || cityMap.getTile(to).regionalConnectionId) return;
   
   // Only allow adjacent tiles
   int dx = std::abs(from.x - to.x);

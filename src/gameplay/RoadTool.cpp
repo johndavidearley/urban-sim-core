@@ -39,6 +39,10 @@ RoadPlan RoadTool::plan(const CityMap &map, const RoadNetwork &roads,
 
   for (const Coord tile : result.tiles) {
     const Tile& mapTile = map.getTile(tile);
+    if (mapTile.regionalConnectionId) {
+      result.error = "route crosses a regional terminal";
+      return result;
+    }
     if (mapTile.type == 2) {
       result.error = "route crosses water";
       return result;

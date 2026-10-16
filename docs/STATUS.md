@@ -1,13 +1,15 @@
 # Project Status
 
-Last verified: October 15, 2026
+Last verified: October 16, 2026
 
-Phases 6–7 (M17–M26) are implemented and locally verified. Phase 8
-(M27–M30) is underway: M27 diagnostics, M28 transport management and M29 UI
-polish are locally verified. M30 local stabilization checks are complete;
-hosted verification of a commit containing these changes remains pending. See `ROADMAP.md`.
-The latest hosted strict and sanitizer run verified here passed on commit
-`ecd7547` (M26). Hosted verification of the current working tree is pending.
+Phases 6–8 (M17–M30) are implemented and verified. Hosted strict builds on
+Linux/macOS/Windows, ASan/UBSan and TSan passed for `7902ddf` in
+[run 38777408741](https://github.com/johndavidearley/urban-sim-core/actions/runs/38777408741).
+Phase 9 (M31–M35) is active: M31 foundations and M32 ports are complete locally.
+Cargo/passenger terminal tools, graphics, operating controls, persisted logistics
+and fulfilled-trade treasury integration are implemented and verified. M33 airports
+is next; tourism follows in M34. See `ROADMAP.md` and `PHASE9.md`. Hosted CI has
+not yet tested the Phase 9 working-tree changes.
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -601,3 +603,279 @@ macOS leak detection disabled). All evidence is in
 Linux/macOS/Windows strict, ASan/UBSan and TSan for `ecd7547`, which does not
 contain the uncommitted Phase 8 work. M30 and Phase 8 remain open until required
 hosted CI passes on a commit containing the reviewed changes.
+
+
+### Phase 9 — planning (October 15, 2026)
+
+The planned sequence is M31 regional connection foundations, M32 cargo ports and
+passenger terminals, M33 passenger airports, M34 tourism/hotels and M35 integrated
+management and stabilization. `PHASE9.md` records placement/access rules, shared
+flow accounting, legacy trade compatibility, visitor/resident separation,
+capacity constraints, reproducible scenarios and exclusions. Milestone checklists
+and acceptance criteria are in `ROADMAP.md`.
+
+No Phase 9 code or simulation changes have been made. M30's required hosted CI
+on the Phase 8 changes remains the implementation entry gate. Phase 9 uses
+aggregate sea/air access initially; physical ships/aircraft, air cargo, neighboring
+city simulation and individual visitor itineraries are deferred.
+
+
+### Phase 9 / M31 — first foundation slice (October 15, 2026)
+
+The M30 entry gate is now satisfied by hosted run 38777408741 on `7902ddf`,
+including all three strict platforms and both sanitizer jobs. This supersedes
+the pending-CI notes in earlier dated entries.
+
+`RegionalConnectionSystem` introduces road-gateway, cargo-port, passenger-terminal
+and airport records. Passenger and goods capacities use separate per-tick units;
+imports and exports share cargo capacity. Allocation is stable by ascending ID,
+with imports before exports, and reports requested/admitted/unmet counts.
+Disabled or inaccessible offers admit nothing. Duplicate/null IDs, unsupported
+mode/capacity combinations and invalid access enums reject. Admission itself
+creates no treasury credit or assertion of local goods delivery.
+
+Pure site preflight checks bounded unoccupied land footprints and reservations,
+adjacent road entrances, a real road path to the requested destination, delivered
+power/water and maritime shore access. A derived flood-fill mask distinguishes
+map-edge-connected water from inland ponds and diagonal-only contacts; callers
+must rebuild it after terrain changes. Preflight never charges funds or reserves
+city tiles. No new simulation loop or player tool is enabled yet.
+
+Warnings-as-errors build and all 474 C++ tests passed (six new regional tests).
+Strict GCC checks and retained evidence are recorded in
+`playtest-artifacts/m31-foundations-20261015/REPORT.md`. M31 remains in progress:
+atomic placement/removal, costs/ledger contracts, validated persistence, native/MCP
+inspection and GUI/headless integration are still required before M32 ports.
+
+
+### Phase 9 / M31 — configuration persistence and inspection (October 15, 2026)
+
+Optional `regionalConnections` configuration survives gameplay-session save,
+native startup/in-session load and headless continuation. Missing legacy data
+clears to an empty list. Parsing rejects malformed types, ranges, duplicate/null
+IDs, incompatible mode/capacity pairs, invalid footprints/entrances and overlapping
+reservations. Road-gateway entrances must be within their footprint at the map
+edge; other entrances must be immediately outside their footprint. Another
+connection cannot reserve a footprint over an entrance. Saved order is by ID.
+
+Load validates before applying the core snapshot; save validates before writing
+it. Native-backed MCP inspection adds paginated `regional_connections` rows with
+separate configured passenger/goods capacities per tick. Inspection does not
+advance ticks or modify policy, cash or history. Records remain configuration
+only: loading them does not reserve tiles, activate terminals or change trade.
+
+Validation passed: warnings-as-errors build, 477 C++ tests, 19 rendered tests,
+7 Python unit tests and strict GCC checks. Native coverage verifies invalid
+imports preserve live records, full-session GUI/headless continuation matches,
+legacy loading clears records and two recorded replays have identical hashes.
+Evidence: `playtest-artifacts/m31-persistence-20261015/REPORT.md`.
+
+M31 remains open for atomic placement/removal, delivery/treasury contracts and
+native management presentation. Hosted CI has not tested the uncommitted M31
+changes; Phase 8's verified hosted baseline remains `7902ddf`.
+
+
+### Phase 9 / M31 — transaction and accounting foundation complete (October 15, 2026)
+
+M31 is locally complete. `RegionalConnectionTool` atomically registers/removes
+footprints with explicit nonnegative construction/demolition prices and cash
+checks. It rechecks roads, destination reachability, utilities, land/registry/civic
+occupancy and entrances at execution; sea access is rebuilt to reject a site
+whose coast became a pond after planning. Failed operations preserve funds and
+reservations. Removal releases only its record, needs no functioning access and
+has no implicit refund. Registry data is not a fake building or terrain mutation.
+
+`regional::settle` separates requested, admitted, delivered, undelivered and unmet
+flow. Only confirmed local deliveries produce fees/import/export amounts, with
+operation shown separately. Duplicate or unknown confirmations, excess delivery,
+inconsistent totals, negative prices, overflow and stale/duplicate ticks reject
+without replacing the last settlement. Rates are explicit integer dollar inputs;
+no new default tariffs or balance changes are introduced. These accounting
+amounts are not automatically deposited in the city treasury.
+
+Optional `regionalSettlement` saves the validated report and finalization tick;
+reload preserves the once-per-tick guard. Historical reports may predate the
+current city tick and survive terminal removal. Native-backed MCP
+`regional_report` inspection is read-only; both hosts retain identical reports,
+and malformed monetary totals reject before world mutation. Legacy absence
+starts unmeasured. The native regression includes exact full-session continuation,
+legacy clearing, unchanged cash on report load and identical recorded replays.
+
+Passed: warnings-as-errors build, 485 C++ tests, 19 rendered tests, 7 Python tests,
+strict GCC checks and 483 headless ASan/UBSan tests (two native tests excluded;
+macOS leak detection disabled, address/undefined checks halt on error).
+Evidence: `playtest-artifacts/m31-transactions-20261015/REPORT.md`.
+Hosted CI for the uncommitted M31 work remains pending.
+
+M32 ports is next. It must connect the internal reservation APIs to world editing
+and growth, active freight delivery and the existing treasury exactly once before
+exposing port construction and native facility presentation. M31 itself adds no
+placeable terminals, active sea/air traffic or tourists. This supersedes earlier
+M31 entries listing these foundation contracts as unfinished.
+
+
+### Phase 9 / M32 — external freight gateway backend (October 15, 2026)
+
+`FreightSystem::simulate` now accepts an optional external gateway list. Each
+record has a unique nonzero ID, map position, enabled flag and nonnegative shared
+import/export capacity per tick. A null override preserves the legacy fixed road
+gateway; an explicit empty or exhausted list carries no external goods.
+
+Configured gateways are considered in stable ID order. Only deliveries with a
+valid local road route consume capacity and add truck loads. Unreachable candidates
+can fall back without duplicate truck legs or separate failure counts. Remaining
+undelivered goods are counted once after alternatives. Gateway usage resets each
+simulation call and reports actual imports/exports by ID. Existing domestic supply
+and producer-restocking order/weighting remain unchanged. Restocked goods are
+forwarded to retailers without a second external import.
+
+Seven new cases verify split capacities and per-edge loads, domestic priority,
+shared producer-restocking limits, disabled/unreachable fallback, explicit closed
+access, deterministic ordering and cache behavior after capacity/topology edits,
+and invalid inputs rejecting before traffic/cache mutation. Passed: warnings-as-
+errors build, all 492 C++ tests, all 19 rendered regressions and strict GCC checks.
+Evidence: `playtest-artifacts/m32-gateways-20261015/REPORT.md`.
+
+This is a backend slice; existing playable hosts still use their legacy call path.
+M32 remains open for physical cargo/passenger terminals, world reservation
+protection, explicit logistics activation, fulfilled-trade treasury integration
+and native/MCP controls. No ports are placeable and no trade prices or new costs
+were activated by this slice. Hosted CI/sanitizer checks for M32 remain pending.
+
+
+### Phase 9 / M32 — physical port reservation backend (October 15, 2026)
+
+Internal `PortTool` now builds paid 2x1 cargo/passenger footprints and removes them
+with ownership checks, a demolition fee and no implicit refund. Initial policy
+is $15,000/200 goods per tick for cargo and $10,000/60 passengers per tick for
+passenger terminals; demolition is $500. Registry-only APIs reject constructed
+records, preventing accidental removal that leaves orphaned tile ownership.
+
+Optional `constructed` saves physical status; legacy records remain unconstructed.
+Tile ownership is derived from those records rather than duplicated in core JSON.
+Gameplay save/load checks occupied terrain, zones, road-edge and building records
+and civic sites; load validates before replacing the world and rebuilds the index.
+Legacy load clears old flags. The physical index protects normal editing, stale
+plans, direct road/zoning writes and growth. Generic bulldozing cannot partially
+remove a terminal. Full gameplay sessions retain the records; raw core snapshots
+remain core city data only.
+
+Passed: warnings-as-errors build, 498 C++ tests, 20 rendered tests, 7 Python tests,
+strict GCC checks over changed paths and 496 headless ASan/UBSan tests (two native
+tests excluded; macOS leak detection disabled). Six new core cases and one new
+native case cover payment, ownership, edit protection, invalid snapshots, exact
+continuation, legacy clearing and replay. Evidence:
+`playtest-artifacts/m32-reservations-20261015/REPORT.md`.
+
+M32 is not complete. Native placement/removal controls and presentation, controller
+cache invalidation after edits, explicit logistics mode, port operation costs,
+active freight routing and one-time trade/treasury booking remain. No player port
+construction tool or active port traffic is exposed yet. Hosted CI for the
+uncommitted Phase 9 changes remains pending.
+
+
+### Phase 9 / M32 — operational site diagnostics (October 15, 2026)
+
+Built ports now use a dedicated read-only readiness check: all footprint tiles
+must carry their own matching ownership, with valid road access, delivered
+utilities and boundary-connected shoreline. Configuration that has not been
+constructed reports `not constructed` and admits no operational capacity. The
+new access status is appended as value 9; historical values retain their meaning.
+Settlement serialization validates the new status with zero admitted flow.
+
+MCP `regional_connections` inspection exposes `site_access`. Site readiness checks
+the entrance itself without requiring a road to the old external gateway; a
+specific local destination needs its own reachable city-side road path. This
+inspection adds no traffic, time, upkeep or treasury booking.
+
+Passed: warnings-as-errors build, 502 C++ tests, both affected rendered tests,
+7 Python tests, strict GCC checks and 500 headless ASan/UBSan tests (two native
+tests excluded, macOS leak detection disabled). The affected native cases retain
+exact GUI/headless continuation and replay coverage. The previous full rendered
+suite passed 20 cases; this change reran the two affected cases. Evidence:
+`playtest-artifacts/m32-readiness-20261015/REPORT.md`.
+
+M32 remains open for native port controls/presentation, controller cache
+invalidation after edits, persisted logistics activation, upkeep and live freight/
+fulfilled-trade treasury integration. No active ports or tourists are enabled.
+
+
+### Phase 9 / M32 — shared live logistics and treasury (October 15, 2026)
+
+Constructed cargo ports now participate in both playable hosts through the shared
+tick. A completed tick with a constructed cargo port opts into persisted
+`regionalLogisticsEnabled`; removing the last port retains the finite logistics
+rules. Passenger terminals and dormant configuration do not activate cargo.
+New-mode routing combines ready cargo ports with a finite west-edge road gateway
+(100 goods/tick), using actual city-side deliveries and shared import/export
+capacity. Synthetic road IDs avoid collisions with all saved registry IDs.
+
+Fulfilled imports/exports replace forecast trade in the economy. Existing treasury
+scaling and aggregate rounding book them once. Retail goods shortages reduce
+commercial receipts/economic health and migration attraction. Enabled cargo and
+passenger terminals cost $20/$10 per tick; disabled terminals cost zero. Upkeep
+is billed once in civic/transit/ports expenses, including access outages. Native
+budget projections include it. Passenger facilities create no visitor demand.
+
+Completed regional reports track actual gateway delivery, unmet demand and access.
+New `amountScale` identifies raw quote units (normally 0.01); separate
+`operatingExpense` records city-dollar upkeep. Reports explain the tick without
+another cash deposit. Paused projections after utility/tool edits run against a
+copy of road loads; tax edits retain fulfillment pricing. Neither finalizes a
+report, charges money nor adds another freight pass to live roads. Native-backed
+metrics expose effective gateways, mode, upkeep and retailer goods availability.
+
+Passed: warnings-as-errors build, 510 C++ tests, 20 rendered tests, 7 Python
+units, strict GCC checks and 508 headless ASan/UBSan tests (two native tests
+excluded; macOS leak detection disabled). A native fixture delivered 30 imports
+at tick 50 for raw expense 1800 at scale 0.01 ($18), plus $20 upkeep, and retained
+exact GUI/headless session continuation and replay. Budget minimum-window layout
+was inspected. Evidence and source hashes:
+`playtest-artifacts/m32-logistics-20261015/REPORT.md`.
+
+M32 still needs native placement/removal controls, port graphics, controller
+cache invalidation after edits and visible transition/capacity controls. The
+construction control must set/explain the mode immediately on first placement;
+the shared tick currently also handles already-constructed historical fixtures.
+Airports, tourism and hosted Phase 9 CI remain pending.
+
+
+### Phase 9 / M32 — native port controls and local closeout (October 16, 2026)
+
+M32 is complete locally. `V` and the visible Ports button cycle Cargo, Passenger,
+Remove, On/Off and Capacity. Native and MCP actions share read-only placement
+planning and the same execution closure. Placement chooses a real civic road
+destination and adjacent entrance, checks shore/utility/reservation/funds rules,
+and revalidates before charging. Ports occupy 2x1 owned sites. Whole-port removal
+charges $500, releases ownership and never refunds construction. Edits invalidate
+autonomous zoning candidates so released land becomes eligible again.
+
+Cargo construction pays $15,000 and immediately persists the logistics mode,
+even while paused; demolition before the first tick still retains the mode.
+Passenger construction costs $10,000 and creates no visitor demand. Enabled
+upkeep remains $20/$10 per tick; disabling suspends upkeep and flow. Native
+capacity presets are 50/100/200 goods or 15/30/60 passengers; semantic controls
+can set zero through the corresponding design limit. Capacity cuts alone do not
+suspend fixed upkeep. Invalid settings and placement do not spend or consume IDs.
+
+The new validated `nextRegionalConnectionId` survives demolition and an empty
+registry; older counters normalize above current registry IDs. Both projections
+render distinct cargo containers/passenger sheds in normal tile depth order,
+without vegetation in their yards. The port panel explains prices and the
+fulfilled-trade/finite-road transition before construction, and shows current
+access, capacity/upkeep and last completed per-port/citywide external flow.
+Its clicks cannot build behind it. Passenger service is labeled inactive.
+
+Passed: warnings-as-errors build, 514 C++ tests, 21 rendered tests (133.271 sec),
+7 Python units, strict GCC checks and 512 headless ASan/UBSan tests (37.64 sec;
+two native tests excluded, macOS leak detection disabled). Four new core cases
+cover planning/read-only behavior, stale execution, counter persistence/rejection
+and bounded graphics. The new native case exercises actual button/key/site input
+for all five actions, costs, paused activation/removal, ID nonreuse, save/load,
+exact GUI/headless continuation and two identical replays. Minimum-window panel
+layout and both-projection port captures were inspected. Evidence/source hashes:
+`playtest-artifacts/m32-controls-20261016/REPORT.md`.
+
+M33 passenger airports is next. Visitors/hotels remain M34; no ship or aircraft
+agents were added. Hosted Phase 9 strict/sanitizer CI and M35 remain pending;
+these changes are uncommitted.

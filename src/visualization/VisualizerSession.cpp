@@ -58,6 +58,9 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   tickState.treasuryLedger = liveState.treasuryLedger;
   tickState.history = liveState.history;
   tickState.alerts = liveState.alerts;
+  tickState.regionalConnections = liveState.regionalConnections;
+  tickState.regionalSettlement = liveState.regionalSettlement;
+  tickState.regionalLogisticsEnabled = liveState.regionalLogisticsEnabled;
   tickState.transitReport = liveState.transitReport;
   tickState.populationTarget = liveState.populationTarget;
   tickState.migrationConditions = liveState.migrationConditions;
@@ -99,6 +102,9 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
   liveState.treasuryLedger = tickState.treasuryLedger;
   liveState.history = tickState.history;
   liveState.alerts = tickState.alerts;
+  liveState.regionalConnections = tickState.regionalConnections;
+  liveState.regionalSettlement = tickState.regionalSettlement;
+  liveState.regionalLogisticsEnabled = tickState.regionalLogisticsEnabled;
   liveState.transitReport = tickState.transitReport;
   liveState.populationTarget = tickState.populationTarget;
   liveState.migrationConditions = tickState.migrationConditions;
@@ -136,7 +142,7 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
 }  // namespace
 
 void projectTreasuryHud(LiveSimulationState& liveState, const std::vector<ServiceFacility>& facilities) {
-  const auto serviceOperatingCosts = liveState.budgetPolicy.serviceCost(facilities) + TransitSystem::operatingCost(liveState.transitRoutes);
+  const auto serviceOperatingCosts = liveState.budgetPolicy.serviceCost(facilities) + TransitSystem::operatingCost(liveState.transitRoutes) + regional::portOperatingCost(liveState.regionalConnections);
   liveState.treasuryExpenses = static_cast<int64_t>(std::llround(
     static_cast<double>(liveState.economy.totalExpenses) * 0.01)) + serviceOperatingCosts;
 }

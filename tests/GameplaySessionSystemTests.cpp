@@ -9,6 +9,8 @@
 #include "src/persistence/GameplaySessionSystem.hpp"
 #include "src/persistence/CityHistoryJson.hpp"
 #include "src/persistence/TransitReportJson.hpp"
+#include "src/persistence/RegionalConnectionsJson.hpp"
+#include "src/persistence/RegionalSettlementJson.hpp"
 #include "src/persistence/CityAlertsJson.hpp"
 #include "src/systems/PlayableCityTick.hpp"
 #include "src/systems/TransitSystem.hpp"
@@ -16,6 +18,44 @@
 #include "src/networks/RoadNetwork.hpp"
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
+
+TEST(GameplaySessionSystemTests, RegionalConfigurationSurvivesContinuationAndRejectsBeforeMutation) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  GameplaySessionState session;
+  regional::Connection airport; airport.id=8; airport.kind=regional::Kind::Airport;
+  airport.origin={3,3}; airport.entrance={3,4}; airport.passengersPerTick=60;
+  session.regionalConnections={airport};
+  session.tick=3;
+  const auto allocation=regional::allocate(3,{10,0,0},{{airport,regional::Access::Ready}});
+  ASSERT_TRUE(regional::settle(allocation,{{8,{5,0,0}}},{2,0,0,1},session.regionalSettlement));
+  const auto path=std::filesystem::temp_directory_path()/"urban_regional_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(),map,roads,store,people,session));
+  nlohmann::json valid; { std::ifstream input(path); input>>valid; }
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  ASSERT_EQ(loaded.regionalConnections.size(),1u);
+  EXPECT_EQ(loaded.regionalConnections[0].passengersPerTick,60u);
+  EXPECT_EQ(loaded.regionalSettlement.revenue,10);
+  EXPECT_FALSE(regional::settle(allocation,{{8,{5,0,0}}},{2,0,0,1},loaded.regionalSettlement));
+  GameplaySessionSystem::advance(map,roads,store,people,loaded);
+  EXPECT_EQ(loaded.regionalConnections[0].id,8u);
+  const auto tick=loaded.tick;
+  store.createBuilding(BuildingType::Residential,{1,1},10);
+  auto invalid=valid; invalid["regionalConnections"][0]["width"]=100;
+  { std::ofstream output(path); output<<invalid; }
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_EQ(store.getBuildingCount(),1u);
+  EXPECT_EQ(loaded.tick,tick);
+  EXPECT_EQ(loaded.regionalConnections[0].id,8u);
+  valid.erase("regionalConnections");
+  valid.erase("regionalSettlement");
+  { std::ofstream output(path); output<<valid; }
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_TRUE(loaded.regionalConnections.empty());
+  EXPECT_FALSE(loaded.regionalSettlement.valid);
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string()+".city.json");
+}
 
 TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   CityMap map({8, 8});
@@ -587,5 +627,58 @@ TEST(GameplaySessionSystemTests, InvalidTransitImportsDoNotMutateCity) {
     EXPECT_EQ(loaded.funds,123);
     EXPECT_EQ(map.zone({1,1}),static_cast<int>(ZoneType::Park));
   }
+  std::filesystem::remove(path);std::filesystem::remove(path.string()+".city.json");
+}
+
+TEST(GameplaySessionSystemTests, ExplicitLogisticsModePersistsAfterLastPortAndRejectsMalformedMode) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  GameplaySessionState session; session.regionalLogisticsEnabled=true;
+  const auto path=std::filesystem::temp_directory_path()/"urban_logistics_mode.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(),map,roads,store,people,session));
+  nlohmann::json valid; {std::ifstream input(path); input>>valid;}
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_TRUE(loaded.regionalLogisticsEnabled);
+  auto state=GameplaySessionSystem::advance(map,roads,store,people,loaded);
+  EXPECT_TRUE(state.regionalLogisticsEnabled);
+  ASSERT_EQ(state.trafficSummary.freight.gateways.size(),1u);
+  EXPECT_EQ(state.trafficSummary.freight.gateways[0].gateway.goodsPerTick,100);
+  for (auto bad:{nlohmann::json(1),nlohmann::json("true"),nlohmann::json(nullptr)}) {
+    auto root=valid; root["regionalLogisticsEnabled"]=bad;
+    {std::ofstream output(path); output<<root;}
+    map.setZone({2,2},4); loaded.funds=123;
+    EXPECT_FALSE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+    EXPECT_EQ(loaded.funds,123); EXPECT_TRUE(loaded.regionalLogisticsEnabled);
+    EXPECT_EQ(map.zone({2,2}),4);
+  }
+  valid.erase("regionalLogisticsEnabled");
+  {std::ofstream output(path); output<<valid;}
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_FALSE(loaded.regionalLogisticsEnabled);
+  EXPECT_TRUE(loaded.regionalConnections.empty());
+  std::filesystem::remove(path); std::filesystem::remove(path.string()+".city.json");
+}
+
+TEST(GameplaySessionSystemTests, RegionalIDCounterSurvivesEmptyRegistryAndRejectsMalformedValues) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  GameplaySessionState session; session.nextRegionalConnectionId=42;
+  const auto path=std::filesystem::temp_directory_path()/"urban_regional_ids.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(),map,roads,store,people,session));
+  nlohmann::json valid; {std::ifstream input(path); input>>valid;}
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_EQ(loaded.nextRegionalConnectionId,42u);
+  for (const auto& bad:{nlohmann::json(0),nlohmann::json(-1),nlohmann::json(1.5),
+       nlohmann::json(true),nlohmann::json(4294967297ULL)}) {
+    auto root=valid;root["nextRegionalConnectionId"]=bad;
+    {std::ofstream output(path);output<<root;}
+    loaded.funds=123;
+    EXPECT_FALSE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+    EXPECT_EQ(loaded.funds,123);EXPECT_EQ(loaded.nextRegionalConnectionId,42u);
+  }
+  valid.erase("nextRegionalConnectionId");
+  {std::ofstream output(path);output<<valid;}
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_EQ(loaded.nextRegionalConnectionId,1u);
   std::filesystem::remove(path);std::filesystem::remove(path.string()+".city.json");
 }

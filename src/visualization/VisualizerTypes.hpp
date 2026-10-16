@@ -6,6 +6,8 @@
 
 #include "src/systems/MigrationSystem.hpp"
 #include "src/systems/CityDisasterState.hpp"
+#include "src/systems/RegionalConnectionSystem.hpp"
+#include "src/systems/RegionalAccounting.hpp"
 #include <array>
 #include <cstdint>
 #include <string>
@@ -59,6 +61,7 @@ enum class PaletteTool {
   Bulldoze,
   Service,
   District,
+  Port,
 };
 
 enum class HudAction {
@@ -88,6 +91,10 @@ struct LiveSimulationState {
   CityHistory history;
   CityAlerts alerts;
   TransitReport transitReport;
+  std::vector<regional::Connection> regionalConnections;
+  regional::Settlement regionalSettlement;
+  bool regionalLogisticsEnabled = false;
+  uint64_t nextRegionalConnectionId = 1;
   bool enableDisasters = false;
   CityDisasterState disasters;
   uint32_t simulationSeed = 98765;

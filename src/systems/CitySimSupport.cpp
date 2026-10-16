@@ -186,7 +186,7 @@ void layRoadGrid(CityMap& map, RoadNetwork& roads, Coord center, int extent, int
 // incremental index (see extendZoningCandidates below).
 bool isZoningCandidate(const CityMap& map, Coord pos) {
   const Tile& tile = map.getTile(pos);
-  if (tile.type == 2 || tile.zone != 0 || tile.buildingId != 0) return false;
+  if (tile.type == 2 || tile.zone != 0 || tile.buildingId != 0 || tile.regionalConnectionId) return false;
   return hasRoadAccess(map, pos);
 }
 
@@ -389,7 +389,7 @@ Coord chooseFacilitySite(
   long bestScore = -1;
   for (int y = y0; y <= y1; ++y) {
     for (int x = x0; x <= x1; ++x) {
-      if (map.getTile({x, y}).type == 2) continue;        // water
+      if (map.getTile({x, y}).type == 2 || map.getTile({x,y}).regionalConnectionId) continue;
       if (!hasRoadAccess(map, {x, y})) continue;
       long score;
       if (facilities.empty()) {
@@ -455,9 +455,11 @@ void placeFacilitiesIfNeeded(
     ServiceFacility facility;
     facility.type = type;
     facility.position = chooseFacilitySite(map, facilities, center, extent);
+    if (map.getTile(facility.position).regionalConnectionId) return false;
     facility.maxTravelDistance = coverageRadius;
     facility.quality = 1.0f;
     facilities.push_back(facility);
+    return true;
   };
   const auto ensureType = [&](ServiceType type) {
     if (countType(type) == 0) {
@@ -466,7 +468,7 @@ void placeFacilitiesIfNeeded(
   };
 
   while (countCycleTypes() < target) {
-    placeType(static_cast<ServiceType>(countCycleTypes() % static_cast<size_t>(typeCount)));
+    if (!placeType(static_cast<ServiceType>(countCycleTypes() % static_cast<size_t>(typeCount)))) break;
   }
 
   // Fire/Police/Health/Education are soft coverage stats, so it's harmless

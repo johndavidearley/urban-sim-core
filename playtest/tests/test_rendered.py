@@ -27,6 +27,270 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_native_port_tools_prices_controls_persistence_and_replay(self):
+        s=self.session
+        await s.city("new",32)
+        await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":10,"x2":25,"y2":10})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":9})
+        await s.city("save")
+        fixture=json.loads(s.artifact("urban_sim_session.json").read_text())
+        core=json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        for tile in core["tiles"]:
+            if tile["y"]==8 and tile["x"]<=25:tile["type"]=2
+        coast=s.artifact("native-ports.city.json");coast.write_text(json.dumps(core))
+        fixture["citySnapshot"]=str(coast)
+        fixture["funds"]=100000 # Liquidity for this isolated acceptance fixture only.
+        path=s.artifact("native-ports.json");path.write_text(json.dumps(fixture))
+        await s.stop();await s.launch();await record(s,"start")
+        await s.city("load",import_path=str(path))
+        await s.request("view",{"action":"projection","projection":"top_down"})
+        await s.request("view",{"action":"camera","tile_pixels":48,"view_x":6,"view_y":3})
+        async def key(name):
+            await s.request("input",{"events":[{"type":"key","key":name}]})
+        async def click(x,y):
+            await s.request("input",{"events":[{"type":"move","x":x,"y":y},
+                {"type":"down","button":"left","x":x,"y":y},{"type":"up","button":"left","x":x,"y":y}]})
+        async def site(x,y):
+            point=await s.request("coordinates",{"direction":"tile_to_screen","x":x,"y":y})
+            await click(point["x"],point["y"])
+        controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+        button=next(c for c in controls if c["name"]=="ports")
+        await click(button["x"]+button["width"]//2,button["y"]+button["height"]//2)
+        self.assertTrue(s.last_state["tools"]["port"])
+        await site(18,9)
+        self.assertEqual(s.last_state["funds"],85000)
+        self.assertTrue(s.last_state["metrics"]["regional_logistics_enabled"])
+        self.assertEqual(s.last_state["tick"],0)
+        toast=s.last_state["toast"]
+        await click(20,s.last_state["dimensions"]["height"]-145)
+        self.assertEqual(s.last_state["toast"],toast) # Hint panel cannot place behind itself.
+        await s.city("save")
+        self.assertTrue(json.loads(s.artifact("urban_sim_session.json").read_text())["regionalLogisticsEnabled"])
+        await key("V");await site(22,9)
+        self.assertEqual(s.last_state["funds"],75000)
+        await s.screenshot("native-ports-top_down")
+        await key("F3");await s.request("view",{"action":"focus"})
+        point=await s.request("coordinates",{"direction":"tile_to_screen","x":22,"y":9})
+        await s.request("input",{"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
+        await s.screenshot("native-ports-isometric")
+        await key("V");await site(18,9) # Whole cargo port, before any tick.
+        self.assertEqual(s.last_state["funds"],74500)
+        self.assertTrue(s.last_state["metrics"]["regional_logistics_enabled"])
+        await key("V");await site(22,9) # Disable passenger upkeep.
+        await key("V");await site(22,9) # Cycle passenger capacity to 15.
+        rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
+        self.assertEqual(len(rows),1);self.assertEqual(rows[0]["id"],2)
+        self.assertFalse(rows[0]["enabled"]);self.assertEqual(rows[0]["passengers_per_tick"],15)
+        await key("V");await site(18,9) # New cargo gets ID 3, never reused 1.
+        self.assertEqual(s.last_state["funds"],59500)
+        rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
+        self.assertEqual([c["id"] for c in rows],[2,3])
+        await key("Escape")
+        self.assertFalse(s.last_state["tools"]["port"])
+        await s.city("save");await s.city("load")
+        saved=json.loads(s.artifact("urban_sim_session.json").read_text())
+        self.assertEqual(saved["nextRegionalConnectionId"],4)
+        checkpoint=s.artifact("native-ports-checkpoint.json")
+        checkpoint_core=s.artifact("native-ports-checkpoint.city.json")
+        checkpoint_core.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
+        saved["citySnapshot"]=str(checkpoint_core);checkpoint.write_text(json.dumps(saved))
+        await s.request("time",{"action":"step","ticks":20})
+        self.assertEqual(s.last_state["metrics"]["port_operating_cost"],20)
+        await s.city("save")
+        gui=json.loads(s.artifact("urban_sim_session.json").read_text())
+        cli=Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"))
+        output=s.artifact("native-ports-headless.json")
+        process=await asyncio.create_subprocess_exec(str(cli),"--simulate","20","--simulate-session",str(checkpoint),
+            "--simulate-session-out",str(output),stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        _,stderr=await process.communicate();self.assertEqual(process.returncode,0,stderr.decode())
+        headless=json.loads(output.read_text());gui.pop("citySnapshot");headless.pop("citySnapshot")
+        self.assertEqual(gui,headless)
+        scenario=await record(s,"stop","native-port-tools")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+        cash=s.last_state["funds"]
+        for options in ({"port_action":"cargo"},{"port_action":"capacity","capacity":61}):
+            with self.assertRaises(PlaytestError):
+                await s.request("tool",{"action":"apply","name":"port","x1":22,"y1":9,**options})
+            self.assertEqual(s.last_state["funds"],cash)
+        await s.request("tool",{"action":"apply","name":"port","port_action":"capacity","capacity":30,"x1":22,"y1":9})
+        rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
+        self.assertEqual(rows[0]["passengers_per_tick"],30)
+        await s.request("window",{"action":"resize","width":800,"height":640})
+        await s.request("view",{"action":"focus"})
+        point=await s.request("coordinates",{"direction":"tile_to_screen","x":22,"y":9})
+        await s.request("input",{"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
+        await s.screenshot("native-ports-minimum-window")
+
+    async def test_constructed_port_reservations_edit_guards_and_continuation(self):
+        s=self.session
+        await s.city("new",32)
+        await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":10,"x2":25,"y2":10})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":9})
+        for zone,x1,x2 in (("residential",1,8),("commercial",20,25)):
+            await s.request("tool",{"action":"apply","name":"zone","zone":zone,"x1":x1,"y1":11,"x2":x2,"y2":11})
+        await s.request("time",{"action":"step","ticks":30})
+        await s.city("save")
+        legacy=json.loads(s.artifact("urban_sim_session.json").read_text())
+        legacy.pop("regionalConnections",None)
+        city=json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        for tile in city["tiles"]:
+            if tile["y"]==8 and tile["x"]<=20:
+                tile["type"]=2
+        core=s.artifact("port-checkpoint.city.json");core.write_text(json.dumps(city))
+        legacy["citySnapshot"]=str(core)
+        fixture=dict(legacy)
+        fixture["funds"]-=15000 # Already-paid historical fixture; API payment is tested in C++.
+        fixture["regionalConnections"]=[{"id":17,"kind":1,"x":18,"y":9,"width":2,"height":1,
+            "entranceX":18,"entranceY":10,"enabled":True,"constructed":True,
+            "passengersPerTick":0,"goodsPerTick":200}]
+        path=s.artifact("port-fixture.json");path.write_text(json.dumps(fixture))
+        await s.city("load",import_path=str(path))
+        tiles=(await s.request("inspect",{"section":"tiles","x":18,"y":9,"width":2,"height":1}))["items"]
+        self.assertEqual([t["regional_connection_id"] for t in tiles],[17,17])
+        port=(await s.request("inspect",{"section":"regional_connections"}))["items"][0]
+        self.assertTrue(port["constructed"])
+        self.assertEqual(port["site_access"],"ready")
+        cash=s.last_state["funds"]
+        for tool,extra in (("road",{"x2":20,"y2":9}),("zone",{"zone":"residential"}),
+                           ("service",{"service":"fire"}),("bulldoze",{})):
+            with self.assertRaises(PlaytestError):
+                await s.request("tool",{"action":"apply","name":tool,"x1":18,"y1":9,**extra})
+            self.assertEqual(s.last_state["funds"],cash)
+        # Colliding saved terrain must reject before replacing the live city.
+        bad_city=json.loads(json.dumps(city))
+        for tile in bad_city["tiles"]:
+            if tile["x"]==18 and tile["y"]==9:
+                tile["zone"]=1
+        bad_core=s.artifact("port-invalid.city.json");bad_core.write_text(json.dumps(bad_city))
+        bad=dict(fixture,citySnapshot=str(bad_core))
+        bad_path=s.artifact("port-invalid.json");bad_path.write_text(json.dumps(bad))
+        with self.assertRaises(PlaytestError):
+            await s.city("load",import_path=str(bad_path))
+        self.assertEqual(s.last_state["funds"],cash)
+        self.assertEqual((await s.request("inspect",{"section":"tiles","x":18,"y":9}))["items"][0]["regional_connection_id"],17)
+        await s.city("save")
+        await s.request("time",{"action":"step","ticks":20})
+        self.assertTrue(s.last_state["metrics"]["regional_logistics_enabled"])
+        self.assertEqual(s.last_state["metrics"]["port_operating_cost"],20)
+        measured=await s.request("inspect",{"section":"regional_report"})
+        self.assertGreater(measured["delivered"]["imports"],0)
+        self.assertEqual(measured["operatingExpense"],20)
+        self.assertEqual(measured["amountScale"],0.01)
+        gateways=s.last_state["metrics"]["regional_gateways"]
+        self.assertEqual([row["goods_per_tick"] for row in gateways],[200,100])
+        await s.city("save")
+        gui=json.loads(s.artifact("urban_sim_session.json").read_text())
+        output=s.artifact("port-headless.json")
+        cli=Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"))
+        process=await asyncio.create_subprocess_exec(str(cli),"--simulate","20",
+            "--simulate-session",str(path),"--simulate-session-out",str(output),
+            stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        _,stderr=await process.communicate()
+        self.assertEqual(process.returncode,0,stderr.decode())
+        headless=json.loads(output.read_text())
+        gui.pop("citySnapshot");headless.pop("citySnapshot")
+        self.assertEqual(gui,headless)
+        await s.city("load",import_path=str(output))
+        self.assertEqual((await s.request("inspect",{"section":"tiles","x":18,"y":9}))["items"][0]["regional_connection_id"],17)
+        old=s.artifact("port-legacy.json");old.write_text(json.dumps(legacy))
+        await s.city("load",import_path=str(old))
+        self.assertEqual((await s.request("inspect",{"section":"tiles","x":18,"y":9}))["items"][0]["regional_connection_id"],0)
+        await s.stop();await s.launch();await record(s,"start")
+        await s.city("load",import_path=str(path))
+        await s.request("time",{"action":"step","ticks":20})
+        await assert_state(s,"items.0.regional_connection_id","eq",17,section="tiles",query={"x":18,"y":9})
+        await s.city("save");await s.city("load")
+        scenario=await record(s,"stop","constructed-port-reservations")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+
+    async def test_regional_configuration_inspection_persistence_and_host_parity(self):
+        s=self.session
+        await s.city("new",32)
+        await s.city("save")
+        legacy=json.loads(s.artifact("urban_sim_session.json").read_text())
+        legacy.pop("regionalConnections",None)
+        legacy.pop("regionalSettlement",None)
+        core=s.artifact("regional-checkpoint.city.json")
+        core.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
+        legacy["citySnapshot"]=str(core)
+        fixture=dict(legacy)
+        fixture["regionalConnections"]=[
+            {"id":8,"kind":3,"x":20,"y":20,"width":2,"height":2,
+             "entranceX":20,"entranceY":22,"enabled":True,
+             "passengersPerTick":60,"goodsPerTick":0},
+            {"id":2,"kind":0,"x":0,"y":16,"width":1,"height":1,
+             "entranceX":0,"entranceY":16,"enabled":False,
+             "passengersPerTick":10,"goodsPerTick":100}]
+        fixture["tick"]=3
+        zero={"passengers":0,"imports":0,"exports":0}
+        fixture["regionalSettlement"]={"valid":True,"allocation":{"tick":3,
+            "requested":dict(zero,passengers=10),"admitted":dict(zero,passengers=10),"unmet":zero,
+            "connections":[{"id":8,"access":0,"passengers":10,"imports":0,"exports":0}]},
+            "deliveries":[{"id":8,"delivered":dict(zero,passengers=5)}],
+            "delivered":dict(zero,passengers=5),"undelivered":dict(zero,passengers=5),
+            "prices":{"passengerFee":2,"importCost":0,"exportRevenue":0,"operatingCost":3},
+            "revenue":10,"expenses":3}
+        path=s.artifact("regional-fixture.json");path.write_text(json.dumps(fixture))
+        await s.city("load",import_path=str(path))
+        before=s.last_state.copy()
+        rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
+        self.assertEqual([row["id"] for row in rows],[2,8])
+        self.assertEqual(rows[1]["kind"],"airport")
+        self.assertEqual(rows[1]["passengers_per_tick"],60)
+        self.assertEqual([row["site_access"] for row in rows],["not constructed","not constructed"])
+        measured=await s.request("inspect",{"section":"regional_report"})
+        self.assertTrue(measured["valid"])
+        self.assertEqual(measured["revenue"],10)
+        self.assertEqual(measured["delivered"]["passengers"],5)
+        for field in ("tick","funds","population","budget"):
+            self.assertEqual(s.last_state[field],before[field])
+        page=await s.request("inspect",{"section":"regional_connections","offset":1,"limit":1})
+        self.assertEqual(page["items"],[rows[1]])
+        bad=dict(fixture);bad["regionalConnections"]=[dict(fixture["regionalConnections"][0],width=100)]
+        badpath=s.artifact("regional-invalid.json");badpath.write_text(json.dumps(bad))
+        with self.assertRaises(PlaytestError):
+            await s.city("load",import_path=str(badpath))
+        self.assertEqual((await s.request("inspect",{"section":"regional_connections"}))["items"],rows)
+        bad=json.loads(json.dumps(fixture));bad["regionalSettlement"]["revenue"]=11
+        badpath.write_text(json.dumps(bad))
+        with self.assertRaises(PlaytestError):
+            await s.city("load",import_path=str(badpath))
+        self.assertEqual((await s.request("inspect",{"section":"regional_report"}))["revenue"],10)
+        await s.city("save")
+        self.assertEqual(json.loads(s.artifact("urban_sim_session.json").read_text())["regionalConnections"][0]["id"],2)
+        await s.request("time",{"action":"step","ticks":20})
+        await s.city("save")
+        gui=json.loads(s.artifact("urban_sim_session.json").read_text())
+        self.assertEqual(gui["funds"],before["funds"])
+        output=s.artifact("regional-headless.json")
+        cli=Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"))
+        process=await asyncio.create_subprocess_exec(str(cli),"--simulate","20",
+            "--simulate-session",str(path),"--simulate-session-out",str(output),
+            stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        _,stderr=await process.communicate()
+        self.assertEqual(process.returncode,0,stderr.decode())
+        headless=json.loads(output.read_text())
+        gui.pop("citySnapshot");headless.pop("citySnapshot")
+        self.assertEqual(gui,headless)
+        await s.city("load",import_path=str(output))
+        self.assertEqual((await s.request("inspect",{"section":"regional_connections"}))["items"],rows)
+        old=s.artifact("regional-legacy.json");old.write_text(json.dumps(legacy))
+        await s.city("load",import_path=str(old))
+        self.assertEqual((await s.request("inspect",{"section":"regional_connections"}))["items"],[])
+        self.assertFalse((await s.request("inspect",{"section":"regional_report"}))["valid"])
+        await s.stop()
+        await s.launch()
+        await record(s,"start")
+        await s.city("load",import_path=str(path))
+        await s.request("time",{"action":"step","ticks":20})
+        await assert_state(s,"items.1.id","eq",8,section="regional_connections")
+        await s.city("save")
+        await s.city("load")
+        scenario=await record(s,"stop","regional-configuration")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+
     async def test_service_funding_controls_coverage_bills_and_continuation(self):
         s = self.session
         await s.city("new", 32)

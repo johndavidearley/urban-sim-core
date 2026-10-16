@@ -5,6 +5,7 @@
 #include "src/gameplay/TreasurySystem.hpp"
 
 #include "src/systems/MigrationSystem.hpp"
+#include "src/systems/RegionalLogistics.hpp"
 #include "src/systems/CityDisasterState.hpp"
 #include <cstdint>
 #include <vector>
@@ -35,6 +36,9 @@ struct PlayableCityTickState {
   CityHistory history;
   CityAlerts alerts;
   TransitReport transitReport;
+  std::vector<regional::Connection> regionalConnections;
+  regional::Settlement regionalSettlement;
+  bool regionalLogisticsEnabled = false;
   uint32_t tick = 0;
   CityDisasterState disasters;
   // Last migration request, retained in saves for compatibility; not a cap.

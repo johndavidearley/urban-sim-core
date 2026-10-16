@@ -14,7 +14,7 @@ public:
     if (!map.isValid(coord)) return false;
     const auto& tile = map.getTile(coord);
     return tile.zone == static_cast<int>(ZoneType::Park) && tile.type != 2 &&
-           !tile.hasRoad && tile.buildingId == 0;
+           !tile.hasRoad && tile.buildingId == 0 && tile.regionalConnectionId == 0;
   }
   static float proximity(const CityMap& map, Coord coord) {
     int nearest = kRadius;

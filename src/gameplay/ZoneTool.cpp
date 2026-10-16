@@ -31,6 +31,10 @@ ZonePlan ZoneTool::plan(
       const Coord coord{x, y};
       result.tiles.push_back(coord);
       const Tile& tile = map.getTile(coord);
+      if (tile.regionalConnectionId) {
+        result.error = "area includes a regional terminal";
+        return result;
+      }
       if (tile.type == 2) {
         result.error = "area includes water";
         return result;

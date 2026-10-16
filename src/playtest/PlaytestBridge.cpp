@@ -35,6 +35,7 @@ Json playtestCapabilities() {
         {"budget_controls", true},
         {"disasters", true},
         {"freight", true},
+        {"ports",true},
         {"transit_overlay", true},
         {"road_classes", true},
         {"population_flow", true},
@@ -191,7 +192,7 @@ void PlaytestBridge::begin(
               K(Num2),   K(Num3),  K(Num4),  K(Num5),   K(Num6),  K(Num7),
               K(Num8), K(Num9),   K(A),     K(B),     K(C),      K(D),     K(F),
               K(G),      K(H),     K(L),     K(N),      K(O),     K(P),
-              K(R),      K(S),     K(T),     K(Z)
+              K(R),      K(S),     K(T),     K(V), K(Z)
 #undef K
           };
           event.type = EventType::KeyDown;

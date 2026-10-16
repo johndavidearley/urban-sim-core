@@ -23,6 +23,10 @@ add_executable(test_core
   TrafficMicroSimTests.cpp
   LandValueSystemTests.cpp
   TransitSystemTests.cpp
+  RegionalConnectionSystemTests.cpp
+  RegionalAccountingTests.cpp
+  RegionalLogisticsTests.cpp
+  PortToolTests.cpp
   FireSystemTests.cpp
   CrimeSystemTests.cpp
   HealthSystemTests.cpp

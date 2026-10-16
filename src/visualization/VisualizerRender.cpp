@@ -142,7 +142,7 @@ void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
     const int dotX = x + 2 + static_cast<int>(variation % static_cast<uint32_t>(std::max(1, size - 4)));
     const int dotY = y + 2 + static_cast<int>((variation >> 8) % static_cast<uint32_t>(std::max(1, size - 4)));
     drawFilledRect(renderer, dotX, dotY, size >= 18 ? 2 : 1, size >= 18 ? 2 : 1, speck, 150);
-    if (tile.zone == 0 && tile.type == 0 && size >= 14 && variation % 11u == 0u) {
+    if (tile.zone == 0 && !tile.regionalConnectionId && tile.type == 0 && size >= 14 && variation % 11u == 0u) {
       const int crown = std::max(3, size / 4);
       const int treeX = x + 2 + static_cast<int>((variation >> 12) % static_cast<uint32_t>(std::max(1, size - crown - 3)));
       const int treeY = y + 2 + static_cast<int>((variation >> 20) % static_cast<uint32_t>(std::max(1, size - crown - 4)));
@@ -639,7 +639,7 @@ void drawIsometricTile(
     }
   }
 
-  if (!tile.hasRoad && tile.buildingId == 0 && !hasFacility && tile.zone == 0 && tile.type == 0
+  if (!tile.hasRoad && tile.buildingId == 0 && !hasFacility && tile.zone == 0 && !tile.regionalConnectionId && tile.type == 0
       && variation % 11u == 0u && width >= 14) {
     const int trunkHeight = std::max(3, height / 2);
     const int crownWidth = std::max(4, width / 5);
@@ -830,3 +830,31 @@ void drawDistrictOutlines(
 }
 
 }  // namespace visualizer
+
+namespace visualizer {
+void drawPortTile(DrawList* renderer,ScreenPoint top,int width,int height,bool isometric,
+                  regional::Kind kind,bool enabled,bool first) {
+  const bool cargo=kind==regional::Kind::CargoPort;
+  const RGB yard=enabled ? RGB{157,171,174} : RGB{113,123,126};
+  const RGB facade=enabled ? (cargo ? (first ? RGB{205,128,68} : RGB{56,125,157}) : RGB{203,220,223})
+                           : RGB{113,123,131};
+  if (isometric) {
+    drawDiamond(renderer,top,width,height,yard);
+    const int w=std::max(4,width*2/3), h=std::max(2,height*2/3);
+    const ScreenPoint roof{top.x,top.y+height/5};
+    drawIsometricObject(renderer,roof,w,h,facade,std::max(3,height*(cargo ? 2 : 3)/5));
+    if (!cargo) {
+      const int halfWidth=std::max(1,w/2-std::max(2,w/7)), halfDepth=std::max(1,h/3);
+      drawDiamond(renderer,{roof.x,roof.y+h/2-std::max(3,height*3/5)-halfDepth},
+        halfWidth*2,halfDepth*2,{56,123,160});
+    }
+  } else {
+    drawFilledRect(renderer,top.x,top.y,width,height,yard);
+    const int pad=std::max(2,width/6);
+    drawFilledRect(renderer,top.x+pad,top.y+pad,width-2*pad,height-2*pad,facade);
+    const RGB detail=cargo ? RGB{235,209,154} : RGB{56,123,160};
+    drawFilledRect(renderer,top.x+pad,top.y+height/2,width-2*pad,std::max(2,height/8),detail);
+    drawRectOutline(renderer,top.x+pad,top.y+pad,width-2*pad,height-2*pad,{65,83,96});
+  }
+}
+} // namespace visualizer

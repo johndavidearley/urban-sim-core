@@ -370,6 +370,7 @@ bool SaveLoadSystem::applySnapshot(
     tile.connectedToPower = serialized.connectedToPower;
     tile.connectedToWater = serialized.connectedToWater;
     tile.buildingId = serialized.buildingId;
+    tile.regionalConnectionId = 0; // Rebuilt by the owning gameplay session.
   }
 
   for (const Building& building : snapshot.buildings) {

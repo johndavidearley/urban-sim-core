@@ -112,6 +112,7 @@ if (command == "inspect") {
                                           "speed_3", "save",
                                           "load", "disasters", "budget", "alerts", "transport"}[static_cast<size_t>(i - 1)],
                hudControlRect(static_cast<HudAction>(i), windowWidth));
+      if (!cleanUiMode) rect("ports",portButtonRect());
       for (int i = 0; i < 5; ++i)
         rect(std::array<std::string, 5>{"road", "zone", "bulldoze", "service",
                                         "district"}[static_cast<size_t>(i)],
@@ -142,6 +143,7 @@ if (command == "inspect") {
   if (offset < 0 || limit < 1 || limit > 512)
     throw std::runtime_error("Page requires offset >= 0 and limit 1..512");
   Json items = Json::array();
+  if (section == "regional_report") return regionalSettlementJson(liveState.regionalSettlement);
   if (section == "diagnostics") {
     const Coord pos{args.value("x",0),args.value("y",0)};
     if (!map.isValid(pos)) throw std::runtime_error("Diagnostic coordinate must be inside the map");
@@ -181,6 +183,7 @@ if (command == "inspect") {
                          {"zone", t.zone},
                          {"road", t.hasRoad},
                          {"building_id", t.buildingId},
+                         {"regional_connection_id", t.regionalConnectionId},
                          {"power", t.connectedToPower},
                          {"water", t.connectedToWater},
                          {"road_access", t.connectedToRoad},
@@ -244,6 +247,17 @@ if (command == "inspect") {
            {"y2", d.maxCorner.y},
            {"archetype", DistrictSystem::archetypeToString(d.archetype)},
            {"budget_cap", d.serviceBudgetCap}});
+  } else if (section == "regional_connections") {
+    const regional::SeaAccess sea(map);
+    for (const auto& c:liveState.regionalConnections) {
+      const char* names[]={"road_gateway","cargo_port","passenger_terminal","airport"};
+      items.push_back({{"id",c.id},{"kind",names[static_cast<int>(c.kind)]},
+        {"origin",{c.origin.x,c.origin.y}},{"width",c.width},{"height",c.height},
+        {"entrance",{c.entrance.x,c.entrance.y}},{"enabled",c.enabled},
+        {"passengers_per_tick",c.passengersPerTick},{"goods_per_tick",c.goodsPerTick},
+        {"constructed",c.constructed},
+        {"site_access",regional::accessName(regional::diagnoseOperation(c,map,roads,sea,c.entrance))}});
+    }
   } else if (section == "routes") {
     for (const auto &r : liveState.transitRoutes) {
       Json stops = Json::array();
@@ -428,10 +442,29 @@ if (command == "tool") {
     type = PaletteTool::Service;
   else if (name == "district")
     type = PaletteTool::District;
+  else if (name == "port")
+    type = PaletteTool::Port;
   else if (name == "none")
     type = PaletteTool::None;
   else
     throw std::runtime_error("Unknown tool");
+  int selectedPortAction=portAction;
+  int portCapacity=-1;
+  if (type==PaletteTool::Port) {
+    const auto mode=args.value("port_action",std::string("cargo"));
+    const std::array<std::string,5> modes{{"cargo","passenger","remove","toggle","capacity"}};
+    const auto found=std::find(modes.begin(),modes.end(),mode);
+    if (found==modes.end()) throw std::runtime_error("Unknown port action");
+    selectedPortAction=static_cast<int>(found-modes.begin());
+    if (args.contains("capacity")) {
+      if (selectedPortAction!=4 || !args.at("capacity").is_number_integer())
+        throw std::runtime_error("Capacity requires the port capacity action and an integer");
+      const auto value=args.at("capacity").get<int64_t>();
+      if (value<0 || value>200) throw std::runtime_error("Invalid port capacity");
+      portCapacity=static_cast<int>(value);
+    }
+  } else if (args.contains("port_action") || args.contains("capacity"))
+    throw std::runtime_error("Port options require the port tool");
   RoadClass roadClass = selectedRoadClass;
   if (args.contains("road_class")) {
     const auto value = args.at("road_class").get<std::string>();
@@ -458,6 +491,7 @@ if (command == "tool") {
       (type == PaletteTool::None || !map.isValid(start) || !map.isValid(end)))
     throw std::runtime_error("Placement outside map or tool missing");
   activatePaletteTool(type);
+  portAction=selectedPortAction;
   selectedRoadClass = roadClass;
   selectedZone = zone;
   selectedService = service;
@@ -465,7 +499,9 @@ if (command == "tool") {
   if (action == "apply") {
     toolDragStart = start;
     lastActionSuccess = true;
-    if (type == PaletteTool::Service)
+    if (type == PaletteTool::Port)
+      applyPort(start,portCapacity);
+    else if (type == PaletteTool::Service)
       applyService(start);
     else
       applyPlacement(end);
