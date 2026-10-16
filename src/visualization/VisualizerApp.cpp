@@ -258,6 +258,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   int cameraPanRemainderY = 0;
   ToastNotification toast;
   int onboardingStep = loadedAtStartup ? 6 : 0;
+  bool guideBudgetReviewed = false;
   bool showOnboarding = !loadedAtStartup;
   bool sessionDirty = !loadedAtStartup;
   bool showQuitDialog = false;
@@ -603,19 +604,6 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       notify(std::string(ServiceSystem::serviceTypeToString(selectedService)) +
                  " BUILT $" + std::to_string(cost),
              true);
-      if (onboardingStep == 3 && selectedService == ServiceType::Power) {
-        onboardingStep = 4;
-      } else if (onboardingStep == 4 && selectedService == ServiceType::Water) {
-        onboardingStep = 5;
-      } else if (onboardingStep == 5 &&
-                 (selectedService == ServiceType::Fire ||
-                  selectedService == ServiceType::Police ||
-                  selectedService == ServiceType::Health ||
-                  selectedService == ServiceType::Education)) {
-        onboardingStep = 6;
-        showOnboarding = false;
-        notify("CITY GUIDE COMPLETE", true);
-      }
     } else {
       notify(servicePlan.error.empty() ? "SERVICE BUILD FAILED"
                                        : servicePlan.error,
@@ -638,9 +626,6 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         refreshRouteHeat(store, population, roads, liveState,
                          1003u + (liveState.tick * 31u));
         notify("ROAD BUILT $" + std::to_string(cost), true);
-        if (onboardingStep == 0) {
-          onboardingStep = 1;
-        }
       } else {
         notify(roadPlan.error.empty() ? "ROAD BUILD FAILED" : roadPlan.error,
                false);
@@ -654,9 +639,6 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                                 liveState, 1003u + liveState.tick * 31u,
                                 /*reallocPopulation=*/false, /*runTraffic=*/false);
         notify("ZONE APPLIED $" + std::to_string(cost), true);
-        if (onboardingStep == 1) {
-          onboardingStep = 2;
-        }
       } else {
         notify(zonePlan.error.empty() ? "ZONING FAILED" : zonePlan.error,
                false);
@@ -1382,12 +1364,15 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         case Key::N:
           if (liveState.paused) {
             executeSimulationTick();
+            notify("STEPPED TO TICK " + std::to_string(liveState.tick) +
+                       " - AUTO RUN PAUSED", true);
           }
           break;
         case Key::H:
           showLegend = !showLegend;
           break;
         case Key::F1:
+          if (onboardingStep == 6) guideBudgetReviewed = false;
           showOnboarding = !showOnboarding;
           break;
         case Key::F3:
@@ -1428,6 +1413,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         case Key::F6:
           showBudgetPanel = true;
+          budgetAlerts = false;
+          budgetTrends = false;
           toolDragging = false;
           cameraPanning = false;
           break;
@@ -1806,8 +1793,32 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       }
     }
 
-    if (onboardingStep == 2 && !liveState.paused) {
-      onboardingStep = 3;
+    if (showBudgetPanel && !budgetAlerts && !budgetTrends)
+      guideBudgetReviewed = true;
+    if (showOnboarding) {
+      bool homes = false, jobs = false;
+      for (int y = 0; y < mapSize && !(homes && jobs); ++y)
+        for (int x = 0; x < mapSize; ++x) {
+          const auto zone = static_cast<ZoneType>(map.zone({x, y}));
+          homes |= zone == ZoneType::Residential;
+          jobs |= zone == ZoneType::Commercial || zone == ZoneType::Industrial ||
+                  zone == ZoneType::Office;
+        }
+      const auto hasService = [&](ServiceType type) {
+        return std::any_of(facilities.begin(), facilities.end(),
+                           [&](const auto& facility) { return facility.type == type; });
+      };
+      if (roads.getRoadCount() == 0) onboardingStep = 0;
+      else if (!(homes && jobs)) onboardingStep = 1;
+      else if (liveState.tick == 0) onboardingStep = 2;
+      else if (!hasService(ServiceType::Power)) onboardingStep = 3;
+      else if (!hasService(ServiceType::Water)) onboardingStep = 4;
+      else if (!guideBudgetReviewed) onboardingStep = 5;
+      else onboardingStep = 6;
+      if (onboardingStep == 6) {
+        showOnboarding = false;
+        notify("CITY GUIDE COMPLETE - F1 TO REVIEW", true);
+      }
     }
 
     if (!running) {
@@ -2277,7 +2288,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           std::string("SERVICE ") +
           ServiceSystem::serviceTypeToString(selectedService) +
           ": CLICK BESIDE A ROAD - $" +
-          std::to_string(ServiceTool::constructionCost(selectedService));
+          std::to_string(ServiceTool::constructionCost(selectedService)) +
+          " - $" +
+          std::to_string(ServiceTool::operatingCostPerTick(selectedService)) +
+          " UPKEEP PER TICK";
       break;
     case PaletteTool::District:
       uiHoverText = std::string("DISTRICT ") +

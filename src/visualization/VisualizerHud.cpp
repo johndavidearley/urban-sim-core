@@ -714,8 +714,8 @@ void drawOnboarding(DrawList* renderer, int windowHeight, int step) {
       drawText(renderer, x + 12, y + 62, "CYCLE SERVICE TO WATER", {175, 185, 200}, 1);
       break;
     case 5:
-      drawText(renderer, x + 12, y + 38, "6 EXPAND YOUR CITY", {235, 238, 242}, 2);
-      drawText(renderer, x + 12, y + 62, "ADD SERVICES WHEN BUDGET ALLOWS", {175, 185, 200}, 1);
+      drawText(renderer, x + 12, y + 38, "6 REVIEW F6 BUDGET", {235, 238, 242}, 2);
+      drawText(renderer, x + 12, y + 62, "CHECK UPKEEP BEFORE ADDING SERVICES", {175, 185, 200}, 1);
       break;
     default:
       break;
@@ -1195,7 +1195,7 @@ std::string makeHudTitle(
 
   std::ostringstream oss;
   oss << "UrbanSimCore Visualizer | "
-      << "Tick:" << liveState.tick << (liveState.paused ? "(paused)" : "(live)")
+      << "Tick:" << liveState.tick << (liveState.paused ? "(auto paused; N steps)" : "(live)")
       << " | "
       << "Buildings:" << store.getBuildingCount() << " (R:" << residential
       << " C:" << commercial << " I:" << industrial << " O:" << office << ")"

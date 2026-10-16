@@ -62,6 +62,18 @@ is also supported. Stale third-party implicit-layer registrations can produce
 loader errors; tests may set `VK_IMPLICIT_LAYER_PATH` to an empty directory for
 an isolated renderer check. This is a test override, not a registry repair.
 
+## Fresh-city player acceptance
+
+[Phase 10](PHASE10.md) defines the opt-in M36 journey from the native New City
+screen to 10,000 residents. Run `playtest/examples/phase10_native_journey.py`
+with the playtest Python environment. Unlike semantic fixture setup, every city
+construction, policy change and tick in this journey comes from native input.
+The runner retains a replay scenario and checks the normal budget, disabled
+autonomous growth, successful purchases, utility supply and save continuation.
+
+Paused means automatic ticking is stopped. N (or period) still advances one
+complete tick; its toast reports that tick while automatic running remains paused.
+
 ## Tools and coordinates
 
 | Tool | Use |

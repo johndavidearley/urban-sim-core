@@ -40,8 +40,9 @@ public:
     const ServicePlacementOptions& options = {}
   );
 
+  // Replaces any empty developable zoning at the paid civic site.
   static bool build(
-    const CityMap& map,
+    CityMap& map,
     const RoadNetwork& roads,
     std::vector<ServiceFacility>& facilities,
     const ServicePlan& plan,

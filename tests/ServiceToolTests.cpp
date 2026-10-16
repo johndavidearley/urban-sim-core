@@ -4,6 +4,7 @@
 #include "src/networks/RoadNetwork.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/world/Zoning.hpp"
+#include "src/systems/GrowthSystem.hpp"
 
 TEST(ServiceToolTests, PlansRoadAccessibleFacilityWithTypeSpecificCostAndRange) {
   CityMap map({16, 16});
@@ -100,4 +101,43 @@ TEST(ServiceToolTests, MustClearParkBeforePlacingFacility) {
   map.getTile({2, 3}).zone = static_cast<int>(ZoneType::Park);
   const auto plan = ServiceTool::plan(map, roads, {}, ServiceType::Fire, {2, 3}, 50000);
   EXPECT_FALSE(plan.valid);
+}
+
+TEST(ServiceToolTests, PaidFacilityReplacesEmptyZoningBeforeSubsequentGrowth) {
+  CityMap map({16, 16});
+  RoadNetwork roads(map);
+  EntityStore store;
+  roads.buildRoad({4, 4}, {5, 4});
+  map.setZone({4, 3}, static_cast<int>(ZoneType::Residential));
+  map.setZone({5, 3}, static_cast<int>(ZoneType::Residential));
+  std::vector<ServiceFacility> facilities;
+  int64_t funds = 10000;
+  const auto plan = ServiceTool::plan(map, roads, facilities,
+                                      ServiceType::Education, {4, 3}, funds);
+  ASSERT_TRUE(plan.valid);
+  ASSERT_TRUE(ServiceTool::build(map, roads, facilities, plan, funds));
+  EXPECT_EQ(map.zone({4, 3}), static_cast<int>(ZoneType::None));
+  EXPECT_EQ(map.zone({5, 3}), static_cast<int>(ZoneType::Residential));
+  ZoneDemand demand;
+  demand.residential = 1.f;
+  for (uint32_t seed = 0; seed < 20; ++seed)
+    GrowthSystem::runStep(map, store, demand, seed, 1.f, nullptr, {-1, -1},
+                          {-1, -1}, nullptr, false, &roads);
+  EXPECT_EQ(map.getTile({4, 3}).buildingId, 0u);
+  EXPECT_NE(map.getTile({5, 3}).buildingId, 0u);
+}
+TEST(ServiceToolTests, RejectedPurchasePreservesZoningAndFunds) {
+  CityMap map({16, 16});
+  RoadNetwork roads(map);
+  roads.buildRoad({4, 4}, {5, 4});
+  map.setZone({4, 3}, static_cast<int>(ZoneType::Residential));
+  std::vector<ServiceFacility> facilities;
+  int64_t funds = 10000;
+  const auto plan = ServiceTool::plan(map, roads, facilities,
+                                      ServiceType::Education, {4, 3}, funds);
+  funds = 100;
+  EXPECT_FALSE(ServiceTool::build(map, roads, facilities, plan, funds));
+  EXPECT_EQ(map.zone({4, 3}), static_cast<int>(ZoneType::Residential));
+  EXPECT_EQ(funds, 100);
+  EXPECT_TRUE(facilities.empty());
 }

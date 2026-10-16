@@ -122,7 +122,7 @@ ServicePlan ServiceTool::plan(
 }
 
 bool ServiceTool::build(
-  const CityMap& map,
+  CityMap& map,
   const RoadNetwork& roads,
   std::vector<ServiceFacility>& facilities,
   const ServicePlan& plan,
@@ -139,6 +139,9 @@ bool ServiceTool::build(
     return false;
   }
   facilities.push_back(current.facility);
+  // Civic sites are not entities. Leaving old zoning here lets the next growth
+  // tick spawn a private building beneath the newly purchased facility.
+  map.setZone(current.facility.position, static_cast<int>(ZoneType::None));
   availableFunds -= current.cost;
   return true;
 }

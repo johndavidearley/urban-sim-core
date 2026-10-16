@@ -27,6 +27,36 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_city_guide_recognizes_early_utilities_and_paused_steps(self):
+        s = self.session
+        await s.city("new", 32)
+        async def key(name):
+            await s.request("input", {"events": [{"type": "key", "key": name}]})
+        if not s.last_state["paused"]:
+            await key("Space")
+        # Semantic setup isolates the guide regression; the M36 journey uses
+        # native construction throughout. Utilities deliberately precede zones.
+        await s.request("tool", {"action": "apply", "name": "road",
+            "x1": 8, "y1": 16, "x2": 24, "y2": 16})
+        for kind, x in (("power", 15), ("water", 17)):
+            await s.request("tool", {"action": "apply", "name": "service",
+                "service": kind, "x1": x, "y1": 15})
+        for kind, x1, x2 in (("residential", 8, 12), ("commercial", 20, 24)):
+            await s.request("tool", {"action": "apply", "name": "zone",
+                "zone": kind, "x1": x1, "y1": 15, "x2": x2, "y2": 15})
+        await key("N")
+        self.assertTrue(s.last_state["paused"])
+        self.assertEqual(s.last_state["tick"], 1)
+        self.assertEqual(s.last_state["toast"], "STEPPED TO TICK 1 - AUTO RUN PAUSED")
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 5)
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        await s.screenshot("m36-guide-budget-minimum")
+        await key("F6")
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 6)
+        await key("Escape")
+        await key("F1")
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 5)
+
     async def test_regional_management_policy_measurements_and_minimum_layout(self):
         s=self.session
         await s.city("new",32)
