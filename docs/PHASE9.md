@@ -1,12 +1,13 @@
 # Phase 9 plan: regional connections, trade and tourism
 
-Started October 15, 2026. M31 foundations, M32 ports, M33 airports and M34
-tourism/hotels are complete locally as of October 16. M35 local management,
-scenario, balance/performance and mature stress/continuation gates are verified.
-Exact-reviewed-commit hosted Phase 9 CI remains. Milestone checklists
-and acceptance criteria are in [ROADMAP.md](ROADMAP.md). The M30 hosted CI entry
-gate passed on `7902ddf` in run 38777408741; it does not validate the uncommitted
-Phase 9 changes.
+Started October 15, 2026; completed October 16, 2026. M31–M35 are implemented
+and verified. Local management, scenario, balance/performance and mature
+stress/continuation gates passed; [hosted CI run 38956044741](https://github.com/johndavidearley/urban-sim-core/actions/runs/38956044741)
+passed on implementation commit `bf8c0366dda5dcef5882db2d7f3e6881a373a639`.
+All three strict platforms, ASan/UBSan, TSan, Linux X11/Wayland rendered/graphics
+checks and installed macOS graphics smoke passed. Milestone acceptance criteria
+are in [ROADMAP.md](ROADMAP.md). Progress entries below retain historical pending
+gates; the final closeout supersedes those earlier status statements.
 
 ## Player outcome
 
@@ -620,3 +621,15 @@ sanitizer checks. Reproduction and raw measurements are retained in
 The roadmap's local management, scenarios/performance and older-save/continuation
 items are checked. M35 remains open for exact-reviewed-commit hosted strict and
 sanitizer CI, including Windows and TSan. Changes have not been committed/pushed.
+
+
+### M35 hosted closeout — Phase 9 complete
+
+October 16, 2026: [run 38956044741](https://github.com/johndavidearley/urban-sim-core/actions/runs/38956044741) passed on the
+exact pushed implementation commit `bf8c0366dda5dcef5882db2d7f3e6881a373a639`.
+Strict Linux/macOS/Windows, ASan/UBSan and TSan jobs all succeeded. Linux graphics,
+controls and rendered playtests passed under X11 and Wayland; installed macOS
+graphics smoke and platform install checks passed. Together with the retained
+local stress/performance/continuation evidence, this satisfies the M35 gate and
+completes Phase 9. Subsequent documentation-only closeout edits are not part of
+that tested implementation commit.

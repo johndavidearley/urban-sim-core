@@ -5,20 +5,17 @@ Last verified: October 16, 2026
 Phases 6–8 (M17–M30) are implemented and verified. Hosted strict builds on
 Linux/macOS/Windows, ASan/UBSan and TSan passed for `7902ddf` in
 [run 38777408741](https://github.com/johndavidearley/urban-sim-core/actions/runs/38777408741).
-Phase 9 (M31–M35) is active: M31 foundations, M32 ports, M33 airports and
-M34 tourism/hotels are complete locally. Terminal tools, operating controls,
-persistence and measured capacity are available; cargo uses fulfilled-trade
-pricing. Bounded visitor demand, hotel cohorts and resident-first road/transit
-travel remain separate from residents. Hotels have Open/Closed controls.
-Explicit municipal fees and visitor-service costs reconcile to the treasury,
-debt and history without crediting private spending. M35 has started with a
-unified Connections / Tourism panel, terminal/hotel controls and actionable
-completed-report regional alerts. Local balance/performance, mature stress and
-continuation checks pass; exact-reviewed-commit hosted Phase 9 validation remains.
-Hotel Open/Closed controls, guest/bed inspection and facility map navigation are
-now included in the management panel.
-See `ROADMAP.md` and `PHASE9.md`. Hosted CI has not yet tested the Phase 9
-working-tree changes.
+Phase 9 (M31–M35) is complete. Regional road/sea/air access, fulfilled-trade
+accounting, bounded tourism/hotels, resident-first visitor travel and unified
+Connections / Tourism management are implemented and verified. Local mature-city
+stress, performance, save/load and GUI/CLI continuation evidence is retained in
+`playtest-artifacts/m35-scale-20261016/REPORT.md`.
+Hosted CI passed on implementation commit `bf8c0366dda5dcef5882db2d7f3e6881a373a639`
+in [run 38956044741](https://github.com/johndavidearley/urban-sim-core/actions/runs/38956044741): strict
+Linux/macOS/Windows builds/tests, ASan/UBSan, TSan, Linux X11/Wayland graphics and
+rendered playtests, installed macOS graphics smoke and install-layout checks.
+See `ROADMAP.md` and `PHASE9.md`. Earlier entries below preserve the implementation
+history and the gates that were pending at each stage.
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -1163,3 +1160,15 @@ are in `tools/REGIONAL_BENCHMARK.md` and `docs/PLAYTESTING.md`; raw evidence is 
 M35's first three roadmap checklists are locally verified. The milestone remains
 open solely for exact-reviewed-commit hosted strict Linux/macOS/Windows,
 ASan/UBSan and TSan validation. Working-tree changes are still uncommitted.
+
+
+### M35 / Phase 9 complete — October 16, 2026
+
+[Hosted CI run 38956044741](https://github.com/johndavidearley/urban-sim-core/actions/runs/38956044741) passed on
+`bf8c0366dda5dcef5882db2d7f3e6881a373a639`, the pushed implementation commit.
+All five jobs passed: strict Windows, macOS and Linux, ASan/UBSan and TSan.
+Linux X11/Wayland rendered playtests and graphics/control smoke, installed macOS
+graphics smoke and all platform install checks passed. This closes M35's final
+exact-commit gate and completes Phase 9. The prior local evidence remains valid;
+this closeout changes documentation only and does not claim the implementation
+CI run tested later documentation edits.
