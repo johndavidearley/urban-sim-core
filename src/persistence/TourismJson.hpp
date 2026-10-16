@@ -129,9 +129,9 @@ inline tourism::Runtime parseTourism(const nlohmann::json& data,uint32_t cityTic
     value.stayFees=number(a.at("stayFees"),maximumStaying*tourism::kStayFee);
     value.services=number(a.at("services"),(tourism::kMaximumDemand+maximumStaying)*tourism::kVisitorServiceCost);
     if (value.measured) {
-      const auto expected=tourism::account(result.report);
-      require(value.tick==expected.tick && value.dayFees==expected.dayFees &&
-        value.stayFees==expected.stayFees && value.services==expected.services);
+      const auto expectedAccounting=tourism::account(result.report);
+      require(value.tick==expectedAccounting.tick && value.dayFees==expectedAccounting.dayFees &&
+        value.stayFees==expectedAccounting.stayFees && value.services==expectedAccounting.services);
     } else require(!value.tick && !value.dayFees && !value.stayFees && !value.services);
   }
   return result;

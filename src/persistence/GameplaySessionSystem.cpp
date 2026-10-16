@@ -620,8 +620,8 @@ bool GameplaySessionSystem::load(
         throw std::runtime_error("Invalid next regional connection ID");
       loaded.nextRegionalConnectionId=value.get<uint64_t>();
     }
-    for (const auto& c:loaded.regionalConnections)
-      loaded.nextRegionalConnectionId=std::max(loaded.nextRegionalConnectionId,static_cast<uint64_t>(c.id)+1);
+    for (const auto& connection:loaded.regionalConnections)
+      loaded.nextRegionalConnectionId=std::max(loaded.nextRegionalConnectionId,static_cast<uint64_t>(connection.id)+1);
     if (root.contains("regionalSettlement"))
       loaded.regionalSettlement=parseRegionalSettlement(root.at("regionalSettlement"),loaded.tick);
 
