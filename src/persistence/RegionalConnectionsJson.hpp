@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <nlohmann/json.hpp>
 #include "src/systems/RegionalConnectionSystem.hpp"
+#include "src/gameplay/TerminalTool.hpp"
 
 // Configuration only: no saved reachability cache or fabricated usage report.
 inline nlohmann::json regionalConnectionsJson(std::vector<regional::Connection> connections) {
@@ -51,9 +52,10 @@ inline std::vector<regional::Connection> parseRegionalConnections(
       if (!row.at("constructed").is_boolean()) invalid();
       c.constructed=row.at("constructed").get<bool>();
     }
-    if (c.constructed &&
-        ((c.kind!=regional::Kind::CargoPort && c.kind!=regional::Kind::PassengerTerminal) ||
-         c.width!=2 || c.height!=1)) invalid();
+    if (c.constructed) {
+      const auto* spec=regional::terminalSpec(c.kind);
+      if (!spec || c.width!=spec->width || c.height!=spec->height) invalid();
+    }
     c.passengersPerTick=integer(row.at("passengersPerTick"),UINT32_MAX);
     c.goodsPerTick=integer(row.at("goodsPerTick"),UINT32_MAX);
     if (!c.id || !ids.insert(c.id).second || !c.width || !c.height ||

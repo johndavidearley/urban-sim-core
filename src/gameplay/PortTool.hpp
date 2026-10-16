@@ -1,14 +1,7 @@
 #pragma once
-#include "src/gameplay/RegionalConnectionTool.hpp"
+#include "src/gameplay/TerminalTool.hpp"
 
-struct PortPlan {
-  regional::Connection connection;
-  Coord destination{-1,-1};
-  std::vector<Coord> tiles;
-  int64_t cost=0;
-  bool valid=false;
-  std::string error;
-};
+using PortPlan = TerminalPlan;
 class PortTool {
 public:
   static constexpr int64_t kCargoCost=15000, kPassengerCost=10000, kDemolitionCost=500;

@@ -22,6 +22,8 @@ enum class Key {
   Home,
   End,
   I,
+  J,
+  K,
   Space,
   Period,
   Equal,

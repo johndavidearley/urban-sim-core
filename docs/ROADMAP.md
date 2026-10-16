@@ -583,11 +583,31 @@ until M34 supplies visitor demand.
 
 ### Milestone 33: Airports and passenger access
 
-- [ ] Place an airport with a validated land footprint and road/utility access.
-- [ ] Add operating capacity controls with construction and upkeep feedback.
-- [ ] Feed passenger capacity into the shared connection report and expose
+- [x] Place an airport with a validated land footprint and road/utility access.
+- [x] Add operating capacity controls with construction and upkeep feedback.
+- [x] Feed passenger capacity into the shared connection report and expose
       inactive reasons, utilization and local access diagnostics.
-- [ ] Verify capacity limits, edits, demolition, persistence and host parity.
+- [x] Verify capacity limits, edits, demolition, persistence and host parity.
+
+**Completed locally (October 16):** Airports use paid 4x2 land reservations,
+validated civic road access and utilities on every tile. J/Airport button places
+them; shared terminal modes handle operation, capacity and whole-site removal.
+Policy is $25,000 construction, $30/tick enabled upkeep, 120 passengers/tick and
+$1,000 demolition, with 30/60/120 capacity presets. Airports never enable cargo
+mode or create cargo gateways. Both projections render runway/apron/terminal/tower.
+
+Shared reports measure available passenger/goods capacity and enforce admission
+limits; passenger-only cities get readiness reports without invented demand or
+fees. Old reports retain unknown capacity. Disabled/disconnected airports expose
+zero availability. Shared terminal specifications preserve maritime APIs and all
+reservation/edit/growth guards, ID persistence and billing behavior.
+
+Verified: 522 C++ tests, 22 rendered tests, 7 Python units, strict GCC and 520
+headless ASan/UBSan tests. Native checks cover controls, prices, capacity, zero
+arrivals/cargo activation, save/load, exact host continuation, replay, removal/
+rebuild IDs and minimum-window layout. Evidence:
+`playtest-artifacts/m33-20261016/REPORT.md`. Hosted Phase 9 CI remains pending.
+M34 tourism and hotels is next.
 
 **Acceptance:** A player can build and fund a valid airport and inspect its
 available passenger capacity and cost. Invalid or disconnected facilities admit
@@ -596,15 +616,24 @@ no arrivals; actual tourism arrivals become available in M34.
 
 ### Milestone 34: Tourism, attractions and hotels
 
-- [ ] Add bounded visitor demand driven by inspectable attraction and city-quality
+**Complete locally (October 16, 2026):** bounded park/quality demand shares road,
+sea and air gateways; three-tick hotel cohorts and resident-first local travel
+remain separate from residents. Native placement, per-hotel Open/Closed policy,
+MCP controls and validated persistence are available. Explicit municipal fees
+($2 per admitted day visitor, $4 per occupied bed/tick) and visitor services
+($1 per day visitor/occupied bed/tick) reconcile to one treasury settlement.
+Private spending is not credited as city income. Evidence:
+`playtest-artifacts/m34-account-20261016/REPORT.md`.
+
+- [x] Add bounded visitor demand driven by inspectable attraction and city-quality
       inputs, with road, sea and air access sharing one allocation.
-- [ ] Track day visitors and overnight cohorts separately from residents;
+- [x] Track day visitors and overnight cohorts separately from residents;
       add placeable hotels with finite beds, costs and existing-model job accounting.
-- [ ] Add aggregate visitor access/attraction trips using roads and available
+- [x] Add aggregate visitor access/attraction trips using roads and available
       transit capacity after resident commuters; report both populations separately.
-- [ ] Show visitor demand, arrivals, stays, departures, bed occupancy, unmet demand
+- [x] Show visitor demand, arrivals, stays, departures, bed occupancy, unmet demand
       and municipal tourism revenue/costs without counting private spending as city cash.
-- [ ] Verify cohort conservation, hotel/connection closures, saturation, treasury
+- [x] Verify cohort conservation, hotel/connection closures, saturation, treasury
       reconciliation, save/load, replay and host parity.
 
 **Acceptance:** An accessible attractive city gains bounded visitors. Overnight

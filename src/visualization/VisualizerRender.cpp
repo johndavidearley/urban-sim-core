@@ -213,6 +213,10 @@ void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
         drawFilledRect(
           renderer, towerX, y + margin + lift - (floor + 1) * stripe, towerW, stripe, tower);
       }
+      if (building->hotelBeds && size >= 24) {
+        drawFilledRect(renderer,x+size/2-5,y+size/2-5,11,11,{32,64,90});
+        drawText(renderer,x+size/2-3,y+size/2-3,"H",{245,230,170},1);
+      }
       if (size >= 16) {
         const RGB window{205, 229, 225};
         for (int wx = x + margin + 2; wx < x + margin + width - 1; wx += 4) {
@@ -621,6 +625,10 @@ void drawIsometricTile(
                             center.x, roofY - height / 3 + 2);
           break;
       }
+      if (building->hotelBeds && width >= 24) {
+        drawFilledRect(renderer,center.x-5,roofY-5,11,11,{32,64,90});
+        drawText(renderer,center.x-3,roofY-3,"H",{245,230,170},1);
+      }
       if (occupancy < 0.15f) {
         setDrawColor(renderer, 232, 172, 65, 230);
         drawLine(renderer, center.x - width / 3, baseY - 2,
@@ -855,6 +863,36 @@ void drawPortTile(DrawList* renderer,ScreenPoint top,int width,int height,bool i
     const RGB detail=cargo ? RGB{235,209,154} : RGB{56,123,160};
     drawFilledRect(renderer,top.x+pad,top.y+height/2,width-2*pad,std::max(2,height/8),detail);
     drawRectOutline(renderer,top.x+pad,top.y+pad,width-2*pad,height-2*pad,{65,83,96});
+  }
+}
+} // namespace visualizer
+
+namespace visualizer {
+void drawAirportTile(DrawList* renderer,ScreenPoint top,int width,int height,bool iso,
+                     bool enabled,int column,int row) {
+  const RGB apron=enabled ? RGB{164,179,182} : RGB{112,122,127};
+  const RGB runway=enabled ? RGB{59,72,84} : RGB{77,83,90};
+  const RGB terminal=enabled ? RGB{198,215,228} : RGB{118,129,137};
+  if (iso) {
+    drawDiamond(renderer,top,width,height,row==1 ? runway : apron);
+    if (row==1) {
+      drawDiamond(renderer,{top.x,top.y+height/3},std::max(3,width/3),std::max(2,height/5),{235,233,209});
+    } else if (column<2) {
+      drawIsometricObject(renderer,{top.x,top.y+height/4},width*3/4,height*3/4,terminal,
+        std::max(4,column==0 ? height/2 : height));
+    } else drawDiamond(renderer,{top.x,top.y+height/3},std::max(3,width/3),std::max(2,height/4),{207,191,119});
+  } else {
+    drawFilledRect(renderer,top.x,top.y,width,height,row==1 ? runway : apron);
+    if (row==1) {
+      drawFilledRect(renderer,top.x+width/5,top.y+height/2,width*3/5,std::max(2,height/12),{235,233,209});
+      if (column==0 || column==3)
+        drawFilledRect(renderer,top.x+width/3,top.y+height/5,std::max(2,width/12),height*3/5,{235,233,209});
+    } else if (column<2) {
+      const int pad=std::max(2,width/6);
+      drawFilledRect(renderer,top.x+pad,top.y+pad,width-2*pad,height-2*pad,terminal);
+      drawRectOutline(renderer,top.x+pad,top.y+pad,width-2*pad,height-2*pad,{49,102,139});
+      drawFilledRect(renderer,top.x+pad,top.y+height/2,width-2*pad,std::max(2,height/8),{49,102,139});
+    } else drawRectOutline(renderer,top.x+width/4,top.y+height/4,width/2,height/2,{207,191,119});
   }
 }
 } // namespace visualizer

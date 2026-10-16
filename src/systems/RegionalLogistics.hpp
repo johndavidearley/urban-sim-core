@@ -16,6 +16,10 @@ struct LogisticsPlan {
 LogisticsPlan planLogistics(const CityMap& map, const RoadNetwork& roads,
                             const std::vector<Connection>& connections);
 bool hasConstructedCargoPort(const std::vector<Connection>& connections);
+bool hasConstructedPassengerTerminal(const std::vector<Connection>& connections);
+int64_t regionalOperatingCost(const std::vector<Connection>& connections);
+Settlement measurePassengerReadiness(uint32_t tick,const CityMap& map,const RoadNetwork& roads,
+  const std::vector<Connection>& connections,double amountScale);
 int64_t portOperatingCost(const std::vector<Connection>& connections);
 // Replaces forecast trade with fulfilled shipments. Commercial tax receipts and
 // economic health scale with goods actually reaching retailers. Call on a fresh

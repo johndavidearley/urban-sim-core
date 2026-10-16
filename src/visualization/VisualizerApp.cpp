@@ -3,6 +3,7 @@
 #include "src/persistence/CityHistoryJson.hpp"
 #include "src/persistence/TransitReportJson.hpp"
 #include "src/persistence/RegionalSettlementJson.hpp"
+#include "src/persistence/TourismJson.hpp"
 #include "src/systems/RegionalLogistics.hpp"
 #include "src/persistence/CityAlertsJson.hpp"
 #include <array>
@@ -24,6 +25,7 @@
 #include "src/gameplay/DistrictTool.hpp"
 #include "src/gameplay/RoadTool.hpp"
 #include "src/gameplay/PortTool.hpp"
+#include "src/gameplay/HotelTool.hpp"
 #include "src/gameplay/ServiceTool.hpp"
 #include "src/gameplay/ZoneTool.hpp"
 #include "src/networks/RoadNetwork.hpp"
@@ -119,6 +121,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       liveState.transitReport = session.transitReport;
       liveState.regionalConnections = session.regionalConnections;
       liveState.regionalSettlement = session.regionalSettlement;
+      liveState.tourism = session.tourism;
       liveState.regionalLogisticsEnabled = session.regionalLogisticsEnabled;
       liveState.nextRegionalConnectionId = session.nextRegionalConnectionId;
       liveState.simulationSeed = session.simulationSeed;
@@ -198,11 +201,26 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   bool districtToolActive = false;
   bool portToolActive = false;
   int portAction = 0; // Cargo, passenger, remove, enable/disable, capacity.
-  const std::array<const char*,5> portActions{{"CARGO","PASSENGER","REMOVE","ON/OFF","CAPACITY"}};
+  const std::array<const char*,7> portActions{{"CARGO","PASSENGER","REMOVE","ON/OFF","CAPACITY","AIRPORT","HOTEL"}};
   auto portButtonRect=[&]() {return visualizer::Rect{windowWidth-126,windowHeight-108,112,32};};
   auto overPortButton=[&](int x,int y) {
     const auto r=portButtonRect();return x>=r.x && y>=r.y && x<r.x+r.w && y<r.y+r.h;
   };
+  auto airportButtonRect=[&]() {return visualizer::Rect{windowWidth-126,windowHeight-148,112,32};};
+  auto overAirportButton=[&](int x,int y) {
+    const auto r=airportButtonRect();return x>=r.x && y>=r.y && x<r.x+r.w && y<r.y+r.h;
+  };
+  auto hotelButtonRect=[&]() {return visualizer::Rect{windowWidth-126,windowHeight-188,112,32};};
+  auto overHotelButton=[&](int x,int y) {
+    const auto r=hotelButtonRect();return x>=r.x && y>=r.y && x<r.x+r.w && y<r.y+r.h;
+  };
+  auto tourismButtonRect=[&]() {return visualizer::Rect{windowWidth-126,windowHeight-228,112,32};};
+  auto overTourismButton=[&](int x,int y) {
+    const auto r=tourismButtonRect();return x>=r.x && y>=r.y && x<r.x+r.w && y<r.y+r.h;
+  };
+  auto terminalPlacement=[&]() {return portAction<2 || portAction==5;};
+  auto terminalKind=[&]() {return portAction==0 ? regional::Kind::CargoPort :
+    (portAction==1 ? regional::Kind::PassengerTerminal : regional::Kind::Airport);};
   auto overPortBanner=[&](int x,int y) {
     return portToolActive && !cleanUiMode && x>=14 && x<windowWidth-140 &&
       y>=windowHeight-166 && y<windowHeight-66;
@@ -339,6 +357,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     session.transitReport = liveState.transitReport;
     session.regionalConnections = liveState.regionalConnections;
     session.regionalSettlement = liveState.regionalSettlement;
+    session.tourism = liveState.tourism;
     session.regionalLogisticsEnabled = liveState.regionalLogisticsEnabled;
     session.nextRegionalConnectionId = liveState.nextRegionalConnectionId;
     session.simulationSeed = liveState.simulationSeed;
@@ -394,6 +413,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.transitReport = session.transitReport;
     liveState.regionalConnections = session.regionalConnections;
     liveState.regionalSettlement = session.regionalSettlement;
+    liveState.tourism = session.tourism;
     liveState.regionalLogisticsEnabled = session.regionalLogisticsEnabled;
     liveState.nextRegionalConnectionId = session.nextRegionalConnectionId;
     liveState.simulationSeed = session.simulationSeed;
@@ -479,49 +499,76 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     districtPlan = {};
   };
 
+  auto setTourism=[&](bool enabled) {
+    liveState.tourism.enabled=enabled;sessionDirty=true;
+    notify(enabled ? "TOURISM ON - ARRIVALS REQUIRE REACHABLE PARKS" :
+      "TOURISM OFF - STAYS DEPART NEXT TICK",true);
+  };
+  auto setHotelOpen=[&](uint32_t id,bool open) {
+    if (!HotelTool::setOpen(store,id,open)) throw std::runtime_error("Select a hotel");
+    sessionDirty=true;
+    notify(open ? "HOTEL OPEN - BEDS AVAILABLE NEXT TICK" :
+      "HOTEL CLOSED - GUESTS DEPART NEXT TICK; JOBS/UPKEEP CONTINUE",true);
+  };
   auto portCivicSites=[&]() {
     std::vector<Coord> sites;
     for (const auto& f:facilities) sites.push_back(f.position);
     return sites;
   };
+  auto planTerminalAt=[&](Coord tile) {
+    return TerminalTool::plan(map,roads,liveState.regionalConnections,tile,terminalKind(),
+      liveState.nextRegionalConnectionId,portCivicSites(),funds);
+  };
   auto selectPortAction=[&]() {
-    const int next=portToolActive ? (portAction+1)%5 : 0;
+    const int next=portToolActive && portAction<5 ? (portAction+1)%5 : 0;
     activatePaletteTool(PaletteTool::Port); portAction=next;
     notify(std::string("PORT ")+portActions[portAction]+" - V CYCLES, ESC CANCELS",true);
   };
   auto applyPort=[&](Coord tile,int capacity=-1) {
-    if (!map.isValid(tile)) {notify("PORT OUTSIDE MAP",false);return;}
+    if (!map.isValid(tile)) {notify("TERMINAL OUTSIDE MAP",false);return;}
     std::string error, message;
-    if (portAction<2) {
-      const auto plan=PortTool::plan(map,roads,liveState.regionalConnections,tile,
-        portAction==0 ? regional::Kind::CargoPort : regional::Kind::PassengerTerminal,
-        liveState.nextRegionalConnectionId,portCivicSites(),funds);
+    if (portAction==6) {
+      const auto* existing=store.getBuilding(map.getTile(tile).buildingId);
+      if (existing && existing->hotelBeds) {
+        setHotelOpen(existing->id,!existing->hotelOpen);
+        return;
+      }
+      const auto plan=HotelTool::plan(map,roads,facilities,tile,funds);
       if (!plan.valid) {notify(plan.error,false);return;}
-      if (!PortTool::build(map,roads,liveState.regionalConnections,plan.connection,
+      if (!HotelTool::build(map,roads,store,facilities,plan,funds)) {notify("HOTEL SITE CHANGED",false);return;}
+      liveState.tourism.enabled=true;
+      message="HOTEL BUILT $10000 - 32 BEDS / 12 JOBS; TOURISM ON";
+    } else if (terminalPlacement()) {
+      const auto plan=planTerminalAt(tile);
+      if (!plan.valid) {notify(plan.error,false);return;}
+      if (!TerminalTool::build(map,roads,liveState.regionalConnections,plan.connection,
             plan.destination,portCivicSites(),funds,&error)) {notify(error,false);return;}
       liveState.nextRegionalConnectionId=static_cast<uint64_t>(plan.connection.id)+1;
       if (portAction==0) liveState.regionalLogisticsEnabled=true;
       message=portAction==0 ? "CARGO PORT BUILT $15000 - FINITE LOGISTICS ON; ROAD 100/TICK"
-                            : "PASSENGER TERMINAL BUILT $10000 - $10/TICK; PASSENGER SERVICE INACTIVE";
+                            : (portAction==5 ? "AIRPORT BUILT $25000 - $30/TICK; VISITORS REQUIRE TOURISM ON AND PARK ACCESS"
+                            : "PASSENGER TERMINAL BUILT $10000 - $10/TICK; VISITORS REQUIRE TOURISM ON AND PARK ACCESS");
     } else {
       const auto id=map.getTile(tile).regionalConnectionId;
       const auto found=std::find_if(liveState.regionalConnections.begin(),liveState.regionalConnections.end(),
         [&](const auto& c){return c.id==id && c.constructed &&
-          (c.kind==regional::Kind::CargoPort || c.kind==regional::Kind::PassengerTerminal);});
-      if (!id || found==liveState.regionalConnections.end()) {notify("SELECT A CONSTRUCTED PORT",false);return;}
+          regional::terminalSpec(c.kind)!=nullptr;});
+      if (!id || found==liveState.regionalConnections.end()) {notify("SELECT A CONSTRUCTED TERMINAL",false);return;}
       if (portAction==2) {
-        if (!PortTool::remove(map,liveState.regionalConnections,id,funds,&error)) {notify(error,false);return;}
-        message="PORT REMOVED $500 - LOGISTICS MODE RETAINED";
+        const auto cost=regional::terminalSpec(found->kind)->demolitionCost;
+        if (!TerminalTool::remove(map,liveState.regionalConnections,id,found->kind,funds,&error)) {notify(error,false);return;}
+        message="TERMINAL REMOVED $"+std::to_string(cost)+" - CARGO RULES UNCHANGED";
       } else if (portAction==3) {
         found->enabled=!found->enabled;
-        message=found->enabled ? "PORT ENABLED - UPKEEP RESUMED" : "PORT DISABLED - NO UPKEEP OR FLOW";
+        message=found->enabled ? "TERMINAL ENABLED - UPKEEP RESUMED" : "TERMINAL DISABLED - NO UPKEEP OR FLOW";
       } else {
         const bool cargo=found->kind==regional::Kind::CargoPort;
         auto& value=cargo ? found->goodsPerTick : found->passengersPerTick;
-        const uint32_t low=cargo ? 50u : 15u, high=cargo ? 200u : 60u;
+        const auto* spec=regional::terminalSpec(found->kind);
+        const uint32_t high=cargo ? spec->goods : spec->passengers, low=high/4;
         if (capacity<-1 || capacity>static_cast<int>(high)) {notify("CAPACITY OUTSIDE DESIGN LIMIT",false);return;}
         value=capacity>=0 ? static_cast<uint32_t>(capacity) : (value<low ? low : (value<high ? std::min(high,value*2) : low));
-        message="PORT CAPACITY "+std::to_string(value)+(cargo ? " GOODS/TICK" : " PASSENGERS/TICK");
+        message="TERMINAL CAPACITY "+std::to_string(value)+(cargo ? " GOODS/TICK" : " PASSENGERS/TICK");
       }
     }
     // Rebuild autonomous candidates after reserving/releasing sites. Removal
@@ -703,7 +750,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
   };
   auto budgetPreview = [&]() {
-    const auto serviceCosts = liveState.budgetPolicy.serviceCost(facilities) + TransitSystem::operatingCost(liveState.transitRoutes) + regional::portOperatingCost(liveState.regionalConnections);
+    const auto serviceCosts = liveState.budgetPolicy.serviceCost(facilities) + TransitSystem::operatingCost(liveState.transitRoutes) + regional::regionalOperatingCost(liveState.regionalConnections);
     return TreasurySystem::breakdown(liveState.economy, 0.01, serviceCosts);
   };
   auto routePeak = [&](size_t index) -> std::pair<float,Coord> {
@@ -765,6 +812,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       {"preview", {{"revenue", preview.revenue}, {"expenses", preview.expenses},
                    {"total_revenue", preview.totalRevenue}, {"total_expenses", preview.totalExpenses}}},
       {"last_tick", {{"valid", ledger.valid}, {"tick", ledger.tick},
+        {"tourism_fees",ledger.breakdown.tourismFees},{"tourism_services",ledger.breakdown.tourismServices},
         {"revenue", ledger.breakdown.revenue}, {"expenses", ledger.breakdown.expenses},
         {"total_revenue", ledger.flow.revenue}, {"total_expenses", ledger.flow.expenses},
         {"funds_before", ledger.fundsBefore}, {"funds_after", ledger.fundsAfter},
@@ -867,7 +915,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"bulldoze", bulldozeToolActive},
            {"service", serviceToolActive},
            {"district", districtToolActive},
-           {"port",portToolActive},{"port_action",portAction},
+           {"port",portToolActive && portAction!=6},{"port_action",portAction},
+           {"hotel",portToolActive && portAction==6},
            {"dragging", toolDragging},
            {"zone_type", static_cast<int>(selectedZone)},
            {"service_type", static_cast<int>(selectedService)},
@@ -935,6 +984,20 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"regional_gateways",regionalGateways},
            {"regional_logistics_enabled",liveState.regionalLogisticsEnabled},
            {"port_operating_cost",regional::portOperatingCost(liveState.regionalConnections)},
+           {"airport_operating_cost",regional::regionalOperatingCost(liveState.regionalConnections)-regional::portOperatingCost(liveState.regionalConnections)},
+           {"regional_operating_cost",regional::regionalOperatingCost(liveState.regionalConnections)},
+           {"tourism_enabled",liveState.tourism.enabled},
+           {"tourism_tick",liveState.tourism.report.tick},
+           {"visitor_day_arrivals",liveState.tourism.report.dayArrivals},
+           {"visitor_overnight_arrivals",liveState.tourism.report.overnightArrivals},
+           {"visitors_staying",liveState.tourism.report.staying},
+           {"visitor_pending_departures",liveState.tourism.state.pendingEarlyDepartures},
+           {"visitor_road_trips",liveState.tourism.travel.road},
+           {"visitor_transit_trips",liveState.tourism.travel.transit},
+           {"visitor_walking_trips",liveState.tourism.travel.walking},
+           {"visitor_unrouted_trips",liveState.tourism.travel.unrouted},
+           {"tourism_fees",liveState.tourism.accounting.fees()},
+           {"tourism_services",liveState.tourism.accounting.services},
            {"goods_availability",liveState.economy.goodsAvailability},
            {"freight_trucks", liveState.trafficSummary.freight.trucks},
            {"freight_routes", liveState.trafficSummary.freight.routes},
@@ -1111,6 +1174,14 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         showQuitDialog = true;
       } else if (event.type == EventType::KeyDown) {
         switch (event.key.sym) {
+        case Key::K:
+          activatePaletteTool(PaletteTool::Port); portAction=6;
+          notify("HOTEL $10000 - 32 BEDS / 12 JOBS; EMPTY LAND, ROAD AND UTILITIES",true);
+          break;
+        case Key::J:
+          activatePaletteTool(PaletteTool::Port); portAction=5;
+          notify("AIRPORT $25000 + $30/TICK - 4X2 LAND; UTILITIES ON EVERY TILE",true);
+          break;
         case Key::V:
           selectPortAction();
           break;
@@ -1541,6 +1612,15 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       } else if (event.type == EventType::MouseDown && !cleanUiMode &&
                  event.button.button == MouseButton::Left && overPortButton(event.button.x,event.button.y)) {
         selectPortAction();
+      } else if (event.type == EventType::MouseDown && !cleanUiMode &&
+                 event.button.button==MouseButton::Left && overAirportButton(event.button.x,event.button.y)) {
+        activatePaletteTool(PaletteTool::Port);portAction=5;
+      } else if (event.type == EventType::MouseDown && !cleanUiMode &&
+                 event.button.button==MouseButton::Left && overHotelButton(event.button.x,event.button.y)) {
+        activatePaletteTool(PaletteTool::Port);portAction=6;
+      } else if (event.type == EventType::MouseDown && !cleanUiMode &&
+                 event.button.button==MouseButton::Left && overTourismButton(event.button.x,event.button.y)) {
+        setTourism(!liveState.tourism.enabled);
       } else if (event.type == EventType::MouseDown && overPortBanner(event.button.x,event.button.y)) {
         // The informational port panel consumes clicks rather than building underneath it.
       } else if (event.type == EventType::MouseDown && portToolActive) {
@@ -1667,11 +1747,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     const auto& overlayFacilities = (overlayMode == OverlayMode::Zone || overlayMode == OverlayMode::Transit) ? facilities : deliveredFacilities;
     std::unordered_set<Coord, Vec2Hash> burningCoords;
     for (const auto& tile : liveState.disasters.burningTiles) burningCoords.insert(tile.position);
+    HotelPlan hoveredHotelPlan;
+    if (portToolActive && portAction==6 && !showBudgetPanel && !showTransportPanel)
+      hoveredHotelPlan=HotelTool::plan(map,roads,facilities,tileAtScreen(mouseX,mouseY),funds);
     PortPlan hoveredPortPlan;
-    if (portToolActive && portAction<2 && !showBudgetPanel && !showTransportPanel)
-      hoveredPortPlan=PortTool::plan(map,roads,liveState.regionalConnections,tileAtScreen(mouseX,mouseY),
-        portAction==0 ? regional::Kind::CargoPort : regional::Kind::PassengerTerminal,
-        liveState.nextRegionalConnectionId,portCivicSites(),funds);
+    if (portToolActive && terminalPlacement() && !showBudgetPanel && !showTransportPanel)
+      hoveredPortPlan=planTerminalAt(tileAtScreen(mouseX,mouseY));
     std::unordered_map<uint32_t,const regional::Connection*> portById;
     for (const auto& c:liveState.regionalConnections) if (c.constructed) portById.emplace(c.id,&c);
     const auto& transitMarks = transitOverlayCache.update(roads, liveState.transitRoutes);
@@ -1689,7 +1770,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                             overlayMode == OverlayMode::Transit ? OverlayMode::Zone : overlayMode, projection, {x, y}, &districts, selectedDistrictId,
                             overlayMode == OverlayMode::Transit ? &transitMarks : nullptr);
           const auto port=portById.find(map.getTile({x,y}).regionalConnectionId);
-          if (port!=portById.end()) drawPortTile(renderer,projection.tileTop({x,y}),
+          if (port!=portById.end() && port->second->kind==regional::Kind::Airport)
+            drawAirportTile(renderer,projection.tileTop({x,y}),projection.tileWidth(),projection.tileHeight(),true,
+              port->second->enabled,x-port->second->origin.x,y-port->second->origin.y);
+          else if (port!=portById.end()) drawPortTile(renderer,projection.tileTop({x,y}),
             projection.tileWidth(),projection.tileHeight(),true,port->second->kind,port->second->enabled,
             x==port->second->origin.x);
           if (burningCoords.count({x, y}) != 0) {
@@ -1738,7 +1822,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                                  rect.x, rect.y, tilePixels, &roads);
           }
           const auto port=portById.find(map.getTile(coord).regionalConnectionId);
-          if (port!=portById.end()) drawPortTile(renderer,{rect.x,rect.y},tilePixels,tilePixels,false,
+          if (port!=portById.end() && port->second->kind==regional::Kind::Airport)
+            drawAirportTile(renderer,{rect.x,rect.y},tilePixels,tilePixels,false,port->second->enabled,
+              coord.x-port->second->origin.x,coord.y-port->second->origin.y);
+          else if (port!=portById.end()) drawPortTile(renderer,{rect.x,rect.y},tilePixels,tilePixels,false,
             port->second->kind,port->second->enabled,coord.x==port->second->origin.x);
           if (burningCoords.count(coord) != 0)
             drawFireMarker(renderer, {rect.x + tilePixels / 2, rect.y + tilePixels / 2}, tilePixels);
@@ -1793,7 +1880,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     const Coord hoveredTile = map.isValid(pinnedInspector) ? pinnedInspector : tileAtScreen(mouseX, mouseY);
     const bool inspectMap = !showTransportPanel && !showBudgetPanel &&
       (map.isValid(pinnedInspector) || (!mouseOverHud && !mouseOverLegend && !mouseOverPalette && !mouseOverDistrictPanel && !mouseOverGuide &&
-        (cleanUiMode || !overPortButton(mouseX,mouseY)) && !overPortBanner(mouseX,mouseY))) && map.isValid(hoveredTile);
+        (cleanUiMode || (!overPortButton(mouseX,mouseY) && !overAirportButton(mouseX,mouseY) && !overHotelButton(mouseX,mouseY) && !overTourismButton(mouseX,mouseY))) && !overPortBanner(mouseX,mouseY))) && map.isValid(hoveredTile);
     if (inspectMap && !portToolActive) {
       if (isometricMode) {
         const IsometricProjection projection = isometricProjection();
@@ -1871,21 +1958,25 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
 
     if (portToolActive && !showBudgetPanel && !showTransportPanel &&
-        (cleanUiMode || !overPortButton(mouseX,mouseY)) && !overPortBanner(mouseX,mouseY)) {
+        (cleanUiMode || (!overPortButton(mouseX,mouseY) && !overAirportButton(mouseX,mouseY) && !overHotelButton(mouseX,mouseY) && !overTourismButton(mouseX,mouseY))) && !overPortBanner(mouseX,mouseY)) {
       const Coord hover=tileAtScreen(mouseX,mouseY);
       if (map.isValid(hover)) {
         std::vector<Coord> tiles;
         bool valid=false;
-        if (portAction<2) {
+        if (portAction==6) {
+          tiles.push_back(hover);valid=hoveredHotelPlan.valid;
+          const auto* hotel=store.getBuilding(map.getTile(hover).buildingId);
+          if (hotel && hotel->hotelBeds) valid=true;
+        } else if (terminalPlacement()) {
           const auto& plan=hoveredPortPlan;
           tiles=plan.tiles;valid=plan.valid;
         } else {
           const auto id=map.getTile(hover).regionalConnectionId;
           const auto found=portById.find(id);
           if (found!=portById.end()) {
-            for (int x=found->second->origin.x;x<found->second->origin.x+found->second->width;++x)
-              tiles.push_back({x,found->second->origin.y});
-            valid=portAction!=2 || funds>=PortTool::kDemolitionCost;
+            for (int y=found->second->origin.y;y<found->second->origin.y+found->second->height;++y)
+              for (int x=found->second->origin.x;x<found->second->origin.x+found->second->width;++x) tiles.push_back({x,y});
+            valid=portAction!=2 || funds>=regional::terminalSpec(found->second->kind)->demolitionCost;
           }
         }
         for (const auto tile:tiles) if (map.isValid(tile)) {
@@ -1919,7 +2010,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
 
     std::string activeToolLabel = "NONE";
-    if (portToolActive) activeToolLabel=std::string("PORT ")+portActions[portAction];
+    if (portToolActive) activeToolLabel=portAction==6 ? "HOTEL" : std::string("TERMINAL ")+portActions[portAction];
     else if (roadToolActive) {
       activeToolLabel =
           selectedRoadClass == RoadClass::Arterial ? "ARTERIAL" : "LOCAL ROAD";
@@ -1951,19 +2042,64 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       drawFilledRect(renderer,r.x,r.y,r.w,r.h,portToolActive ? RGB{40,100,110} : RGB{28,43,53});
       drawRectOutline(renderer,r.x,r.y,r.w,r.h,{135,170,190});
       drawText(renderer,r.x+8,r.y+8,"V PORTS",{225,240,245},1);
-      if (portToolActive) {
+      const auto a=airportButtonRect();
+      drawFilledRect(renderer,a.x,a.y,a.w,a.h,portToolActive && portAction==5 ? RGB{40,100,110} : RGB{28,43,53});
+      drawRectOutline(renderer,a.x,a.y,a.w,a.h,{135,170,190});
+      drawText(renderer,a.x+6,a.y+8,"J AIRPORT",{225,240,245},1);
+      const auto h=hotelButtonRect();
+      drawFilledRect(renderer,h.x,h.y,h.w,h.h,portToolActive && portAction==6 ? RGB{40,100,110} : RGB{28,43,53});
+      drawRectOutline(renderer,h.x,h.y,h.w,h.h,{135,170,190});
+      drawText(renderer,h.x+8,h.y+8,"K HOTEL",{225,240,245},1);
+      const auto t=tourismButtonRect();
+      drawFilledRect(renderer,t.x,t.y,t.w,t.h,liveState.tourism.enabled ? RGB{40,100,110} : RGB{28,43,53});
+      drawRectOutline(renderer,t.x,t.y,t.w,t.h,{135,170,190});
+      drawText(renderer,t.x+4,t.y+8,liveState.tourism.enabled ? "TOURISM ON" : "TOURISM OFF",{225,240,245},1);
+      if (portToolActive && portAction==6) {
         const int x=14, y=windowHeight-166;
         drawFilledRect(renderer,x,y,windowWidth-x-140,100,{14,24,32},245);
-        drawText(renderer,x+8,y+7,std::string("PORT ")+portActions[portAction]+" - V CYCLES - CLICK SITE - ESC CANCELS",{150,225,235},1);
-        std::string info=portAction==0 ? "$15000 + $20/TICK; DESIGN CAPACITY 200 GOODS/TICK"
-          : (portAction==1 ? "$10000 + $10/TICK; 60 PASSENGERS; PASSENGER SERVICE INACTIVE"
-          : (portAction==2 ? "$500 TO REMOVE ENTIRE PORT; LOGISTICS MODE STAYS ON"
+        drawText(renderer,x+8,y+7,"HOTEL - K SELECTS - CLICK HOTEL TO OPEN/CLOSE",{150,225,235},1);
+        drawText(renderer,x+8,y+24,"$10000; 32 BEDS/12 JOBS; FEES $2 DAY/$4 STAY; SERVICE $1",{230,215,165},1);
+        const auto& travel=liveState.tourism.travel;
+        const auto travelInfo=travel.measured ? "LAST TRIPS ROAD "+std::to_string(travel.road)+
+          " TRANSIT "+std::to_string(travel.transit)+" WALK "+std::to_string(travel.walking)+
+          " UNROUTED "+std::to_string(travel.unrouted) : "VISITOR TRIPS USE TRANSIT AFTER RESIDENTS";
+        drawText(renderer,x+8,y+42,travelInfo,{175,200,210},1);
+        std::string hotelInfo=hoveredHotelPlan.valid ? "VALID SITE - CLICK TO BUILD" : hoveredHotelPlan.error;
+        const auto hover=tileAtScreen(mouseX,mouseY);
+        const auto* building=map.isValid(hover) ? store.getBuilding(map.getTile(hover).buildingId) : nullptr;
+        if (building && building->hotelBeds) {
+          uint32_t guests=0;
+          for (const auto& stay:liveState.tourism.state.stays)
+            if (stay.hotelId==building->id) guests+=stay.guests;
+          hotelInfo=std::string(building->hotelOpen ? "OPEN: " : "CLOSED: ")+std::to_string(guests)+"/"+std::to_string(building->hotelBeds)+
+            " BEDS; JOBS/UPKEEP CONTINUE";
+        }
+        drawText(renderer,x+8,y+61,hotelInfo,{200,220,230},1);
+        const auto& visitors=liveState.tourism.report;
+        const auto visitorInfo=visitors.tick ? "LAST T"+std::to_string(visitors.tick)+
+          " DAY "+std::to_string(visitors.dayArrivals)+" NIGHT "+std::to_string(visitors.overnightArrivals)+
+          " STAY "+std::to_string(visitors.staying)+
+          " OUT "+std::to_string(visitors.scheduledDepartures+visitors.earlyDepartures)+
+          " EARLY "+std::to_string(visitors.earlyDepartures)+" UNMET "+
+          std::to_string(visitors.unmetDayTransport+visitors.unmetOvernightTransport+visitors.unmetOvernightBeds) :
+          "PARKS ATTRACT VISITORS; 3-TICK STAYS; B BULLDOZES";
+        drawText(renderer,x+8,y+79,visitorInfo,{175,205,215},1);
+      } else if (portToolActive) {
+        const int x=14, y=windowHeight-166;
+        drawFilledRect(renderer,x,y,windowWidth-x-140,100,{14,24,32},245);
+        drawText(renderer,x+8,y+7,std::string("TERMINAL ")+portActions[portAction]+" - V MANAGES - ESC CANCELS",{150,225,235},1);
+        std::string info=portAction==5 ? "$25000 + $30/TICK; 4X2 LAND; 120 PASSENGERS/TICK"
+          : portAction==0 ? "$15000 + $20/TICK; DESIGN CAPACITY 200 GOODS/TICK"
+          : (portAction==1 ? "$10000 + $10/TICK; 60 PASSENGERS; TOURISM CONTROLS ARRIVALS"
+          : (portAction==2 ? "REMOVE WHOLE TERMINAL: PORT $500 / AIRPORT $1000; NO REFUND"
           : (portAction==3 ? "CLICK PORT TO ENABLE/DISABLE; DISABLED PORTS HAVE NO UPKEEP"
-          : "CLICK PORT TO CYCLE CAPACITY; DESIGN LIMIT 200 GOODS / 60 PASSENGERS")));
+          : "CLICK TO CYCLE CAPACITY; PORT 200 GOODS/60 PASS; AIRPORT 120 PASS")));
         drawText(renderer,x+8,y+24,info,{230,215,165},1);
         if (portAction==0) drawText(renderer,x+8,y+42,
           "FIRST PORT: DELIVERED TRADE ONLY; REMOVAL KEEPS ROAD LIMIT 100/TICK",{230,215,165},1);
-        else drawText(renderer,x+8,y+42,"HOVER A PORT FOR ACCESS AND LAST COMPLETED FLOW",{175,200,210},1);
+        else drawText(renderer,x+8,y+42,portAction==5 ?
+          "UTILITIES EVERY TILE; ROAD BOTH LONG SIDES; TOURISM NEEDS PARK ACCESS" :
+          "HOVER A TERMINAL FOR ACCESS AND LAST COMPLETED FLOW",{175,200,210},1);
         const auto hover=tileAtScreen(mouseX,mouseY);
         if (map.isValid(hover)) {
           const auto found=portById.find(map.getTile(hover).regionalConnectionId);
@@ -1972,12 +2108,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
             const auto access=regional::diagnoseOperation(c,map,roads,regional::SeaAccess(map),c.entrance);
             info="ID "+std::to_string(c.id)+" "+regional::accessName(access)+" CAP "+
               std::to_string(c.goodsPerTick ? c.goodsPerTick : c.passengersPerTick)+" UPKEEP $"+
-              std::to_string(regional::portOperatingCost({c}))+"/TICK";
-          } else if (portAction<2) {
+              std::to_string(regional::regionalOperatingCost({c}))+"/TICK";
+          } else if (terminalPlacement()) {
             const auto& plan=hoveredPortPlan;
             info=plan.valid ? "VALID SHORE SITE - ROAD GATEWAY LIMITED TO 100 GOODS/TICK AFTER CARGO" : plan.error;
-          } else info="SELECT A CONSTRUCTED PORT";
-          if (found!=portById.end() && portAction<2) info="OCCUPIED - "+info;
+          } else info="SELECT A CONSTRUCTED TERMINAL";
+          if (found!=portById.end() && terminalPlacement()) info="OCCUPIED - "+info;
           drawText(renderer,x+8,y+61,info,{200,220,230},1);
           if (found!=portById.end()) {
             const auto& report=liveState.regionalSettlement;
@@ -1985,9 +2121,18 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
               [&](const auto& u){return u.id==found->second->id;});
             if (report.valid && row!=report.allocation.connections.end()) info="LAST T"+
               std::to_string(report.allocation.tick)+" IN "+std::to_string(row->imports)+" OUT "+
-              std::to_string(row->exports)+" PASS "+std::to_string(row->passengers)+"; CITY UNMET GOODS "+
+              std::to_string(row->exports)+" PASS "+std::to_string(row->passengers)+"/"+
+              (row->capacityMeasured ? std::to_string(row->availablePassengers) : "?")+"; UNMET TRADE "+
               std::to_string(static_cast<uint64_t>(report.allocation.unmet.imports)+report.allocation.unmet.exports);
-            else info="NO COMPLETED FLOW RECORDED FOR THIS PORT";
+            else info="NO COMPLETED FLOW RECORDED FOR THIS TERMINAL";
+            if (found->second->kind==regional::Kind::Airport || found->second->kind==regional::Kind::PassengerTerminal) {
+              const auto& visitors=liveState.tourism.report;
+              const auto usage=std::find_if(visitors.connections.begin(),visitors.connections.end(),
+                [&](const auto& value){return value.id==found->second->id;});
+              info=usage!=visitors.connections.end() ? "TOURISM T"+std::to_string(visitors.tick)+
+                " ARRIVALS "+std::to_string(usage->day+usage->overnight)+"/"+std::to_string(usage->capacity)+
+                " - "+regional::accessName(usage->access) : "NO COMPLETED TOURISM FLOW FOR THIS TERMINAL";
+            }
             drawText(renderer,x+8,y+79,info,{175,205,215},1);
           }
         }

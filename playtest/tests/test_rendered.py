@@ -27,6 +27,497 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_tourism_fees_services_ledger_shutdown_and_invalid_import(self):
+        s=self.session
+        await record(s,"start");await s.city("new",32)
+        await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
+        await s.request("tool",{"action":"apply","name":"zone","zone":"park","x1":8,"y1":17,"x2":9,"y2":17})
+        await s.request("tool",{"action":"apply","name":"hotel","x1":8,"y1":15})
+        saw_bed_shortage=False
+        for _ in range(4):
+            cash=s.last_state["funds"]
+            await s.request("time",{"action":"step","ticks":1})
+            visitors=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+            r=visitors["report"];a=visitors["accounting"]
+            saw_bed_shortage=saw_bed_shortage or r["unmetOvernightBeds"]>0
+            ledger=(await s.request("budget",{"action":"inspect"}))["last_tick"]
+            self.assertEqual(a["dayFees"],2*r["dayArrivals"]);self.assertEqual(a["stayFees"],4*r["staying"])
+            self.assertEqual(a["services"],r["dayArrivals"]+r["staying"])
+            self.assertEqual(ledger["tourism_fees"],a["dayFees"]+a["stayFees"])
+            self.assertEqual(ledger["tourism_services"],a["services"])
+            self.assertEqual(ledger["total_revenue"],sum(ledger["revenue"])+ledger["tourism_fees"])
+            self.assertEqual(ledger["total_expenses"],sum(ledger["expenses"])+ledger["tourism_services"])
+            self.assertEqual(s.last_state["funds"]-cash,ledger["total_revenue"]-ledger["total_expenses"])
+            self.assertEqual(s.last_state["population"],0)
+        self.assertTrue(saw_bed_shortage)
+        await s.city("save");await s.city("load")
+        self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"],visitors)
+        await s.request("budget",{"action":"open"})
+        await s.screenshot("tourism-treasury")
+        await s.request("window",{"action":"resize","width":800,"height":640})
+        await s.screenshot("tourism-treasury-minimum")
+        await s.request("budget",{"action":"close"})
+        await s.request("budget",{"action":"set_tourism","tourism_enabled":False})
+        self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"]["accounting"],a)
+        await s.request("time",{"action":"step","ticks":1})
+        off=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertEqual(off["accounting"]["dayFees"],0);self.assertEqual(off["accounting"]["stayFees"],0)
+        self.assertEqual(off["accounting"]["services"],0)
+        self.assertGreater(off["report"]["earlyDepartures"],0)
+        scenario=await record(s,"stop","tourism-municipal-accounting")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+        await s.city("save")
+        saved=json.loads(s.artifact("urban_sim_session.json").read_text())
+        saved["citySnapshot"]=str(s.artifact("urban_sim_session.json.city.json"));saved["funds"]=1
+        saved["tourism"]["accounting"]["stayFees"]+=1
+        bad=s.artifact("bad-accounting.json");bad.write_text(json.dumps(saved));cash=s.last_state["funds"]
+        with self.assertRaises(PlaytestError):
+            await s.city("load",import_path=str(bad))
+        self.assertEqual(s.last_state["funds"],cash)
+
+    async def test_hotel_open_policy_departures_persistence_and_continuation(self):
+        s=self.session
+        await record(s,"start");await s.city("new",32)
+        await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
+        await s.request("tool",{"action":"apply","name":"zone","zone":"park","x1":8,"y1":17})
+        await s.request("tool",{"action":"apply","name":"hotel","x1":8,"y1":15})
+        await s.request("time",{"action":"step","ticks":1})
+        hotel=(await s.request("inspect",{"section":"entities"}))["items"][0]
+        before=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertGreater(before["report"]["staying"],0)
+        cash=s.last_state["funds"]
+        await s.request("budget",{"action":"set_hotel","hotel_id":hotel["id"],"hotel_open":False})
+        self.assertEqual(s.last_state["funds"],cash)
+        self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"],before)
+        for projection in ("top_down","isometric"):
+            await s.request("tool",{"action":"select","name":"hotel"})
+            await s.request("view",{"action":"projection","projection":projection});await s.request("view",{"action":"focus"})
+            point=await s.request("coordinates",{"direction":"tile_to_screen","x":8,"y":15})
+            await s.request("input",{"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
+            await s.screenshot("hotel-closed-"+projection)
+        await s.city("save");await s.city("load")
+        closed=(await s.request("inspect",{"section":"entities"}))["items"][0]
+        self.assertFalse(closed["hotel_open"]);self.assertEqual(closed["capacity"],12)
+        self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"],before)
+        checkpoint=json.loads(s.artifact("urban_sim_session.json").read_text())
+        core=s.artifact("closed-checkpoint.city.json");core.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
+        checkpoint["citySnapshot"]=str(core)
+        path=s.artifact("closed-checkpoint.json");path.write_text(json.dumps(checkpoint))
+        await s.request("time",{"action":"step","ticks":1})
+        after=(await s.request("inspect",{"section":"tourism"}))["tourism"]["report"]
+        self.assertEqual(after["staying"],0);self.assertEqual(after["overnightArrivals"],0)
+        self.assertEqual(after["earlyDepartures"],before["report"]["staying"])
+        self.assertGreater(after["dayArrivals"],0)
+        await s.city("save")
+        gui=json.loads(s.artifact("urban_sim_session.json").read_text())
+        gui_core=json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        cli=Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"));output=s.artifact("closed-headless.json")
+        process=await asyncio.create_subprocess_exec(str(cli),"--simulate","1","--simulate-session",str(path),"--simulate-session-out",str(output),stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        _,stderr=await process.communicate();self.assertEqual(process.returncode,0,stderr.decode())
+        headless=json.loads(output.read_text());gui.pop("citySnapshot");headless.pop("citySnapshot")
+        self.assertEqual(gui,headless);self.assertEqual(gui_core,json.loads(Path(str(output)+".city.json").read_text()))
+        await s.request("time",{"action":"step","ticks":1})
+        self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"]["report"]["earlyDepartures"],0)
+        # Native tile input uses the same policy setter as MCP.
+        await s.request("tool",{"action":"select","name":"hotel"})
+        await s.request("view",{"action":"focus"})
+        point=await s.request("coordinates",{"direction":"tile_to_screen","x":8,"y":15})
+        await s.request("input",{"events":[{"type":"down","button":"left","x":point["x"],"y":point["y"]},{"type":"up","button":"left","x":point["x"],"y":point["y"]}]})
+        self.assertTrue((await s.request("inspect",{"section":"entities"}))["items"][0]["hotel_open"])
+        await s.request("time",{"action":"step","ticks":1})
+        self.assertGreater((await s.request("inspect",{"section":"tourism"}))["tourism"]["report"]["overnightArrivals"],0)
+        with self.assertRaises(PlaytestError):
+            await s.request("budget",{"action":"set_hotel","hotel_id":0,"hotel_open":False})
+        scenario=await record(s,"stop","hotel-open-policy")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+
+    async def test_visitor_travel_resident_priority_fleet_changes_and_continuation(self):
+        s=self.session
+        await s.city("new",32)
+        await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
+        for zone,y in (("residential",15),("commercial",17)):
+            await s.request("tool",{"action":"apply","name":"zone","zone":zone,"x1":6,"y1":y,"x2":13,"y2":y})
+        await s.request("tool",{"action":"apply","name":"zone","zone":"park","x1":14,"y1":17})
+        await s.request("tool",{"action":"apply","name":"hotel","x1":14,"y1":15})
+        await s.request("time",{"action":"step","ticks":20});await s.city("save")
+        fixture=json.loads(s.artifact("urban_sim_session.json").read_text())
+        core=s.artifact("visitor-travel-base.city.json")
+        core.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
+        fixture["citySnapshot"]=str(core)
+        # Isolated route fixture; actual policies and traffic run through normal
+        # gameplay actions. Historical completed usage remains unchanged.
+        fixture["transitRoutes"]=[{"id":9001,"mode":0,"vehicleCount":1,
+            "capacityPerVehicle":30,"stopCoverageRadius":32,
+            "stops":[{"x":0,"y":16},{"x":22,"y":16}]}]
+        path=s.artifact("visitor-travel-base.json");path.write_text(json.dumps(fixture))
+        await s.stop();await s.launch();await record(s,"start")
+        await s.city("load",import_path=str(path))
+        await s.request("time",{"action":"step","ticks":1})
+        measured=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        travel=measured["travel"]
+        self.assertTrue(travel["measured"]);self.assertGreater(travel["requested"],0)
+        resident=(await s.request("budget",{"action":"inspect"}))["transit_report"]
+        self.assertGreater(resident["commuters"],0)
+        row=next(r for r in travel["routes"] if r["id"]==9001)
+        commuter=next(r for r in resident["routes"] if r["id"]==9001)
+        self.assertEqual(row["residentRiders"],commuter["ridership"])
+        self.assertLessEqual(row["residentRiders"]+row["ridership"],row["capacity"])
+        self.assertEqual(travel["requested"],sum(travel[k] for k in ("road","transit","walking","unrouted")))
+        await s.request("budget",{"action":"set_route_vehicles","route_id":9001,"vehicles":20})
+        self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"],measured)
+        await s.request("time",{"action":"step","ticks":1})
+        spare=(await s.request("inspect",{"section":"tourism"}))["tourism"]["travel"]
+        self.assertGreater(spare["transit"],0);self.assertEqual(spare["road"],0)
+        for r in spare["routes"]:
+            self.assertLessEqual(r["residentRiders"]+r["ridership"],r["capacity"])
+        await s.city("save")
+        checkpoint=json.loads(s.artifact("urban_sim_session.json").read_text())
+        checkpoint_core=s.artifact("visitor-travel-checkpoint.city.json")
+        checkpoint_core.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
+        checkpoint["citySnapshot"]=str(checkpoint_core)
+        checkpoint_path=s.artifact("visitor-travel-checkpoint.json");checkpoint_path.write_text(json.dumps(checkpoint))
+        await s.request("time",{"action":"step","ticks":6});await s.city("save")
+        gui=json.loads(s.artifact("urban_sim_session.json").read_text())
+        gui_core=json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        cli=Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"))
+        output=s.artifact("visitor-travel-headless.json")
+        process=await asyncio.create_subprocess_exec(str(cli),"--simulate","6","--simulate-session",str(checkpoint_path),
+            "--simulate-session-out",str(output),stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        _,stderr=await process.communicate();self.assertEqual(process.returncode,0,stderr.decode())
+        headless=json.loads(output.read_text());gui.pop("citySnapshot");headless.pop("citySnapshot")
+        self.assertEqual(gui,headless)
+        def city_contents(core):
+            # Newly grown entities receive process-local IDs after reload.
+            positions={b["id"]:b["position"] for b in core["buildings"]}
+            for building in core["buildings"]:
+                building.pop("id")
+            for group in core["populationGroups"]:
+                group.pop("id")
+            for tile in core["tiles"]:
+                tile["buildingId"]=positions.get(tile["buildingId"])
+            for key in ("buildings","populationGroups","roads","tiles"):
+                core[key].sort(key=lambda value:json.dumps(value,sort_keys=True))
+            return core
+        self.assertEqual(city_contents(gui_core),city_contents(json.loads(Path(str(output)+".city.json").read_text())))
+        await s.request("budget",{"action":"set_route_vehicles","route_id":9001,"vehicles":0})
+        await s.request("time",{"action":"step","ticks":1})
+        road_only=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertEqual(road_only["travel"]["transit"],0);self.assertGreater(road_only["travel"]["road"],0)
+        edges=(await s.request("inspect",{"section":"roads"}))["items"]
+        self.assertTrue(any(e["visitor_load"]>0 for e in edges))
+        for e in edges:
+            self.assertLessEqual(e["visitor_load"]+e["freight_load"],e["load"])
+        for _ in range(2):
+            await s.city("save");await s.city("load")
+            self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"],road_only)
+            self.assertEqual((await s.request("inspect",{"section":"roads"}))["items"],edges)
+        await s.request("tool",{"action":"select","name":"hotel"})
+        for projection in ("top_down","isometric"):
+            await s.request("view",{"action":"projection","projection":projection});await s.request("view",{"action":"focus"})
+            point=await s.request("coordinates",{"direction":"tile_to_screen","x":14,"y":15})
+            await s.request("input",{"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
+            await s.screenshot("visitor-travel-"+projection)
+        scenario=await record(s,"stop","visitor-local-travel")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+
+    async def test_live_tourism_cohorts_policy_demolition_and_host_parity(self):
+        s=self.session
+        await record(s,"start");await s.city("new",32)
+        await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
+        await s.request("tool",{"action":"apply","name":"zone","zone":"park","x1":8,"y1":17})
+        await s.request("tool",{"action":"apply","name":"hotel","x1":8,"y1":15})
+        policy=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertTrue(policy["enabled"]);self.assertEqual(policy["report"]["tick"],0)
+        await s.request("time",{"action":"step","ticks":1})
+        current=(await s.request("inspect",{"section":"tourism"}))["tourism"];r=current["report"]
+        self.assertEqual(r["accessibleParks"],1);self.assertEqual(r["parkContribution"],20)
+        self.assertGreater(r["dayArrivals"],0);self.assertGreater(r["overnightArrivals"],0)
+        self.assertEqual(r["staying"],r["overnightArrivals"])
+        self.assertEqual(s.last_state["population"],0)
+        self.assertEqual(s.last_state["budget"]["last_tick"]["total_revenue"],2*r["dayArrivals"]+4*r["staying"])
+        cash=s.last_state["funds"];tick=s.last_state["tick"]
+        for _ in range(3):
+            self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"],current)
+        self.assertEqual(s.last_state["funds"],cash);self.assertEqual(s.last_state["tick"],tick)
+        controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+        button=next(c for c in controls if c["name"]=="tourism")
+        async def toggle():
+            x=button["x"]+button["width"]//2;y=button["y"]+button["height"]//2
+            await s.request("input",{"events":[{"type":"move","x":x,"y":y},
+                {"type":"down","button":"left","x":x,"y":y},{"type":"up","button":"left","x":x,"y":y}]})
+        await toggle();off=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertFalse(off["enabled"]);self.assertEqual(off["report"],r)
+        await toggle();self.assertTrue(s.last_state["metrics"]["tourism_enabled"])
+        await s.city("save");await s.city("load")
+        self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"],current)
+        checkpoint=json.loads(s.artifact("urban_sim_session.json").read_text())
+        core=s.artifact("tourism-checkpoint.city.json")
+        core.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
+        checkpoint["citySnapshot"]=str(core)
+        path=s.artifact("tourism-checkpoint.json");path.write_text(json.dumps(checkpoint))
+        await s.request("time",{"action":"step","ticks":6});await s.city("save")
+        gui=json.loads(s.artifact("urban_sim_session.json").read_text())
+        gui_core=json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        cli=Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"))
+        output=s.artifact("tourism-headless.json")
+        process=await asyncio.create_subprocess_exec(str(cli),"--simulate","6","--simulate-session",str(path),
+            "--simulate-session-out",str(output),stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        stdout,stderr=await process.communicate();self.assertEqual(process.returncode,0,stderr.decode())
+        self.assertIn("TOURISM ON",stdout.decode())
+        headless=json.loads(output.read_text());gui.pop("citySnapshot");headless.pop("citySnapshot")
+        self.assertEqual(gui,headless)
+        self.assertEqual(gui_core,json.loads(Path(str(output)+".city.json").read_text()))
+        measured=((await s.request("inspect",{"section":"tourism"}))["tourism"])["report"]
+        self.assertGreater(measured["scheduledDepartures"],0);self.assertLessEqual(measured["staying"],32)
+        await s.request("tool",{"action":"select","name":"hotel"})
+        for projection in ("top_down","isometric"):
+            await s.request("view",{"action":"projection","projection":projection});await s.request("view",{"action":"focus"})
+            point=await s.request("coordinates",{"direction":"tile_to_screen","x":8,"y":15})
+            await s.request("input",{"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
+            await s.screenshot("tourism-active-"+projection)
+        await s.request("tool",{"action":"apply","name":"bulldoze","x1":8,"y1":15})
+        pending=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertEqual(pending["state"]["stays"],[])
+        self.assertEqual(pending["state"]["pendingEarlyDepartures"],measured["staying"])
+        self.assertEqual(pending["report"],measured)
+        await s.city("save");await s.city("load")
+        self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"],pending)
+        await s.request("time",{"action":"step","ticks":1})
+        after=((await s.request("inspect",{"section":"tourism"}))["tourism"])["report"]
+        self.assertEqual(after["earlyDepartures"],measured["staying"])
+        self.assertEqual(after["staying"],0);self.assertGreater(after["unmetOvernightBeds"],0)
+        await s.request("budget",{"action":"set_tourism","tourism_enabled":False})
+        await s.request("time",{"action":"step","ticks":1})
+        self.assertEqual(((await s.request("inspect",{"section":"tourism"}))["tourism"])["report"]["dayArrivals"],0)
+        scenario=await record(s,"stop","live-tourism-cohorts")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+        await s.city("save")
+        bad=json.loads(s.artifact("urban_sim_session.json").read_text())
+        bad["citySnapshot"]=str(s.artifact("urban_sim_session.json.city.json"))
+        bad["funds"]=1;bad["tourism"]["report"]["dayArrivals"]=2001
+        bad_path=s.artifact("bad-tourism.json");bad_path.write_text(json.dumps(bad))
+        before=(await s.request("inspect",{"section":"tourism"}))["tourism"];cash=s.last_state["funds"]
+        with self.assertRaises(PlaytestError):
+            await s.city("load",import_path=str(bad_path))
+        self.assertEqual(s.last_state["funds"],cash)
+        self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"],before)
+
+    async def test_native_hotel_placement_cost_guards_persistence_and_replay(self):
+        s=self.session
+        await record(s,"start")
+        await s.city("new",32)
+        await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
+        await s.request("view",{"action":"projection","projection":"top_down"})
+        await s.request("view",{"action":"camera","tile_pixels":40,"view_x":3,"view_y":8})
+        async def click(x,y):
+            await s.request("input",{"events":[{"type":"move","x":x,"y":y},
+                {"type":"down","button":"left","x":x,"y":y},{"type":"up","button":"left","x":x,"y":y}]})
+        async def site(x=8,y=15):
+            point=await s.request("coordinates",{"direction":"tile_to_screen","x":x,"y":y})
+            await click(point["x"],point["y"])
+        controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+        button=next(c for c in controls if c["name"]=="hotel")
+        cash=s.last_state["funds"]
+        await click(button["x"]+button["width"]//2,button["y"]+button["height"]//2)
+        self.assertTrue(s.last_state["tools"]["hotel"])
+        point=await s.request("coordinates",{"direction":"tile_to_screen","x":8,"y":15})
+        await s.request("input",{"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
+        await s.screenshot("hotel-site-preview")
+        await site()
+        self.assertEqual(s.last_state["funds"],cash-10000)
+        hotels=(await s.request("inspect",{"section":"entities"}))["items"]
+        self.assertEqual(len(hotels),1)
+        hotel=hotels[0]
+        self.assertEqual(hotel["hotel_beds"],32);self.assertEqual(hotel["capacity"],12)
+        self.assertEqual(hotel["occupancy"],0);self.assertEqual(hotel["type"],2)
+        self.assertEqual(s.last_state["population"],0)
+        await site() # Existing hotel toggles visitor operation without spending.
+        self.assertFalse((await s.request("inspect",{"section":"entities"}))["items"][0]["hotel_open"])
+        await site()
+        self.assertEqual(s.last_state["funds"],cash-10000)
+        await site(8,16) # Road tile is rejected too.
+        self.assertEqual(s.last_state["funds"],cash-10000)
+        await s.request("input",{"events":[{"type":"key","key":"Escape"},{"type":"key","key":"K"}]})
+        self.assertTrue(s.last_state["tools"]["hotel"])
+        await s.request("tool",{"action":"apply","name":"hotel","x1":8,"y1":15})
+        self.assertFalse((await s.request("inspect",{"section":"entities"}))["items"][0]["hotel_open"])
+        await s.request("tool",{"action":"apply","name":"hotel","x1":8,"y1":15})
+        self.assertEqual(s.last_state["funds"],cash-10000)
+        with self.assertRaises(PlaytestError):
+            await s.request("tool",{"action":"select","name":"hotel","capacity":1})
+        for projection in ("top_down","isometric"):
+            await s.request("view",{"action":"projection","projection":projection})
+            await s.request("view",{"action":"focus"})
+            point=await s.request("coordinates",{"direction":"tile_to_screen","x":8,"y":15})
+            await s.request("input",{"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
+            await s.screenshot("hotel-native-"+projection)
+        await s.city("save");await s.city("load")
+        restored=(await s.request("inspect",{"section":"entities"}))["items"]
+        self.assertEqual(restored,hotels)
+        self.assertEqual(s.last_state["funds"],cash-10000)
+        await s.request("tool",{"action":"apply","name":"bulldoze","x1":8,"y1":15})
+        self.assertEqual(s.last_state["funds"],cash-10200)
+        self.assertEqual((await s.request("inspect",{"section":"entities"}))["items"],[])
+        await s.request("tool",{"action":"apply","name":"hotel","x1":8,"y1":15})
+        newer=(await s.request("inspect",{"section":"entities"}))["items"][0]
+        self.assertGreater(newer["id"],hotel["id"])
+        self.assertEqual(s.last_state["funds"],cash-20200)
+        self.assertEqual(newer["hotel_beds"],32)
+        await s.request("window",{"action":"resize","width":800,"height":640})
+        await s.screenshot("hotel-native-minimum-window")
+        scenario=await record(s,"stop","native-hotel-placement")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+
+    async def test_hotel_metadata_session_continuation_and_replay(self):
+        s = self.session
+        await s.city("new",32)
+        await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
+        await s.city("save")
+        fixture = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        # Isolated saved fixture representing HotelTool output; this does not
+        # claim native hotel placement or completed tourism integration.
+        core["buildings"].append({"id":101,"type":2,"position":{"x":8,"y":15},
+            "capacity":12,"occupancy":0,"hotelBeds":32,"crimeRate":0.0,"illnessRate":0.0})
+        core["nextEntityId"] = 102
+        next(t for t in core["tiles"] if t["x"]==8 and t["y"]==15)["buildingId"] = 101
+        core_path = s.artifact("hotel-base.city.json");core_path.write_text(json.dumps(core))
+        fixture["citySnapshot"] = str(core_path);fixture["funds"] -= 10000
+        path = s.artifact("hotel-base.json");path.write_text(json.dumps(fixture))
+        await s.stop();await s.launch();await record(s,"start")
+        await s.city("load",import_path=str(path))
+        cash = s.last_state["funds"]
+        await s.city("save");await s.city("load")
+        self.assertEqual(s.last_state["funds"],cash)
+        self.assertEqual(s.last_state["population"],0)
+        checkpoint = json.loads(s.artifact("urban_sim_session.json").read_text())
+        checkpoint_core = s.artifact("hotel-checkpoint.city.json")
+        checkpoint_core.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
+        self.assertEqual(json.loads(checkpoint_core.read_text())["buildings"][0]["hotelBeds"],32)
+        checkpoint["citySnapshot"] = str(checkpoint_core)
+        checkpoint_path = s.artifact("hotel-checkpoint.json");checkpoint_path.write_text(json.dumps(checkpoint))
+        await s.request("time",{"action":"step","ticks":10});await s.city("save")
+        gui = json.loads(s.artifact("urban_sim_session.json").read_text())
+        gui_core = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        self.assertEqual(gui_core["buildings"][0]["hotelBeds"],32)
+        self.assertEqual(gui_core["buildings"][0]["capacity"],12)
+        cli = Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"))
+        output = s.artifact("hotel-headless.json")
+        process = await asyncio.create_subprocess_exec(str(cli),"--simulate","10", "--simulate-session",str(checkpoint_path),
+            "--simulate-session-out",str(output),stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        _,stderr = await process.communicate();self.assertEqual(process.returncode,0,stderr.decode())
+        headless = json.loads(output.read_text())
+        gui.pop("citySnapshot");headless.pop("citySnapshot");self.assertEqual(gui,headless)
+        self.assertEqual(gui_core,json.loads(Path(str(output)+".city.json").read_text()))
+        scenario = await record(s,"stop","hotel-metadata-continuation")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+
+    async def test_native_airport_controls_readiness_without_tourism_and_host_parity(self):
+        s=self.session
+        await s.city("new",32)
+        for x1,y1,x2,y2 in ((0,10,26,10),(17,13,26,13),(17,10,17,13)):
+            await s.request("tool",{"action":"apply","name":"road","x1":x1,"y1":y1,"x2":x2,"y2":y2})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":9})
+        await s.city("save")
+        fixture=json.loads(s.artifact("urban_sim_session.json").read_text())
+        core=s.artifact("airport-base.city.json");core.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
+        fixture["citySnapshot"]=str(core);fixture["funds"]=100000 # Isolated acceptance liquidity.
+        path=s.artifact("airport-base.json");path.write_text(json.dumps(fixture))
+        await s.stop();await s.launch();await record(s,"start")
+        await s.city("load",import_path=str(path))
+        await s.request("view",{"action":"projection","projection":"top_down"})
+        await s.request("view",{"action":"camera","tile_pixels":40,"view_x":10,"view_y":5})
+        async def key(name):
+            await s.request("input",{"events":[{"type":"key","key":name}]})
+        async def click(x,y):
+            await s.request("input",{"events":[{"type":"move","x":x,"y":y},
+                {"type":"down","button":"left","x":x,"y":y},{"type":"up","button":"left","x":x,"y":y}]})
+        async def site(x=18,y=11):
+            p=await s.request("coordinates",{"direction":"tile_to_screen","x":x,"y":y})
+            await click(p["x"],p["y"])
+        controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+        button=next(c for c in controls if c["name"]=="airport")
+        await click(button["x"]+button["width"]//2,button["y"]+button["height"]//2)
+        self.assertEqual(s.last_state["tools"]["port_action"],5)
+        await site()
+        self.assertEqual(s.last_state["funds"],75000)
+        self.assertFalse(s.last_state["metrics"]["regional_logistics_enabled"])
+        self.assertEqual(s.last_state["metrics"]["airport_operating_cost"],30)
+        rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
+        self.assertEqual(rows[0]["kind"],"airport");self.assertEqual(rows[0]["available_passengers_per_tick"],120)
+        self.assertEqual(rows[0]["goods_per_tick"],0);self.assertEqual(rows[0]["site_access"],"ready")
+        tiles=(await s.request("inspect",{"section":"tiles","x":18,"y":11,"width":4,"height":2}))["items"]
+        self.assertEqual([t["regional_connection_id"] for t in tiles],[1]*8)
+        await key("Escape");await key("J")
+        self.assertEqual(s.last_state["tools"]["port_action"],5)
+        await s.request("tool",{"action":"select","name":"airport","port_action":"capacity"})
+        await site(21,12)
+        rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
+        self.assertEqual(rows[0]["passengers_per_tick"],30)
+        await s.request("tool",{"action":"apply","name":"airport","port_action":"capacity","capacity":90,"x1":18,"y1":11})
+        await s.request("tool",{"action":"select","name":"airport","port_action":"toggle"});await site()
+        self.assertEqual(s.last_state["metrics"]["airport_operating_cost"],0)
+        await s.request("time",{"action":"step","ticks":1})
+        self.assertEqual(s.last_state["funds"],74927)
+        measured=await s.request("inspect",{"section":"regional_report"})
+        self.assertEqual(measured["allocation"]["connections"][0]["availablePassengers"],0)
+        self.assertEqual(measured["delivered"]["passengers"],0)
+        await s.city("save");await s.city("load")
+        await s.request("tool",{"action":"select","name":"airport","port_action":"toggle"});await site()
+        await s.request("time",{"action":"step","ticks":1})
+        self.assertEqual(s.last_state["funds"],74824)
+        measured=await s.request("inspect",{"section":"regional_report"})
+        self.assertEqual(measured["allocation"]["connections"][0]["availablePassengers"],90)
+        self.assertEqual(measured["operatingExpense"],30);self.assertEqual(s.last_state["population"],0)
+        self.assertFalse(s.last_state["metrics"]["regional_logistics_enabled"])
+        for projection in ("top_down","isometric"):
+            await s.request("view",{"action":"projection","projection":projection})
+            await s.request("view",{"action":"focus"})
+            p=await s.request("coordinates",{"direction":"tile_to_screen","x":18,"y":11})
+            await s.request("input",{"events":[{"type":"move","x":p["x"],"y":p["y"]}]})
+            await s.screenshot("airport-"+projection)
+        await s.city("save")
+        checkpoint=json.loads(s.artifact("urban_sim_session.json").read_text())
+        checkpoint_core=s.artifact("airport-checkpoint.city.json")
+        checkpoint_core.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
+        checkpoint["citySnapshot"]=str(checkpoint_core)
+        checkpoint_path=s.artifact("airport-checkpoint.json");checkpoint_path.write_text(json.dumps(checkpoint))
+        await s.request("time",{"action":"step","ticks":10});await s.city("save")
+        gui=json.loads(s.artifact("urban_sim_session.json").read_text())
+        cli=Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"));output=s.artifact("airport-headless.json")
+        process=await asyncio.create_subprocess_exec(str(cli),"--simulate","10","--simulate-session",str(checkpoint_path),
+            "--simulate-session-out",str(output),stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        _,stderr=await process.communicate();self.assertEqual(process.returncode,0,stderr.decode())
+        headless=json.loads(output.read_text());gui.pop("citySnapshot");headless.pop("citySnapshot");self.assertEqual(gui,headless)
+        scenario=await record(s,"stop","native-airport-controls")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+        cash=s.last_state["funds"]
+        with self.assertRaises(PlaytestError):
+            await s.request("tool",{"action":"apply","name":"airport","port_action":"capacity","capacity":121,"x1":18,"y1":11})
+        self.assertEqual(s.last_state["funds"],cash)
+        await s.request("tool",{"action":"select","name":"airport","port_action":"remove"});await site(21,12)
+        self.assertEqual(s.last_state["funds"],cash-1000)
+        self.assertFalse(s.last_state["metrics"]["regional_logistics_enabled"])
+        await key("J");await site()
+        rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
+        self.assertEqual(rows[0]["id"],2)
+        await s.request("window",{"action":"resize","width":800,"height":640})
+        await s.request("view",{"action":"focus"})
+        await s.screenshot("airport-minimum-window")
+
     async def test_native_port_tools_prices_controls_persistence_and_replay(self):
         s=self.session
         await s.city("new",32)
@@ -224,6 +715,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
              "entranceX":0,"entranceY":16,"enabled":False,
              "passengersPerTick":10,"goodsPerTick":100}]
         fixture["tick"]=3
+        fixture.pop("tourism",None) # Deliberate pre-tourism historical checkpoint.
         zero={"passengers":0,"imports":0,"exports":0}
         fixture["regionalSettlement"]={"valid":True,"allocation":{"tick":3,
             "requested":dict(zero,passengers=10),"admitted":dict(zero,passengers=10),"unmet":zero,

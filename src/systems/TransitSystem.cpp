@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <queue>
+#include <map>
+#include <set>
+#include <stdexcept>
 
 namespace {
 
@@ -64,13 +67,47 @@ void TransitSystem::buildCache(
   cache.topologyVersion = roads.getTopologyVersion();
 }
 
-TransitOffload::TransitOffload(const std::vector<TransitRoute>& routes, const TransitCoverageCache& cache)
+TransitOffload::TransitOffload(const std::vector<TransitRoute>& routes, const TransitCoverageCache& cache,
+    const std::vector<TransitRouteUsage>* reserved)
   : routes_(routes), cache_(cache) {
+  std::map<TransitRouteId,TransitRouteUsage> prior;
+  if (reserved) for (const auto& row:*reserved)
+    if (row.ridership>row.capacity || row.ridership>row.demand || !prior.emplace(row.id,row).second)
+      throw std::invalid_argument("invalid resident transit reservation");
+  std::set<TransitRouteId> routeIds;
   remainingCapacity_.reserve(routes_.size());
   for (const TransitRoute& route : routes_) {
-    remainingCapacity_.push_back(static_cast<uint32_t>(std::max(0, route.totalCapacity())));
+    auto capacity=static_cast<uint32_t>(std::max(0,route.totalCapacity()));
+    if (reserved && !routeIds.insert(route.id).second)
+      throw std::invalid_argument("duplicate transit route ID");
+    const auto found=prior.find(route.id);
+    if (found!=prior.end()) {
+      if (found->second.capacity!=capacity) throw std::invalid_argument("resident transit capacity changed");
+      capacity-=found->second.ridership;prior.erase(found);
+    }
+    remainingCapacity_.push_back(capacity);
     usage_.push_back({route.id,static_cast<uint32_t>(route.totalCapacity()),0,0});
   }
+  if (!prior.empty()) throw std::invalid_argument("unknown resident transit route");
+}
+
+uint32_t TransitOffload::offloadAcrossRoutes(Coord origin,Coord destination,uint32_t trips) {
+  uint32_t remaining=trips;
+  size_t first=routes_.size();
+  for (size_t i=0;i<routes_.size() && i<cache_.entries.size();++i) {
+    const auto& field=cache_.entries[i].distanceField;
+    const auto from=field.find(origin),to=field.find(destination);
+    if (from==field.end() || to==field.end() || from->second>routes_[i].stopCoverageRadius ||
+        to->second>routes_[i].stopCoverageRadius) continue;
+    if (first==routes_.size()) first=i;
+    const auto carried=std::min(remaining,remainingCapacity_[i]);
+    remainingCapacity_[i]-=carried;remaining-=carried;
+    usage_[i].ridership+=carried;usage_[i].demand+=carried;
+    if (!remaining) break;
+  }
+  if (first!=routes_.size()) {usage_[first].demand+=remaining;demand_+=trips;}
+  ridership_+=trips-remaining;
+  return trips-remaining;
 }
 
 uint32_t TransitOffload::offload(Coord home, Coord work, uint32_t workers) {

@@ -109,3 +109,16 @@ TEST(TreasurySystemTests, BreakdownReconcilesRoundedCategoriesToChargedTotals) {
   EXPECT_EQ(breakdown.expenses[3], 13);
   EXPECT_EQ(breakdown.expenses[4], 27);
 }
+
+TEST(TreasurySystemTests, ExplicitVisitorFeesAndServicesSettleOnceAlongsideDebt) {
+  EconomyState economy;economy.totalRevenue=100;economy.totalExpenses=300;
+  economy.residentialTaxRevenue=100;economy.totalMaintenance=300;
+  auto breakdown=TreasurySystem::breakdown(economy,0.01,20,0,40,10);
+  int64_t funds=0;TreasuryDebt debt{50,0};
+  auto flow=TreasurySystem::applyEconomy(economy,funds,0.01,30,&debt,0,40);
+  EXPECT_EQ(flow.revenue,41);EXPECT_EQ(flow.expenses,33);
+  EXPECT_EQ(breakdown.totalRevenue,flow.revenue);EXPECT_EQ(breakdown.totalExpenses,flow.expenses);
+  EXPECT_EQ(flow.debtRepaid,8);EXPECT_EQ(funds,0);EXPECT_EQ(debt.principal,42);
+  EXPECT_EQ(breakdown.tourismFees,40);EXPECT_EQ(breakdown.tourismServices,10);
+  EXPECT_EQ(breakdown.revenue[0],1);EXPECT_EQ(breakdown.expenses[0],3);
+}

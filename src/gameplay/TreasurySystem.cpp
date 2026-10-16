@@ -11,12 +11,13 @@ TreasuryFlow TreasurySystem::applyEconomy(
   double tickScale,
   int64_t additionalExpenses,
   TreasuryDebt* debt,
-  double interestRatePerTick
+  double interestRatePerTick,
+  int64_t additionalRevenue
 ) {
   TreasuryFlow flow;
   const double scale = std::max(0.0, tickScale);
   flow.revenue = static_cast<int64_t>(std::llround(
-    static_cast<double>(economy.totalRevenue) * scale));
+    static_cast<double>(economy.totalRevenue) * scale)) + std::max<int64_t>(0,additionalRevenue);
   flow.expenses = static_cast<int64_t>(std::llround(
     static_cast<double>(economy.totalExpenses) * scale)) + std::max<int64_t>(0, additionalExpenses);
   const int64_t previous = funds;
@@ -62,7 +63,8 @@ TreasuryFlow TreasurySystem::applyEconomy(
 }
 
 TreasuryBreakdown TreasurySystem::breakdown(const EconomyState& economy,
-  double tickScale, int64_t serviceCosts, int64_t constructionCosts) {
+  double tickScale, int64_t serviceCosts, int64_t constructionCosts,
+  int64_t tourismFees, int64_t tourismServices) {
   TreasuryBreakdown result;
   const double scale = std::max(0.0, tickScale);
   const auto allocate = [scale](const auto& raw, auto& output) {
@@ -87,5 +89,9 @@ TreasuryBreakdown TreasurySystem::breakdown(const EconomyState& economy,
   result.expenses[3] = std::max<int64_t>(0, serviceCosts);
   result.expenses[4] = std::max<int64_t>(0, constructionCosts);
   result.totalExpenses += result.expenses[3] + result.expenses[4];
+  result.tourismFees=std::max<int64_t>(0,tourismFees);
+  result.tourismServices=std::max<int64_t>(0,tourismServices);
+  result.totalRevenue+=result.tourismFees;
+  result.totalExpenses+=result.tourismServices;
   return result;
 }

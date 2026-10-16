@@ -612,6 +612,12 @@ int runGameplaySessionSimulation(const std::string& inputPath,
             << session.disasters.fire.activeFires << " LOST FIRE "
             << session.disasters.buildingsLostToFire << " DISASTER "
             << session.disasters.buildingsLostToDisaster << "\n";
+  std::cout << "TOURISM " << (session.tourism.enabled ? "ON" : "OFF")
+            << " DAY " << session.tourism.report.dayArrivals
+            << " NIGHT " << session.tourism.report.overnightArrivals
+            << " STAY " << session.tourism.report.staying
+            << " FEES $" << session.tourism.accounting.fees()
+            << " SERVICES $" << session.tourism.accounting.services << "\n";
   if (!reportPath.empty() && !writeSimulationReportCSV(reportPath, rows)) {
     std::cerr << "Error: cannot write simulation report\n";
     return 1;

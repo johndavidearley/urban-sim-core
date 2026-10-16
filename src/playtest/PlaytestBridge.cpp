@@ -36,6 +36,9 @@ Json playtestCapabilities() {
         {"disasters", true},
         {"freight", true},
         {"ports",true},
+        {"airports",true},
+        {"hotel_placement",true},
+        {"tourism_cohorts",true},
         {"transit_overlay", true},
         {"road_classes", true},
         {"population_flow", true},
@@ -186,7 +189,7 @@ void PlaytestBridge::begin(
           const auto key = item.at("key").get<std::string>();
           const std::vector<std::pair<std::string, Key>> keys = {
 #define K(name) {#name, Key::name}
-              K(Escape), K(Enter), K(Tab), K(Home), K(End), K(I), K(Space), K(Period), K(Equal), K(Plus),
+              K(Escape), K(Enter), K(Tab), K(Home), K(End), K(I), K(J), K(K), K(Space), K(Period), K(Equal), K(Plus),
               K(Minus),  K(Left),  K(Right), K(Up),     K(Down),  K(F1),
               K(F2),     K(F3),    K(F4),    K(F5), K(F6), K(F7), K(F8),     K(F9),    K(Num1),
               K(Num2),   K(Num3),  K(Num4),  K(Num5),   K(Num6),  K(Num7),

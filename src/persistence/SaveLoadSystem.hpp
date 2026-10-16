@@ -28,6 +28,7 @@ struct SerializedRoad {
   float currentLoad = 0.0f;
   RoadClass roadClass = RoadClass::Local;
   float freightLoad = 0.0f;
+  float visitorLoad = 0.0f;
 };
 
 struct CitySnapshot {

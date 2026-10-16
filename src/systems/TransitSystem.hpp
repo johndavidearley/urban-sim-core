@@ -85,7 +85,12 @@ struct TransitCoverageCache {
 // sequential accumulation phase, never concurrently.
 class TransitOffload {
 public:
-  TransitOffload(const std::vector<TransitRoute>& routes, const TransitCoverageCache& cache);
+  TransitOffload(const std::vector<TransitRoute>& routes, const TransitCoverageCache& cache,
+                 const std::vector<TransitRouteUsage>* reserved = nullptr);
+
+  // Aggregate visitor legs may use multiple covering routes, after subtracting
+  // completed resident ridership. Demand is counted once across those routes.
+  uint32_t offloadAcrossRoutes(Coord origin, Coord destination, uint32_t trips);
 
   // Returns how many of `workers` ride transit for this home->work commute
   // (0 if no route's coverage reaches both ends, or every covering route is

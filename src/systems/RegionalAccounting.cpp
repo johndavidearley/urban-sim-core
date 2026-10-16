@@ -42,6 +42,11 @@ bool settle(const Report& report,const std::vector<Delivery>& deliveries,
       if (!u.id || !ids.insert(u.id).second || static_cast<int>(u.access)<0 ||
           static_cast<int>(u.access)>static_cast<int>(Access::NotConstructed) || (u.access!=Access::Ready && (u.passengers || u.imports || u.exports)))
         throw std::invalid_argument("invalid regional allocation row");
+      if ((!u.capacityMeasured && (u.availablePassengers || u.availableGoods)) ||
+          (u.capacityMeasured && (u.passengers>u.availablePassengers ||
+            static_cast<uint64_t>(u.imports)+u.exports>u.availableGoods ||
+            (u.access!=Access::Ready && (u.availablePassengers || u.availableGoods)))))
+        throw std::invalid_argument("regional flow exceeds available capacity");
       add(admitted.passengers,u.passengers); add(admitted.imports,u.imports); add(admitted.exports,u.exports);
     }
     if (!equal(admitted,report.admitted) || admitted.passengers>report.requested.passengers ||

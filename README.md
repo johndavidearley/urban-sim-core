@@ -118,8 +118,28 @@ Controls:
   Cargo costs $15,000 + $20/tick; passenger terminals $10,000 + $10/tick;
   whole-port demolition costs $500. Disabled ports have no upkeep or flow.
   The first cargo port enables fulfilled-trade rules and a 100-goods road-gateway
-  limit; removing it retains those rules. Passenger service remains inactive.
+  limit; removing it retains those rules. Passenger arrivals require tourism
+  enabled and a reachable park.
   The port panel shows access, capacity, costs and the last completed cargo flow.
+- `J` or **J AIRPORT**: place a 4×2 inland passenger airport for $25,000 plus
+  $30/tick, with capacity 120 passengers/tick. Every footprint tile needs power
+  and water; connect roads along both long sides. `V` operating modes manage
+  airports too: enable/disable, 30/60/120 capacity, or $1,000 whole-airport removal.
+  Airports do not activate cargo rules. Passenger capacity/readiness is measured;
+  visitor arrivals require tourism enabled and a reachable park.
+- `K` or **K HOTEL**: place a hotel for $10,000 on empty unzoned land with
+  road, power and water. Each hotel has 32 visitor beds and 12 commercial jobs;
+  existing commercial maintenance applies once. `B` demolishes it for $200.
+  Hotel signs appear in both views. Building a hotel enables tourism; reachable
+  parks attract bounded day visitors and three-tick overnight stays. The Tourism
+  On/Off button also enables road-only visits without hotels. Visitors stay
+  separate from residents. Visitor trips use spare transit seats after commuters,
+  then roads; the hotel panel reports road/transit/walking/unrouted totals.
+  With K/Hotel selected, click an existing hotel to open/close its visitor beds.
+  Closed hotels release guests next tick; commercial jobs and upkeep continue.
+  Municipal fees are $2 per admitted day visitor and $4 per occupied bed per tick,
+  with $1 of visitor services per day visitor/occupied bed. The budget separates
+  these amounts from existing commercial taxes, maintenance and terminal upkeep.
 - Left-drag: preview and build an x-then-y road while the road tool is active
 - Right-click: cancel the current road drag
 - Arrow keys: pan viewport

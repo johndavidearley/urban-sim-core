@@ -27,6 +27,11 @@ add_executable(test_core
   RegionalAccountingTests.cpp
   RegionalLogisticsTests.cpp
   PortToolTests.cpp
+  AirportTests.cpp
+  TourismSystemTests.cpp
+  HotelToolTests.cpp
+  TourismIntegrationTests.cpp
+  TourismTravelTests.cpp
   FireSystemTests.cpp
   CrimeSystemTests.cpp
   HealthSystemTests.cpp

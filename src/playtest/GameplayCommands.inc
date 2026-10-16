@@ -13,7 +13,16 @@ if (command == "stop") {
 }
 if (command == "budget") {
   const auto action = args.value("action", "inspect");
-  if (action=="transport") {showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;}
+  if (action=="set_hotel") {
+    if (!args.at("hotel_id").is_number_integer() || !args.at("hotel_open").is_boolean())
+      throw std::runtime_error("Hotel ID must be integer and hotel_open boolean");
+    const auto id=args.at("hotel_id").get<int64_t>();
+    if (id<=0 || id>UINT32_MAX) throw std::runtime_error("Invalid hotel ID");
+    setHotelOpen(static_cast<uint32_t>(id),args.at("hotel_open").get<bool>());
+  } else if (action=="set_tourism") {
+    if (!args.at("tourism_enabled").is_boolean()) throw std::runtime_error("Tourism policy must be boolean");
+    setTourism(args.at("tourism_enabled").get<bool>());
+  } else if (action=="transport") {showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;}
   else if (action=="set_route_vehicles") {
     if (!args.at("route_id").is_number_integer() || !args.at("vehicles").is_number_integer())
       throw std::runtime_error("Route ID and vehicles must be integers");
@@ -112,7 +121,7 @@ if (command == "inspect") {
                                           "speed_3", "save",
                                           "load", "disasters", "budget", "alerts", "transport"}[static_cast<size_t>(i - 1)],
                hudControlRect(static_cast<HudAction>(i), windowWidth));
-      if (!cleanUiMode) rect("ports",portButtonRect());
+      if (!cleanUiMode) {rect("ports",portButtonRect());rect("airport",airportButtonRect());rect("hotel",hotelButtonRect());rect("tourism",tourismButtonRect());}
       for (int i = 0; i < 5; ++i)
         rect(std::array<std::string, 5>{"road", "zone", "bulldoze", "service",
                                         "district"}[static_cast<size_t>(i)],
@@ -143,6 +152,7 @@ if (command == "inspect") {
   if (offset < 0 || limit < 1 || limit > 512)
     throw std::runtime_error("Page requires offset >= 0 and limit 1..512");
   Json items = Json::array();
+  if (section == "tourism") return {{"tourism",tourismJson(liveState.tourism,liveState.tick)}};
   if (section == "regional_report") return regionalSettlementJson(liveState.regionalSettlement);
   if (section == "diagnostics") {
     const Coord pos{args.value("x",0),args.value("y",0)};
@@ -203,7 +213,7 @@ if (command == "inspect") {
                        {"x2", edge.to.x}, {"y2", edge.to.y},
                        {"road_class", edge.roadClass == RoadClass::Arterial ? "arterial" : "local"},
                        {"capacity", edge.capacity}, {"load", edge.currentLoad},
-                       {"freight_load", edge.freightLoad}, {"congestion", edge.congestion}});
+                       {"freight_load", edge.freightLoad},{"visitor_load",edge.visitorLoad}, {"congestion", edge.congestion}});
     }
   } else if (section == "entities") {
     std::vector<EntityId> ids;
@@ -217,6 +227,8 @@ if (command == "inspect") {
                        {"x", b.position.x},
                        {"y", b.position.y},
                        {"capacity", b.capacity},
+                       {"hotel_beds", b.hotelBeds},
+                       {"hotel_open", b.hotelOpen},
                        {"occupancy", b.occupancy},
                        {"crime_rate", b.crimeRate},
                        {"illness_rate", b.illnessRate}});
@@ -251,7 +263,10 @@ if (command == "inspect") {
     const regional::SeaAccess sea(map);
     for (const auto& c:liveState.regionalConnections) {
       const char* names[]={"road_gateway","cargo_port","passenger_terminal","airport"};
+      const auto access=regional::diagnoseOperation(c,map,roads,sea,c.entrance);
       items.push_back({{"id",c.id},{"kind",names[static_cast<int>(c.kind)]},
+        {"available_passengers_per_tick",access==regional::Access::Ready ? c.passengersPerTick : 0u},
+        {"available_goods_per_tick",access==regional::Access::Ready ? c.goodsPerTick : 0u},
         {"origin",{c.origin.x,c.origin.y}},{"width",c.width},{"height",c.height},
         {"entrance",{c.entrance.x,c.entrance.y}},{"enabled",c.enabled},
         {"passengers_per_tick",c.passengersPerTick},{"goods_per_tick",c.goodsPerTick},
@@ -442,7 +457,7 @@ if (command == "tool") {
     type = PaletteTool::Service;
   else if (name == "district")
     type = PaletteTool::District;
-  else if (name == "port")
+  else if (name == "port" || name == "airport" || name == "hotel")
     type = PaletteTool::Port;
   else if (name == "none")
     type = PaletteTool::None;
@@ -450,9 +465,13 @@ if (command == "tool") {
     throw std::runtime_error("Unknown tool");
   int selectedPortAction=portAction;
   int portCapacity=-1;
-  if (type==PaletteTool::Port) {
-    const auto mode=args.value("port_action",std::string("cargo"));
-    const std::array<std::string,5> modes{{"cargo","passenger","remove","toggle","capacity"}};
+  if (name=="hotel") {
+    if (args.contains("port_action") || args.contains("capacity"))
+      throw std::runtime_error("Hotel placement does not accept terminal options");
+    selectedPortAction=6;
+  } else if (type==PaletteTool::Port) {
+    const auto mode=args.value("port_action",name=="airport" ? std::string("airport") : std::string("cargo"));
+    const std::array<std::string,6> modes{{"cargo","passenger","remove","toggle","capacity","airport"}};
     const auto found=std::find(modes.begin(),modes.end(),mode);
     if (found==modes.end()) throw std::runtime_error("Unknown port action");
     selectedPortAction=static_cast<int>(found-modes.begin());

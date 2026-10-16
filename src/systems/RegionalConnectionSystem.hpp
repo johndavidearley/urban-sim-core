@@ -58,6 +58,8 @@ struct Usage {
   uint32_t id = 0;
   Access access = Access::Ready;
   uint32_t passengers = 0, imports = 0, exports = 0;
+  bool capacityMeasured = false; // Legacy reports omit available capacity.
+  uint32_t availablePassengers = 0, availableGoods = 0;
 };
 struct Report {
   uint32_t tick = 0;

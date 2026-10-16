@@ -50,9 +50,10 @@ public:
     RoadNodeId to;
     float length;      // Always 1.0 for grid movement
     float capacity;    // Max vehicles per tick
-    float currentLoad; // Commuters and freight vehicles using this edge
+    float currentLoad; // Commuters, freight and visitor trips using this edge
     RoadClass roadClass = RoadClass::Local;
     float freightLoad = 0.0f;
+    float visitorLoad = 0.0f;
 
     float getCongestion() const {
       if (capacity == 0) return 0.0f;
@@ -134,6 +135,7 @@ public:
   void updateCongestion(glm::ivec2 from, glm::ivec2 to, float load);
   float getCongestion(glm::ivec2 from, glm::ivec2 to) const;
   void resetCongestion();
+  void addVisitorLoad(glm::ivec2 from, glm::ivec2 to, float load);
   
   // Stats
   size_t getRoadCount() const;
@@ -157,6 +159,7 @@ public:
     float capacity;
     RoadClass roadClass = RoadClass::Local;
     float freightLoad = 0.0f;
+    float visitorLoad = 0.0f;
   };
   std::vector<EdgeTrafficInfo> getAllEdgeTraffic() const;
   

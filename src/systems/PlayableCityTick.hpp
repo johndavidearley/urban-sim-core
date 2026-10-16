@@ -1,4 +1,5 @@
 #pragma once
+#include "src/systems/TourismSystem.hpp"
 #include "src/gameplay/CityAlerts.hpp"
 #include "src/gameplay/CityHistory.hpp"
 #include "src/gameplay/BudgetPolicy.hpp"
@@ -38,6 +39,7 @@ struct PlayableCityTickState {
   TransitReport transitReport;
   std::vector<regional::Connection> regionalConnections;
   regional::Settlement regionalSettlement;
+  tourism::Runtime tourism;
   bool regionalLogisticsEnabled = false;
   uint32_t tick = 0;
   CityDisasterState disasters;
@@ -113,6 +115,7 @@ struct DerivedCityRefreshOptions {
   // Rebuild display/cache data without replacing the saved congestion or land
   // values that govern the next growth step.
   bool preserveCheckpoint = false;
+  bool projectVisitorTravel = true;
   bool reallocPopulation = false;
   bool runTraffic = true;
   bool enableFreight = true;

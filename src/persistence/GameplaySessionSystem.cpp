@@ -4,6 +4,7 @@
 #include "src/persistence/RegionalConnectionsJson.hpp"
 #include "src/persistence/RegionalSettlementJson.hpp"
 #include "src/persistence/RegionalReservations.hpp"
+#include "src/persistence/TourismJson.hpp"
 #include "src/persistence/CityAlertsJson.hpp"
 
 #include <cmath>
@@ -51,6 +52,17 @@ bool fail(std::string* errorMessage, const std::string& message) {
     *errorMessage = message;
   }
   return false;
+}
+
+bool validateHotelCivicSites(const CitySnapshot& snapshot,
+    const std::vector<Coord>& civicSites, std::string* error) {
+  std::set<std::pair<int,int>> positions;
+  for (const auto& building : snapshot.buildings)
+    if (building.hotelBeds) positions.emplace(building.position.x,building.position.y);
+  for (auto site : civicSites)
+    if (positions.count({site.x,site.y}))
+      return fail(error,"hotel overlaps a civic facility");
+  return true;
 }
 
 bool validServiceType(int value) {
@@ -220,8 +232,11 @@ bool GameplaySessionSystem::save(
     parseRegionalSettlement(regionalSettlementJson(session.regionalSettlement),session.tick);
     std::vector<Coord> civicSites;
     for (const auto& facility:session.facilities) civicSites.push_back(facility.position);
-    if (!validateRegionalReservations(SaveLoadSystem::captureSnapshot(map,roads,store,population),
-          session.regionalConnections,civicSites,errorMessage)) return false;
+    const auto snapshot = SaveLoadSystem::captureSnapshot(map,roads,store,population);
+    parseTourism(tourismJson(session.tourism,session.tick),session.tick,snapshot,&session.transitReport);
+    validateTourismAccounting(session.tourism,session.treasuryLedger);
+    if (!validateHotelCivicSites(snapshot,civicSites,errorMessage) ||
+        !validateRegionalReservations(snapshot,session.regionalConnections,civicSites,errorMessage)) return false;
   } catch (const std::exception& e) {
     return fail(errorMessage,std::string("invalid regional configuration: ")+e.what());
   }
@@ -262,6 +277,7 @@ bool GameplaySessionSystem::save(
   const auto& flow = ledger.flow;
   const json ledgerJson = {{"valid", ledger.valid}, {"tick", ledger.tick},
     {"revenue", ledger.breakdown.revenue}, {"expenses", ledger.breakdown.expenses},
+    {"tourismFees",ledger.breakdown.tourismFees},{"tourismServices",ledger.breakdown.tourismServices},
     {"totalRevenue", ledger.breakdown.totalRevenue},
     {"totalExpenses", ledger.breakdown.totalExpenses},
     {"fundsBefore", ledger.fundsBefore}, {"fundsAfter", ledger.fundsAfter},
@@ -313,6 +329,7 @@ bool GameplaySessionSystem::save(
                {"transitRoutes", serializeTransitRoutes(session.transitRoutes)},
                {"regionalConnections", regionalConnectionsJson(session.regionalConnections)},
                {"regionalSettlement", regionalSettlementJson(session.regionalSettlement)},
+               {"tourism",tourismJson(session.tourism,session.tick)},
                {"regionalLogisticsEnabled",session.regionalLogisticsEnabled},
                {"nextRegionalConnectionId",[&]() {
                  uint64_t next=std::max<uint64_t>(1,session.nextRegionalConnectionId);
@@ -447,6 +464,12 @@ bool GameplaySessionSystem::load(
               return fail(errorMessage, "gameplay session has invalid ledger category amount");
         ledger.breakdown.revenue = item.at("revenue").get<std::array<int64_t, 6>>();
         ledger.breakdown.expenses = item.at("expenses").get<std::array<int64_t, 5>>();
+        for (const char* name:{"tourismFees","tourismServices"})
+          if (item.contains(name) && (!item.at(name).is_number_integer() ||
+              item.at(name).get<double>()<0 || item.at(name).get<double>()>10000))
+            return fail(errorMessage,"invalid tourism treasury category");
+        ledger.breakdown.tourismFees=item.value("tourismFees",int64_t{0});
+        ledger.breakdown.tourismServices=item.value("tourismServices",int64_t{0});
         ledger.breakdown.totalRevenue = item.at("totalRevenue").get<int64_t>();
         ledger.breakdown.totalExpenses = item.at("totalExpenses").get<int64_t>();
         ledger.fundsBefore = item.at("fundsBefore").get<int64_t>();
@@ -469,9 +492,9 @@ bool GameplaySessionSystem::load(
                           flow.debtIssued, flow.debtRepaid, flow.interestCharged,
                           flow.outstandingDebt}) valid = valid && value >= 0;
         valid = valid && std::accumulate(ledger.breakdown.revenue.begin(),
-          ledger.breakdown.revenue.end(), 0.L) == flow.revenue;
+          ledger.breakdown.revenue.end(), 0.L)+ledger.breakdown.tourismFees == flow.revenue;
         valid = valid && std::accumulate(ledger.breakdown.expenses.begin(),
-          ledger.breakdown.expenses.end(), 0.L) == flow.expenses;
+          ledger.breakdown.expenses.end(), 0.L)+ledger.breakdown.tourismServices == flow.expenses;
         valid = valid && flow.net == ledger.fundsAfter - ledger.fundsBefore;
         valid = valid && flow.shortfall == flow.debtIssued;
         valid = valid && static_cast<long double>(ledger.fundsBefore) + flow.revenue -
@@ -615,9 +638,13 @@ bool GameplaySessionSystem::load(
       return fail(errorMessage, diagnostics.errorMessage.empty()
         ? "unable to load core city snapshot" : diagnostics.errorMessage);
     }
+    loaded.tourism.state.tick=loaded.tick;
+    if (root.contains("tourism")) loaded.tourism=parseTourism(root.at("tourism"),loaded.tick,snapshot,&loaded.transitReport);
+    validateTourismAccounting(loaded.tourism,loaded.treasuryLedger);
     std::vector<Coord> civicSites;
     for (const auto& facility:loaded.facilities) civicSites.push_back(facility.position);
-    if (!validateRegionalReservations(snapshot,loaded.regionalConnections,civicSites,errorMessage)) return false;
+    if (!validateHotelCivicSites(snapshot,civicSites,errorMessage) ||
+        !validateRegionalReservations(snapshot,loaded.regionalConnections,civicSites,errorMessage)) return false;
     if (!SaveLoadSystem::applySnapshot(snapshot,map,roads,store,population,errorMessage)) return false;
     rebuildRegionalReservations(map,loaded.regionalConnections);
     session = std::move(loaded);
@@ -639,6 +666,7 @@ PlayableCityTickState GameplaySessionSystem::advance(
   state.alerts = session.alerts;
   state.regionalConnections = session.regionalConnections;
   state.regionalSettlement = session.regionalSettlement;
+  state.tourism = session.tourism;
   state.regionalLogisticsEnabled = session.regionalLogisticsEnabled;
   state.transitReport = session.transitReport;
   state.populationTarget = session.populationTarget;
@@ -698,6 +726,7 @@ PlayableCityTickState GameplaySessionSystem::advance(
   session.alerts = state.alerts;
   session.regionalConnections = state.regionalConnections;
   session.regionalSettlement = state.regionalSettlement;
+  session.tourism = state.tourism;
   session.regionalLogisticsEnabled = state.regionalLogisticsEnabled;
   session.transitReport = state.transitReport;
   session.populationTarget = state.populationTarget;

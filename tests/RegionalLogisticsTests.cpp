@@ -128,7 +128,8 @@ TEST(RegionalLogisticsTests, PassengerTerminalAloneNeverActivatesCargoAndDisable
   PlayableCityTickOptions options; options.enableTransit=false; options.growthChance=0;
   playableCityTick(city.map,city.roads,city.store,city.people,{},state,funds,options);
   EXPECT_FALSE(state.regionalLogisticsEnabled);
-  EXPECT_FALSE(state.regionalSettlement.valid);
+  EXPECT_TRUE(state.regionalSettlement.valid);
+  EXPECT_EQ(state.regionalSettlement.delivered.passengers,0u);
   EXPECT_TRUE(state.trafficSummary.freight.gateways.empty());
   EXPECT_EQ(funds,39990);
   state.regionalConnections[0].enabled=false;

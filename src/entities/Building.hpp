@@ -16,6 +16,10 @@ struct Building {
   Coord position{0, 0};
   int capacity = 0;
   int occupancy = 0;
+  // Optional deliberate hotel specialization of a commercial building. Worker
+  // occupancy remains employment; visitor beds/stays are a separate quantity.
+  uint32_t hotelBeds = 0;
+  bool hotelOpen = true; // Visitor operation only; commercial jobs/upkeep remain.
   // Cached neighborhood read-outs; land value consumes them one tick later.
   float crimeRate = 0.0f;
   float illnessRate = 0.0f;

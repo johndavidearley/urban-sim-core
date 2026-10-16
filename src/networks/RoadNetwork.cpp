@@ -1,5 +1,6 @@
 #include "src/networks/RoadNetwork.hpp"
 #include <algorithm>
+#include <cmath>
 
 RoadNetwork::RoadNetwork(const CityMap& map) : cityMap(map) {
   // Lazy node creation: only tiles that participate in a road edge are
@@ -297,10 +298,18 @@ std::vector<glm::ivec2> RoadNetwork::getAllRoadTiles() const {
   return roads;
 }
 
+void RoadNetwork::addVisitorLoad(glm::ivec2 from,glm::ivec2 to,float load) {
+  if (!std::isfinite(load) || load<=0.0f) return;
+  const auto found=edges.find(makeEdgeKey(from,to));
+  if (found==edges.end()) return;
+  found->second.visitorLoad+=load;found->second.currentLoad+=load;
+}
+
 void RoadNetwork::resetCongestion() {
   for (auto& [key, edge] : edges) {
     edge.currentLoad = 0.0f;
     edge.freightLoad = 0.0f;
+    edge.visitorLoad = 0.0f;
   }
 }
 
@@ -317,6 +326,7 @@ std::vector<RoadNetwork::EdgeTrafficInfo> RoadNetwork::getAllEdgeTraffic() const
     info.capacity = edge.capacity;
     info.roadClass = edge.roadClass;
     info.freightLoad = edge.freightLoad;
+    info.visitorLoad = edge.visitorLoad;
     traffic.push_back(info);
   }
 

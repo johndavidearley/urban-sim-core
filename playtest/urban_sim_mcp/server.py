@@ -41,7 +41,7 @@ KEYS = [
     "F6",
     "F9",
     *[f"Num{i}" for i in range(1, 10)],
-    *list("ABCDFGHLNOPRSTVZ"),
+    *list("ABCDFGHJKLNOPRSTVZ"),
 ]
 
 
@@ -76,6 +76,7 @@ INSPECTION_REFERENCE = {
         "routes",
         "regional_connections",
         "regional_report",
+        "tourism",
         "roads",
     ],
     "summary": {
@@ -287,7 +288,7 @@ def create_server(session: Session) -> FastMCP:
     async def tool(
         action: Literal["select", "apply", "district_policy", "district_delete"],
         name: (
-            Literal["road", "zone", "bulldoze", "service", "district", "port", "none"] | None
+            Literal["road", "zone", "bulldoze", "service", "district", "port", "airport", "hotel", "none"] | None
         ) = None,
         x1: Coordinate = 0,
         y1: Coordinate = 0,
@@ -299,10 +300,10 @@ def create_server(session: Session) -> FastMCP:
         road_class: Literal["local", "arterial"] | None = None,
         id: UInt32 | None = None,
         budget_cap: int | None = None,
-        port_action: Literal["cargo", "passenger", "remove", "toggle", "capacity"] | None = None,
+        port_action: Literal["cargo", "passenger", "remove", "toggle", "capacity", "airport"] | None = None,
         capacity: Annotated[int, Field(ge=0, le=200)] | None = None,
     ) -> dict[str, Any]:
-        """Use gameplay tools with normal plans, costs and validation. Endpoints are tile coordinates; services use x1/y1. Road class local/arterial supports build or upgrade. Policies support archetype and budget cap. Ports use x1/y1 and port_action cargo/passenger/remove/toggle/capacity. Optional capacity is goods (0..200) or passengers (0..60); omission cycles capacity."""
+        """Use gameplay tools with normal plans, costs and validation. Endpoints are tile coordinates; services use x1/y1. Road class local/arterial supports build or upgrade. Policies support archetype and budget cap. Hotel uses x1/y1 on empty unzoned land with road/power/water; $10000, 32 beds, 12 commercial jobs; building enables tourism; visitors require reachable parks. Terminal tools use x1/y1; name airport defaults to 4x2 airport placement, while port_action selects cargo/passenger/airport/remove/toggle/capacity. Capacity sets 0..200 goods, 0..60 sea passengers or 0..120 air passengers; omission cycles presets."""
         return await session.request(
             "tool",
             compact(
@@ -325,10 +326,13 @@ def create_server(session: Session) -> FastMCP:
 
     @server.tool(annotations=local)
     async def budget(
-        action: Literal["inspect", "set_taxes", "set_funding", "reset_funding", "reset", "open", "close", "services", "taxes", "trends", "alerts", "view_alert", "transport", "set_route_vehicles"] = "inspect",
+        action: Literal["inspect", "set_taxes", "set_funding", "reset_funding", "reset", "open", "close", "services", "taxes", "trends", "alerts", "view_alert", "transport", "set_route_vehicles", "set_tourism", "set_hotel"] = "inspect",
         alert_index: Annotated[int, Field(ge=0, le=4)] | None = None,
         route_id: Annotated[int, Field(ge=0, le=4294967295)] | None = None,
         vehicles: Annotated[int, Field(ge=0, le=20)] | None = None,
+        tourism_enabled: bool | None = None,
+        hotel_id: Annotated[int, Field(ge=1, le=4294967295)] | None = None,
+        hotel_open: bool | None = None,
         tax_percent: Annotated[
             list[Annotated[int, Field(ge=0, le=20)]], Field(min_length=5, max_length=5)
         ] | None = None,
@@ -339,7 +343,7 @@ def create_server(session: Session) -> FastMCP:
         """Inspect/open the city budget or set integer tax percentages (R,C,I,O,income).
 
         Defaults are [5,8,6,9,10]; allowed range is 0..20. Taxes affect revenue.
-        The next-tick estimate excludes new growth and debt flows. Last-tick
+        The next-tick estimate excludes new growth, visitors and debt flows. Last-tick
         ledger is immutable until the next simulation tick. Service funding is
         ordered Fire, Police, Health, Education, Power, Water, Sanitation,
         Garbage, Recycling, Cemetery, Crematorium; 0..100%, default all 100.
@@ -351,9 +355,16 @@ def create_server(session: Session) -> FastMCP:
         (index 0 power, 1 water, 2 unemployment, 3 services, 4 budget).
         transport opens route management. set_route_vehicles edits a bus route
         fleet (0..20), with $2 per assigned vehicle per tick; completed usage
-        remains immutable until stepping.
+        remains immutable until stepping. set_tourism with tourism_enabled changes
+        visitor policy. set_hotel with hotel_id and hotel_open controls one hotel;
+        closing releases guests next tick while jobs and upkeep continue.
+        inspect tourism returns policy, active stays, pending
+        departures and immutable completed demand/travel/accounting reports.
+        Municipal fees are $2 per admitted day visitor and $4 per occupied bed
+        each tick, with $1 services per day visitor/occupied bed. Separate
+        tourism_fees/tourism_services reconcile to last_tick treasury totals.
         """
-        return await session.request("budget", compact(action=action, alert_index=alert_index, route_id=route_id, vehicles=vehicles, tax_percent=tax_percent, service_percent=service_percent))
+        return await session.request("budget", compact(action=action, alert_index=alert_index, route_id=route_id, vehicles=vehicles, tourism_enabled=tourism_enabled, hotel_id=hotel_id, hotel_open=hotel_open, tax_percent=tax_percent, service_percent=service_percent))
 
     @server.tool(annotations=local)
     async def view(
@@ -403,6 +414,7 @@ def create_server(session: Session) -> FastMCP:
             "routes",
             "regional_connections",
             "regional_report",
+            "tourism",
             "roads",
         ] = "summary",
         offset: Annotated[int, Field(ge=0)] = 0,
@@ -493,6 +505,7 @@ def create_server(session: Session) -> FastMCP:
             "routes",
             "regional_connections",
             "regional_report",
+            "tourism",
             "roads",
         ] = "summary",
         query: dict | None = None,
@@ -532,6 +545,8 @@ def create_server(session: Session) -> FastMCP:
                     "bulldoze": "B",
                     "service": "S",
                     "district": "P",
+                    "airport": "J or Airport button builds a 4x2 passenger airport; V manages terminals",
+                    "hotel": "K or Hotel button places a $10000 hotel with 32 beds and 12 commercial jobs; B removes it",
                     "ports": "V cycles cargo/passenger/remove/on-off/capacity; click a site; Escape cancels",
                     "pause": "Space",
                     "step": "Period",

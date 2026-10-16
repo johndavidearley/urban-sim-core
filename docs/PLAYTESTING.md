@@ -670,3 +670,156 @@ not. IDs do not reuse a demolished port's ID under the saved counter. Constructi
 and removal invalidate the autonomous zoning candidate cache so reserved land is
 excluded and released land becomes eligible again. Full session continuation and
 recorded native replay retain IDs, settings, mode, money and reports.
+
+
+### M33 airports and measured passenger readiness
+
+`J` or the inspectable `airport` button selects airport placement. Airports use
+a fixed 4x2 land footprint, a reachable civic road entrance, and delivered power
+and water on every tile. The middle tiles need roads along both long sides for
+utility delivery. No shore or boundary-connected water is required. Construction
+costs $25,000 and starts at 120 passengers/tick, with no cargo capacity. The shared
+terminal plan/build/remove implementation retains maritime-only PortTool wrappers
+and revalidates execution. Reservations, growth/edit guards and derived ownership
+rebuilding apply to all eight tiles.
+
+Existing `V` terminal operating modes manage airports as well as ports. Airport
+capacity cycles 30/60/120 or can be set explicitly to 0..120; enabled upkeep is
+fixed at $30/tick, including access outages. Disabled airports have no upkeep or
+availability. Whole-airport removal costs $1,000 with no refund, preserves the
+regional ID counter and leaves cargo rules unchanged. Airports never activate
+cargo mode or create cargo gateways. A rebuilt airport receives a fresh ID.
+
+The existing `tool` accepts `name="airport"` (default placement), or
+`name="port",port_action="airport"`. Remove/toggle/capacity actions accept either
+name and target `x1/y1`. General terminal tools keep their existing 17-tool API;
+capabilities add `airports` and native key input adds `J`. Inspection metrics add
+`airport_operating_cost` and `regional_operating_cost`; `port_operating_cost`
+continues to count only maritime terminals. The budget labels the combined
+category `CIVIC/TRANSPORT` and bills each enabled facility once.
+
+`regional_connections` inspection adds current `available_passengers_per_tick` and
+`available_goods_per_tick` (zero unless physically ready and enabled). Completed
+`regional_report` allocation rows now record `availablePassengers` and
+`availableGoods`. They describe available per-tick capacity, not arrivals. Newly
+measured admission cannot exceed those limits; imports and exports share goods
+capacity. Blocked/disabled rows expose zero availability. Both fields must appear
+together and use nonnegative uint32 integers. Legacy reports omit them and retain
+unknown historical capacity; omission is not interpreted as zero.
+
+A city with constructed passenger terminals/airports and no cargo mode now gets
+a completed-tick passenger-readiness report. It excludes the legacy road freight
+gateway, invents no passenger demand/arrivals/fees and does not replace legacy
+freight pricing. Its separate `operatingExpense` records terminal upkeep; the
+city treasury still bills services and trade normally. In cargo mode the same
+regional report includes all offers and the finite road freight gateway. Paused
+inspection/refresh keeps the last completed measurement and charges nothing.
+The native hover panel shows passenger utilization as actual/available. Real
+tourism demand and local attraction access are deferred to M34.
+
+
+## M34 hotel placement controls
+
+Use K or the inspectable `hotel` button to select placement. A hotel costs
+$10,000 and needs empty unzoned land beside a road with both power and water.
+The preview and panel explain invalid sites before a click. Each hotel is one
+commercial entity with 12 worker slots and 32 visitor beds; standard commercial
+upkeep applies once. H badges identify hotels in top-down and isometric views.
+The panel explicitly marks visitor service inactive pending live tourism ticks.
+Use B/bulldoze for the ordinary $200 building removal; Escape/right-click cancel.
+
+MCP `tool` accepts `name: "hotel"`, `action: "select"` or `"apply"` and x1/y1.
+Hotel placement rejects terminal-specific `port_action`/`capacity` arguments.
+`inspect entities` adds `hotel_beds`; `capacity` and `occupancy` remain worker
+quantities. `state.tools.hotel` reports the active hotel tool, and the capability
+`hotel_placement` advertises this control separately from completed tourism.
+
+`test_native_hotel_placement_cost_guards_persistence_and_replay` covers real
+button/key/click paths, costs/guards, saved beds/jobs, demolition/rebuild IDs,
+minimum-window layout and deterministic replays. It uses ordinary city funds.
+The older hotel metadata test independently checks GUI/headless continuation.
+
+
+## M34 live tourism cohorts
+
+The visible `tourism` button toggles policy without changing the last completed
+report. Building a hotel enables tourism; legacy saves default disabled. MCP
+`budget` accepts `action: "set_tourism", tourism_enabled: true|false`.
+`inspect` section `tourism` returns a nested `tourism` record containing current
+policy, cohort `state` (including pending early departures) and completed `report`.
+It does not overwrite the protocol's top-level UI state. Summary metrics expose
+tourism_enabled, tourism_tick, visitor_day_arrivals, visitor_overnight_arrivals,
+visitors_staying and visitor_pending_departures; population remains residents.
+
+Completed demand reports include accessibleParks, qualityPercent, park/quality
+contributions, requested day/overnight, arrivals/departures, staying, transport/bed
+shortages and per-gateway mode/access/capacity/usage. Hotel panels show current
+occupied beds and last completed totals; passenger terminal panels use completed
+tourism allocation. CLI saved-session continuation prints day/night/stay counts.
+
+Pausing, inspection and policy edits create no visitors, departures, fees or
+history samples. Removing an occupied hotel queues early departures without
+retaining invalid hotel references, so a paused save/load stays valid. The next
+completed tick counts those departures exactly once. Disabling policy stops
+admissions and releases surviving stays on that next tick. Local visitor road/
+transit loads are described below; municipal tourism fees are still pending.
+
+The live tourism acceptance test checks real policy-button input, bounded
+arrivals, resident separation, no fabricated fees, paused inspection/save/load,
+exact GUI/headless core/session continuation, active cohorts, paused hotel
+removal, queued departures, policy shutdown, strict invalid import rejection
+before mutation and two identical replays.
+
+## M34 visitor road/transit travel
+
+`inspect tourism` now includes completed `travel`: measured/tick,
+requested/road/transit/walking/unrouted, aggregate legs by kind and route usage
+with capacity, residentRiders, demand and ridership. Summary metrics expose
+visitor_road_trips, visitor_transit_trips, visitor_walking_trips and
+visitor_unrouted_trips. Road inspection adds visitor_load; total load includes
+resident, freight and visitor components. Hotel panels display completed trip
+mode counts in both projections.
+
+Visitors use spare seats after residents, share them across legs/routes, and
+fall back to roads. Shared road anchors count as walking; disconnected trips are
+unrouted. Paused fleet/road edits reproject demand without duplicating loads or
+changing the completed travel record. Historic capacity is validated against the
+completed resident transit report, allowing fleet edits before saving.
+
+The visitor travel acceptance case covers resident seat priority, spare fleet
+capacity, zero-fleet road fallback, repeated paused save/load, GUI/CLI semantic
+city and exact session continuation, both projections and two identical replays.
+Newly grown entity IDs are process-local; semantic city comparison resolves tile
+building references and compares all remaining fields. Municipal tourism fees
+and hotel operating controls remain pending.
+
+## M34 hotel operating policy
+
+With K/Hotel selected, clicking an existing hotel toggles its visitor beds.
+MCP budget action set_hotel takes hotel_id and hotel_open; inspect entities adds
+hotel_open. Closing releases guests next tick and stops overnight admissions;
+day visits continue. Paused policy edits leave reports and stays untouched.
+Jobs and existing commercial maintenance continue while closed. The hotel panel
+shows the current policy and occupied beds. Legacy hotels default open.
+
+The hotel policy acceptance case checks closure with active guests, paused
+save/load, one-time early departures, exact GUI/CLI continuation, native tile
+reopening, invalid IDs and two identical replays. Placement acceptance also
+checks native and MCP toggles without additional construction charges.
+
+## M34 municipal tourism accounting
+
+`inspect tourism` includes `accounting` with measured/tick/dayFees/stayFees/services.
+Fees are $2 per admitted day visitor and $4 per occupied bed each tick; services
+cost $1 per admitted day visitor/occupied bed. Departures and unmet demand incur
+no fee. Metrics add tourism_fees/tourism_services; budget last_tick adds the same
+fields. Totals reconcile as sum(revenue)+tourism_fees and
+sum(expenses)+tourism_services. Existing six revenue/five expense arrays retain
+their categories. The native budget shows completed fees/services/net; CLI
+continuation prints fees/services. Next-tick estimates exclude visitor amounts.
+
+The accounting acceptance case verifies a full stay cycle, bed saturation,
+separate fees/costs, treasury totals and cash, paused save/load, strict tampered
+import rejection before mutation, minimum-window budget readability, shutdown
+with zero charges and two identical replays. C++ checks include debt repayment,
+legacy absence without retroactive charges and report/ledger reconciliation.

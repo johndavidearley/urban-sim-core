@@ -5,11 +5,16 @@ Last verified: October 16, 2026
 Phases 6–8 (M17–M30) are implemented and verified. Hosted strict builds on
 Linux/macOS/Windows, ASan/UBSan and TSan passed for `7902ddf` in
 [run 38777408741](https://github.com/johndavidearley/urban-sim-core/actions/runs/38777408741).
-Phase 9 (M31–M35) is active: M31 foundations and M32 ports are complete locally.
-Cargo/passenger terminal tools, graphics, operating controls, persisted logistics
-and fulfilled-trade treasury integration are implemented and verified. M33 airports
-is next; tourism follows in M34. See `ROADMAP.md` and `PHASE9.md`. Hosted CI has
-not yet tested the Phase 9 working-tree changes.
+Phase 9 (M31–M35) is active: M31 foundations, M32 ports, M33 airports and
+M34 tourism/hotels are complete locally. Terminal tools, operating controls,
+persistence and measured capacity are available; cargo uses fulfilled-trade
+pricing. Bounded visitor demand, hotel cohorts and resident-first road/transit
+travel remain separate from residents. Hotels have Open/Closed controls.
+Explicit municipal fees and visitor-service costs reconcile to the treasury,
+debt and history without crediting private spending. M35 unified management,
+integrated balance/performance and hosted Phase 9 validation remain next.
+See `ROADMAP.md` and `PHASE9.md`. Hosted CI has not yet tested the Phase 9
+working-tree changes.
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -879,3 +884,190 @@ layout and both-projection port captures were inspected. Evidence/source hashes:
 M33 passenger airports is next. Visitors/hotels remain M34; no ship or aircraft
 agents were added. Hosted Phase 9 strict/sanitizer CI and M35 remain pending;
 these changes are uncommitted.
+
+
+### Phase 9 / M33 — passenger airports and local closeout (October 16, 2026)
+
+M33 is complete locally. `J` and the Airport button place a 4x2 inland airport
+for $25,000 with capacity 120 passengers/tick. The shared terminal implementation
+selects/rechecks real civic road access, delivered power/water on every tile,
+land/occupancy/reservation/funds checks and atomic ownership. Roads along both
+long sides serve the footprint's middle tiles. Maritime PortTool wrappers retain
+their existing contract. Derived eight-tile ownership is validated and rebuilt
+on load and protected by ordinary editing/growth guards. Airport edits use the
+shared persistent ID counter and zoning-cache invalidation.
+
+Shared V terminal operating modes enable/disable airports, cycle 30/60/120
+passenger capacity (or explicitly set 0..120), and remove the whole facility for
+$1,000 without refund. Enabled upkeep is $30/tick, including access outages;
+disabling suspends it and availability. The existing treasury bills this once
+in CIVIC/TRANSPORT expenses. Airports do not activate cargo mode or add cargo
+gateways. Runway, apron, terminal and tower render in both projections with
+preview, access/cost feedback, operating settings and measured utilization.
+
+Regional report rows now include optional measured available passenger/goods
+capacity. Admission must fit measured limits and blocked rows expose zero.
+Legacy reports without those fields keep unknown historical capacity and still
+round-trip. Passenger-only cities now finalize readiness-only reports without
+changing legacy freight pricing or fabricating arrivals/fees. Cargo-mode reports
+include passenger capacity as well. Current inspection exposes effective capacity;
+paused inspection/refresh retains the last completed report and charges nothing.
+Visitor demand remains zero until M34.
+
+Passed: warnings-as-errors build; 522 C++ tests (8.73 sec); 22 rendered tests
+(148.007 sec); 7 Python units; strict GCC checks; 520 headless ASan/UBSan tests
+(48.82 sec), excluding two native tests with macOS leak detection disabled.
+Eight new core cases cover inland payment/ownership, bad sites/utilities/funds,
+whole-site editing/removal guards, upkeep/readiness without cargo or visitors,
+save validation, capacity metadata/legacy reports, geometry and access loss.
+The new native case verifies button/key/site input, design limits, disable/enable,
+zero arrivals, paused save/load, exact GUI/headless continuation, two replays,
+demolition/rebuild IDs and minimum-window layout. Both projections and minimum
+layout were inspected. Evidence/source hashes:
+`playtest-artifacts/m33-20261016/REPORT.md`.
+
+M34 tourism/hotels is next. Air cargo, flight/aircraft agents, schedules and noise
+contours remain outside M33. Hosted Phase 9 CI and M35 are pending; changes remain
+uncommitted.
+
+
+### M34 tourism foundation (October 16, 2026; in progress)
+
+Standalone bounded attraction demand, shared road/sea/air allocation, reachable
+hotel beds and three-tick overnight cohorts are implemented. Day departures,
+scheduled/early overnight departures and transport/bed shortages are explicit.
+Ten new tests cover bounded demand, mode sharing, capacity saturation, hotel
+reachability, conservation, closure/removal and invalid-state rejection.
+
+Warnings-as-errors builds, all 532 C++ tests, strict GCC and 530 headless
+ASan/UBSan tests passed. No live simulation or rendering path consumes this model
+yet; rendered tests were not repeated for this slice. Hotel placement/jobs,
+world-route measurements, persistence, local visitor traffic and municipal
+accounting remain before M34 completion. Evidence:
+`playtest-artifacts/m34-foundation-20261016/REPORT.md`.
+
+
+### M34 hotel backend and world access (October 16, 2026; in progress)
+
+Added paid hotel placement backend: one unzoned commercial entity with 12 jobs,
+32 visitor beds and $10,000 construction cost. Existing commercial maintenance,
+taxes and employment apply once. Occupied-site tools and autonomous growth
+preserve the hotel; ordinary bulldozing removes its identity for $200. Optional
+core snapshot metadata survives legacy-compatible save/load. Hotel IDs, beds,
+footprints, real road edges and civic overlaps are validated before load mutation.
+
+Tourism world access now measures real road components for parks, terminal
+entrances and hotels. The west road gateway offers 100 passenger slots per tick;
+dormant connection records remain inactive. Hotels lacking roads or utilities
+provide no beds. Ports/airports need actual attraction paths, not just a ready
+entrance. These measurements remain separate from live completed tourism ticks.
+
+Validation: 544 C++ tests, 542 headless ASan/UBSan tests, strict GCC, 7 Python
+units, the 22 existing rendered tests and one new hotel-session rendered test.
+The new test verifies paused metadata persistence, exact GUI/headless session
+and core continuation, and two identical replays. M34 still needs placement UI,
+live cohort/session integration, visitor road/transit loads and municipal tourism
+accounting. Evidence: `playtest-artifacts/m34-hotels-20261016/REPORT.md`.
+
+
+### M34 native hotel controls (October 16, 2026; in progress)
+
+K/Hotel now places paid hotels through the shared HotelTool backend, with a
+site preview and price/beds/jobs/upkeep panel. H badges identify hotels in both
+projections. B/bulldoze removes them. MCP accepts hotel placement, exposes the
+Hotel button/key/capability and reports hotel_beds separately from worker counts.
+No live visitor stays or tourism revenue are fabricated; the panel marks visitor
+service inactive until completed-tick integration.
+
+Passed warnings-as-errors builds, all 544 C++ tests, 542 headless ASan/UBSan
+tests, 7 Python units, strict GCC on rendering/native/input/bridge code, and all
+24 rendered tests (164.241 seconds). New acceptance covers real button/key/site
+placement, costs/guards, save/load, demolition/rebuild IDs, both projections,
+minimum-window layout and two identical replays. Existing hotel-session coverage
+verifies exact GUI/headless continuation. Visual review confirmed readable
+signage/panel at normal and minimum sizes. M34 remains open for live visitor
+ticks, cohort persistence, visitor traffic, operating policy and municipal
+accounting. Evidence: `playtest-artifacts/m34-hotel-controls-20261016/REPORT.md`.
+
+
+### M34 live visitor ticks and cohort persistence (October 16, 2026; in progress)
+
+The shared playable tick now allocates bounded road/sea/air visitor demand and
+three-tick overnight stays. Tourism is legacy-default-off; hotel construction
+opts in, and the visible Tourism button/MCP policy also enables road-only day
+visits without hotels. Native panels show current occupied beds and completed
+arrivals, stays, departures and unmet demand. CLI session continuation prints
+visitor counts; MCP inspect tourism exposes the full nested policy/state/report.
+Potential demand follows candidate gateway road components even for disabled or
+zero-capacity service, so closure remains explicit unmet transport.
+
+Optional session records validate bounded demand, integer counts, IDs, capacities,
+flow totals, cohort clocks, hotel occupancy and incoming-core cross references
+before mutation. Paused hotel demolition releases cohort IDs and queues early
+departures, keeping save/load valid; the next completed tick books them once.
+Paused inspection/policy edits preserve reports, cash and resident history.
+Visitors do not enter resident/job/migration totals or create municipal revenue.
+
+Passed warnings-as-errors builds, all 549 C++ tests, 547 headless ASan/UBSan
+tests, 7 Python units and strict GCC. All 25 distinct rendered tests passed across
+the full run and retry: disk exhaustion interrupted the last five cases; after
+reclaiming only pixel-verified redundant captures, those five plus live tourism
+acceptance passed in a six-case retry (55.450 seconds). Live acceptance verifies
+real policy input, active stay save/load, exact GUI/headless session AND core
+continuation, paused demolition/departures, invalid import preservation and two
+identical replays. M34 remains open for resident-first visitor road/transit loads,
+hotel operating policy and municipal tourism accounting. Evidence:
+`playtest-artifacts/m34-live-20261016/REPORT.md`.
+
+### M34 resident-first local visitor travel (October 16, 2026; in progress)
+
+Visitor day visits, hotel admissions, hotel/park trips and departures now produce
+aggregate local travel. Resident commuters reserve transit seats first; visitors
+share remaining covering-route capacity and then use roads. Separate visitor
+road loads contribute to congestion. Walking and broken-access/unrouted counts
+remain explicit. Visitor trips do not inflate resident population or commute
+reports. Native hotel panels and MCP expose separate mode/route totals.
+
+Completed travel survives sessions with strict cohort and resident-capacity
+validation. Core snapshots preserve visitor/freight/other load splits. Repeated
+paused refreshes and save/load do not accumulate visitor traffic or rewrite the
+completed report. Legacy saves without travel remain valid. M34 remains open for
+hotel operating controls and municipal tourism accounting. Validation passed:
+557 C++ tests, 555 ASan/UBSan tests, 26 rendered cases and seven Python unit tests,
+plus strict GCC warnings-as-errors checks. Evidence:
+`playtest-artifacts/m34-travel-20261016/REPORT.md`.
+
+### M34 hotel operating controls (October 16, 2026; in progress)
+
+Per-hotel Open/Closed visitor operation is available through native K/Hotel tile
+clicks and MCP budget set_hotel with hotel_id/hotel_open. Panels show policy and
+beds; closing releases guests once on the next tick and blocks overnight
+admissions while day visits continue. Reopening restores bed eligibility.
+Commercial jobs, taxes and maintenance continue. Paused edits cost nothing and
+preserve completed reports/cohorts, including across save/load. Core/session
+persistence defaults older hotels open and rejects invalid policy records before
+mutation. Validation passed: 559 C++ tests, 557 ASan/UBSan tests, 27 rendered
+cases, seven Python unit tests and strict GCC warnings-as-errors checks.
+Municipal tourism accounting remains. Evidence:
+`playtest-artifacts/m34-policy-20261016/REPORT.md`.
+
+### M34 complete locally: municipal accounting (October 16, 2026)
+
+Explicit $2 day-admission and $4 occupied-bed/tick fees, with $1 visitor services
+per admitted day visitor/occupied bed/tick, settle once with existing treasury
+revenue/expenses before debt repayment and interest. Private visitor spending is
+not city income. Original tax/maintenance/terminal/transit categories remain
+separate. Native budget panels, hotel rates, MCP accounting/ledger fields and CLI
+reports expose the amounts; the next-tick estimate explicitly excludes visitors.
+Strict optional save records reconcile completed demand and ledger categories;
+legacy records add no retroactive charges. Paused actions never settle again.
+
+Validation passed: 562 C++ tests, 560 ASan/UBSan tests, 28 rendered acceptance
+cases, seven Python unit tests and strict GCC warnings-as-errors checks. Coverage
+includes saturated beds, stay turnover, shutdown, cash/debt/category totals,
+invalid imports before mutation, minimum-window readability, exact GUI/CLI
+continuation and identical replays. Evidence:
+`playtest-artifacts/m34-account-20261016/REPORT.md`.
+
+M34 is complete locally. M35 unified regional/tourism management, integrated
+balance/performance, sustained rendered playtests and hosted Phase 9 CI remain.

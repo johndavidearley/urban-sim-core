@@ -1,3 +1,5 @@
+#include "src/systems/TourismAccess.hpp"
+#include "src/systems/TourismTravel.hpp"
 #include "src/systems/PlayableCityTick.hpp"
 
 #include <algorithm>
@@ -102,6 +104,7 @@ void refreshDerivedCityState(
   PlayableCityTickState& state,
   const DerivedCityRefreshOptions& options
 ) {
+  tourism::reconcileRemovedHotels(state.tourism.state,store);
   const auto facilities = state.budgetPolicy.fundedFacilities(baseFacilities);
   ThreadPool& pool = playablePool();
   int ax0 = 0, ay0 = 0, ax1 = 0, ay1 = 0;
@@ -161,12 +164,21 @@ void refreshDerivedCityState(
     }
     TrafficSystem::refreshCongestion(roads, state.trafficSummary);
   }
+  if (options.runTraffic && !options.preserveCheckpoint && options.projectVisitorTravel && state.tourism.travel.measured) {
+    const std::vector<TransitRoute> noRoutes;
+    const std::vector<TransitRouteUsage> noResidents;
+    (void)tourism::applyTravel(state.tourism.travel.tick,state.tourism.travel.legs,roads,
+      options.enableTransit ? state.transitRoutes : noRoutes,state.transitCache,
+      options.enableTransit ? state.transitSummary.routeUsage : noResidents);
+    TrafficSystem::refreshCongestion(roads,state.trafficSummary);
+  }
   if (options.preserveCheckpoint && options.runTraffic) {
     roads.resetCongestion();
     for (const auto &edge : checkpointLoads) {
       roads.updateCongestion(edge.from, edge.to,
-                             edge.currentLoad - edge.freightLoad);
+                             edge.currentLoad - edge.freightLoad - edge.visitorLoad);
       roads.addFreightLoad(edge.from, edge.to, edge.freightLoad);
+      roads.addVisitorLoad(edge.from,edge.to,edge.visitorLoad);
     }
     TrafficSystem::refreshCongestion(roads, state.trafficSummary);
   }
@@ -294,6 +306,7 @@ void playableCityTick(
 
   DerivedCityRefreshOptions refresh;
   refresh.runTraffic = true;
+  refresh.projectVisitorTravel = false;
   refresh.enableTransit = options.enableTransit;
   refresh.enableFreight = options.enableFreight;
   refresh.placeTransit = options.enableTransit;
@@ -346,35 +359,6 @@ void playableCityTick(
   refreshDistrictGrowthModifiers(
     options.districts, map, store, population, roads, facilities, state);
 
-  int64_t serviceOperatingCosts = state.budgetPolicy.serviceCost(baseFacilities) + TransitSystem::operatingCost(state.transitRoutes) + regional::portOperatingCost(state.regionalConnections);
-  state.treasuryLedger = {};
-  state.treasuryLedger.valid = true;
-  state.treasuryLedger.tick = state.tick + 1;
-  state.treasuryLedger.breakdown = TreasurySystem::breakdown(
-    state.economy, options.treasuryTickScale, serviceOperatingCosts, growth.constructionSpend);
-  state.treasuryLedger.fundsBefore = funds;
-  state.treasuryLedger.debtBefore = state.treasuryDebt;
-  serviceOperatingCosts += growth.constructionSpend;
-  TreasuryDebt debt;
-  debt.principal = state.treasuryDebt;
-  debt.interestRemainder = state.treasuryInterestRemainder;
-  const TreasuryFlow flow = TreasurySystem::applyEconomy(
-    state.economy, funds, options.treasuryTickScale, serviceOperatingCosts,
-    &debt, options.treasuryInterestRate
-  );
-  state.treasuryLedger.flow = flow;
-  state.treasuryLedger.fundsAfter = funds;
-  state.treasuryRevenue = flow.revenue;
-  state.treasuryExpenses = flow.expenses;
-  state.treasuryNet = flow.net;
-  state.treasuryShortfall = flow.shortfall;
-  state.treasuryDebt = debt.principal;
-  state.treasuryDebtIssued = flow.debtIssued;
-  state.treasuryDebtRepaid = flow.debtRepaid;
-  state.treasuryInterestCharged = flow.interestCharged;
-  state.treasuryInterestRemainder = debt.interestRemainder;
-  state.lowFunds = funds > 0 && funds < 5000;
-  state.bankrupt = funds == 0 && (flow.shortfall > 0 || state.treasuryDebt > 0);
   state.populationChange.deaths = state.deathcare.deaths;
   state.populationChange.net =
       static_cast<int64_t>(population.getTotalPopulation()) - populationBefore;
@@ -394,8 +378,68 @@ void playableCityTick(
     state.migrationConditions.serviceSatisfaction *= 0.5f+0.5f*state.economy.goodsAvailability;
     state.regionalSettlement=regional::measureLogistics(state.tick+1,
       regional::planLogistics(map,roads,state.regionalConnections),state.trafficSummary.freight,
-      options.treasuryTickScale,regional::portOperatingCost(state.regionalConnections));
+      options.treasuryTickScale,regional::regionalOperatingCost(state.regionalConnections));
   }
+  if (!state.regionalLogisticsEnabled && regional::hasConstructedPassengerTerminal(state.regionalConnections))
+    state.regionalSettlement=regional::measurePassengerReadiness(state.tick+1,map,roads,state.regionalConnections,options.treasuryTickScale);
+  // Tourism measures after resident work. Local visitor legs reserve only the
+  // transit capacity left by resident commuters and have separate usage reports.
+  auto previousVisitors = state.tourism.state;
+  if (!previousVisitors.tick && previousVisitors.stays.empty()) previousVisitors.tick = state.tick;
+  const auto quality = static_cast<uint32_t>(std::clamp(
+    (static_cast<double>(state.serviceSummary.satisfaction) +
+     1.0 - state.crimeRate + 1.0 - state.illnessRate) / 3.0, 0.0, 1.0) * 100.0);
+  auto visitorPlan = (state.tourism.enabled || !previousVisitors.stays.empty() || previousVisitors.pendingEarlyDepartures) ?
+    tourism::planAccess(map,roads,store,state.regionalConnections,quality) : tourism::AccessPlan{};
+  auto allocationPlan=visitorPlan;
+  if (!state.tourism.enabled) {
+    allocationPlan.attractions={};allocationPlan.offers.clear();
+    for (auto& hotel:allocationPlan.hotels) hotel.enabled=false;
+  }
+  const auto visitors = tourism::advance(previousVisitors,state.tick+1,
+    allocationPlan.attractions,std::move(allocationPlan.offers),std::move(allocationPlan.hotels));
+  state.tourism.state = visitors.state;
+  state.tourism.report = visitors.report;
+  state.tourism.report.enabled = state.tourism.enabled;
+  const std::vector<TransitRoute> noRoutes;
+  const std::vector<TransitRouteUsage> noResidents;
+  state.tourism.travel=tourism::applyTravel(state.tick+1,
+    tourism::planTravel(previousVisitors,visitors.state,visitors.report,visitorPlan,roads),roads,
+    options.enableTransit ? state.transitRoutes : noRoutes,state.transitCache,
+    options.enableTransit ? state.transitSummary.routeUsage : noResidents);
+  TrafficSystem::refreshCongestion(roads,state.trafficSummary);
+  state.migrationConditions.congestion=state.trafficSummary.averageEdgeCongestion;
+  state.tourism.accounting=tourism::account(state.tourism.report);
+  int64_t serviceOperatingCosts = state.budgetPolicy.serviceCost(baseFacilities) + TransitSystem::operatingCost(state.transitRoutes) + regional::regionalOperatingCost(state.regionalConnections);
+  state.treasuryLedger = {};
+  state.treasuryLedger.valid = true;
+  state.treasuryLedger.tick = state.tick + 1;
+  state.treasuryLedger.breakdown = TreasurySystem::breakdown(
+    state.economy, options.treasuryTickScale, serviceOperatingCosts, growth.constructionSpend,
+    state.tourism.accounting.fees(),state.tourism.accounting.services);
+  state.treasuryLedger.fundsBefore = funds;
+  state.treasuryLedger.debtBefore = state.treasuryDebt;
+  serviceOperatingCosts += growth.constructionSpend + state.tourism.accounting.services;
+  TreasuryDebt debt;
+  debt.principal = state.treasuryDebt;
+  debt.interestRemainder = state.treasuryInterestRemainder;
+  const TreasuryFlow flow = TreasurySystem::applyEconomy(
+    state.economy, funds, options.treasuryTickScale, serviceOperatingCosts,
+    &debt, options.treasuryInterestRate, state.tourism.accounting.fees()
+  );
+  state.treasuryLedger.flow = flow;
+  state.treasuryLedger.fundsAfter = funds;
+  state.treasuryRevenue = flow.revenue;
+  state.treasuryExpenses = flow.expenses;
+  state.treasuryNet = flow.net;
+  state.treasuryShortfall = flow.shortfall;
+  state.treasuryDebt = debt.principal;
+  state.treasuryDebtIssued = flow.debtIssued;
+  state.treasuryDebtRepaid = flow.debtRepaid;
+  state.treasuryInterestCharged = flow.interestCharged;
+  state.treasuryInterestRemainder = debt.interestRemainder;
+  state.lowFunds = funds > 0 && funds < 5000;
+  state.bankrupt = funds == 0 && (flow.shortfall > 0 || state.treasuryDebt > 0);
   state.laggedEducationCoverage = state.serviceSummary.educationCoverage;
 
   ++state.tick;

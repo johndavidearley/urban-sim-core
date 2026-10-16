@@ -24,6 +24,9 @@ add_library(urban_sim_core
   systems/RegionalConnectionSystem.cpp
   systems/RegionalAccounting.cpp
   systems/RegionalLogistics.cpp
+  systems/TourismSystem.cpp
+  systems/TourismAccess.cpp
+  systems/TourismTravel.cpp
   systems/FireSystem.cpp
   systems/CrimeSystem.cpp
   systems/HealthSystem.cpp
@@ -36,6 +39,8 @@ add_library(urban_sim_core
   gameplay/ServiceTool.cpp
   gameplay/RegionalConnectionTool.cpp
   gameplay/PortTool.cpp
+  gameplay/TerminalTool.cpp
+  gameplay/HotelTool.cpp
   gameplay/DistrictTool.cpp
   gameplay/TreasurySystem.cpp
   world/CityMap.cpp

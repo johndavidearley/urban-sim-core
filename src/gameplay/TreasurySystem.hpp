@@ -29,6 +29,7 @@ struct TreasuryBreakdown {
   std::array<int64_t, 6> revenue{};
   // Buildings, parks, imports, service operation, growth construction.
   std::array<int64_t, 5> expenses{};
+  int64_t tourismFees = 0, tourismServices = 0;
   int64_t totalRevenue = 0;
   int64_t totalExpenses = 0;
 };
@@ -46,13 +47,15 @@ struct TreasuryLedger {
 class TreasurySystem {
 public:
   static TreasuryBreakdown breakdown(const EconomyState& economy,
-    double tickScale = 0.01, int64_t serviceCosts = 0, int64_t constructionCosts = 0);
+    double tickScale = 0.01, int64_t serviceCosts = 0, int64_t constructionCosts = 0,
+    int64_t tourismFees = 0, int64_t tourismServices = 0);
   static TreasuryFlow applyEconomy(
     const EconomyState& economy,
     int64_t& funds,
     double tickScale = 0.01,
     int64_t additionalExpenses = 0,
     TreasuryDebt* debt = nullptr,
-    double interestRatePerTick = 0.0
+    double interestRatePerTick = 0.0,
+    int64_t additionalRevenue = 0
   );
 };

@@ -7,6 +7,7 @@
 #include <exception>
 #include <fstream>
 #include <unordered_set>
+#include <unordered_map>
 
 #include <nlohmann/json.hpp>
 
@@ -143,6 +144,9 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
   std::unordered_set<uint32_t> buildingIds;
   buildingIds.reserve(snapshot.buildings.size());
 
+  std::unordered_map<uint32_t,const Building*> hotels;
+  std::unordered_set<int64_t> hotelPositions;
+  std::unordered_set<uint32_t> hotelFootprints;
   for (const Building& building : snapshot.buildings) {
     if (building.id == EntityIdUtils::NullEntity) {
       return fail("building has a null entity ID");
@@ -156,13 +160,23 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
     if (building.capacity < 0 || building.occupancy < 0 || building.occupancy > building.capacity) {
       return fail("building occupancy or capacity is invalid");
     }
+    if (!building.hotelBeds && !building.hotelOpen) return fail("hotel policy requires a hotel");
+    if (building.hotelBeds && (building.type != BuildingType::Commercial ||
+        building.hotelBeds > 1000)) return fail("invalid hotel specialization");
+    if (building.hotelBeds) {
+      if (!hotels.emplace(building.id,&building).second ||
+          !hotelPositions.insert(tileKey(building.position.x,building.position.y)).second)
+        return fail("duplicate hotel entity or footprint");
+    }
     if (!std::isfinite(building.crimeRate) ||
         !std::isfinite(building.illnessRate) || building.crimeRate < 0.0f ||
         building.crimeRate > 1.0f || building.illnessRate < 0.0f ||
         building.illnessRate > 1.0f) {
       return fail("building neighborhood rates are invalid");
     }
-    buildingIds.insert(static_cast<uint32_t>(building.id));
+    if (!buildingIds.insert(static_cast<uint32_t>(building.id)).second &&
+        (building.hotelBeds || hotels.count(building.id)))
+      return fail("duplicate hotel entity ID");
   }
 
   for (const PopulationGroup& group : snapshot.populationGroups) {
@@ -198,13 +212,23 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
       return fail("tile references a missing building ID");
     }
 
+    const auto hotel = hotels.find(tile.buildingId);
+    if (hotel != hotels.end()) {
+      if (hotel->second->position != Coord{tile.x,tile.y} || tile.zone ||
+          tile.hasRoad || tile.type == 2 || !hotelFootprints.insert(tile.buildingId).second)
+        return fail("hotel does not own an unzoned land footprint");
+    }
     const int64_t key = tileKey(tile.x, tile.y);
     if (!seenTiles.insert(key).second) {
       return fail("snapshot contains duplicate tile coordinates");
     }
   }
 
+  if (hotelFootprints.size() != hotels.size()) return fail("hotel footprint is missing");
   for (const SerializedRoad& road : snapshot.roads) {
+    if (hotelPositions.count(tileKey(road.from.x,road.from.y)) ||
+        hotelPositions.count(tileKey(road.to.x,road.to.y)))
+      return fail("hotel footprint overlaps a road edge");
     if (!isInBounds(road.from.x, road.from.y, snapshot.width, snapshot.height)) {
       return fail("road start is outside the map");
     }
@@ -214,8 +238,9 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
     if (!areAdjacentCardinal(road.from, road.to)) {
       return fail("road endpoints are not cardinally adjacent");
     }
-    if (!std::isfinite(road.currentLoad) || !std::isfinite(road.freightLoad) ||
-        road.freightLoad < 0.0f || road.freightLoad > road.currentLoad ||
+    if (!std::isfinite(road.currentLoad) || !std::isfinite(road.freightLoad) || !std::isfinite(road.visitorLoad) ||
+        road.freightLoad < 0.0f || road.visitorLoad < 0.0f ||
+        road.freightLoad + road.visitorLoad > road.currentLoad ||
         (road.roadClass != RoadClass::Local &&
          road.roadClass != RoadClass::Arterial)) {
       return fail("road class or freight load is invalid");
@@ -237,13 +262,18 @@ glm::ivec2 coordFromJson(const json& j) {
 }
 
 json buildingToJson(const Building& building) {
-  return json{{"id", building.id},
+  json result{{"id", building.id},
               {"type", static_cast<int>(building.type)},
               {"position", coordToJson(building.position)},
               {"capacity", building.capacity},
               {"occupancy", building.occupancy},
               {"crimeRate", building.crimeRate},
               {"illnessRate", building.illnessRate}};
+  if (building.hotelBeds) {
+    result["hotelBeds"] = building.hotelBeds;
+    result["hotelOpen"] = building.hotelOpen;
+  }
+  return result;
 }
 
 Building buildingFromJson(const json& j) {
@@ -253,6 +283,17 @@ Building buildingFromJson(const json& j) {
   building.position = coordFromJson(j.at("position"));
   building.capacity = j.at("capacity").get<int>();
   building.occupancy = j.at("occupancy").get<int>();
+  if (j.contains("hotelBeds")) {
+    const auto& beds = j.at("hotelBeds");
+    if (!beds.is_number_integer() || beds.get<int64_t>() < 0 || beds.get<int64_t>() > 1000)
+      throw std::runtime_error("hotel beds must be an integer from 0 to 1000");
+    building.hotelBeds = beds.get<uint32_t>();
+  }
+  if (j.contains("hotelOpen")) {
+    if (!j.at("hotelOpen").is_boolean() || !building.hotelBeds)
+      throw std::runtime_error("hotel policy requires a hotel and boolean value");
+    building.hotelOpen=j.at("hotelOpen").get<bool>();
+  }
   building.crimeRate = j.value("crimeRate", 0.0f);
   building.illnessRate = j.value("illnessRate", 0.0f);
   return building;
@@ -327,7 +368,7 @@ CitySnapshot SaveLoadSystem::captureSnapshot(
   for (const auto& edge : edgeTraffic) {
     snapshot.roads.push_back(SerializedRoad{edge.from, edge.to,
                                             edge.currentLoad, edge.roadClass,
-                                            edge.freightLoad});
+                                            edge.freightLoad,edge.visitorLoad});
   }
 
   return snapshot;
@@ -386,8 +427,9 @@ bool SaveLoadSystem::applySnapshot(
     roads.setRoadClass(road.from, road.to, road.roadClass);
     if (road.currentLoad > 0.0f) {
       roads.updateCongestion(road.from, road.to,
-                             road.currentLoad - road.freightLoad);
+                             road.currentLoad - road.freightLoad - road.visitorLoad);
       roads.addFreightLoad(road.from, road.to, road.freightLoad);
+      roads.addVisitorLoad(road.from,road.to,road.visitorLoad);
     }
   }
 
@@ -459,7 +501,7 @@ bool SaveLoadSystem::saveToFile(
              {"to", coordToJson(road.to)},
              {"currentLoad", road.currentLoad},
              {"roadClass", static_cast<int>(road.roadClass)},
-             {"freightLoad", road.freightLoad}});
+             {"freightLoad", road.freightLoad},{"visitorLoad",road.visitorLoad}});
   }
 
   std::ofstream out(filePath);
@@ -556,6 +598,7 @@ bool SaveLoadSystem::loadSnapshotFromFile(
       road.currentLoad = roadJson.at("currentLoad").get<float>();
       road.roadClass = static_cast<RoadClass>(roadJson.value("roadClass", 0));
       road.freightLoad = roadJson.value("freightLoad", 0.0f);
+      road.visitorLoad = roadJson.value("visitorLoad",0.0f);
       snapshot.roads.push_back(road);
     }
   } catch (const std::exception& ex) {

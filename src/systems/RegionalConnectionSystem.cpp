@@ -125,7 +125,9 @@ Report allocate(uint32_t tick, Demand demand, std::vector<Offer> offers) {
         static_cast<int>(c.kind)<0 || static_cast<int>(c.kind)>3)
       throw std::invalid_argument("invalid regional connection capacity/mode");
     Usage u; u.id=c.id; u.access=c.enabled ? offer.access : Access::Disabled;
+    u.capacityMeasured=true;
     if (u.access==Access::Ready) {
+      u.availablePassengers=c.passengersPerTick;u.availableGoods=c.goodsPerTick;
       u.passengers=std::min(r.unmet.passengers,c.passengersPerTick);
       u.imports=std::min(r.unmet.imports,c.goodsPerTick);
       u.exports=std::min(r.unmet.exports,c.goodsPerTick-u.imports);

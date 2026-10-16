@@ -1,6 +1,7 @@
 #pragma once
 #include "src/persistence/SaveLoadSystem.hpp"
 #include "src/systems/RegionalConnectionSystem.hpp"
+#include "src/gameplay/TerminalTool.hpp"
 
 // A gameplay record is authoritative. Tile ownership is a derived index and
 // deliberately absent from standalone core snapshots. The snapshot must first
@@ -12,8 +13,8 @@ inline bool validateRegionalReservations(const CitySnapshot& snapshot,
   std::vector<uint32_t> ownership(static_cast<size_t>(snapshot.width)*snapshot.height,0);
   for (const auto& c:connections) {
     if (!c.constructed) continue;
-    if (!c.id || (c.kind!=regional::Kind::CargoPort && c.kind!=regional::Kind::PassengerTerminal) ||
-        c.width!=2 || c.height!=1 ||
+    const auto* spec=regional::terminalSpec(c.kind);
+    if (!c.id || !spec || c.width!=spec->width || c.height!=spec->height ||
         c.origin.x<0 || c.origin.y<0 || static_cast<int64_t>(c.origin.x)+c.width>snapshot.width ||
         static_cast<int64_t>(c.origin.y)+c.height>snapshot.height)
       return fail("invalid constructed terminal footprint");

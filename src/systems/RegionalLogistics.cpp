@@ -1,4 +1,5 @@
 #include "RegionalLogistics.hpp"
+#include "src/gameplay/TerminalTool.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -23,6 +24,30 @@ bool hasConstructedCargoPort(const std::vector<Connection>& connections) {
   return std::any_of(connections.begin(),connections.end(),[](const auto& c) {
     return c.constructed && c.kind==Kind::CargoPort;
   });
+}
+bool hasConstructedPassengerTerminal(const std::vector<Connection>& connections) {
+  return std::any_of(connections.begin(),connections.end(),[](const auto& c) {
+    return c.constructed && (c.kind==Kind::PassengerTerminal || c.kind==Kind::Airport);
+  });
+}
+int64_t regionalOperatingCost(const std::vector<Connection>& connections) {
+  int64_t result=0;
+  for (const auto& c:connections) {
+    const auto* spec=terminalSpec(c.kind);
+    if (spec && c.constructed && c.enabled) result+=spec->upkeep;
+  }
+  return result;
+}
+Settlement measurePassengerReadiness(uint32_t tick,const CityMap& map,const RoadNetwork& roads,
+  const std::vector<Connection>& connections,double amountScale) {
+  const SeaAccess sea(map);
+  std::vector<Offer> offers;
+  for (const auto& c:connections) if (c.constructed && (c.kind==Kind::PassengerTerminal || c.kind==Kind::Airport))
+    offers.push_back({c,diagnoseOperation(c,map,roads,sea,c.entrance)});
+  Settlement result;std::string error;
+  if (!settle(allocate(tick,{},offers),{},{},result,&error)) throw std::invalid_argument(error);
+  result.amountScale=amountScale;result.operatingExpense=regionalOperatingCost(connections);
+  return result;
 }
 int64_t portOperatingCost(const std::vector<Connection>& connections) {
   int64_t result=0;
@@ -84,6 +109,10 @@ Settlement measureLogistics(uint32_t tick,const LogisticsPlan& plan,const Freigh
   std::vector<Delivery> deliveries;
   for (const auto& offer:plan.offers) {
     Usage row; row.id=offer.connection.id; row.access=offer.access;
+    row.capacityMeasured=true;
+    if (row.access==Access::Ready && offer.connection.enabled) {
+      row.availablePassengers=offer.connection.passengersPerTick;row.availableGoods=offer.connection.goodsPerTick;
+    }
     const auto found=std::find_if(freight.gateways.begin(),freight.gateways.end(),[&](const auto& u) {
       return u.gateway.id==row.id;
     });

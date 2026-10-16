@@ -1,4 +1,5 @@
 #pragma once
+#include "src/systems/TourismSystem.hpp"
 #include "src/gameplay/CityAlerts.hpp"
 #include "src/gameplay/CityHistory.hpp"
 #include "src/gameplay/BudgetPolicy.hpp"
@@ -93,6 +94,7 @@ struct LiveSimulationState {
   TransitReport transitReport;
   std::vector<regional::Connection> regionalConnections;
   regional::Settlement regionalSettlement;
+  tourism::Runtime tourism;
   bool regionalLogisticsEnabled = false;
   uint64_t nextRegionalConnectionId = 1;
   bool enableDisasters = false;

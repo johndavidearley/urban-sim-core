@@ -155,7 +155,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       drawText(renderer, x + 360, row, "$" + std::to_string(serviceCosts[i]), {255, 195, 135}, 1);
       drawText(renderer, x + 520, row, std::to_string(static_cast<int>(serviceCoverage[i] * 100.f)) + "%", {135, 225, 175}, 1);
     }
-    drawText(renderer, x + 360, y + 346, "CIVIC/TRANSIT/PORTS $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
+    drawText(renderer, x + 360, y + 346, "CIVIC/TRANSPORT $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
   }
   for (int action = 0; action < 43; ++action) {
     if (!budgetControlVisible(action, services, trends, alerts)) continue;
@@ -287,7 +287,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     drawText(renderer, x + 360, row, revenueNames[i], {185, 205, 220}, 1);
     drawText(renderer, x + 580, row, "+$" + std::to_string(preview.revenue[i]), {120, 225, 155}, 1);
   }
-  const std::array<const char*, 5> costNames{{"BUILDING UPKEEP", "PARK UPKEEP", "IMPORTS", "CIVIC/TRANSIT/PORTS", "BUILDING GROWTH"}};
+  const std::array<const char*, 5> costNames{{"BUILDING UPKEEP", "PARK UPKEEP", "IMPORTS", "CIVIC/TRANSPORT", "BUILDING GROWTH"}};
   for (size_t i = 0; i < costNames.size(); ++i) {
     const int row = y + 204 + static_cast<int>(i) * 16;
     drawText(renderer, x + 360, row, costNames[i], {185, 205, 220}, 1);
@@ -296,7 +296,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   drawText(renderer, x + 360, y + 298, "IN $" + std::to_string(preview.totalRevenue) +
            " OUT $" + std::to_string(preview.totalExpenses), {235, 240, 250}, 1);
   drawText(renderer, x + 360, y + 316, "SURPLUS $" + std::to_string(preview.totalRevenue - preview.totalExpenses), {255, 220, 130}, 1);
-  drawText(renderer, x + 360, y + 336, "EXCLUDES NEW GROWTH AND DEBT FLOWS", {165, 185, 205}, 1);
+  drawText(renderer, x + 360, y + 336, "EXCLUDES GROWTH, VISITORS AND DEBT", {165, 185, 205}, 1);
   }
   drawFilledRect(renderer, x + 24, y + 368, panel.w - 48, 1, {85, 105, 125});
   drawText(renderer, x + 24, y + 512, services ? "CUTS REDUCE REACH AND CAPACITY. ZERO SUSPENDS OPERATION." : "TOOL PURCHASES ARE PAID OUTSIDE TICK TOTALS.", {165, 185, 205}, 1);
@@ -315,6 +315,9 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     " TO $" + std::to_string(ledger.fundsAfter), {230, 240, 245}, 1);
   drawText(renderer, x + 24, y + 476, "DEBT $" + std::to_string(ledger.debtBefore) +
     " TO $" + std::to_string(ledger.flow.outstandingDebt), {230, 240, 245}, 1);
+  drawText(renderer,x+24,y+494,"VISITOR FEES $"+std::to_string(ledger.breakdown.tourismFees)+
+    " SERVICES $"+std::to_string(ledger.breakdown.tourismServices)+" NET $"+
+    std::to_string(ledger.breakdown.tourismFees-ledger.breakdown.tourismServices),{150,215,200},1);
 }
 
 bool transportControlEnabled(int action,const std::vector<TransitRoute>& routes,size_t selected) {

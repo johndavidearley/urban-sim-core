@@ -16,5 +16,7 @@ TEST(VisualizerInput, ShortcutsAreIndependentOfShiftAndUnknownKeysAreIgnored) {
   EXPECT_EQ(translateGLFWKey(GLFW_KEY_KP_ENTER, 0), Key::Enter);
   EXPECT_EQ(translateGLFWKey(GLFW_KEY_F9, 0), Key::F9);
   EXPECT_EQ(translateGLFWKey(GLFW_KEY_V, GLFW_MOD_SHIFT), Key::V);
+  EXPECT_EQ(translateGLFWKey(GLFW_KEY_J, GLFW_MOD_SHIFT), Key::J);
+  EXPECT_EQ(translateGLFWKey(GLFW_KEY_K, GLFW_MOD_SHIFT), Key::K);
   EXPECT_EQ(translateGLFWKey(GLFW_KEY_UNKNOWN, 0), Key::Unknown);
 }

@@ -10,9 +10,14 @@ inline nlohmann::json regionalDemandJson(regional::Demand d) {
 }
 inline nlohmann::json regionalSettlementJson(const regional::Settlement& s) {
   auto rows=nlohmann::json::array(), deliveries=nlohmann::json::array();
-  for (const auto& u:s.allocation.connections)
+  for (const auto& u:s.allocation.connections) {
     rows.push_back({{"id",u.id},{"access",static_cast<int>(u.access)},
       {"passengers",u.passengers},{"imports",u.imports},{"exports",u.exports}});
+    if (u.capacityMeasured) {
+      rows.back()["availablePassengers"]=u.availablePassengers;
+      rows.back()["availableGoods"]=u.availableGoods;
+    }
+  }
   for (const auto& d:s.deliveries)
     deliveries.push_back({{"id",d.id},{"delivered",regionalDemandJson(d.delivered)}});
   nlohmann::json result={{"valid",s.valid},{"allocation",{{"tick",s.allocation.tick},
@@ -58,9 +63,14 @@ inline regional::Settlement parseRegionalSettlement(const nlohmann::json& data,u
   const auto& rows=a.at("connections"); const auto& confirmations=data.at("deliveries");
   if (!rows.is_array() || rows.size()>4097 || !confirmations.is_array() || confirmations.size()>4097)
     throw std::runtime_error("Invalid regional settlement rows");
-  for (const auto& row:rows)
+  for (const auto& row:rows) {
     report.connections.push_back({u32(row.at("id")),static_cast<regional::Access>(number(row.at("access"),static_cast<int>(regional::Access::NotConstructed))),
       u32(row.at("passengers")),u32(row.at("imports")),u32(row.at("exports"))});
+    if (row.contains("availablePassengers") || row.contains("availableGoods")) {
+      auto& u=report.connections.back();u.capacityMeasured=true;
+      u.availablePassengers=u32(row.at("availablePassengers"));u.availableGoods=u32(row.at("availableGoods"));
+    }
+  }
   std::vector<regional::Delivery> deliveries;
   for (const auto& row:confirmations) deliveries.push_back({u32(row.at("id")),demand(row.at("delivered"))});
   const auto& p=data.at("prices");

@@ -1,10 +1,11 @@
 # Phase 9 plan: regional connections, trade and tourism
 
-Started October 15, 2026. M31 connection/access/allocation, transaction and
-persistence foundations are locally verified; M32 freight routing is in progress
-and M33–M35 remain planned. Milestone checklists and acceptance criteria
-are in [ROADMAP.md](ROADMAP.md). The M30 hosted CI entry gate passed on `7902ddf`
-in run 38777408741.
+Started October 15, 2026. M31 foundations, M32 ports, M33 airports and M34
+tourism/hotels are complete locally as of October 16. M35 unified management,
+integrated balance/performance and hosted Phase 9 CI remain. Milestone checklists
+and acceptance criteria are in [ROADMAP.md](ROADMAP.md). The M30 hosted CI entry
+gate passed on `7902ddf` in run 38777408741; it does not validate the uncommitted
+Phase 9 changes.
 
 ## Player outcome
 
@@ -13,7 +14,7 @@ provide hotels. Understand whether external access, local transport, attraction
 quality or beds limit activity, then see the cost and result of an adjustment.
 Sea and air access serve the city economy rather than acting as decorative assets.
 
-## Current baseline
+## Baseline at Phase 9 entry
 
 - Roads support commuters and aggregate truck freight. External freight uses a
   fixed west-edge gateway; economy calculations currently price net imports and
@@ -278,3 +279,227 @@ M32 was closed locally on October 16 after 514 C++ tests, 21 rendered tests,
 7 Python units, strict GCC and 512 headless ASan/UBSan tests passed. Evidence:
 `playtest-artifacts/m32-controls-20261016/REPORT.md`. Hosted verification remains
 part of the Phase 9/M35 gate. M33 airports is the next milestone.
+
+
+## M33 airport implementation (October 16)
+
+Passenger airports now use a fixed 4x2 land footprint with no maritime requirement,
+real civic road access and delivered utilities on every tile. `TerminalTool` owns
+shared terminal specifications, read-only planning, atomic build and whole-site
+removal. Existing PortTool wrappers remain maritime-only. Airport policy starts
+at $25,000 construction, $30/tick enabled upkeep, 120 passengers/tick and $1,000
+demolition. Operating presets are 30/60/120; explicit capacities are 0..120.
+
+`J`/Airport button selects construction; shared V operating modes enable/disable,
+change capacity and remove airports. The existing MCP tool gains an airport name/
+placement option. Airport edits use the shared ID counter, reservation validation,
+world editing/growth guards and zoning-cache invalidation. Both projections show
+a runway, apron, terminal and control tower in the normal tile depth order.
+
+Shared reports now measure available passenger/goods capacities, with zero
+availability for blocked facilities. Old reports retain unknown capacity when
+these fields are absent. Admission validation enforces measured limits. Passenger-
+only cities receive readiness-only completed reports while retaining legacy
+freight; cargo-mode reports include passenger facility availability as well.
+No airport creates cargo capacity, enables cargo mode, invents visitor demand or
+credits fees. Enabled airport upkeep enters the existing CIVIC/TRANSPORT category
+once. Current inspection and last completed availability remain distinct.
+
+Native acceptance covers button/key/site input, paid inland construction, all
+eight owned tiles, operating changes, zero arrivals, paused save/load, exact
+GUI/headless continuation, two replays, demolition/rebuild IDs and minimum-window
+layout. Core coverage adds utility/road loss, bad terrain/funds, whole-site
+protection/removal, malformed saves/capacity metadata and bounded geometry.
+Verification and milestone status are recorded in STATUS.md.
+
+
+M33 was closed locally on October 16 after 522 C++ tests, 22 rendered tests,
+7 Python units, strict GCC and 520 headless ASan/UBSan tests passed. Evidence:
+`playtest-artifacts/m33-20261016/REPORT.md`. Hosted checks remain part of M35.
+M34 tourism/hotels is next; no visitor demand is fabricated in M33.
+
+
+## M34 foundation (October 16, 2026; milestone remains open)
+
+`TourismSystem` supplies a pure completed-tick model, separate from residents,
+jobs and money. Demand starts at 20 visitors per accessible park, caps the park
+count at 50, and adds a quality contribution of 0–100% of the park contribution.
+No accessible parks means no demand. Total demand therefore cannot exceed 2,000
+per tick; one quarter requests overnight stays and the remainder requests day
+visits. These are initial tuning constants, not demonstrated balance results.
+
+All ready gateway offers share the same remaining demand, in ascending ID order.
+Day visits take first capacity and depart in the same completed tick. Overnight
+arrivals require an enabled hotel with free beds and a confirmed route from the
+chosen gateway. Hotels and cohorts use stable IDs; a cohort arriving at tick T
+leaves at T+3, freeing beds before that tick's admissions. This duration denotes
+simulation ticks, with no calendar-day interpretation. Closing/removing a hotel
+releases remaining guests as early departures; losing a gateway blocks new
+arrivals without evicting existing guests. Reports distinguish transport and bed
+shortages. Repeated/skipped ticks and malformed cohort records are rejected.
+
+The host must supply measured reachable parks, diagnosed routes to attractions,
+and hotel/gateway reachability. This foundation does not yet compute those world
+routes or mutate live sessions. Hotel construction and employment, optional save
+records, resident-first visitor road/transit loads, municipal fees/upkeep and
+native/MCP/CLI inspection remain required before M34 can close. No visitor count
+or municipal revenue is introduced into existing cities by this standalone code.
+
+
+### M34 hotel entity and world access integration (in progress)
+
+`HotelTool` deliberately places one hotel on an empty, unzoned, powered/watered
+land tile beside a real road. Initial tuning is $10,000 construction, 32 beds
+and 12 commercial jobs. It rechecks stale plans before charging or creating the
+entity. A hotel is one commercial entity with an optional `hotelBeds` field:
+existing commercial employment, tax, goods and maintenance calculations apply
+once. Worker occupancy never represents overnight guests, and there is no
+second hotel upkeep charge. Ordinary bulldozing costs the existing $200 per
+building and removes the hotel identity. Unzoned hotels are excluded from growth
+redevelopment, ordinary occupied-tile zoning, and autonomous zoning expansion.
+
+Core snapshots optionally preserve hotel beds; legacy buildings default to zero.
+Malformed beds, duplicate hotel IDs, noncommercial hotel entities and
+mismatched/zoned/water/road footprints are rejected before applying a snapshot.
+Full sessions also reject hotels overlapping civic facilities. Full tourism cohort/session
+persistence is still pending.
+
+`TourismAccess::planAccess` derives inputs from current roads, parks, hotel
+entities and regional facilities without altering the world. It labels queried
+road components once. Parks with a local road path to a candidate gateway count toward
+demand; disabled or zero-capacity service leaves explicit unmet transport; a gateway with no reachable attraction reports no road path. The existing
+west-edge road gateway supplies 100 passenger slots per tick. Dormant regional
+configuration stays dormant. Each hotel's reachable gateway IDs come from real
+road connectivity, and missing local road access or utilities disables its beds.
+The host still supplies the bounded city-quality score. Live completed ticks,
+visitor travel, placement UI and municipal accounting are not yet wired here.
+
+
+### M34 native hotel placement (October 16, 2026; milestone remains open)
+
+K and the visible Hotel button select one-tile hotel placement with green/red
+site preview. The panel explains price, beds, commercial jobs, existing upkeep,
+and the currently inactive visitor service. Native clicks and MCP `tool` with
+`name: "hotel"` use the same HotelTool preflight/build path. Existing B/bulldoze
+removes hotels, and successful placement invalidates autonomous zoning caches.
+Both projections draw an H badge within the building's ordinary rendering/depth
+pass. `inspect entities` exposes `hotel_beds` separately from worker `capacity`
+and `occupancy`; no resident count or overnight occupancy is fabricated.
+
+The native acceptance test exercises button/key/site input, price, occupied/road
+rejection, semantic invalid options, save/load, demolition, fresh rebuild IDs,
+both views, the 800x640 minimum layout and two identical replays. Separate hotel
+session acceptance already verifies exact GUI/headless core/session continuation.
+Live visitor ticks, cohort/session persistence, visitor road/transit trips,
+municipal tourism accounting and operating policy remain before M34 can close.
+
+
+### M34 live cohorts and persistence (October 16, 2026; in progress)
+
+The shared playable tick now completes one tourism allocation after resident
+work and services. Reachable parks contribute demand; quality is the integer
+percentage of the clamped mean of civic satisfaction, one minus crime, and one
+minus illness. Both demand contributions are inspectable. Visitors do not enter
+PopulationStore, worker occupancy, migration or resident history. Local visitor
+road/transit loads and municipal tourism fees are still pending; this slice
+changes neither their loads nor treasury through visitor admissions.
+
+Tourism is explicit policy, disabled for legacy sessions (including older hotel
+saves). Building a hotel enables it. The visible Tourism On/Off button or MCP
+budget set_tourism/tourism_enabled can enable road-only day visits without a
+hotel, or stop admissions. Policy edits are immediate; a disabled policy releases
+remaining stays on the next completed tick. Completed reports remain immutable
+while paused. Hotels require beds, utilities, roads and gateway/attraction access;
+three-tick cohorts free beds before admissions, and scheduled/early departures
+are separate measurements.
+
+Optional session tourism records preserve policy, tick, active hotel cohorts,
+bounded pending early departures and the last completed report. Strict integer,
+ID, capacity, bounded demand, flow reconciliation, occupancy, departure-time and
+hotel cross-reference validation happens against the incoming core snapshot
+before applying the world or funds. Missing legacy records initialize disabled
+and align the tourism clock with the saved city tick. Removing an occupied hotel
+while paused releases its ID references immediately and queues departures; saving
+and reloading in that state is valid, and the next tick books them exactly once.
+
+MCP inspect tourism returns a nested tourism record, keeping its cohort state
+separate from the protocol's UI state. Native hotel panels show occupied beds and
+last completed arrivals/stays/unmet demand. Passenger terminal panels show their
+last tourism allocation separately from freight settlement. CLI saved-session
+continuation prints tourism day/night/stay counts and persists the full report.
+Visitor road/transit loads, operating policy and tourism treasury accounting
+remain before M34 completion.
+
+
+Potential park demand depends on the candidate gateway's local road component,
+not its operating capacity. Disabling or setting the sole airport to zero keeps
+that demand visible as unmet transport; operational readiness still admits zero.
+A physically disconnected park still contributes nothing. This supersedes the
+initial access-foundation rule that counted only parks on ready gateway paths.
+
+### M34 local visitor travel (October 16, 2026; in progress)
+
+Completed visitor allocations now produce aggregate gateway/park round trips,
+new hotel access trips, hotel/park round trips and overnight departure trips.
+Local anchors use real road components. A shared anchor counts as walking;
+missing or broken access is explicitly unrouted. Removed hotels retain no stale
+references and their queued departures remain visible as unrouted travel.
+
+Resident commuters reserve route capacity first. Visitors share the remaining
+seats across covering routes, then use deterministic road paths. Separate road
+visitor loads contribute to total congestion alongside commuter/freight loads;
+resident commute totals and resident transit reports retain their own meaning.
+The hotel panel and MCP expose road/transit/walking/unrouted counts and per-route
+visitor demand/ridership with the resident reservation. Roads expose visitor_load.
+
+Full sessions preserve the completed travel report, validate its cohort counts
+and combined route capacity against the completed resident report, and accept
+legacy saves without travel records. Core snapshots preserve visitor/freight/
+other road load components. Paused refreshes project the last trip demand onto
+current roads and fleet without accumulating load or rewriting completed reports.
+Hotel operating policy and municipal tourism accounting remain before M34 closes.
+
+### M34 hotel operation (October 16, 2026; in progress)
+
+Each hotel now has an independent Open/Closed visitor policy. With K/Hotel
+selected, clicking an existing hotel toggles it; MCP budget set_hotel accepts
+hotel_id and hotel_open. Closing stops bed admissions and releases its existing
+guests on the next completed tick, reporting early departures exactly once.
+Day visits continue and reopening restores bed eligibility. Commercial jobs,
+taxes and existing maintenance remain in the existing employment/treasury model.
+There is no additional fee for editing policy.
+
+The hovered hotel panel shows Open/Closed, occupancy and the continuing jobs/
+upkeep rule. Core/session saves preserve policy; old hotels default open.
+Nonboolean values and policy fields on ordinary buildings reject before mutation.
+Paused edits preserve stays and completed reports, including save/load before the
+closure takes effect. Municipal tourism accounting remains before M34 closes.
+
+### M34 municipal tourism accounting (October 16, 2026)
+
+Completed admissions and occupied beds now settle explicit municipal charges:
+$2 per admitted day visitor, $4 per occupied bed per completed tick, and $1 of
+visitor-service costs per admitted day visitor/occupied bed. A three-tick stay
+pays on each occupied tick; admission itself adds no second overnight fee.
+Unmet demand, departed guests and merely configured capacity produce no charge.
+These fixed initial rates do not model private hotel/retail spending. Existing
+commercial taxes/jobs/maintenance and terminal/transit upkeep remain counted once
+in their existing categories; visitor services are a separate municipal cost.
+
+One treasury settlement includes these categories before cash/debt repayment and
+interest. Completed ledger totals, budget history and alerts include the same
+amounts. Native budget panels show visitor fees/services/net, hotel panels show
+rates, MCP tourism inspection adds completed accounting, and CLI continuation
+prints fees/services. The next-tick estimate explicitly excludes visitors along
+with new growth and debt flows; actual visitor counts are measured on completion.
+
+Optional bounded accounting save records reconcile to the completed tourism
+report and treasury ledger before mutation. Legacy records default unmeasured,
+add no retroactive charges and use the new rules on their next completed tick.
+Pausing, inspection, policy edits and save/load never settle money again.
+
+M34 is complete locally. Final accounting validation passed 562 C++ tests,
+560 ASan/UBSan tests, 28 rendered cases, seven Python unit tests and strict GCC
+warnings-as-errors checks. Full evidence is retained in
+`playtest-artifacts/m34-account-20261016/REPORT.md`. M35 remains for unified
+management, integrated balance/performance, sustained playtesting and hosted CI.
