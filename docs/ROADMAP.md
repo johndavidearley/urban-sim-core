@@ -670,16 +670,16 @@ M35 and Phase 9 are complete.
 
 ## Phase 10: End-to-end playability (M36)
 
-**Active.** See [PHASE10.md](PHASE10.md) for the native-control and evidence contract.
+**Complete.** See [PHASE10.md](PHASE10.md) for the native-control and evidence contract.
 
 ### Milestone 36: Fresh-city player journey and packaged candidate
 
-- [ ] Retain a fresh-city native-control playthrough to 10,000 residents using
+- [x] Retain a fresh-city native-control playthrough to 10,000 residents using
       the normal budget, with autonomous building disabled.
-- [ ] Fix demonstrated discoverability, feedback, progression and layout issues.
-- [ ] Verify bounded acceptance, replay and save/continuation for that journey.
-- [ ] Produce and smoke-test a packaged build with launch/save instructions.
-- [ ] Pass relevant local checks and hosted CI on the reviewed implementation.
+- [x] Fix demonstrated discoverability, feedback, progression and layout issues.
+- [x] Verify bounded acceptance, replay and save/continuation for that journey.
+- [x] Produce and smoke-test a packaged build with launch/save instructions.
+- [x] Pass relevant local checks and hosted CI on the reviewed implementation.
 
 **Acceptance:** A player can start a city, understand and resolve its bottlenecks,
 reach 10,000 residents and continue/save/load it through native controls. Evidence
@@ -702,7 +702,7 @@ candidate launches with documented runtime requirements and save location.
 | 7 | M23–M26 | complete |
 | 8 | M27–M30 | complete; hosted CI verified on 7902ddf |
 | 9 | M31–M35 | complete; hosted CI verified on bf8c036 |
-| 10 | M36 | active: end-to-end playability |
+| 10 | M36 | complete: end-to-end playability |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

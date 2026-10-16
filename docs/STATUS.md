@@ -14,8 +14,13 @@ Hosted CI passed on implementation commit `bf8c0366dda5dcef5882db2d7f3e6881a373a
 in [run 38956044741](https://github.com/johndavidearley/urban-sim-core/actions/runs/38956044741): strict
 Linux/macOS/Windows builds/tests, ASan/UBSan, TSan, Linux X11/Wayland graphics and
 rendered playtests, installed macOS graphics smoke and install-layout checks.
-M36 / Phase 10 is active: a fresh-city native-control journey to 10,000 residents
-and an installed/package-verified candidate. See `PHASE10.md` for acceptance.
+M36 / Phase 10 is complete: native fresh-city growth to 10,093 residents, exact
+save continuation to 10,379, two identical replays and a smoke-tested macOS Intel
+candidate. Strict local checks passed 571 C++ tests, seven Python unit tests and
+32 rendered tests. Hosted CI passed on `ae9ccb9e6433da7b15be9cbe1663f1b7d05ccb62`
+in [run 38981010151](https://github.com/johndavidearley/urban-sim-core/actions/runs/38981010151),
+including strict Windows/macOS/Linux, ASan/UBSan, TSan and X11/Wayland playtests.
+See `PHASE10.md` for conditions, limitations, retained evidence and package details.
 See `ROADMAP.md` and `PHASE9.md`. Earlier entries below preserve the implementation
 history and the gates that were pending at each stage.
 
