@@ -22,7 +22,7 @@ if (command == "budget") {
   } else if (action=="set_tourism") {
     if (!args.at("tourism_enabled").is_boolean()) throw std::runtime_error("Tourism policy must be boolean");
     setTourism(args.at("tourism_enabled").get<bool>());
-  } else if (action=="transport") {showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;}
+  } else if (action=="transport") {showRegionalPanel=false;showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;}
   else if (action=="set_route_vehicles") {
     if (!args.at("route_id").is_number_integer() || !args.at("vehicles").is_number_integer())
       throw std::runtime_error("Route ID and vehicles must be integers");
@@ -67,14 +67,14 @@ if (command == "budget") {
     policy.servicePercent = BudgetPolicy{}.servicePercent;
     setBudgetPolicy(policy);
   } else if (action == "services" || action == "taxes" || action == "trends" || action == "alerts") {
-    showTransportPanel=false;
+    showRegionalPanel=false;showTransportPanel=false;
     budgetServices = action == "services";
     budgetTrends = action == "trends";
     budgetAlerts = action == "alerts";
     showBudgetPanel = true; toolDragging = false; cameraPanning = false;
   } else if (action == "reset") setBudgetPolicy(BudgetPolicy{});
-  else if (action == "open") { showTransportPanel=false; showBudgetPanel = true; toolDragging = false; cameraPanning = false; }
-  else if (action == "close") {showBudgetPanel=false;showTransportPanel=false;}
+  else if (action == "open") { showRegionalPanel=false;showTransportPanel=false; showBudgetPanel = true; toolDragging = false; cameraPanning = false; }
+  else if (action == "close") {showBudgetPanel=false;showRegionalPanel=false;showTransportPanel=false;}
   else if (action != "inspect") throw std::runtime_error("Unknown budget action");
   return budgetStatus();
 }
@@ -97,6 +97,16 @@ if (command == "inspect") {
                                         "cancel"}[static_cast<size_t>(i - 1)],
              quitButtonRect(static_cast<QuitAction>(i), windowWidth,
                             windowHeight));
+    else if (showRegionalPanel) {
+      const char* names[]={"regional_close","regional_prev","regional_next","regional_operation","regional_capacity","regional_tourism","regional_tab","regional_locate","regional_alert_next","regional_alert_manage"};
+      const size_t count=regionalHotelTab ? managedHotels(store,liveState.tourism.state).size() :
+        managedTerminals(liveState.regionalConnections).size();
+      for (int i=0;i<10;++i) {
+        rect(names[i],regionalControlRect(i,windowWidth,windowHeight));
+        controls.back()["enabled"]=regionalControlEnabled(i,regionalHotelTab,count,regional::diagnose(liveState.regionalSettlement,liveState.tourism).size());
+        controls.back()["focused"]=i==regionalFocus;
+      }
+    }
     else if (showTransportPanel) {
       const char* names[]={"transport_close","route_prev","route_next","vehicles_minus","vehicles_plus","route_coverage","route_bottleneck"};
       for (int i=0;i<7;++i) {rect(names[i],transportControlRect(i,windowWidth,windowHeight));
@@ -121,7 +131,7 @@ if (command == "inspect") {
                                           "speed_3", "save",
                                           "load", "disasters", "budget", "alerts", "transport"}[static_cast<size_t>(i - 1)],
                hudControlRect(static_cast<HudAction>(i), windowWidth));
-      if (!cleanUiMode) {rect("ports",portButtonRect());rect("airport",airportButtonRect());rect("hotel",hotelButtonRect());rect("tourism",tourismButtonRect());}
+      if (!cleanUiMode) {rect("connections",regionalButtonRect());rect("ports",portButtonRect());rect("airport",airportButtonRect());rect("hotel",hotelButtonRect());rect("tourism",tourismButtonRect());}
       for (int i = 0; i < 5; ++i)
         rect(std::array<std::string, 5>{"road", "zone", "bulldoze", "service",
                                         "district"}[static_cast<size_t>(i)],
@@ -153,6 +163,12 @@ if (command == "inspect") {
     throw std::runtime_error("Page requires offset >= 0 and limit 1..512");
   Json items = Json::array();
   if (section == "tourism") return {{"tourism",tourismJson(liveState.tourism,liveState.tick)}};
+  if (section == "regional_alerts") {
+    for (const auto& alert:regional::diagnose(liveState.regionalSettlement,liveState.tourism))
+      items.push_back({{"problem",regional::problemName(alert.problem)},{"tick",alert.tick},
+        {"unmet",alert.unmet},{"target_id",alert.targetId},{"advice",regional::problemAdvice(alert.problem)}});
+    return {{"items",items}};
+  }
   if (section == "regional_report") return regionalSettlementJson(liveState.regionalSettlement);
   if (section == "diagnostics") {
     const Coord pos{args.value("x",0),args.value("y",0)};

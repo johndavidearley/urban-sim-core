@@ -27,6 +27,249 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_regional_management_policy_measurements_and_minimum_layout(self):
+        s=self.session
+        await s.city("new",32)
+        async def key(name):
+            await s.request("input",{"events":[{"type":"key","key":name}]})
+        async def control(name):
+            controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+            c=next(c for c in controls if c["name"]==name)
+            await s.request("input",{"events":[
+                {"type":"down","button":"left","x":c["x"]+4,"y":c["y"]+4},
+                {"type":"up","button":"left","x":c["x"]+4,"y":c["y"]+4}]})
+        await control("connections")
+        self.assertTrue(s.last_state["ui"]["regional"])
+        controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+        self.assertFalse(next(c for c in controls if c["name"]=="regional_capacity")["enabled"])
+        await key("U")
+        for x1,y1,x2,y2 in ((0,10,26,10),(17,13,26,13),(17,10,17,13)):
+            await s.request("tool",{"action":"apply","name":"road","x1":x1,"y1":y1,"x2":x2,"y2":y2})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":9})
+        await s.request("tool",{"action":"apply","name":"airport","x1":18,"y1":11})
+        rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]["passengers_per_tick"],120)
+        await s.request("time",{"action":"step","ticks":1})
+        before=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        await key("F8");await key("U")
+        self.assertTrue(s.last_state["ui"]["regional"])
+        self.assertFalse(s.last_state["ui"]["transport"])
+        await control("regional_capacity")
+        rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
+        self.assertEqual(rows[0]["passengers_per_tick"],30)
+        await control("regional_operation")
+        rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
+        self.assertFalse(rows[0]["enabled"])
+        self.assertEqual(s.last_state["metrics"]["regional_operating_cost"],0)
+        await control("regional_tourism")
+        after=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertEqual(after["report"],before["report"])
+        self.assertEqual(after["accounting"],before["accounting"])
+        await s.screenshot("m35-connections-default")
+        await s.request("window",{"action":"resize","width":800,"height":640})
+        await s.screenshot("m35-connections-minimum")
+        controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+        for c in controls:
+            self.assertGreaterEqual(c["x"],0);self.assertLessEqual(c["x"]+c["width"],800)
+            self.assertGreaterEqual(c["y"],0);self.assertLessEqual(c["y"]+c["height"],640)
+        await key("N")
+        after=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertEqual(after["report"]["tick"],before["report"]["tick"]+1)
+        self.assertEqual(after["report"]["dayArrivals"],0)
+        await key("Escape");await key("U")
+        # From tourism focus, eight Tabs reach operation; Enter reopens the airport.
+        for _ in range(8): await key("Tab")
+        await key("Enter")
+        rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
+        self.assertTrue(rows[0]["enabled"])
+        await control("regional_locate")
+        self.assertFalse(s.last_state["ui"]["regional"])
+        self.assertEqual(s.last_state["ui"]["pinned_tile"],[18,11])
+        await key("U");await key("Escape")
+        self.assertFalse(s.last_state["ui"]["regional"])
+
+    async def test_regional_hotel_management_closure_recovery_and_map_focus(self):
+        s=self.session
+        await record(s,"start")
+        await s.city("new",32)
+        async def key(name):
+            await s.request("input",{"events":[{"type":"key","key":name}]})
+        async def control(name):
+            controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+            c=next(c for c in controls if c["name"]==name)
+            await s.request("input",{"events":[
+                {"type":"down","button":"left","x":c["x"]+4,"y":c["y"]+4},
+                {"type":"up","button":"left","x":c["x"]+4,"y":c["y"]+4}]})
+        await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
+        await s.request("tool",{"action":"apply","name":"zone","zone":"park","x1":8,"y1":17,"x2":9,"y2":17})
+        await s.request("tool",{"action":"apply","name":"hotel","x1":8,"y1":15})
+        await s.request("time",{"action":"step","ticks":3})
+        before=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertGreater(before["report"]["staying"],0)
+        self.assertGreater(before["report"]["unmetOvernightBeds"],0)
+        await key("U");await control("regional_alert_manage")
+        self.assertTrue(s.last_state["ui"]["regional_hotel_tab"])
+        controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+        self.assertFalse(next(c for c in controls if c["name"]=="regional_capacity")["enabled"])
+        await s.screenshot("m35-hotel-bed-bottleneck")
+        await control("regional_operation")
+        paused=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertEqual(paused,before)
+        alerts=(await s.request("inspect",{"section":"regional_alerts"}))["items"]
+        self.assertEqual(alerts[0]["problem"],"HOTEL BEDS")
+        self.assertEqual(alerts[0]["tick"],before["report"]["tick"])
+        await s.screenshot("m35-hotel-closed-before-tick")
+        # A capacity action cannot modify hotel beds or worker capacity.
+        await control("regional_capacity")
+        await s.city("save")
+        snapshot=json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        hotel=next(b for b in snapshot["buildings"] if b.get("hotelBeds"))
+        self.assertFalse(hotel["hotelOpen"])
+        self.assertEqual(hotel["hotelBeds"],32);self.assertEqual(hotel["capacity"],12)
+        await key("N")
+        closed=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertEqual(closed["report"]["staying"],0)
+        self.assertGreater(closed["report"]["earlyDepartures"],0)
+        self.assertGreater(closed["report"]["unmetOvernightBeds"],0)
+        self.assertEqual(closed["accounting"]["stayFees"],0)
+        # Reload the paused closure and reproduce the exact next-tick result.
+        await s.city("load")
+        self.assertFalse(s.last_state["ui"]["regional"])
+        await s.request("time",{"action":"step","ticks":1})
+        self.assertEqual((await s.request("inspect",{"section":"tourism"}))["tourism"],closed)
+        await key("U");await control("regional_tab")
+        await s.request("window",{"action":"resize","width":800,"height":640})
+        await s.screenshot("m35-hotel-minimum-closed")
+        # Tab from tab-switch focus (6) reaches operation after wrapping the alert controls.
+        for _ in range(7): await key("Tab")
+        await key("Enter");await key("N")
+        recovered=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+        self.assertGreater(recovered["report"]["overnightArrivals"],0)
+        self.assertGreater(recovered["accounting"]["stayFees"],0)
+        for _ in range(12):
+            cash=s.last_state["funds"]
+            await key("N")
+            tourism=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+            ledger=(await s.request("budget",{"action":"inspect"}))["last_tick"]
+            self.assertLessEqual(tourism["report"]["staying"],32)
+            self.assertEqual(s.last_state["population"],0)
+            self.assertEqual(s.last_state["funds"]-cash,ledger["total_revenue"]-ledger["total_expenses"])
+            self.assertEqual(ledger["tourism_fees"],tourism["accounting"]["dayFees"]+tourism["accounting"]["stayFees"])
+        await s.screenshot("m35-hotel-minimum-recovered")
+        await control("regional_locate")
+        self.assertFalse(s.last_state["ui"]["regional"])
+        self.assertEqual(s.last_state["ui"]["pinned_tile"],[8,15])
+        await s.screenshot("m35-hotel-located")
+        await key("U");await key("F8")
+        self.assertFalse(s.last_state["ui"]["regional"])
+        self.assertTrue(s.last_state["ui"]["transport"])
+        scenario=await record(s,"stop","m35-hotel-closure-recovery")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+
+    async def test_regional_mixed_access_alerts_closure_recovery_and_host_parity(self):
+        s=self.session
+        await s.city("new",32)
+        for x1,y1,x2,y2 in ((0,10,26,10),(0,13,26,13),(17,10,17,13),(0,10,0,16)):
+            await s.request("tool",{"action":"apply","name":"road","x1":x1,"y1":y1,"x2":x2,"y2":y2})
+        for service,x in (("power",15),("water",17)):
+            await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":9})
+        for zone,x1,x2 in (("residential",2,8),("commercial",9,12),("industrial",13,15)):
+            await s.request("tool",{"action":"apply","name":"zone","zone":zone,"x1":x1,"y1":14,"x2":x2,"y2":14})
+        await s.request("tool",{"action":"apply","name":"zone","zone":"park","x1":2,"y1":11,"x2":11,"y2":11})
+        await s.request("time",{"action":"step","ticks":20})
+        await s.city("save")
+        fixture=json.loads(s.artifact("urban_sim_session.json").read_text())
+        core=json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        for tile in core["tiles"]:
+            if tile["y"]==8 and tile["x"]<=26: tile["type"]=2
+        coast=s.artifact("mixed-base.city.json");coast.write_text(json.dumps(core))
+        fixture["citySnapshot"]=str(coast);fixture["funds"]=1000000
+        fixture["transitRoutes"]=[{"id":9001,"mode":0,"vehicleCount":1,
+            "capacityPerVehicle":30,"stopCoverageRadius":32,
+            "stops":[{"x":0,"y":10},{"x":26,"y":13}]}]
+        path=s.artifact("mixed-base.json");path.write_text(json.dumps(fixture))
+        await s.stop();await s.launch();await record(s,"start")
+        await s.city("load",import_path=str(path))
+        for name,x,y,options in (("port",22,9,{"port_action":"cargo"}),
+            ("port",24,9,{"port_action":"passenger"}),("airport",18,11,{}),("hotel",8,9,{})):
+            await s.request("tool",{"action":"apply","name":name,"x1":x,"y1":y,**options})
+        async def key(name):
+            await s.request("input",{"events":[{"type":"key","key":name}]})
+        async def control(name):
+            controls=(await s.request("inspect",{"section":"ui"}))["controls"]
+            c=next(c for c in controls if c["name"]==name)
+            await s.request("input",{"events":[
+                {"type":"down","button":"left","x":c["x"]+4,"y":c["y"]+4},
+                {"type":"up","button":"left","x":c["x"]+4,"y":c["y"]+4}]})
+        samples=[]
+        async def step(phase):
+            cash=s.last_state["funds"]
+            await s.request("time",{"action":"step","ticks":1})
+            visitors=(await s.request("inspect",{"section":"tourism"}))["tourism"]
+            r=visitors["report"]
+            ledger=(await s.request("budget",{"action":"inspect"}))["last_tick"]
+            cargo=await s.request("inspect",{"section":"regional_report"})
+            self.assertEqual(r["dayArrivals"]+r["unmetDayTransport"],r["requestedDay"])
+            self.assertEqual(r["overnightArrivals"]+r["unmetOvernightTransport"]+r["unmetOvernightBeds"],r["requestedOvernight"])
+            self.assertEqual(sum(u["day"] for u in r["connections"]),r["dayArrivals"])
+            self.assertEqual(sum(u["overnight"] for u in r["connections"]),r["overnightArrivals"])
+            for row in visitors["travel"]["routes"]:
+                self.assertLessEqual(row["residentRiders"]+row["ridership"],row["capacity"])
+            self.assertEqual(s.last_state["funds"]-cash,ledger["total_revenue"]-ledger["total_expenses"])
+            self.assertEqual(ledger["tourism_fees"],visitors["accounting"]["dayFees"]+visitors["accounting"]["stayFees"])
+            for direction in ("imports","exports"):
+                self.assertEqual(cargo["allocation"]["requested"][direction],cargo["allocation"]["admitted"][direction]+cargo["allocation"]["unmet"][direction])
+                self.assertEqual(cargo["allocation"]["admitted"][direction],cargo["delivered"][direction]+cargo["undelivered"][direction])
+            samples.append({"phase":phase,"tick":r["tick"],"visitors":r,"cargo":cargo,
+                "travel":visitors["travel"],"ledger":ledger,"population":s.last_state["population"]})
+            return visitors
+        for _ in range(4): baseline=await step("mixed")
+        self.assertGreater(s.last_state["population"],0)
+        for kind in (0,2,3):
+            self.assertGreater(sum(row["day"]+row["overnight"] for row in baseline["report"]["connections"] if row["kind"]==kind),0)
+        self.assertGreater(sum(samples[-1]["cargo"]["allocation"]["requested"][k] for k in ("imports","exports")),0)
+        # Closing the airport must retain the completed report/alerts until a tick.
+        await s.request("tool",{"action":"apply","name":"airport","port_action":"toggle","x1":18,"y1":11})
+        for _ in range(3): closed=await step("airport_closed")
+        self.assertGreater(closed["report"]["unmetDayTransport"],0)
+        alerts=(await s.request("inspect",{"section":"regional_alerts"}))["items"]
+        self.assertEqual(alerts[0]["problem"],"VISITOR ACCESS")
+        self.assertEqual(alerts[0]["target_id"],3)
+        await key("U");await control("regional_alert_manage")
+        self.assertEqual(s.last_state["ui"]["regional_selected"],2)
+        await s.request("window",{"action":"resize","width":800,"height":640})
+        await s.screenshot("m35-mixed-airport-access-alert")
+        await control("regional_operation")
+        self.assertEqual((await s.request("inspect",{"section":"regional_alerts"}))["items"],alerts)
+        recovered=await step("reopened")
+        self.assertLess(recovered["report"]["unmetDayTransport"],closed["report"]["unmetDayTransport"])
+        await control("regional_alert_next");await control("regional_alert_manage")
+        self.assertTrue(s.last_state["ui"]["regional_hotel_tab"])
+        await s.screenshot("m35-mixed-airport-recovery")
+        await s.city("save")
+        checkpoint=s.artifact("mixed-checkpoint.json")
+        saved=json.loads(s.artifact("urban_sim_session.json").read_text())
+        frozenCore=s.artifact("mixed-checkpoint.city.json")
+        frozenCore.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
+        saved["citySnapshot"]=str(frozenCore);checkpoint.write_text(json.dumps(saved))
+        for _ in range(12): await step("sustained_recovery")
+        await s.city("save")
+        gui=json.loads(s.artifact("urban_sim_session.json").read_text())
+        cli=Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"))
+        output=s.artifact("mixed-headless.json")
+        process=await asyncio.create_subprocess_exec(str(cli),"--simulate","12","--simulate-session",str(checkpoint),
+            "--simulate-session-out",str(output),stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        _,stderr=await process.communicate();self.assertEqual(process.returncode,0,stderr.decode())
+        headless=json.loads(output.read_text());gui.pop("citySnapshot");headless.pop("citySnapshot")
+        self.assertEqual(gui,headless)
+        s.artifact("m35-mixed-measurements.json").write_text(json.dumps(samples,indent=2))
+        scenario=await record(s,"stop","m35-mixed-access-recovery")
+        self.assertTrue((await replay(s,scenario["scenario"],2))["identical"])
+
     async def test_tourism_fees_services_ledger_shutdown_and_invalid_import(self):
         s=self.session
         await record(s,"start");await s.city("new",32)

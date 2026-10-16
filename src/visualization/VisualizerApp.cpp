@@ -1,4 +1,5 @@
 #include <algorithm>
+#include "src/visualization/RegionalManagement.hpp"
 #include <climits>
 #include "src/persistence/CityHistoryJson.hpp"
 #include "src/persistence/TransitReportJson.hpp"
@@ -180,6 +181,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   bool isometricMode = true;
   bool showBudgetPanel = false;
   bool showTransportPanel = false;
+  bool showRegionalPanel = false;
+  size_t selectedRegionalTerminal = 0;
+  size_t selectedRegionalHotel = 0;
+  size_t selectedRegionalAlert = 0;
+  bool regionalHotelTab = false;
+  int regionalFocus = 0;
   size_t selectedTransitRoute = 0;
   int budgetFocus=-1,transportFocus=-1;
   uint32_t inspectedTrendTick=0;
@@ -214,6 +221,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   auto overHotelButton=[&](int x,int y) {
     const auto r=hotelButtonRect();return x>=r.x && y>=r.y && x<r.x+r.w && y<r.y+r.h;
   };
+  auto regionalButtonRect=[&]() {return visualizer::Rect{windowWidth-126,windowHeight-268,112,32};};
   auto tourismButtonRect=[&]() {return visualizer::Rect{windowWidth-126,windowHeight-228,112,32};};
   auto overTourismButton=[&](int x,int y) {
     const auto r=tourismButtonRect();return x>=r.x && y>=r.y && x<r.x+r.w && y<r.y+r.h;
@@ -449,6 +457,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.transitCache = TransitCoverageCache{};
     liveState.transitSummary = TransitSummary{};
     pinnedInspector={-1,-1};inspectedTrendTick=0;budgetFocus=transportFocus=-1;selectedTransitRoute=0;
+    selectedRegionalTerminal=selectedRegionalHotel=selectedRegionalAlert=0;regionalHotelTab=false;regionalFocus=0;showRegionalPanel=false;
     liveState.serviceCache = ServiceCoverageCache{};
     facilities = std::move(session.facilities);
     applySessionDistricts(districts, session);
@@ -1023,6 +1032,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"compact", cleanUiMode},
            {"budget", showBudgetPanel},
            {"transport",showTransportPanel},
+           {"regional",showRegionalPanel},{"regional_focus",regionalFocus},
+           {"regional_selected",selectedRegionalTerminal},{"regional_hotel_tab",regionalHotelTab},
+           {"regional_selected_hotel",selectedRegionalHotel},
+           {"regional_selected_alert",selectedRegionalAlert},
+           {"regional_alert_count",regional::diagnose(liveState.regionalSettlement,liveState.tourism).size()},
            {"budget_focus",budgetFocus},{"transport_focus",transportFocus},
            {"trends_tick",liveState.history.samples.empty() ? 0 : liveState.history.samples[trendSampleIndex(liveState.history,inspectedTrendTick)].tick},
            {"port_button",{{"x",portButtonRect().x},{"y",portButtonRect().y},
@@ -1105,6 +1119,99 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           default:
             break;
           }
+        }
+        continue;
+      }
+      const auto regionalButton=regionalButtonRect();
+      const bool clickedRegional=event.type==EventType::MouseDown && event.button.button==MouseButton::Left &&
+        !cleanUiMode && !showRegionalPanel && !showBudgetPanel && !showTransportPanel &&
+        event.button.x>=regionalButton.x && event.button.x<regionalButton.x+regionalButton.w &&
+        event.button.y>=regionalButton.y && event.button.y<regionalButton.y+regionalButton.h;
+      if ((event.type==EventType::KeyDown && event.key.sym==Key::U) || clickedRegional) {
+        showRegionalPanel=!showRegionalPanel;
+        showTransportPanel=false;showBudgetPanel=false;
+        toolDragging=false;cameraPanning=false;
+        continue;
+      }
+      if (showRegionalPanel) {
+        auto activateRegional=[&](int action) {
+          if (action==0) {showRegionalPanel=false;return;}
+          if (action==5) {setTourism(!liveState.tourism.enabled);return;}
+          if (action==6) {regionalHotelTab=!regionalHotelTab;return;}
+          const auto terminals=managedTerminals(liveState.regionalConnections);
+          const auto hotels=managedHotels(store,liveState.tourism.state);
+          const auto alerts=regional::diagnose(liveState.regionalSettlement,liveState.tourism);
+          if (action>=8) {
+            if (alerts.empty()) return;
+            selectedRegionalAlert=std::min(selectedRegionalAlert,alerts.size()-1);
+            if (action==8) {selectedRegionalAlert=(selectedRegionalAlert+1)%alerts.size();return;}
+            const auto& alert=alerts[selectedRegionalAlert];
+            regionalHotelTab=alert.problem==regional::Problem::HotelBeds;
+            if (alert.problem==regional::Problem::VisitorTravel) {
+              showRegionalPanel=false;showTransportPanel=true;return;
+            }
+            if (regionalHotelTab) {
+              selectedRegionalHotel=0;
+              for (size_t i=0;i<hotels.size();++i) if (hotels[i].building.id==alert.targetId) selectedRegionalHotel=i;
+            } else {
+              selectedRegionalTerminal=0;
+              const bool cargo=alert.problem!=regional::Problem::PassengerAccess;
+              for (size_t i=0;i<terminals.size();++i)
+                if ((terminals[i].kind==regional::Kind::CargoPort)==cargo) {selectedRegionalTerminal=i;break;}
+              for (size_t i=0;i<terminals.size();++i) if (terminals[i].id==alert.targetId) selectedRegionalTerminal=i;
+            }
+            return;
+          }
+          const size_t count=regionalHotelTab ? hotels.size() : terminals.size();
+          if (!regionalControlEnabled(action,regionalHotelTab,count,alerts.size())) return;
+          auto& selected=regionalHotelTab ? selectedRegionalHotel : selectedRegionalTerminal;
+          selected=std::min(selected,count-1);
+          if (action==1) selected=(selected+count-1)%count;
+          if (action==2) selected=(selected+1)%count;
+          if (action==7) {
+            const Coord target=regionalHotelTab ? hotels[selected].building.position : terminals[selected].origin;
+            showRegionalPanel=false;
+            activatePaletteTool(PaletteTool::None);
+            pinnedInspector=target;
+            overlayMode=OverlayMode::ServiceCoverage;
+            isometricMode=true;
+            const auto projected=isometricProjection().tileCenter(target);
+            isometricCameraX+=windowWidth/2-projected.x;
+            isometricCameraY+=windowHeight*2/3-projected.y;
+          }
+          if (action==3 && regionalHotelTab) {
+            const auto& building=hotels[selected].building;
+            setHotelOpen(building.id,!building.hotelOpen);
+          }
+          if ((action==3 || action==4) && !regionalHotelTab) {
+            const int previousAction=portAction;
+            portAction=action==3 ? 3 : 4;
+            applyPort(terminals[selectedRegionalTerminal].origin);
+            portAction=previousAction;
+          }
+        };
+        if (event.type==EventType::Quit) showQuitDialog=true;
+        if (event.type==EventType::KeyDown) {
+          if (event.key.sym==Key::Escape) showRegionalPanel=false;
+          if (event.key.sym==Key::F8) {showRegionalPanel=false;showTransportPanel=true;}
+          if (event.key.sym==Key::F6 || event.key.sym==Key::F7) {
+            showRegionalPanel=false;showBudgetPanel=true;
+            budgetAlerts=event.key.sym==Key::F7;budgetTrends=false;
+          }
+          if (event.key.sym==Key::F2) gReadableUiText=!gReadableUiText;
+          if (event.key.sym==Key::Tab || event.key.sym==Key::Down) regionalFocus=(regionalFocus+1)%10;
+          if (event.key.sym==Key::Up) regionalFocus=(regionalFocus+9)%10;
+          if (event.key.sym==Key::Enter) activateRegional(regionalFocus);
+          if (event.key.sym==Key::Left) activateRegional(1);
+          if (event.key.sym==Key::Right) activateRegional(2);
+          if (event.key.sym==Key::Space) {liveState.paused=!liveState.paused;sessionDirty=true;}
+          if (liveState.paused && (event.key.sym==Key::N || event.key.sym==Key::Period)) executeSimulationTick();
+          if (event.key.sym==Key::F5) saveSession();
+        }
+        if (event.type==EventType::MouseMotion) {mouseX=event.motion.x;mouseY=event.motion.y;}
+        if (event.type==EventType::MouseDown && event.button.button==MouseButton::Left) {
+          const int action=regionalHitTest(event.button.x,event.button.y,windowWidth,windowHeight);
+          if (action>=0) {regionalFocus=action;activateRegional(action);}
         }
         continue;
       }
@@ -1878,7 +1985,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         !cleanUiMode && showOnboarding && mouseX >= 14 && mouseX < 364 &&
         mouseY >= windowHeight - 154 && mouseY < windowHeight - 62;
     const Coord hoveredTile = map.isValid(pinnedInspector) ? pinnedInspector : tileAtScreen(mouseX, mouseY);
-    const bool inspectMap = !showTransportPanel && !showBudgetPanel &&
+    const bool inspectMap = !showRegionalPanel && !showTransportPanel && !showBudgetPanel &&
       (map.isValid(pinnedInspector) || (!mouseOverHud && !mouseOverLegend && !mouseOverPalette && !mouseOverDistrictPanel && !mouseOverGuide &&
         (cleanUiMode || (!overPortButton(mouseX,mouseY) && !overAirportButton(mouseX,mouseY) && !overHotelButton(mouseX,mouseY) && !overTourismButton(mouseX,mouseY))) && !overPortBanner(mouseX,mouseY))) && map.isValid(hoveredTile);
     if (inspectMap && !portToolActive) {
@@ -2037,7 +2144,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     drawToolPalette(renderer, windowWidth, windowHeight, roadToolActive,
                     zoneToolActive, bulldozeToolActive, serviceToolActive,
                     districtToolActive, mouseX, mouseY);
-    if (!cleanUiMode && !showBudgetPanel && !showTransportPanel) {
+    if (!cleanUiMode && !showRegionalPanel && !showBudgetPanel && !showTransportPanel) {
+      const auto management=regionalButtonRect();
+      const bool bottleneck=!regional::diagnose(liveState.regionalSettlement,liveState.tourism).empty();
+      drawFilledRect(renderer,management.x,management.y,management.w,management.h,bottleneck ? RGB{105,66,25} : RGB{28,43,53});
+      drawText(renderer,management.x+4,management.y+8,"U CONNECTIONS",{225,240,245},1);
       const auto r=portButtonRect();
       drawFilledRect(renderer,r.x,r.y,r.w,r.h,portToolActive ? RGB{40,100,110} : RGB{28,43,53});
       drawRectOutline(renderer,r.x,r.y,r.w,r.h,{135,170,190});
@@ -2317,6 +2428,15 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           liveState.transitRoutes[std::min(selectedTransitRoute,liveState.transitRoutes.size()-1)].stops.begin(),
           liveState.transitRoutes[std::min(selectedTransitRoute,liveState.transitRoutes.size()-1)].stops.end(),
           [&](Coord stop){return roads.getNode(stop)!=nullptr;})),transportFocus);
+    if (showRegionalPanel) {
+      uint64_t beds=0;
+      for (const auto& entry:store.getBuildings())
+        if (entry.second.hotelOpen) beds+=entry.second.hotelBeds;
+      drawRegionalPanel(renderer,windowWidth,windowHeight,liveState.regionalConnections,
+        selectedRegionalTerminal,liveState.regionalSettlement,liveState.tourism,beds,
+        regional::regionalOperatingCost(liveState.regionalConnections),liveState.regionalLogisticsEnabled,regionalFocus,
+        managedHotels(store,liveState.tourism.state),regionalHotelTab,selectedRegionalHotel,selectedRegionalAlert);
+    }
     if (showQuitDialog) {
       drawQuitDialog(renderer, windowWidth, windowHeight, mouseX, mouseY,
                      sessionDirty);

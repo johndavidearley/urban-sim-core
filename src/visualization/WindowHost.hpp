@@ -65,6 +65,7 @@ enum class Key {
   R,
   S,
   T,
+  U,
   V,
   Z
 };

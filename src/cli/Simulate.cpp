@@ -1,4 +1,5 @@
 #include "src/cli/Simulate.hpp"
+#include "src/gameplay/RegionalDiagnostics.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -618,6 +619,10 @@ int runGameplaySessionSimulation(const std::string& inputPath,
             << " STAY " << session.tourism.report.staying
             << " FEES $" << session.tourism.accounting.fees()
             << " SERVICES $" << session.tourism.accounting.services << "\n";
+  for (const auto& alert:regional::diagnose(session.regionalSettlement,session.tourism))
+    std::cout << "REGIONAL ALERT T" << alert.tick << " " << regional::problemName(alert.problem)
+              << " UNMET " << alert.unmet << " TARGET " << alert.targetId << " - "
+              << regional::problemAdvice(alert.problem) << "\n";
   if (!reportPath.empty() && !writeSimulationReportCSV(reportPath, rows)) {
     std::cerr << "Error: cannot write simulation report\n";
     return 1;

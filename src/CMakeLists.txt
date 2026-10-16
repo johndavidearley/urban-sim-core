@@ -86,6 +86,11 @@ add_executable(UrbanSimCore-cli
 
 target_link_libraries(UrbanSimCore-cli PRIVATE urban_sim_core)
 
+# Explicitly built local profiling tool; no timing assertions in portable CI.
+add_executable(UrbanSimCore-regional-benchmark EXCLUDE_FROM_ALL ../tools/RegionalBenchmark.cpp)
+target_link_libraries(UrbanSimCore-regional-benchmark PRIVATE urban_sim_core)
+target_compile_definitions(UrbanSimCore-regional-benchmark PRIVATE URBAN_SIM_PROFILE_CONFIG=\"$<CONFIG>\")
+
 # CPU-side visualizer geometry remains usable without a window or graphics SDK.
 add_library(urban_sim_visualizer_drawing STATIC
   visualization/VisualizerTypes.cpp

@@ -1,8 +1,9 @@
 # Phase 9 plan: regional connections, trade and tourism
 
 Started October 15, 2026. M31 foundations, M32 ports, M33 airports and M34
-tourism/hotels are complete locally as of October 16. M35 unified management,
-integrated balance/performance and hosted Phase 9 CI remain. Milestone checklists
+tourism/hotels are complete locally as of October 16. M35 local management,
+scenario, balance/performance and mature stress/continuation gates are verified.
+Exact-reviewed-commit hosted Phase 9 CI remains. Milestone checklists
 and acceptance criteria are in [ROADMAP.md](ROADMAP.md). The M30 hosted CI entry
 gate passed on `7902ddf` in run 38777408741; it does not validate the uncommitted
 Phase 9 changes.
@@ -503,3 +504,119 @@ M34 is complete locally. Final accounting validation passed 562 C++ tests,
 warnings-as-errors checks. Full evidence is retained in
 `playtest-artifacts/m34-account-20261016/REPORT.md`. M35 remains for unified
 management, integrated balance/performance, sustained playtesting and hosted CI.
+
+
+## M35 implementation started — October 16, 2026
+
+The first management slice adds a native **Connections / Tourism** panel, opened
+with **U** or the Connections button. It combines current tourism policy, finite
+versus legacy cargo mode, open beds and configured terminal upkeep with completed
+visitor demand/admissions, unmet access/beds, local travel, municipal visitor
+fees/services and cargo delivery diagnostics. Completed measurements retain their
+own tick labels and do not change when policy is edited while paused.
+
+Constructed terminals are browsed in stable ID order. The panel reuses the existing
+terminal action path to change enabled state and cycle capacity within design
+limits; it can also toggle tourism. Mouse controls and Tab/Enter navigation share
+the same actions; arrows browse terminals, Space pauses and N advances a paused
+city. MCP UI inspection exposes control bounds, enabled/focused state and panel
+state, so automation exercises the native controls. Existing MCP terminal/hotel
+editing and detailed inspection remain available.
+
+Local verification: strict warnings-as-errors build, 564 CTest cases and a rendered
+management acceptance test pass. The rendered test covers road-only disabled
+controls, airport capacity/operation changes, paused-report preservation, modal
+switching, next-tick measurement and keyboard/mouse operation. Captures at default
+and 800x640 window sizes were inspected. Evidence is retained in
+`playtest-artifacts/m35-management-20261016/REPORT.md`.
+
+M35 is **in progress**. Hotel selection/editing within this panel, map navigation
+and overlay/alert integration, nonzero mixed-flow and closure/recovery scenarios,
+sustained scale/performance evidence, host continuation and exact-commit hosted
+strict/sanitizer checks remain. No capacity or cost tuning is justified by this
+initial UI verification.
+
+
+### M35 hotel management and map navigation
+
+The management panel now includes a hotel tab with stable ID order, policy,
+installed beds, worker capacity and completed guest counts. Its operation button
+uses the existing hotel policy path; capacity is disabled for hotels. Closing a
+hotel while paused leaves completed measurements intact. Locate on Map pins the
+selected hotel or terminal, recenters the native camera and opens service
+coverage. The tile inspector identifies hotels. Budget/Alerts/Transit shortcuts
+work from management, and load resets tab/selection state.
+
+The retained nonzero hotel scenario demonstrates a bed bottleneck, paused
+closure, next-tick early departures, exact save/load continuation, native
+keyboard recovery, twelve subsequent ticks of reconciled municipal fees/funds
+and two matching replays. Both management acceptance tests pass; the strict
+build and all 565 CTest cases pass. Minimum-window captures were inspected.
+See `playtest-artifacts/m35-hotels-20261016/REPORT.md` for evidence. This extends
+the first management slice; mixed-access stress, actionable regional alerts,
+scale/performance, broader host continuation and exact-commit hosted CI remain.
+
+
+### M35 regional diagnostics and mixed-access evidence
+
+Added a shared, read-only diagnostic model for completed passenger-access,
+hotel-bed, cargo-admission, cargo-delivery and local visitor-travel shortfalls.
+Native management displays the measured count/tick and advice, highlights the
+Connections button, and offers Next Alert / Manage Alert. Passenger access
+prefers measured blocked terminals, then saturated ready terminals, with stable
+ID ties. Cargo admission deficits remain citywide rather than inventing a
+per-terminal unmet allocation. Bed alerts select measured occupied hotels when
+possible; absent targets fall back to management rather than stale map pins.
+MCP `regional_alerts` and CLI playable continuation use this same model. Existing
+city alerts retain their separate debounce/cooldown and saved layout.
+
+The mixed-access fixture now explicitly connects the fixed west road gateway,
+shore passenger/cargo terminals and airport. It includes resident commuting,
+a shared-capacity bus, ten parks and a hotel, with isolated setup liquidity.
+Twenty measured ticks cover all three passenger modes, cargo delivery, airport
+closure, native alert-directed reopening and recovery. Each tick verifies flow
+conservation, combined resident/visitor transit capacity and treasury cash/fee
+reconciliation. Twelve-tick GUI/CLI continuation and two replays agree. All 569
+CTest cases and 7 Python tests pass; minimum-window alert/recovery captures were
+inspected. See `playtest-artifacts/m35-alerts-20261016/REPORT.md` for measurements
+and reproduction. No cost/capacity tuning followed from this fixture.
+
+Mature-scale tick/routing/cache cost, longer mixed-access stress and
+exact-reviewed-commit hosted strict/sanitizer CI remain M35 gates.
+
+
+### M35 local gate closeout: mature stress and performance
+
+Added an optional `UrbanSimCore-regional-benchmark` target and retained
+`phase9_stabilization.py` / `phase9_profile.py` runners. The mature 96x96 M30
+legacy save continues without fabricated tourists; an explicit coast fixture
+outside its developed footprint supports paid regional extension tools.
+
+The rendered scenario passes 1,320 ticks after setup, including progressive
+passenger-mode closures, hotel closure, cargo demolition, save/load during
+closure, recovery and twenty-tick full GUI/CLI continuation. Two independent
+90-step replays match. It retains solvent cash/history reconciliation, cargo
+300-to-100-to-300 delivery under demolition/rebuild, passenger capacity
+266-to-160-to-100 under closures, and successful hotel cohort recovery.
+
+Six sequential 1,000-tick profiles cover small/growing 32x32 and mature legacy /
+mixed 96x96 fixtures, with cold and retained host caches. Every measured tick
+checks cohort/flow conservation, transit capacity, visitor fee/service categories,
+ledger sums/cash and freight-cache bounds. Final world checksums, funds, tourism
+and cargo agree between cache modes. Timing excludes loading, saving, rendering
+and inspection; access-plan probes and route/distance-field counts are separate.
+On x86_64 macOS, Clang 17, RelWithDebInfo, mean retained-cache tick times are
+0.915 ms (small), 7.353 ms (legacy mature) and 7.483 ms (mixed mature). These
+fixtures differ and do not isolate a regional-only overhead or establish an FPS
+promise. No demonstrated numerical balance problem required rate/cost tuning.
+
+Strict normal/benchmark builds pass, with 569 normal and 567 local headless
+ASan/UBSan CTest cases, seven Python unit tests and a 100-tick mature mixed
+sanitizer benchmark passing. macOS leak detection is disabled for these local
+sanitizer checks. Reproduction and raw measurements are retained in
+`playtest-artifacts/m35-scale-20261016/REPORT.md` and documented in
+`tools/REGIONAL_BENCHMARK.md` / `docs/PLAYTESTING.md`.
+
+The roadmap's local management, scenarios/performance and older-save/continuation
+items are checked. M35 remains open for exact-reviewed-commit hosted strict and
+sanitizer CI, including Windows and TSan. Changes have not been committed/pushed.

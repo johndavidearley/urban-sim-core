@@ -513,7 +513,7 @@ passed on `7902ddf` in [run 38777408741](https://github.com/johndavidearley/urba
 
 ## Phase 9: Regional connections, trade and tourism (M31–M35)
 
-**Active: M31 locally complete; M32 routing work underway; M33–M35 planned.** Add sea and air access
+**Active: M31–M34 locally complete; M35 local checks passed, hosted validation pending.** Add sea and air access
 with measurable economic and visitor effects. Detailed rules and dependencies
 are in [PHASE9.md](PHASE9.md). The M30 hosted CI gate passed on `7902ddf`.
 Existing bus/rail commute behavior remains the baseline.
@@ -644,11 +644,11 @@ can increase served visitors when access is the limiting factor.
 
 ### Milestone 35: Regional management, integration and balance
 
-- [ ] Finish a unified Connections/Tourism management view, overlays, alerts,
+- [x] Finish a unified Connections/Tourism management view, overlays, alerts,
       keyboard navigation, native assets and MCP inspection/editing.
-- [ ] Retain road-only, port, airport, mixed-access and closure/recovery scenarios;
+- [x] Retain road-only, port, airport, mixed-access and closure/recovery scenarios;
       measure trade, treasury, visitors, resident travel and performance.
-- [ ] Tune only demonstrated capacity/cost problems; verify older saves and
+- [x] Tune only demonstrated capacity/cost problems; verify older saves and
       deterministic continuation across both hosts.
 - [ ] Run sustained rendered playtests and exact-commit hosted strict/sanitizer CI.
 
@@ -657,6 +657,13 @@ its setting, and see the subsequent measured effect and cost. Published evidence
 shows no double-counted flows or ledger income, no resident/transit regression,
 and passing required CI on the reviewed commit.
 **Excluded:** a renderer replacement, physical ship/aircraft simulation and further feature expansion.
+
+Local management/scenario/performance checks passed October 16, 2026: 1,320
+rendered mature-city stress ticks, two matching replays, full GUI/CLI continuation
+and 6,000 profiled ticks across startup/mature legacy/mixed fixtures. See
+[PHASE9.md](PHASE9.md) and the retained
+`playtest-artifacts/m35-scale-20261016/REPORT.md`. The final checkbox remains open
+for exact-reviewed-commit hosted CI; M35 is not yet complete.
 
 ---
 
@@ -672,12 +679,12 @@ and passing required CI on the reviewed commit.
 | 6 | M17–M22 | complete |
 | 7 | M23–M26 | complete |
 | 8 | M27–M30 | complete; hosted CI verified on 7902ddf |
-| 9 | M31–M35 | active (M31 locally complete; M32 in progress) |
+| 9 | M31–M35 | active (M35 hosted validation pending) |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.
 **Phase 8 (M27–M30):** complete; local stabilization and hosted CI verified on `7902ddf`.
-**Phase 9 (M31–M35):** active; M31 locally verified, M32 port routing in progress.
+**Phase 9 (M31–M35):** active; M31–M34 locally verified, M35 local checks passed and hosted validation pending.
 
 ---
 

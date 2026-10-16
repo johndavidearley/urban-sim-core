@@ -24,6 +24,7 @@ add_executable(test_core
   LandValueSystemTests.cpp
   TransitSystemTests.cpp
   RegionalConnectionSystemTests.cpp
+  RegionalDiagnosticsTests.cpp
   RegionalAccountingTests.cpp
   RegionalLogisticsTests.cpp
   PortToolTests.cpp

@@ -4,6 +4,7 @@
 #include "src/visualization/VisualizerHud.hpp"
 #include "src/visualization/VisualizerRender.hpp"
 #include "src/visualization/WindowHost.hpp"
+#include "src/visualization/RegionalManagement.hpp"
 #include "gtest/gtest.h"
 #include <algorithm>
 using namespace visualizer;
@@ -447,4 +448,48 @@ TEST(VisualizerGeometry, PortObjectsKeepGeometryAndShadowsWithinTheirTile) {
       EXPECT_GT(v.a,0.f); EXPECT_LE(v.a,1.f);
     }
   }
+}
+
+TEST(RegionalManagement, ControlsStayInsideMinimumWindowAndUseExclusiveHitBounds) {
+  const auto panel=regionalPanelRect(800,640);
+  EXPECT_GE(panel.x,0); EXPECT_GE(panel.y,0);
+  EXPECT_LE(panel.x+panel.w,800); EXPECT_LE(panel.y+panel.h,640);
+  for (int action=0;action<10;++action) {
+    const auto r=regionalControlRect(action,800,640);
+    EXPECT_GE(r.x,panel.x); EXPECT_LE(r.x+r.w,panel.x+panel.w);
+    EXPECT_GE(r.y,panel.y); EXPECT_LE(r.y+r.h,panel.y+panel.h);
+    EXPECT_EQ(regionalHitTest(r.x,r.y,800,640),action);
+    EXPECT_EQ(regionalHitTest(r.x+r.w,r.y,800,640),-1);
+  }
+}
+TEST(RegionalManagement, SelectionUsesStableConstructedTerminalIds) {
+  regional::Connection airport; airport.id=9; airport.kind=regional::Kind::Airport; airport.constructed=true;
+  auto port=airport; port.id=3; port.kind=regional::Kind::CargoPort;
+  auto dormant=port; dormant.id=1; dormant.constructed=false;
+  auto road=port; road.id=2; road.kind=regional::Kind::RoadGateway;
+  const auto terminals=managedTerminals({airport,dormant,road,port});
+  ASSERT_EQ(terminals.size(),2u);
+  EXPECT_EQ(terminals[0].id,3u); EXPECT_EQ(terminals[1].id,9u);
+}
+
+TEST(RegionalManagement, HotelOccupancyIsSeparateFromJobsAndClosurePolicy) {
+  EntityStore store;
+  Building hotel; hotel.id=8; hotel.type=BuildingType::Commercial;
+  hotel.hotelBeds=32; hotel.hotelOpen=false; hotel.capacity=12; hotel.occupancy=7;
+  store.upsertBuilding(hotel);
+  auto other=hotel; other.id=3; other.hotelOpen=true; store.upsertBuilding(other);
+  auto shop=hotel; shop.id=1; shop.hotelBeds=0; store.upsertBuilding(shop);
+  tourism::State state; state.tick=10;
+  state.stays={{8,6,11},{3,9,12},{8,4,13}};
+  const auto hotels=managedHotels(store,state);
+  ASSERT_EQ(hotels.size(),2u);
+  EXPECT_EQ(hotels[0].building.id,3u); EXPECT_EQ(hotels[0].guests,9u);
+  EXPECT_EQ(hotels[1].guests,10u); EXPECT_EQ(hotels[1].building.occupancy,7);
+  EXPECT_FALSE(hotels[1].building.hotelOpen);
+  EXPECT_EQ(state.stays.size(),3u);
+  EXPECT_FALSE(regionalControlEnabled(4,true,hotels.size()));
+  EXPECT_TRUE(regionalControlEnabled(3,true,hotels.size()));
+  EXPECT_TRUE(regionalControlEnabled(7,true,hotels.size()));
+  EXPECT_FALSE(regionalControlEnabled(7,true,0));
+  EXPECT_TRUE(regionalControlEnabled(6,true,0));
 }

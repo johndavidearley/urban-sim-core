@@ -140,6 +140,13 @@ Controls:
   Municipal fees are $2 per admitted day visitor and $4 per occupied bed per tick,
   with $1 of visitor services per day visitor/occupied bed. The budget separates
   these amounts from existing commercial taxes, maintenance and terminal upkeep.
+- `U` or **Connections**: manage terminals and hotels, inspect completed cargo,
+  visitor/travel/fee measurements, change terminal operation/capacity or hotel
+  Open/Closed policy, and locate the selected facility on the service overlay.
+  Measured regional bottlenecks highlight the Connections button. **Next Alert**
+  and **Manage Alert** lead to the relevant terminal, hotel or transport controls.
+  Paused edits preserve the last measured alert until the next tick; these
+  completed-report diagnostics are separate from the debounced city alerts (F7).
 - Left-drag: preview and build an x-then-y road while the road tool is active
 - Right-click: cancel the current road drag
 - Arrow keys: pan viewport
@@ -898,3 +905,11 @@ exact continuation scenarios in `playtest/examples/phase8_stabilization.py`.
 New snapshots preserve the entity allocator counter so continuing in the GUI
 and headless CLI assigns identical new IDs, including after removed entities.
 Older snapshots remain supported. See `docs/PLAYTESTING.md` for reproduction.
+
+
+M35 local evidence tools are documented in [PLAYTESTING.md](docs/PLAYTESTING.md)
+and [REGIONAL_BENCHMARK.md](tools/REGIONAL_BENCHMARK.md). The retained Phase 9
+stabilization script exercises mature mixed-access closures, demolition, load and
+recovery; the optional benchmark target separates shared tick CPU time from
+rendering/IPC and reports routing/cache sizes without hardware-dependent test
+thresholds.

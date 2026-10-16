@@ -11,8 +11,12 @@ persistence and measured capacity are available; cargo uses fulfilled-trade
 pricing. Bounded visitor demand, hotel cohorts and resident-first road/transit
 travel remain separate from residents. Hotels have Open/Closed controls.
 Explicit municipal fees and visitor-service costs reconcile to the treasury,
-debt and history without crediting private spending. M35 unified management,
-integrated balance/performance and hosted Phase 9 validation remain next.
+debt and history without crediting private spending. M35 has started with a
+unified Connections / Tourism panel, terminal/hotel controls and actionable
+completed-report regional alerts. Local balance/performance, mature stress and
+continuation checks pass; exact-reviewed-commit hosted Phase 9 validation remains.
+Hotel Open/Closed controls, guest/bed inspection and facility map navigation are
+now included in the management panel.
 See `ROADMAP.md` and `PHASE9.md`. Hosted CI has not yet tested the Phase 9
 working-tree changes.
 
@@ -1071,3 +1075,91 @@ continuation and identical replays. Evidence:
 
 M34 is complete locally. M35 unified regional/tourism management, integrated
 balance/performance, sustained rendered playtests and hosted Phase 9 CI remain.
+
+
+### M35 started: unified management, October 16, 2026
+
+Added the first Connections / Tourism panel (U), combining current policy with
+completed cargo/visitor/travel/accounting measurements and unmet-access/bed
+counts. Native mouse and keyboard controls select constructed terminals, change
+operation/capacity and toggle tourism; MCP exposes their bounds and focus.
+Strict local build, 564 CTest cases and rendered default/minimum-window acceptance
+passed. See `PHASE9.md` for scope and retained evidence. M35 remains in progress;
+integrated hotel editing, map/alert/overlay navigation, stress/recovery and
+performance scenarios, host parity and exact-commit hosted CI remain pending.
+
+
+### M35 continued: hotel management and facility navigation
+
+Connections / Tourism now browses hotels as well as terminals. Open/Closed
+controls preserve measured guests while paused; closures release cohorts on the
+next tick and retain commercial jobs/upkeep. Hotel beds and worker capacity are
+shown separately from completed guest counts. Locate on Map pins a hotel or
+terminal and switches to the service coverage overlay; the tile inspector labels
+hotel policy/capacity. F6/F7/F8 switch to Budget/Alerts/Transit. MCP exposes the
+new controls and tab/selection state. Loading resets management selection.
+
+The native closure/recovery scenario fills a road-only hotel, closes it with
+active guests, verifies early departures and ledger totals, reloads the paused
+closure, reopens via keyboard, and checks twelve further ticks. Two deterministic
+replays match. Strict build and 565 CTest cases pass; management layout and map
+navigation were inspected at minimum window size. Evidence is retained in
+`playtest-artifacts/m35-hotels-20261016/REPORT.md`. Mixed-access stress, actionable
+regional alerts, scale/performance and exact-commit hosted CI remain pending.
+
+
+### M35 continued: measured regional alerts and mixed-access recovery
+
+The Connections button highlights measured passenger-access, bed, cargo-admission,
+cargo-delivery or local-travel bottlenecks. Next Alert / Manage Alert select the
+relevant terminal or hotel, or open Transit. Blocked passenger terminals take
+priority over saturated ready terminals. Counts/ticks come from completed reports;
+paused edits preserve warnings until a subsequent measurement. These derived
+alerts add no persistence fields and leave city-alert debounce/cooldown unchanged.
+F7 links to regional management with U; MCP `regional_alerts` and CLI playable
+continuation expose the same diagnostic model.
+
+A retained 32x32 mixed road/sea/air/cargo fixture has residents, a shared-capacity
+bus and one hotel. It measures twenty ticks across baseline, airport closure,
+reopening and recovery. Closing the airport reduces day admissions from 221 to
+160; native Manage Alert selects that airport, and reopening restores 219 on the
+next tick as demand evolves. Bus use remains bounded (12 residents + 18 visitors
+at tick 24; 26 + 4 at tick 40). Cargo flows, visitor demand splits and treasury
+categories reconcile each tick; twelve-tick GUI/CLI continuation matches, and
+two fresh-process replays match. Strict build, 569 CTest cases and 7 Python tests
+pass. Evidence: `playtest-artifacts/m35-alerts-20261016/REPORT.md`.
+
+M35 remains in progress: this small mixed fixture does not establish mature-scale
+performance or long-duration stability. Those measurements, broader closure/load
+stress and exact-reviewed-commit hosted strict/sanitizer CI remain.
+
+
+### M35 local gates verified: scale, endurance and recovery
+
+The retained 96x96 legacy city (6,937 residents at input) continues without
+fabricated visitors. A paid mixed-access extension then passes 1,320 rendered
+stress/recovery ticks, including airport/shore-passenger closure, road-only
+arrivals, hotel closure, cargo-port demolition, closure save/load and recovery.
+Passenger admissions fall from about 266 to 160 and then 100 as modes close;
+reopening restores them. Cargo delivery falls from 300 to 100 goods when the
+port is demolished and returns to 300 after rebuilding; finite logistics stays
+enabled. Block histories reconcile cash, and full twenty-tick GUI/CLI continuation
+and two 90-step fresh-process replays match. Final rendered population is 7,455.
+
+An optional strict-built regional benchmark and retained profile runner measure
+6,000 ticks across small 32x32, mature legacy 96x96 and mature mixed 96x96 saves.
+Warm/cold modes agree on final world checksums, funds, tourism and cargo. Mean
+retained-cache tick costs are 0.915, 7.353 and 7.483 ms respectively on this
+x86_64 macOS/Clang 17 RelWithDebInfo host. File/render/inspection time is excluded;
+raw distributions and routing/cache sizes are retained. This is bounded fixture
+evidence, not a universal FPS or maximum-city claim. No rates/costs were tuned.
+
+Validation: 569 normal CTest cases, 567 headless ASan/UBSan CTest cases, seven
+Python unit tests and a 100-tick mature mixed sanitizer benchmark pass. Local
+macOS sanitizer runs disable leak detection. Tools and reproduction instructions
+are in `tools/REGIONAL_BENCHMARK.md` and `docs/PLAYTESTING.md`; raw evidence is in
+`playtest-artifacts/m35-scale-20261016/REPORT.md`.
+
+M35's first three roadmap checklists are locally verified. The milestone remains
+open solely for exact-reviewed-commit hosted strict Linux/macOS/Windows,
+ASan/UBSan and TSan validation. Working-tree changes are still uncommitted.

@@ -823,3 +823,56 @@ separate fees/costs, treasury totals and cash, paused save/load, strict tampered
 import rejection before mutation, minimum-window budget readability, shutdown
 with zero charges and two identical replays. C++ checks include debt repayment,
 legacy absence without retroactive charges and report/ledger reconciliation.
+
+
+The **U** shortcut or **Connections** button opens the regional/tourism management
+panel. `inspect(section="ui")` exposes `regional_close`, `regional_prev`,
+`regional_next`, `regional_operation`, `regional_capacity`, `regional_tourism`, `regional_tab` and `regional_locate`
+controls with bounds, enabled state and focus. State `ui.regional` indicates the
+panel is open. Tab/Up/Down move focus, Enter activates, Left/Right browse
+constructed terminals, Escape closes, Space pauses and N steps while paused.
+Policy edits preserve completed-tick reports until the next simulation tick.
+
+The panel's **View Hotels / View Terminals** button switches the browsed asset
+type. Hotel operation uses the same Open/Closed policy as MCP `budget.set_hotel`;
+beds and worker capacity remain fixed. Hotel guest counts use the last completed
+tourism state, including guests awaiting departure after a paused closure.
+**Locate on Map** pins the selected facility and opens the service coverage
+overlay. F6/F7/F8 switch directly to Budget/Alerts/Transit. State
+`ui.regional_hotel_tab` and `ui.regional_selected_hotel` expose the hotel tab and
+selection index. Load resets management selection and closes the panel.
+
+`inspect(section="regional_alerts")` returns at most five derived completed-report
+bottlenecks: visitor access, hotel beds, cargo access/capacity, local cargo
+delivery and local visitor travel. Each item includes `problem`, `tick`, `unmet`,
+`target_id` and `advice`. `target_id=0` means a citywide problem. Alert quantities
+come from saved reports and do not clear merely because policy was edited while
+paused. These diagnostics do not change city-alert debounce/cooldown or add save
+records. New saves and legacy saves without measurements produce no fabricated
+alerts. CLI playable continuation prints the same diagnostics.
+
+Management controls `regional_alert_next` and `regional_alert_manage` cycle and
+act on the measured bottleneck. Manage selects a terminal or hotel, or opens
+Transit for local visitor travel. `ui.regional_alert_count` and
+`ui.regional_selected_alert` expose the current list size and selected index.
+For passenger access, a measured blocked terminal takes priority over a full
+ready terminal, then the lowest ID breaks ties. Cargo admission shortfalls remain
+citywide; an undelivered admitted cargo row can identify a connection. A removed
+facility falls back to the relevant management tab rather than a stale map pin.
+
+
+For longer M35 evidence, `playtest/examples/phase9_stabilization.py` accepts
+`--executable`, `--legacy-save` (the retained mature 96x96 M30 checkpoint) and
+`--artifacts`. It first verifies legacy continuation without fabricated visitors,
+then constructs a connected shore/air/hotel extension through semantic tools on
+an explicit coast fixture. It retains 1,320 rendered stress/recovery ticks after
+setup, checks complete per-batch treasury history and flow/travel constraints,
+loads during a closure, compares full GUI/CLI continuation and replays twice.
+Native alert editing remains covered by `test_regional_*` acceptance tests.
+The script never overwrites its source save. `measurements.json` timestamps are
+step-request latency (including graphics/IPC), not engine tick CPU time.
+
+The optional `UrbanSimCore-regional-benchmark` target profiles the shared tick
+path without file/render time, with retained/warm and reconstructed/cold host
+caches and per-tick invariants. See `tools/REGIONAL_BENCHMARK.md` for commands,
+measurement boundaries and cache-count interpretation.

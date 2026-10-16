@@ -34,6 +34,8 @@
 #include "src/world/Zoning.hpp"
 
 #include "src/visualization/VisualizerHud.hpp"
+#include "src/visualization/RegionalManagement.hpp"
+#include "src/gameplay/TerminalTool.hpp"
 #include "src/visualization/VisualizerOverlay.hpp"
 #include "src/visualization/VisualizerRender.hpp"
 
@@ -216,7 +218,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     drawText(renderer, x + 24, y + 450, diagnostics.checkedTick ? "LAST CHECKED TICK " + std::to_string(diagnostics.checkedTick) : "NO COMPLETED TICK CHECKED YET", {135, 215, 240}, 1);
     drawText(renderer, x + 24, y + 470, "ALERTS NEED 3 BAD TICKS. RECOVERY NEEDS 2 HEALTHY TICKS.", {165, 185, 205}, 1);
     drawText(renderer, x + 24, y + 490, "REPEAT NOTICES WAIT 60 TICKS. PAUSED EDITS WAIT FOR A TICK.", {165, 185, 205}, 1);
-    drawText(renderer, x + 24, y + 512, "VIEW OPENS A RELEVANT OVERLAY OR THE BUDGET. F7 OR ESC CLOSES.", {165, 185, 205}, 1);
+    drawText(renderer, x + 24, y + 512, "VIEW: OVERLAY/BUDGET. U: REGIONAL AND TOURISM ALERTS.", {165, 185, 205}, 1);
     return;
   }
   if (trends) {
@@ -880,6 +882,11 @@ void drawTileInspector(
                std::string("BLDG ") + buildingTypeLabel(building->type) + " "
                  + std::to_string(building->occupancy) + "/" + std::to_string(building->capacity),
                {210, 225, 210}, 1);
+      if (building->hotelBeds) {
+        drawText(renderer,x+10,y+111,
+          std::string("HOTEL ")+(building->hotelOpen ? "OPEN" : "CLOSED")+
+          " BEDS "+std::to_string(building->hotelBeds)+" / U MANAGES",{150,225,235},1);
+      }
       if (building->type == BuildingType::Residential) {
         drawText(
             renderer, x + 10, y + 111,
@@ -1234,3 +1241,97 @@ std::string makeHudTitle(
 
 
 }  // namespace visualizer
+
+namespace visualizer {
+void drawRegionalPanel(DrawList* renderer,int width,int height,
+  const std::vector<regional::Connection>& connections,size_t selected,
+  const regional::Settlement& cargo,const tourism::Runtime& tourism,
+  uint64_t openBeds,int64_t configuredUpkeep,bool finiteCargo,int focus,
+  const std::vector<ManagedHotel>& hotels,bool hotelTab,size_t selectedHotel,size_t selectedAlert) {
+  const auto p=regionalPanelRect(width,height);
+  drawFilledRect(renderer,p.x,p.y,p.w,p.h,{22,30,39},250);
+  drawRectOutline(renderer,p.x,p.y,p.w,p.h,{140,190,210});
+  auto line=[&](int y,const std::string& text,RGB color=RGB{220,230,240}) {
+    drawText(renderer,p.x+20,p.y+y,text,color,1);
+  };
+  line(18,"CONNECTIONS / TOURISM",{150,225,235});
+  line(42,"U / ESC CLOSE   TAB FOCUS   ENTER APPLY   LEFT/RIGHT SELECT");
+  line(68,"POLICY NOW: TOURISM "+std::string(tourism.enabled ? "ON" : "OFF")+
+    " / CARGO "+(finiteCargo ? "FINITE" : "LEGACY ROAD"));
+  line(88,"OPEN BEDS "+std::to_string(openBeds)+" / TERMINAL UPKEEP $"+
+    std::to_string(configuredUpkeep)+" PER TICK");
+  const auto& r=tourism.report;
+  line(120,r.tick ? "COMPLETED VISITORS T"+std::to_string(r.tick) : "VISITORS: NO COMPLETED TICK");
+  line(140,"DAY "+std::to_string(r.dayArrivals)+" / "+std::to_string(r.requested.day)+
+    "  OVERNIGHT "+std::to_string(r.overnightArrivals)+" / "+std::to_string(r.requested.overnight)+
+    "  STAYING "+std::to_string(r.staying));
+  line(160,"UNMET ACCESS "+std::to_string(r.unmetDayTransport+r.unmetOvernightTransport)+
+    " / BEDS "+std::to_string(r.unmetOvernightBeds),{245,210,135});
+  line(180,"ATTRACTIONS: PARKS "+std::to_string(r.attractions.accessibleParks)+
+    " / QUALITY "+std::to_string(r.attractions.qualityPercent)+" PERCENT");
+  const auto& travel=tourism.travel;
+  line(200,travel.measured ? "LOCAL TRIPS T"+std::to_string(travel.tick)+" ROAD "+std::to_string(travel.road)+
+    " TRANSIT "+std::to_string(travel.transit)+" UNROUTED "+std::to_string(travel.unrouted) : "LOCAL TRIPS: NOT MEASURED");
+  const auto& a=tourism.accounting;
+  line(220,a.measured ? "VISITOR LEDGER T"+std::to_string(a.tick)+" FEES $"+std::to_string(a.fees())+
+    " SERVICES $"+std::to_string(a.services)+" NET $"+std::to_string(a.fees()-a.services) : "VISITOR LEDGER: NOT MEASURED");
+  line(250,cargo.valid ? "CARGO T"+std::to_string(cargo.allocation.tick)+" DELIVERED IN "+
+    std::to_string(cargo.delivered.imports)+" OUT "+std::to_string(cargo.delivered.exports)+
+    " UNMET "+std::to_string(static_cast<uint64_t>(cargo.allocation.unmet.imports)+cargo.allocation.unmet.exports)+
+    " UNDELIVERED "+std::to_string(static_cast<uint64_t>(cargo.undelivered.imports)+cargo.undelivered.exports) : "CARGO: NO FINITE LOGISTICS MEASUREMENT");
+  const auto terminals=managedTerminals(connections);
+  if (hotelTab && hotels.empty()) line(294,"NO HOTELS - K BUILDS A HOTEL WITH 32 BEDS AND 12 JOBS");
+  else if (hotelTab) {
+    selectedHotel=std::min(selectedHotel,hotels.size()-1);
+    const auto& hotel=hotels[selectedHotel];
+    const auto& building=hotel.building;
+    line(294,"HOTEL "+std::to_string(selectedHotel+1)+" / "+std::to_string(hotels.size())+
+      " #"+std::to_string(building.id)+" AT "+std::to_string(building.position.x)+","+std::to_string(building.position.y));
+    line(316,"POLICY NOW: "+std::string(building.hotelOpen ? "OPEN" : "CLOSED")+
+      " BEDS "+std::to_string(building.hotelBeds)+" JOB CAPACITY "+std::to_string(building.capacity));
+    line(342,"GUESTS AT T"+std::to_string(tourism.state.tick)+": "+std::to_string(hotel.guests)+
+      " / DEPARTURES FOLLOW COMPLETED TICKS");
+    line(366,"CLOSURE KEEPS JOBS / UPKEEP. GUESTS LEAVE NEXT TICK.",{245,210,135});
+  }
+  else if (terminals.empty()) line(294,"NO CONSTRUCTED TERMINALS - ROAD-ONLY TOURISM REMAINS AVAILABLE");
+  else {
+    selected=std::min(selected,terminals.size()-1);
+    const auto& c=terminals[selected];
+    const bool goods=c.kind==regional::Kind::CargoPort;
+    const std::string kind=goods ? "CARGO PORT" : c.kind==regional::Kind::Airport ? "AIRPORT" : "PASSENGER TERMINAL";
+    line(294,"TERMINAL "+std::to_string(selected+1)+" / "+std::to_string(terminals.size())+
+      "  #"+std::to_string(c.id)+" "+kind);
+    line(316,"POLICY NOW: "+std::string(c.enabled ? "ON" : "OFF")+" CAPACITY "+
+      std::to_string(goods ? c.goodsPerTick : c.passengersPerTick)+(goods ? " GOODS/TICK" : " PASSENGERS/TICK")+
+      " UPKEEP $"+std::to_string(c.enabled ? regional::terminalSpec(c.kind)->upkeep : 0));
+    if (goods) {
+      const auto row=std::find_if(cargo.allocation.connections.begin(),cargo.allocation.connections.end(),[&](const auto& u){return u.id==c.id;});
+      line(342,cargo.valid && row!=cargo.allocation.connections.end() ? "LAST CARGO: "+std::string(regional::accessName(row->access))+
+        " ADMITTED "+std::to_string(static_cast<uint64_t>(row->imports)+row->exports) : "NO COMPLETED CARGO ROW FOR THIS TERMINAL");
+    } else {
+      const auto row=std::find_if(r.connections.begin(),r.connections.end(),[&](const auto& u){return u.id==c.id;});
+      line(342,row!=r.connections.end() ? "LAST VISITORS: "+std::string(regional::accessName(row->access))+
+        " ARRIVED "+std::to_string(row->day+row->overnight)+" / "+std::to_string(row->capacity) : "NO COMPLETED VISITOR ROW FOR THIS TERMINAL");
+    }
+  }
+  const auto alerts=regional::diagnose(cargo,tourism);
+  if (alerts.empty()) line(394,"NO MEASURED REGIONAL BOTTLENECKS");
+  else {
+    selectedAlert=std::min(selectedAlert,alerts.size()-1);
+    const auto& alert=alerts[selectedAlert];
+    line(394,"ALERT "+std::to_string(selectedAlert+1)+"/"+std::to_string(alerts.size())+
+      " T"+std::to_string(alert.tick)+" "+regional::problemName(alert.problem),{245,210,135});
+    line(414,"UNMET "+std::to_string(alert.unmet)+" - "+regional::problemAdvice(alert.problem),{245,210,135});
+  }
+  line(446,"EDITS APPLY NEXT TICK. SPACE PAUSES; N STEPS WHILE PAUSED.");
+  const char* labels[]={"CLOSE","< PREV","NEXT >","ON/OFF","CAPACITY","TOURISM",
+    hotelTab ? "VIEW TERMINALS" : "VIEW HOTELS","LOCATE ON MAP","NEXT ALERT","MANAGE ALERT"};
+  for (int action=0;action<10;++action) {
+    const auto b=regionalControlRect(action,width,height);
+    const bool enabled=regionalControlEnabled(action,hotelTab,hotelTab ? hotels.size() : terminals.size(),alerts.size());
+    drawFilledRect(renderer,b.x,b.y,b.w,b.h,enabled ? RGB{42,62,75} : RGB{38,40,43});
+    drawRectOutline(renderer,b.x,b.y,b.w,b.h,action==focus ? RGB{255,225,110} : RGB{110,140,160});
+    drawText(renderer,b.x+6,b.y+8,labels[action],enabled ? RGB{235,240,245} : RGB{115,120,125},1);
+  }
+}
+}
