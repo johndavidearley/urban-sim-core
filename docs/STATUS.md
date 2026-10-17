@@ -1,12 +1,19 @@
 # Project Status
 
-Last verified: October 16, 2026
+Last verified: October 17, 2026
 
 Waste-to-energy incinerators are implemented: native construction, recycling-first
 residual waste processing, fuel-dependent electricity (up to 6 MW per plant),
 air pollution, service funding and save compatibility. Local strict validation
 passed 582 C++ tests, seven Python unit tests and 34 rendered tests. See
 [WASTE_TO_ENERGY.md](WASTE_TO_ENERGY.md) for costs, controls and model limits.
+Hosted CI passed on implementation commit `5da5ee8` in
+[run 38996056201](https://github.com/johndavidearley/urban-sim-core/actions/runs/38996056201),
+including strict Windows/macOS/Linux, ASan/UBSan, TSan and Linux rendered
+playtests. The packaged macOS Intel candidate passed installed graphics smoke
+and native incinerator acceptance with save/load and two identical replays.
+Evidence: `playtest-artifacts/incinerator/REPORT.md`.
+
 
 Phases 6–8 (M17–M30) are implemented and verified. Hosted strict builds on
 Linux/macOS/Windows, ASan/UBSan and TSan passed for `7902ddf` in
