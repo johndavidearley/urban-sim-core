@@ -1,5 +1,7 @@
 # Phase 11: surface water and early waterworks
 
+M37 and Phase 11 are complete.
+
 M37 addresses the missing surface-water sources observed after M36. Existing
 flat saves are retained; their terrain is not regenerated beneath a built city.
 
@@ -59,5 +61,29 @@ replays. Top-down and minimum-window isometric captures were inspected. A clippe
 placement warning exposed by this check was fixed, with geometry coverage for
 both text sizes. Evidence is retained under `playtest-artifacts/m37-water/`.
 
-Hosted CI, the current-host package smoke and the full explicit-flat M36 rerun
-remain pending at implementation commit time.
+The complete explicit-flat M36 rerun passed to 10,379 residents with exact saved
+checkpoint/continuation and its original canonical hash. The clean-source macOS
+Intel ZIP was extracted into a path containing a space; its installed executable
+passed native shore construction, F5/F9 and both replays with Vulkan environment
+overrides removed. Its launcher passed all 16 graphics probes with an isolated
+save directory. Package, checksum, manifest and evidence are retained under
+`playtest-artifacts/m37-water/`; see `REPORT.md` there.
+
+Hosted CI passed on implementation commit
+`e89a6012c9098add2c309308c63d9c6a31cb96ee` in
+[run 38991588321](https://github.com/johndavidearley/urban-sim-core/actions/runs/38991588321):
+strict Windows/macOS/Linux builds/tests, ASan/UBSan, TSan, Linux X11/Wayland
+rendered/graphics acceptance and installed macOS graphics/install checks.
+
+Run the focused native acceptance with:
+
+```sh
+URBAN_SIM_PLAYTEST_EXECUTABLE="$PWD/build-strict/bin/UrbanSimCore-playtest" \
+  PYTHONPATH=playtest .venv/bin/python -m unittest discover \
+  -s playtest/tests -p test_rendered.py -k native_default_river
+```
+
+The retained macOS Intel ZIP is
+`playtest-artifacts/m37-water/package/UrbanSimCore-m37-rc1-macos-x86_64.zip`.
+Its SHA-256 is
+`065c0de48e05b943745d9396222f229ebf48928fe59281d099a159dbc2be0229`.
