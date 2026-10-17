@@ -104,7 +104,8 @@ Controls:
 - `B`: toggle the bulldozer tool
 - `S`: activate the service tool; press repeatedly to cycle Fire, Police,
   Health, Education, Power, Water, Sanitation, Garbage, Recycling, Cemetery,
-  and Crematorium
+  Crematorium, and Incinerator. Incinerators burn residual garbage for power
+  (up to 6 MW)
 - `P`: activate the district tool; press repeatedly to cycle General,
   Industrial, and Tech Hub archetypes. Left-drag paints a policy rectangle
   (free). Click an existing district to select it; ARCH cycles its archetype

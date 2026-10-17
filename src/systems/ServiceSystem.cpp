@@ -1,4 +1,5 @@
 #include "ServiceSystem.hpp"
+#include "src/systems/WasteSystem.hpp"
 
 #include <algorithm>
 #include <array>
@@ -29,7 +30,8 @@ uint64_t facilitySignature(const std::vector<ServiceFacility>& facilities) {
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.powerCapacityMW)));
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.emissionsKgPerMWh)));
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.waterSupplyUnits)));
-    if (facility.surfaceWater) {
+    if (facility.surfaceWater || facility.type == ServiceType::Incinerator
+        || facility.type == ServiceType::Garbage || facility.type == ServiceType::Recycling) {
       mix(1u);
       mix(static_cast<uint32_t>(std::hash<float>{}(facility.quality)));
     }
@@ -152,6 +154,10 @@ bool ServiceSystem::parseServiceType(const std::string& raw, ServiceType& outTyp
     outType = ServiceType::Cemetery;
     return true;
   }
+  if (normalized == "INCINERATOR" || normalized == "WASTE_TO_ENERGY") {
+    outType = ServiceType::Incinerator;
+    return true;
+  }
   if (normalized == "CREMATORIUM" || normalized == "CREMATION") {
     outType = ServiceType::Crematorium;
     return true;
@@ -186,6 +192,8 @@ const char* ServiceSystem::serviceTypeToString(ServiceType type, bool surfaceWat
       return "Cemetery";
     case ServiceType::Crematorium:
       return "Crematorium";
+    case ServiceType::Incinerator:
+      return "Incinerator";
     default:
       return "Unknown";
   }
@@ -292,6 +300,7 @@ void ServiceSystem::buildCache(
   ServiceCoverageCache& cache
 ) {
   cache.entries.clear();
+  cache.wasteFacilities.clear();
   cache.powerGenerationCapacityMW = 0.0f;
   cache.powerWeightedEmissions = 0.0f;
   cache.waterSupplyUnits = 0.0f;
@@ -328,11 +337,17 @@ void ServiceSystem::buildCache(
         ? intakeCleanFraction(roads, facilities, facility.position) : 1.f;
       cache.waterSupplyUnits += std::max(0.0f, facility.waterSupplyUnits) * clean;
     }
+    if (facility.type == ServiceType::Garbage || facility.type == ServiceType::Recycling)
+      cache.wasteFacilities.push_back(facility);
     Coord anchor;
     if (!roads.resolveRoadAnchor(facility.position, anchor)) {
       continue;
     }
     groups[{facility.type, facility.maxTravelDistance}].push_back(anchor);
+    if (facility.type == ServiceType::Incinerator) cache.wasteFacilities.push_back(facility);
+    if (facility.type == ServiceType::Incinerator) {
+      groups[{ServiceType::Power, facility.maxTravelDistance}].push_back(anchor);
+    }
   }
 
   for (auto& [key, sources] : groups) {
@@ -402,7 +417,9 @@ bool ServiceSystem::isResultCacheValid(
   // (create/remove/clear/upsert). A full building-position fingerprint was
   // previously rehashed on every validity check and dominated large cities
   // even on pure cache hits.
-  return cache.cachedStoreMutationVersion == store.getMutationVersion();
+  return cache.cachedStoreMutationVersion == store.getMutationVersion()
+    && std::none_of(cache.wasteFacilities.begin(), cache.wasteFacilities.end(),
+      [](const ServiceFacility& f) { return f.type == ServiceType::Incinerator; });
 }
 
 void ServiceSystem::storeCachedResult(
@@ -545,6 +562,14 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   summary.recyclingCoverage  = coveredByType[typeIndex(ServiceType::Recycling)] / denom;
   summary.cemeteryCoverage   = coveredByType[typeIndex(ServiceType::Cemetery)] / denom;
   summary.crematoriumCoverage = coveredByType[typeIndex(ServiceType::Crematorium)] / denom;
+  summary.incineratorCoverage = coveredByType[typeIndex(ServiceType::Incinerator)] / denom;
+  const auto waste = summary.incineratorCoverage > 0.f
+    ? WasteSystem::evaluate(store, cache.wasteFacilities, summary) : WasteSummary{};
+  const float weightedEmissions = cache.powerWeightedEmissions
+    + waste.powerGenerationMW * waste.emissionsKgPerMWh;
+  summary.powerGenerationMW += waste.powerGenerationMW;
+  summary.powerEmissionsKgPerMWh = summary.powerGenerationMW > 0.f
+    ? weightedEmissions / summary.powerGenerationMW : 0.f;
   summary.powerSupplyRatio = summary.powerDemandMW > 0.0f
     ? std::min(1.0f, summary.powerGenerationMW / summary.powerDemandMW)
     : 1.0f;

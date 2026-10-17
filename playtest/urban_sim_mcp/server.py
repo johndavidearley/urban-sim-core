@@ -107,6 +107,7 @@ INSPECTION_REFERENCE = {
                 "recycling_coverage",
                 "cemetery_coverage",
                 "crematorium_coverage",
+                "incinerator_coverage",
             ],
             "utility_supply": [
                 "power_demand_mw",
@@ -116,6 +117,8 @@ INSPECTION_REFERENCE = {
                 "water_supply",
                 "water_supply_ratio",
             ],
+            "waste_incinerated": "residual waste units burned per tick",
+            "waste_power_mw": "fuel-dependent waste-to-energy output in MW",
             "deathcare_backlog": "residents awaiting disposition",
             "fraction_units": "coverage, supply ratios and rates are 0..1",
         },
@@ -342,7 +345,7 @@ def create_server(session: Session) -> FastMCP:
             list[Annotated[int, Field(ge=0, le=20)]], Field(min_length=5, max_length=5)
         ] | None = None,
         service_percent: Annotated[
-            list[Annotated[int, Field(ge=0, le=100)]], Field(min_length=11, max_length=11)
+            list[Annotated[int, Field(ge=0, le=100)]], Field(min_length=11, max_length=12)
         ] | None = None,
     ) -> dict[str, Any]:
         """Inspect/open the city budget or set integer tax percentages (R,C,I,O,income).
@@ -351,7 +354,7 @@ def create_server(session: Session) -> FastMCP:
         The next-tick estimate excludes new growth, visitors and debt flows. Last-tick
         ledger is immutable until the next simulation tick. Service funding is
         ordered Fire, Police, Health, Education, Power, Water, Sanitation,
-        Garbage, Recycling, Cemetery, Crematorium; 0..100%, default all 100.
+        Garbage, Recycling, Cemetery, Crematorium, Incinerator; 0..100%, default all 100.
         Cuts reduce reach, utility supply, and processing capacity; zero closes
         operation without removing facilities. reset restores the entire budget;
         reset_funding preserves taxes. services/taxes/trends select the panel tab. History contains the latest

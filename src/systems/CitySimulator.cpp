@@ -411,7 +411,7 @@ SimResult CitySimulator::run(
     WasteSummary waste;
     {
       const auto t0 = Clock::now();
-      waste = WasteSystem::evaluate(store, fundedFacilities, service);
+      waste = WasteSystem::evaluate(store, coverageCache.wasteFacilities, service);
       if (waste.pollutionPenalty > 0.0f) {
         city_sim::applyWastePollution(map, waste.pollutionPenalty, ax0, ay0, ax1, ay1);
         tickResPollution = city_sim::averageResidentialPollution(map, store);

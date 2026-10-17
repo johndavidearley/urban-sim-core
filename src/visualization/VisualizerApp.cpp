@@ -832,6 +832,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
             else policy.taxPercent = BudgetPolicy{}.taxPercent;
             setBudgetPolicy(policy);
           }
+          if (action == 43 || action == 44) {
+            auto policy = liveState.budgetPolicy;
+            policy.servicePercent[11] = std::clamp(policy.servicePercent[11] + (action == 43 ? -25 : 25), 0, 100);
+            setBudgetPolicy(policy);
+          }
           if (action >= 14 && action < 36) {
             auto policy = liveState.budgetPolicy;
             const size_t index = static_cast<size_t>((action - 14) / 2);
@@ -847,8 +852,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   };
   auto cycleBudgetFocus = [&](int direction) {
     int candidate=budgetFocus<0 ? (direction>0?-1:0) : budgetFocus;
-    for (int i=0;i<43;++i) {
-      candidate=(candidate+direction+43)%43;
+    for (int i=0;i<45;++i) {
+      candidate=(candidate+direction+45)%45;
       if (budgetControlEnabled(candidate,liveState.budgetPolicy,budgetServices,budgetTrends,budgetAlerts)) {budgetFocus=candidate;return;}
     }
   };
@@ -969,6 +974,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"water_coverage", liveState.serviceSummary.waterCoverage},
            {"sanitation_coverage", liveState.serviceSummary.sanitationCoverage},
            {"garbage_coverage", liveState.serviceSummary.garbageCoverage},
+           {"incinerator_coverage", liveState.serviceSummary.incineratorCoverage},
+           {"waste_incinerated", liveState.waste.incinerated},
+           {"waste_power_mw", liveState.waste.powerGenerationMW},
            {"recycling_coverage", liveState.serviceSummary.recyclingCoverage},
            {"cemetery_coverage", liveState.serviceSummary.cemeteryCoverage},
            {"crematorium_coverage",
@@ -2131,7 +2139,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       const auto residents = population.getTotalPopulation();
       const float joblessness = residents ? static_cast<float>(residents-std::min(residents,population.getTotalEmployed()))/residents : 0.f;
       drawTileInspector(renderer, map, roads, store, deliveredFacilities, hoveredTile,
-                        &districts, &diagnostics, joblessness,map.isValid(pinnedInspector));
+                        &districts, &diagnostics, joblessness,map.isValid(pinnedInspector), &liveState.waste);
     }
     if (!cleanUiMode) {
       if (const District *selected =

@@ -79,21 +79,24 @@ Rect budgetPanelRect(int windowWidth, int windowHeight) {
 }
 bool budgetControlVisible(int action, bool services, bool trends, bool alerts) {
   if (action == 0 || action == 12 || action == 13 || action == 36 || action == 37) return true;
+  if (action == 43 || action == 44) return services && !trends && !alerts;
   if (action >= 38) return alerts;
   if (alerts) return false;
   if (trends) return false;
   return !((action >= 2 && action < 12 && services) || (action >= 14 && !services));
 }
 bool budgetControlEnabled(int action,const BudgetPolicy& policy,bool services,bool trends,bool alerts) {
-  if (action<0 || action>=43 || !budgetControlVisible(action,services,trends,alerts)) return false;
+  if (action<0 || action>=45 || !budgetControlVisible(action,services,trends,alerts)) return false;
   if (action>=2 && action<12) {const int v=policy.taxPercent[(action-2)/2];return action%2 ? v<20 : v>0;}
+  if (action==43 || action==44) {const int v=policy.servicePercent[11];return action==44 ? v<100 : v>0;}
   if (action>=14 && action<36) {const int v=policy.servicePercent[(action-14)/2];return action%2 ? v<100 : v>0;}
   return true;
 }
 Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool services, bool, bool) {
   const auto panel = budgetPanelRect(windowWidth, windowHeight);
+  if (action == 43 || action == 44) return {panel.x + 220 + (action - 43) * 40, panel.y + 130 + 11 * 18, 30, 16};
   if (action == 0) return {panel.x + 664, panel.y + 12, 40, 26};
-  if (action == 1) return {panel.x + 24, panel.y + (services ? 338 : 278), 240, 24};
+  if (action == 1) return {panel.x + 24, panel.y + (services ? 352 : 278), 240, 24};
   if (action >= 38 && action < 43) return {panel.x + 552, panel.y + 116 + (action - 38) * 64, 144, 24};
   if (action == 37) return {panel.x + 264, panel.y + 76, 76, 24};
   if (action == 36) return {panel.x + 184, panel.y + 76, 76, 24};
@@ -107,7 +110,7 @@ Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool servi
   return {};
 }
 int budgetHitTest(int x, int y, int windowWidth, int windowHeight, bool services, bool trends, bool alerts) {
-  for (int action = 0; action < 43; ++action) {
+  for (int action = 0; action < 45; ++action) {
     if (!budgetControlVisible(action, services, trends, alerts)) continue;
     const auto r = budgetControlRect(action, windowWidth, windowHeight, services);
     if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return action;
@@ -157,9 +160,9 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       drawText(renderer, x + 360, row, "$" + std::to_string(serviceCosts[i]), {255, 195, 135}, 1);
       drawText(renderer, x + 520, row, std::to_string(static_cast<int>(serviceCoverage[i] * 100.f)) + "%", {135, 225, 175}, 1);
     }
-    drawText(renderer, x + 360, y + 346, "CIVIC/TRANSPORT $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
+    drawText(renderer, x + 360, y + 360, "CIVIC/TRANSPORT $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
   }
-  for (int action = 0; action < 43; ++action) {
+  for (int action = 0; action < 45; ++action) {
     if (!budgetControlVisible(action, services, trends, alerts)) continue;
     const auto r = budgetControlRect(action, windowWidth, windowHeight, services);
     const bool hovered = mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
@@ -168,6 +171,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       const int rate = policy.taxPercent[static_cast<size_t>((action - 2) / 2)];
       disabled = (action % 2 == 0 && rate == 0) || (action % 2 == 1 && rate == 20);
     }
+    if (action == 43 || action == 44) disabled = !budgetControlEnabled(action, policy, services, trends, alerts);
     if (action >= 14 && action < 36) {
       const int percent = policy.servicePercent[static_cast<size_t>((action - 14) / 2)];
       disabled = (action % 2 == 0 && percent == 0) || (action % 2 == 1 && percent == 100);
@@ -179,8 +183,8 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     drawRectOutline(renderer, r.x, r.y, r.w, r.h, activeTab ? RGB{255, 225, 110} :
                     (disabled ? RGB{65, 70, 80} : RGB{135, 165, 190}));
     const char* label = action == 0 ? "X" : (action == 1 ? (services ? "RESTORE FULL FUNDING" : "RESET DEFAULT TAXES") :
-      (action == 12 ? "TAXES" : (action == 13 ? "SERVICES" : (action == 36 ? "TRENDS" : (action == 37 ? "ALERTS" : (action >= 38 ? "VIEW" : (action % 2 == 0 ? "-" : "+")))))));
-    drawText(renderer, r.x + 10, r.y + (action >= 14 && action < 36 ? 3 : 7), label, disabled ? RGB{95, 100, 110} : RGB{235, 245, 250}, 1);
+      (action == 12 ? "TAXES" : (action == 13 ? "SERVICES" : (action == 36 ? "TRENDS" : (action == 37 ? "ALERTS" : (action == 43 ? "-" : (action == 44 ? "+" : (action >= 38 ? "VIEW" : (action % 2 == 0 ? "-" : "+")))))))));
+    drawText(renderer, r.x + 10, r.y + (((action >= 14 && action < 36) || action >= 43) ? 3 : 7), label, disabled ? RGB{95, 100, 110} : RGB{235, 245, 250}, 1);
   }
   if (alerts) {
     const auto& v = diagnostics.inputs;
@@ -300,7 +304,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   drawText(renderer, x + 360, y + 316, "SURPLUS $" + std::to_string(preview.totalRevenue - preview.totalExpenses), {255, 220, 130}, 1);
   drawText(renderer, x + 360, y + 336, "EXCLUDES GROWTH, VISITORS AND DEBT", {165, 185, 205}, 1);
   }
-  drawFilledRect(renderer, x + 24, y + 368, panel.w - 48, 1, {85, 105, 125});
+  drawFilledRect(renderer, x + 24, y + (services ? 382 : 368), panel.w - 48, 1, {85, 105, 125});
   drawText(renderer, x + 24, y + 512, services ? "CUTS REDUCE REACH AND CAPACITY. ZERO SUSPENDS OPERATION." : "TOOL PURCHASES ARE PAID OUTSIDE TICK TOTALS.", {165, 185, 205}, 1);
   if (!ledger.valid) {
     drawText(renderer, x + 24, y + 392, "NO COMPLETED TICK RECORDED YET", {185, 205, 220}, 1);
@@ -818,7 +822,7 @@ void drawTileInspector(
   const EntityStore& store,
   const std::vector<ServiceFacility>& facilities,
   Coord coord,
-  const DistrictSystem* districts, const BuildingDiagnostics* diagnostics, float cityJoblessness,bool pinned
+  const DistrictSystem* districts, const BuildingDiagnostics* diagnostics, float cityJoblessness,bool pinned, const WasteSummary* waste
 ) {
   if (!map.isValid(coord)) {
     return;
@@ -911,6 +915,10 @@ void drawTileInspector(
                std::string("SERVICE ") + ServiceSystem::serviceTypeToString(facility.type, facility.surfaceWater)
                  + " RANGE " + std::to_string(facility.maxTravelDistance),
                serviceFacilityColor(facility.type), 1);
+      if (facility.type == ServiceType::Incinerator && waste) {
+        drawText(renderer, x + 10, y + 95, "CITY BURNED " + std::to_string(waste->incinerated)
+          + "/TICK POWER " + std::to_string(waste->powerGenerationMW) + " MW", {255,190,105}, 1);
+      }
       if (facility.surfaceWater) {
         const std::string info = facility.type == ServiceType::Water
           ? "SOURCE CLEAN " + std::to_string(static_cast<int>(100 * ServiceSystem::intakeCleanFraction(roads, facilities, coord))) + "%"

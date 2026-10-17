@@ -21,10 +21,11 @@ enum class ServiceType : int {
   Garbage = 7,
   Recycling = 8,
   Cemetery = 9,
-  Crematorium = 10
+  Crematorium = 10,
+  Incinerator = 11
 };
 
-constexpr size_t kServiceTypeCount = 11;
+constexpr size_t kServiceTypeCount = 12;
 
 enum class PowerSourceType : int {
   Generic = 0,
@@ -83,6 +84,7 @@ struct ServiceCoverageSummary {
   float recyclingCoverage = 0.0f;
   float cemeteryCoverage = 0.0f;
   float crematoriumCoverage = 0.0f;
+  float incineratorCoverage = 0.0f;
   float powerDemandMW = 0.0f;
   float powerGenerationMW = 0.0f;
   float powerSupplyRatio = 1.0f;
@@ -99,7 +101,7 @@ struct ServiceCoverageSummary {
 };
 
 // Bit pack of which ServiceType values cover a road node. kServiceTypeCount
-// is 11, so a uint16_t is enough for one bit per type.
+// is 12, so a uint16_t is enough for one bit per type.
 using ServiceCoverageMask = uint16_t;
 static_assert(kServiceTypeCount <= 16, "ServiceCoverageMask needs more bits");
 
@@ -114,6 +116,8 @@ struct ServiceCoverageCache {
     int maxTravelDistance = 10;
   };
   std::vector<Entry> entries;
+  // Funded waste facilities; fuel-dependent generation is evaluated from live occupancy.
+  std::vector<ServiceFacility> wasteFacilities;
   size_t builtForFacilityCount = 0;
   uint64_t builtForFacilitySignature = 0;
   uint64_t builtForTopologyVersion = static_cast<uint64_t>(-1);

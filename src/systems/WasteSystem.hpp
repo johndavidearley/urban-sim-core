@@ -11,6 +11,10 @@ struct WasteSummary {
   int64_t generated = 0;
   int64_t recycled = 0;
   int64_t landfilled = 0;
+  int64_t incinerated = 0;
+  int64_t incinerationCapacity = 0;
+  float powerGenerationMW = 0.0f;
+  float emissionsKgPerMWh = 650.0f;
   int64_t uncollected = 0;
   int64_t collectionCapacity = 0;
   int64_t recyclingCapacity = 0;

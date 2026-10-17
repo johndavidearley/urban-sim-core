@@ -380,8 +380,9 @@ void drawIsometricFacility(DrawList* renderer, ScreenPoint top, int width, int h
       drawFilledRect(renderer, cx - unit, roofY - height / 3, 2 * unit, 2 * unit, cream);
       break;
     case ServiceType::Power:
+    case ServiceType::Incinerator:
     case ServiceType::Crematorium: {
-      const int chimney = facility.type == ServiceType::Power ? height : height / 2;
+      const int chimney = facility.type != ServiceType::Crematorium ? height : height / 2;
       drawFilledRect(renderer, cx + 2 * unit, roofY - chimney, 2 * unit, chimney, {98, 104, 107});
       drawFilledRect(renderer, cx + unit, roofY - chimney, 4 * unit, unit, cream);
       if (facility.type == ServiceType::Power)

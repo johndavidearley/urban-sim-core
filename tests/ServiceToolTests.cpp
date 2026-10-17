@@ -180,3 +180,16 @@ TEST(ServiceToolTests,
   EXPECT_EQ(ServiceTool::operatingCostPerTick(ServiceType::Sanitation, true),
             8);
 }
+
+TEST(ServiceToolTests, IncineratorPurchaseRequiresRoadAndFunds) {
+  CityMap map({16,16}); RoadNetwork roads(map);
+  roads.buildRoad({4,4}, {5,4});
+  std::vector<ServiceFacility> facilities;
+  int64_t funds = 20000;
+  const auto plan = ServiceTool::plan(map, roads, facilities, ServiceType::Incinerator, {4,3}, funds);
+  ASSERT_TRUE(plan.valid);
+  ASSERT_TRUE(ServiceTool::build(map, roads, facilities, plan, funds));
+  EXPECT_EQ(funds, 2000);
+  EXPECT_EQ(ServiceTool::operatingCostPerTick(ServiceType::Incinerator), 60);
+  EXPECT_FALSE(ServiceTool::plan(map, roads, facilities, ServiceType::Incinerator, {5,3}, funds).valid);
+}

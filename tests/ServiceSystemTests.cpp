@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 
 #include "src/systems/ServiceSystem.hpp"
+#include "src/systems/PlayableCityTick.hpp"
 
 TEST(ServiceSystemTests, CoverageUsesRoadReachability) {
   CityMap map({12, 12});
@@ -374,4 +375,35 @@ TEST(ServiceSystemTests, RawOutletsReduceIntakeSupplyOnlyAlongConnectedWater) {
       1.f);
   EXPECT_FLOAT_EQ(ServiceSystem::intakeCleanFraction(roads, facilities, {3, 3}),
                   0.f);
+}
+
+TEST(ServiceSystemTests, IncineratorGenerationTracksFuelAndRoadConnectivity) {
+  CityMap map({16,16}); RoadNetwork roads(map); EntityStore store;
+  roads.buildRoad({2,3}, {3,3});
+  const auto id = store.createBuilding(BuildingType::Residential, {2,2}, 10000);
+  map.getTile({2,2}).buildingId = static_cast<uint32_t>(id);
+  store.getBuilding(id)->occupancy = 1000;
+  std::vector<ServiceFacility> facilities{{ServiceType::Incinerator, {3,2}, 18, 1.f}};
+  ServiceCoverageCache cache;
+  ServiceSystem::buildCache(roads, facilities, cache);
+  auto coverage = ServiceSystem::evaluateFromCache(store, roads, cache);
+  EXPECT_FLOAT_EQ(coverage.incineratorCoverage, 1.f);
+  EXPECT_FLOAT_EQ(coverage.powerCoverage, 1.f);
+  EXPECT_FLOAT_EQ(coverage.powerGenerationMW, 5.f);
+  EXPECT_FLOAT_EQ(coverage.powerSupplyRatio, 1.f);
+  EXPECT_FLOAT_EQ(coverage.powerEmissionsKgPerMWh, 650.f);
+  updateUtilityConnectivityFromFacilities(map, roads, store, facilities);
+  EXPECT_TRUE(map.getTile({2,2}).connectedToPower);
+  store.getBuilding(id)->occupancy = 10000; // Demand exceeds the 6 MW fuel-processing cap.
+  updateUtilityConnectivityFromFacilities(map, roads, store, facilities);
+  EXPECT_FALSE(map.getTile({2,2}).connectedToPower);
+  store.getBuilding(id)->occupancy = 1000;
+  ServiceSystem::storeCachedResult(store, coverage, cache);
+  store.getBuilding(id)->occupancy = 0; // In-place changes must not retain old fuel output.
+  EXPECT_FALSE(ServiceSystem::isResultCacheValid(store, cache));
+  EXPECT_FLOAT_EQ(ServiceSystem::evaluateFromCache(store, roads, cache).powerGenerationMW, 0.f);
+  store.getBuilding(id)->occupancy = 1000;
+  facilities[0].position = {14,14};
+  ServiceSystem::buildCache(roads, facilities, cache);
+  EXPECT_FLOAT_EQ(ServiceSystem::evaluateFromCache(store, roads, cache).powerGenerationMW, 0.f);
 }

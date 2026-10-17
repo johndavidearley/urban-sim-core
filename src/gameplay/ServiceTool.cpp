@@ -19,6 +19,7 @@ int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater) {
     case ServiceType::Recycling: return 11000;
     case ServiceType::Cemetery: return 10000;
     case ServiceType::Crematorium: return 14000;
+    case ServiceType::Incinerator: return 18000;
     default: return 5000;
   }
 }
@@ -38,6 +39,7 @@ int64_t ServiceTool::operatingCostPerTick(ServiceType type, bool surfaceWater) {
     case ServiceType::Recycling: return 38;
     case ServiceType::Cemetery: return 24;
     case ServiceType::Crematorium: return 42;
+    case ServiceType::Incinerator: return 60;
     default: return 0;
   }
 }
@@ -55,6 +57,7 @@ int ServiceTool::coverageDistance(ServiceType type) {
     case ServiceType::Recycling: return 16;
     case ServiceType::Cemetery: return 18;
     case ServiceType::Crematorium: return 20;
+    case ServiceType::Incinerator: return 18;
     default: return 12;
   }
 }

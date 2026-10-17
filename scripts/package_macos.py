@@ -53,6 +53,8 @@ New City defaults to lakes/river terrain. T toggles flat maps on the start scree
 S cycles civic tools; with Water/Sanitation selected, V toggles shore/inland mode.
 Shore intakes and raw sewage outlets need adjacent water and a road. Nearby
 raw outlets reduce intake supply; separate them along the water body.
+Incinerator (S, after Crematorium): $18,000, $60/tick; burns residual garbage
+for up to 6 MW. F6 Services controls funding. Recycling takes priority.
 See the in-game controls for road, zoning and civic construction tools.
 
 The bin directory also contains the CLI and native playtest executable.

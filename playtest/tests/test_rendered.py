@@ -27,6 +27,62 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_incinerator_native_purchase_fuel_funding_and_checkpoint(self):
+        s = self.session
+        await record(s, "start")
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        for service, x in (("power", 18), ("water", 20)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
+        for zone, y in (("residential", 15), ("commercial", 17)):
+            await s.request("tool", {"action": "apply", "name": "zone", "zone": zone, "x1": 6, "y1": y, "x2": 13, "y2": y})
+        await s.request("time", {"action": "step", "ticks": 20})
+        # Generate treasury through ordinary simulation, then buy through native input.
+        for _ in range(20):
+            if s.last_state["funds"] >= 18000:
+                break
+            await s.request("time", {"action": "step", "ticks": 50})
+        self.assertGreaterEqual(s.last_state["funds"], 18000)
+        await s.request("tool", {"action": "select", "name": "service", "service": "crematorium"})
+        await s.request("input", {"events": [{"type": "key", "key": "S"}]})
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        point = await s.request("coordinates", {"direction": "tile_to_screen", "x": 22, "y": 15})
+        before = s.last_state["funds"]
+        await s.request("input", {"events": [{"type": "down", "x": point["x"], "y": point["y"]},
+                                               {"type": "up", "x": point["x"], "y": point["y"]}]})
+        self.assertEqual(s.last_state["funds"], before - 18000)
+        plants = (await s.request("inspect", {"section": "facilities"}))["items"]
+        plant = next(f for f in plants if f["type"] == "Incinerator")
+        self.assertGreater(plant["city_waste_power_mw"], 0)
+        await s.city("save")
+        await s.city("load")
+        await s.request("time", {"action": "step", "ticks": 2})
+        self.assertGreater(s.last_state["metrics"]["waste_power_mw"], 0)
+        self.assertGreater(s.last_state["metrics"]["waste_incinerated"], 0)
+        self.assertEqual(s.last_state["budget"]["service_costs"][11], 60)
+        await s.request("view", {"action": "projection", "projection": "isometric"})
+        point = await s.request("coordinates", {"direction": "tile_to_screen", "x": 22, "y": 15})
+        await s.request("input", {"events": [{"type": "move", "x": point["x"], "y": point["y"]}]})
+        await s.screenshot("incinerator-power-inspector")
+        await s.request("budget", {"action": "services"})
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        controls = (await s.request("inspect", {"section": "ui"}))["controls"]
+        button = next(c for c in controls if c["name"] == "funding_11_minus")
+        for _ in range(4):
+            await s.request("input", {"events": [{"type": "down", "x": button["x"]+2, "y": button["y"]+2},
+                                                   {"type": "up", "x": button["x"]+2, "y": button["y"]+2}]})
+        self.assertEqual(s.last_state["budget"]["service_percent"][11], 0)
+        plant = next(f for f in (await s.request("inspect", {"section": "facilities"}))["items"] if f["type"] == "Incinerator")
+        self.assertEqual(plant["city_waste_power_mw"], 0)
+        await s.screenshot("incinerator-funding-minimum-window")
+        await s.city("save")
+        await s.city("load")
+        self.assertEqual(s.last_state["budget"]["service_percent"][11], 0)
+        self.assertEqual(s.last_state["budget"]["service_costs"][11], 0)
+
+        scenario = await record(s, "stop", "incinerator")
+        self.assertTrue((await replay(s, scenario["scenario"], 2))["identical"])
+
     async def test_native_default_river_shore_utilities_and_checkpoint(self):
         s = self.session
         await record(s, "start")
@@ -1203,7 +1259,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         taxes = [7,9,8,10,11]
         await s.request("budget", {"action": "set_taxes", "tax_percent": taxes})
         self.assertEqual(s.last_state["budget"]["service_percent"][0], 50)
-        funding = [50,100,100,100,0,100,100,100,100,100,100]
+        funding = [50,100,100,100,0,100,100,100,100,100,100,100]
         await s.request("budget", {"action": "set_funding", "service_percent": funding})
         self.assertEqual(s.last_state["budget"]["tax_percent"], taxes)
         self.assertEqual(s.last_state["budget"]["service_costs"][4], 0)
@@ -1243,7 +1299,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s.last_state["metrics"]["power_supply_mw"], 0)
         await s.request("budget", {"action": "reset_funding"})
         self.assertEqual(s.last_state["budget"]["tax_percent"], taxes)
-        self.assertEqual(s.last_state["budget"]["service_percent"], [100]*11)
+        self.assertEqual(s.last_state["budget"]["service_percent"], [100]*12)
         self.assertEqual(s.last_state["metrics"]["power_supply_mw"], 100)
         self.assertEqual(s.last_state["budget"]["service_coverage"][0], 1)
         self.assertEqual(s.last_state["facilities"], 3)
@@ -2474,7 +2530,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(changed.structuredContent["tax_percent"], [6, 8, 6, 9, 10])
                 funded = await client.call_tool("budget", {"action": "set_funding", "service_percent": [50]*11})
                 self.assertFalse(funded.isError)
-                self.assertEqual(funded.structuredContent["service_percent"], [50]*11)
+                self.assertEqual(funded.structuredContent["service_percent"], [50]*11 + [100])
                 self.assertFalse((await client.call_tool("budget", {"action": "reset"})).isError)
                 summary = await client.call_tool("inspect", {"section": "summary"})
                 self.assertFalse(summary.isError)

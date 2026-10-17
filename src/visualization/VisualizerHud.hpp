@@ -130,7 +130,8 @@ void drawTileInspector(
   const std::vector<ServiceFacility>& facilities,
   Coord coord,
   const DistrictSystem* districts = nullptr,
-  const BuildingDiagnostics* diagnostics = nullptr, float cityJoblessness = 0.f, bool pinned = false
+  const BuildingDiagnostics* diagnostics = nullptr, float cityJoblessness = 0.f, bool pinned = false,
+  const WasteSummary* waste = nullptr
 );
 
 Rect quitButtonRect(QuitAction action, int windowWidth, int windowHeight);

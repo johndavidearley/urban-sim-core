@@ -52,9 +52,10 @@ inline CityHistory parseCityHistory(const nlohmann::json& rows, uint32_t tick) {
     s.debt = integer("debt", 0, max);
     auto policy = [&](const char* key, auto& values, int limit) {
       const auto& array = row.at(key);
-      if (!array.is_array() || array.size() != values.size())
+      if (!array.is_array() || (array.size() != values.size()
+          && !(std::string(key) == "service_percent" && array.size() == 11)))
         throw std::runtime_error("Invalid city history policy size");
-      for (size_t i = 0; i < values.size(); ++i) {
+      for (size_t i = 0; i < array.size(); ++i) {
         if (!array[i].is_number_integer() || array[i].get<double>() < 0 || array[i].get<double>() > limit)
           throw std::runtime_error("Invalid city history policy");
         values[i] = array[i].get<int>();

@@ -50,10 +50,10 @@ if (command == "budget") {
     setBudgetPolicy(policy);
   } else if (action == "set_funding") {
     const auto& values = args.at("service_percent");
-    if (!values.is_array() || values.size() != kServiceTypeCount)
-      throw std::runtime_error("Provide eleven service funding percentages from 0 to 100");
+    if (!values.is_array() || (values.size() != kServiceTypeCount && values.size() != 11))
+      throw std::runtime_error("Provide twelve service funding percentages (legacy eleven accepted) from 0 to 100");
     auto policy = liveState.budgetPolicy;
-    for (size_t i = 0; i < kServiceTypeCount; ++i) {
+    for (size_t i = 0; i < values.size(); ++i) {
       if (!values[i].is_number_integer())
         throw std::runtime_error("Service funding must be integer percentages from 0 to 100");
       const auto value = values[i].get<int64_t>();
@@ -114,8 +114,9 @@ if (command == "inspect") {
         controls.back()["focused"]=i==transportFocus;}
     }
     else if (showBudgetPanel) {
-      for (int i = 0; i < 43; ++i) {
+      for (int i = 0; i < 45; ++i) {
         if (!budgetControlVisible(i, budgetServices, budgetTrends, budgetAlerts)) continue;
+        if (i == 43 || i == 44) { rect(i == 43 ? "funding_11_minus" : "funding_11_plus", budgetControlRect(i, windowWidth, windowHeight, true)); continue; }
         if (i >= 37) { rect(i == 37 ? "budget_alerts" : "alert_view_" + std::to_string(i - 38), budgetControlRect(i, windowWidth, windowHeight)); continue; }
         if (i == 36) { rect("budget_trends", budgetControlRect(i, windowWidth, windowHeight)); continue; }
         rect(i == 0 ? "budget_close" : (i == 1 ? "budget_reset" :
@@ -264,6 +265,16 @@ if (command == "inspect") {
         items.back()["water_supply"] = f.waterSupplyUnits;
         if (f.surfaceWater) items.back()["source_clean_fraction"] = ServiceSystem::intakeCleanFraction(
           roads, liveState.budgetPolicy.fundedFacilities(facilities), f.position);
+      }
+      if (f.type == ServiceType::Incinerator) {
+        const auto funded = liveState.budgetPolicy.fundedFacilities(facilities);
+        ServiceCoverageCache cache;
+        ServiceSystem::buildCache(roads, funded, cache);
+        const auto coverage = ServiceSystem::evaluateFromCache(store, roads, cache);
+        const auto waste = WasteSystem::evaluate(store, cache.wasteFacilities, coverage);
+        items.back()["city_waste_incinerated"] = waste.incinerated;
+        items.back()["city_waste_power_mw"] = waste.powerGenerationMW;
+        items.back()["emissions_kg_per_mwh"] = waste.emissionsKgPerMWh;
       }
       items.back()["surface_water"] = f.surfaceWater;
       items.back()["name"] = ServiceSystem::serviceTypeToString(f.type, f.surfaceWater);

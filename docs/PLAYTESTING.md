@@ -328,8 +328,10 @@ Opening or editing the panel does not advance time or alter recorded history.
 
 
 The completed M23 budget API adds `set_funding` with `service_percent`:
-exactly 11 integer percentages in 0..100, ordered Fire, Police, Health,
-Education, Power, Water, Sanitation, Garbage, Recycling, Cemetery, Crematorium.
+12 integer percentages in 0..100, ordered Fire, Police, Health,
+Education, Power, Water, Sanitation, Garbage, Recycling, Cemetery, Crematorium,
+Incinerator. Legacy 11-entry requests and saves retain the new department at its
+current/default funding.
 Defaults are all 100. `set_taxes` preserves funding; `set_funding` preserves
 taxes. `reset` restores the whole policy, while `reset_funding` preserves taxes.
 `services` and `taxes` open the appropriate budget tab; `open` keeps the

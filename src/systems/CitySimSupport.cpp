@@ -538,8 +538,13 @@ void updateUtilityConnectivity(
   int x0, int y0, int x1, int y1,
   ThreadPool& pool
 ) {
+  float generation = cache.powerGenerationCapacityMW;
+  if (std::any_of(cache.wasteFacilities.begin(), cache.wasteFacilities.end(),
+      [](const ServiceFacility& f) { return f.type == ServiceType::Incinerator; })) {
+    generation = ServiceSystem::evaluateFromCache(store, roads, cache).powerGenerationMW;
+  }
   const UtilityPlan powerPlan = planUtilityService(
-    store, roads, cache.nearestPowerDistance, cache.powerGenerationCapacityMW);
+    store, roads, cache.nearestPowerDistance, generation);
   const UtilityPlan waterPlan = planUtilityService(
     store, roads, cache.nearestWaterDistance, cache.waterSupplyUnits);
 

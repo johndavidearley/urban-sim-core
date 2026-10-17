@@ -10,7 +10,7 @@
 // District fiscal policy is separate; this controls the city's treasury taxes.
 struct BudgetPolicy {
   std::array<int, 5> taxPercent{{5, 8, 6, 9, 10}};
-  std::array<int, kServiceTypeCount> servicePercent{{100,100,100,100,100,100,100,100,100,100,100}};
+  std::array<int, kServiceTypeCount> servicePercent{{100,100,100,100,100,100,100,100,100,100,100,100}};
   // Defaults are neutral. Each percentage point changes attraction by 4%.
   // Household decisions combine property and income taxes with equal weight.
   std::array<float, 4> taxAttraction() const {
@@ -69,7 +69,7 @@ struct BudgetPolicy {
   static std::array<float, kServiceTypeCount> coverage(const ServiceCoverageSummary& s) {
     return {{s.fireCoverage, s.policeCoverage, s.healthCoverage, s.educationCoverage,
       s.powerCoverage, s.waterCoverage, s.sanitationCoverage, s.garbageCoverage,
-      s.recyclingCoverage, s.cemeteryCoverage, s.crematoriumCoverage}};
+      s.recyclingCoverage, s.cemeteryCoverage, s.crematoriumCoverage, s.incineratorCoverage}};
   }
   bool valid() const {
     return std::all_of(taxPercent.begin(), taxPercent.end(),

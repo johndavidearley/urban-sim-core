@@ -67,7 +67,7 @@ bool validateHotelCivicSites(const CitySnapshot& snapshot,
 
 bool validServiceType(int value) {
   return value >= static_cast<int>(ServiceType::Fire)
-      && value <= static_cast<int>(ServiceType::Crematorium);
+      && value <= static_cast<int>(ServiceType::Incinerator);
 }
 
 bool validTransitMode(int value) {
@@ -436,9 +436,9 @@ bool GameplaySessionSystem::load(
     }
     if (root.contains("budgetServicePercent")) {
       const auto& values = root.at("budgetServicePercent");
-      if (!values.is_array() || values.size() != kServiceTypeCount)
+      if (!values.is_array() || (values.size() != kServiceTypeCount && values.size() != 11))
         return fail(errorMessage, "gameplay session has invalid service funding");
-      for (size_t i = 0; i < kServiceTypeCount; ++i) {
+      for (size_t i = 0; i < values.size(); ++i) {
         if (!values[i].is_number_integer())
           return fail(errorMessage, "gameplay session has invalid service funding");
         const auto value = values[i].get<int64_t>();

@@ -511,3 +511,19 @@ TEST(VisualizerGeometry, ShorePlacementWarningsFitMinimumWindowInBothTextSizes) 
   }
   gReadableUiText = previous;
 }
+
+TEST(VisualizerGeometryTests, IncineratorFundingControlsFitMinimumWindow) {
+  BudgetPolicy policy;
+  EXPECT_TRUE(budgetControlVisible(43, true, false, false));
+  EXPECT_FALSE(budgetControlVisible(43, false, false, true));
+  EXPECT_TRUE(budgetControlEnabled(43, policy, true, false, false));
+  EXPECT_FALSE(budgetControlEnabled(44, policy, true, false, false));
+  for (const int action : {43,44}) {
+    const auto r = budgetControlRect(action,800,640,true);
+    EXPECT_EQ(budgetHitTest(r.x+1,r.y+1,800,640,true,false,false),action);
+    EXPECT_GE(r.x,0); EXPECT_GE(r.y,0); EXPECT_LE(r.x+r.w,800); EXPECT_LE(r.y+r.h,640);
+  }
+  policy.servicePercent[11] = 0;
+  EXPECT_FALSE(budgetControlEnabled(43, policy, true, false, false));
+  EXPECT_TRUE(budgetControlEnabled(44, policy, true, false, false));
+}

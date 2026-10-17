@@ -143,7 +143,8 @@ ServiceType nextPlayableService(ServiceType type) {
     case ServiceType::Garbage: return ServiceType::Recycling;
     case ServiceType::Recycling: return ServiceType::Cemetery;
     case ServiceType::Cemetery: return ServiceType::Crematorium;
-    case ServiceType::Crematorium:
+    case ServiceType::Crematorium: return ServiceType::Incinerator;
+    case ServiceType::Incinerator:
     default: return ServiceType::Fire;
   }
 }
@@ -161,6 +162,7 @@ RGB serviceFacilityColor(ServiceType type) {
     case ServiceType::Recycling: return {55, 205, 125};
     case ServiceType::Cemetery: return {115, 125, 105};
     case ServiceType::Crematorium: return {175, 105, 185};
+    case ServiceType::Incinerator: return {225, 125, 60};
     default: return {180, 180, 180};
   }
 }

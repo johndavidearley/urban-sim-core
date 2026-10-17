@@ -444,7 +444,7 @@ TEST(GameplaySessionSystemTests, InvalidServiceFundingDoesNotMutateCityOrPolicy)
   { std::ifstream input(path); input >> original; }
   for (int invalid = 0; invalid < 4; ++invalid) {
     auto root = original;
-    if (invalid == 0) root["budgetServicePercent"].erase(0);
+    if (invalid == 0) { root["budgetServicePercent"].erase(0); root["budgetServicePercent"].erase(0); }
     if (invalid == 1) root["budgetServicePercent"][0] = -1;
     if (invalid == 2) root["budgetServicePercent"][0] = 101;
     if (invalid == 3) root["budgetServicePercent"][0] = 50.5;
@@ -744,4 +744,43 @@ TEST(GameplaySessionSystemTests,
   EXPECT_FALSE(loaded.facilities[1].surfaceWater);
   std::filesystem::remove(path);
   std::filesystem::remove(path.string() + ".city.json");
+}
+
+TEST(GameplaySessionSystemTests, IncineratorFundingAndLegacyServicePolicyRoundTrip) {
+  CityMap map({16,16}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  roads.buildRoad({2,3}, {3,3});
+  GameplaySessionState session;
+  session.facilities = {{ServiceType::Incinerator, {3,2}, 18, 1.f}};
+  session.budgetPolicy.servicePercent[11] = 50;
+  const auto path = std::filesystem::temp_directory_path()/"urban_incinerator_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store, people, session));
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  ASSERT_EQ(loaded.facilities.size(), 1u);
+  EXPECT_EQ(loaded.facilities[0].type, ServiceType::Incinerator);
+  EXPECT_EQ(loaded.budgetPolicy.serviceCost(loaded.facilities), 30);
+  auto funded = loaded.budgetPolicy.fundedFacilities(loaded.facilities);
+  EXPECT_FLOAT_EQ(funded[0].quality, .5f);
+  loaded.budgetPolicy.servicePercent[11] = 0;
+  EXPECT_TRUE(loaded.budgetPolicy.fundedFacilities(loaded.facilities).empty());
+  nlohmann::json json; {std::ifstream input(path); input >> json;}
+  json["facilities"] = nlohmann::json::array();
+  json["budgetServicePercent"].erase(11);
+  {std::ofstream output(path); output << json;}
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  EXPECT_EQ(loaded.budgetPolicy.servicePercent[11], 100);
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string()+".city.json");
+}
+
+TEST(GameplaySessionSystemTests, LegacyBudgetHistoryDefaultsNewDepartmentToFullFunding) {
+  CityHistory history;
+  CityHistorySample sample;
+  sample.tick = 1;
+  history.append(sample);
+  auto rows = cityHistoryJson(history);
+  rows[0]["service_percent"].erase(11);
+  const auto parsed = parseCityHistory(rows,1);
+  ASSERT_EQ(parsed.samples.size(), 1u);
+  EXPECT_EQ(parsed.samples[0].policy.servicePercent[11], 100);
 }

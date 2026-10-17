@@ -191,6 +191,8 @@ void refreshDerivedCityState(
     state.serviceSummary = state.serviceCache.cachedResult;
   }
 
+  state.waste = WasteSystem::evaluate(store, state.serviceCache.wasteFacilities, state.serviceSummary);
+
   if (options.updateLandValues && !options.preserveCheckpoint) {
     LandValueSystem::updateLandValues(
       map, roads, store, &state.serviceCache, ax0, ay0, ax1, ay1);
@@ -337,7 +339,7 @@ void playableCityTick(
   }
 
   float tickResPollution = city_sim::averageResidentialPollution(map, store);
-  state.waste = WasteSystem::evaluate(store, facilities, state.serviceSummary);
+  state.waste = WasteSystem::evaluate(store, state.serviceCache.wasteFacilities, state.serviceSummary);
   if (state.waste.pollutionPenalty > 0.0f) {
     city_sim::applyWastePollution(map, state.waste.pollutionPenalty, ax0, ay0, ax1, ay1);
     tickResPollution = city_sim::averageResidentialPollution(map, store);
