@@ -651,12 +651,17 @@ void drawPlacementWarning(
   if (warning.empty()) {
     return;
   }
-  const int width = std::min(360, std::max(130, 20 + static_cast<int>(warning.size()) * 4));
+  const int glyphWidth = gReadableUiText ? 8 : 4;
+  const int width = std::min(std::min(620, windowWidth - 8),
+      std::max(130, 20 + static_cast<int>(warning.size()) * glyphWidth));
+  const size_t maxChars = static_cast<size_t>(std::max(3, (width - 16) / glyphWidth));
+  const std::string label = warning.size() > maxChars
+      ? warning.substr(0, maxChars - 3) + "..." : warning;
   const int x = std::max(4, std::min(windowWidth - width - 4, mouseX + 16));
   const int y = std::max(4, std::min(windowHeight - 28, mouseY + 18));
   drawFilledRect(renderer, x, y, width, 24, {28, 18, 18}, 235);
   drawRectOutline(renderer, x, y, width, 24, {235, 75, 75}, 255);
-  drawText(renderer, x + 8, y + 8, warning, {255, 185, 175}, 1);
+  drawText(renderer, x + 8, y + 8, label, {255, 185, 175}, 1);
 }
 
 void drawUiTooltip(
@@ -903,9 +908,15 @@ void drawTileInspector(
   for (const ServiceFacility& facility : facilities) {
     if (facility.position == coord) {
       drawText(renderer, x + 10, y + 111,
-               std::string("SERVICE ") + ServiceSystem::serviceTypeToString(facility.type)
+               std::string("SERVICE ") + ServiceSystem::serviceTypeToString(facility.type, facility.surfaceWater)
                  + " RANGE " + std::to_string(facility.maxTravelDistance),
                serviceFacilityColor(facility.type), 1);
+      if (facility.surfaceWater) {
+        const std::string info = facility.type == ServiceType::Water
+          ? "SOURCE CLEAN " + std::to_string(static_cast<int>(100 * ServiceSystem::intakeCleanFraction(roads, facilities, coord))) + "%"
+          : "RAW SEWAGE: INTAKE BUFFER 13 WATER HOPS";
+        drawText(renderer, x + 10, y + 95, info, {255,190,105}, 1);
+      }
       break;
     }
   }

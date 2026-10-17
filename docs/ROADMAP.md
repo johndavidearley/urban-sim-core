@@ -689,6 +689,18 @@ candidate launches with documented runtime requirements and save location.
 
 ---
 
+## Phase 11: Surface water and early waterworks (M37)
+
+**Active.** See [PHASE11.md](PHASE11.md).
+
+- [x] Default new maps to connected lakes/rivers with usable shorelines.
+- [x] Add native shoreline intakes and cheaper untreated sewage outlets.
+- [x] Model bounded same-water-body intake contamination and show cleanliness.
+- [ ] Verify persistence, native controls/replays, strict tests and hosted CI.
+- [ ] Package and smoke-test the current-host candidate.
+
+---
+
 ## Timeline
 
 | Phase | Milestones | Est. Duration |
@@ -703,6 +715,7 @@ candidate launches with documented runtime requirements and save location.
 | 8 | M27–M30 | complete; hosted CI verified on 7902ddf |
 | 9 | M31–M35 | complete; hosted CI verified on bf8c036 |
 | 10 | M36 | complete: end-to-end playability |
+| 11 | M37 | active: surface water and early waterworks |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

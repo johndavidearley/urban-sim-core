@@ -234,6 +234,13 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       y>=windowHeight-166 && y<windowHeight-66;
   };
   ServiceType selectedService = ServiceType::Fire;
+  bool surfaceWaterTool = start.generateTerrain && !loadedAtStartup;
+  auto surfaceMode = [&]() {
+    return surfaceWaterTool && (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation);
+  };
+  auto serviceOptions = [&]() {
+    ServicePlacementOptions options; options.surfaceWater = surfaceMode(); return options;
+  };
   ZoneType selectedZone = ZoneType::Residential;
   DistrictArchetype selectedArchetype = DistrictArchetype::General;
   bool toolDragging = false;
@@ -593,7 +600,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   };
   auto applyService = [&](Coord tile) {
     servicePlan =
-        ServiceTool::plan(map, roads, facilities, selectedService, tile, funds);
+        ServiceTool::plan(map, roads, facilities, selectedService, tile, funds, serviceOptions());
     const int64_t cost = servicePlan.cost;
     if (ServiceTool::build(map, roads, facilities, servicePlan, funds)) {
       sessionDirty = true;
@@ -601,7 +608,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                               liveState, 1001u + (liveState.tick * 31u),
                               /*reallocPopulation=*/false,
                               /*runTraffic=*/false);
-      notify(std::string(ServiceSystem::serviceTypeToString(selectedService)) +
+      notify(std::string(ServiceSystem::serviceTypeToString(selectedService, surfaceMode())) +
                  " BUILT $" + std::to_string(cost),
              true);
     } else {
@@ -610,7 +617,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
              false);
     }
     servicePlan =
-        ServiceTool::plan(map, roads, facilities, selectedService, tile, funds);
+        ServiceTool::plan(map, roads, facilities, selectedService, tile, funds, serviceOptions());
   };
   auto applyPlacement = [&](Coord tile) {
     if (roadToolActive) {
@@ -911,6 +918,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"dragging", toolDragging},
            {"zone_type", static_cast<int>(selectedZone)},
            {"service_type", static_cast<int>(selectedService)},
+           {"surface_water", surfaceMode()},
            {"archetype", static_cast<int>(selectedArchetype)}}},
          {"preview",
           {{"road_error", roadPlan.error},
@@ -1272,7 +1280,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           notify("AIRPORT $25000 + $30/TICK - 4X2 LAND; UTILITIES ON EVERY TILE",true);
           break;
         case Key::V:
-          selectPortAction();
+          if (serviceToolActive && (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation)) {
+            surfaceWaterTool = !surfaceWaterTool;
+            servicePlan = {};
+            notify(surfaceMode() ? "SHORE MODE - WATER INTAKE / RAW SEWAGE OUTLET"
+                                 : "INLAND WATER / TREATED SANITATION", true);
+          } else selectPortAction();
           break;
         case Key::I:
           if (map.isValid(pinnedInspector)) pinnedInspector={-1,-1};
@@ -1761,7 +1774,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       } else if (event.type == EventType::MouseMotion && serviceToolActive) {
         const Coord tile = tileAtScreen(event.motion.x, event.motion.y);
         servicePlan = ServiceTool::plan(map, roads, facilities, selectedService,
-                                        tile, funds);
+                                        tile, funds, serviceOptions());
       } else if (event.type == EventType::MouseMotion && toolDragging) {
         const Coord tile = tileAtScreen(event.motion.x, event.motion.y);
         if (map.isValid(tile)) {
@@ -2137,7 +2150,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     } else if (bulldozeToolActive) {
       activeToolLabel = "BULLDOZE";
     } else if (serviceToolActive) {
-      activeToolLabel = ServiceSystem::serviceTypeToString(selectedService);
+      activeToolLabel = ServiceSystem::serviceTypeToString(selectedService, surfaceMode());
     } else if (districtToolActive) {
       activeToolLabel = DistrictSystem::archetypeToString(selectedArchetype);
     }
@@ -2284,14 +2297,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           "BULLDOZER: DRAG TO REMOVE ROADS ZONES BUILDINGS OR SERVICES";
       break;
     case PaletteTool::Service:
-      uiHoverText =
-          std::string("SERVICE ") +
-          ServiceSystem::serviceTypeToString(selectedService) +
-          ": CLICK BESIDE A ROAD - $" +
-          std::to_string(ServiceTool::constructionCost(selectedService)) +
-          " - $" +
-          std::to_string(ServiceTool::operatingCostPerTick(selectedService)) +
-          " UPKEEP PER TICK";
+      uiHoverText = std::string(ServiceSystem::serviceTypeToString(selectedService, surfaceMode())) +
+          " $" + std::to_string(ServiceTool::constructionCost(selectedService, surfaceMode())) +
+          " + $" + std::to_string(ServiceTool::operatingCostPerTick(selectedService, surfaceMode())) + "/TICK";
+      if (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation)
+        uiHoverText += " - V INLAND/SHORE";
+      else uiHoverText += " - CLICK BESIDE ROAD";
       break;
     case PaletteTool::District:
       uiHoverText = std::string("DISTRICT ") +
@@ -2396,6 +2407,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         }
       }
+    }
+    if (uiHoverText.empty() && serviceToolActive && surfaceMode() && servicePlan.valid) {
+      uiHoverText = selectedService == ServiceType::Water
+        ? "INTAKE CLEAN SOURCE " + std::to_string(static_cast<int>(100 * ServiceSystem::intakeCleanFraction(
+            roads, liveState.budgetPolicy.fundedFacilities(facilities), servicePlan.facility.position))) + "% - KEEP AWAY FROM RAW OUTLETS"
+        : "RAW SEWAGE - NEARBY INTAKES LOSE CLEAN WATER SUPPLY";
     }
     drawUiTooltip(renderer, mouseX, mouseY, windowWidth, windowHeight,
                   uiHoverText);

@@ -94,6 +94,7 @@ public:
   };
   
   RoadNetwork(const CityMap& map);
+  const CityMap& getCityMap() const { return cityMap; }
   
   // Road management
   void buildRoad(glm::ivec2 from, glm::ivec2 to);

@@ -10,8 +10,8 @@
 
 namespace {
 uint64_t facilitySignature(const std::vector<ServiceFacility>& facilities) {
-  // FNV-1a over fixed-width integer fields. Quality is intentionally excluded:
-  // current coverage calculations do not use it.
+  // FNV-1a over fixed-width fields. Surface-discharge quality affects intake
+  // capacity; legacy coverage does not depend on quality.
   uint64_t hash = 1469598103934665603ULL;
   auto mix = [&hash](uint32_t value) {
     for (int shift = 0; shift < 32; shift += 8) {
@@ -29,6 +29,10 @@ uint64_t facilitySignature(const std::vector<ServiceFacility>& facilities) {
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.powerCapacityMW)));
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.emissionsKgPerMWh)));
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.waterSupplyUnits)));
+    if (facility.surfaceWater) {
+      mix(1u);
+      mix(static_cast<uint32_t>(std::hash<float>{}(facility.quality)));
+    }
   }
   return hash;
 }
@@ -156,7 +160,9 @@ bool ServiceSystem::parseServiceType(const std::string& raw, ServiceType& outTyp
   return false;
 }
 
-const char* ServiceSystem::serviceTypeToString(ServiceType type) {
+const char* ServiceSystem::serviceTypeToString(ServiceType type, bool surfaceWater) {
+  if (surfaceWater && type == ServiceType::Water) return "Water Intake";
+  if (surfaceWater && type == ServiceType::Sanitation) return "Sewage Outlet";
   switch (type) {
     case ServiceType::Fire:
       return "Fire";
@@ -224,6 +230,62 @@ float ServiceSystem::defaultPowerEmissions(PowerSourceType type) {
   }
 }
 
+float ServiceSystem::intakeCleanFraction(
+    const RoadNetwork &roads, const std::vector<ServiceFacility> &facilities,
+    Coord intake) {
+  const auto &map = roads.getCityMap();
+  const Coord directions[] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+  std::unordered_map<Coord, float, Vec2Hash> discharge;
+  for (const auto &facility : facilities) {
+    Coord anchor;
+    if (!facility.surfaceWater || facility.type != ServiceType::Sanitation ||
+        facility.quality <= 0 ||
+        !roads.resolveRoadAnchor(facility.position, anchor))
+      continue;
+    for (const auto delta : directions) {
+      const auto pos =
+          Coord{facility.position.x + delta.x, facility.position.y + delta.y};
+      if (map.isValid(pos) && map.getTile(pos).type == 2)
+        discharge[pos] =
+            std::max(discharge[pos], std::clamp(facility.quality, 0.f, 1.f));
+    }
+  }
+  bool shoreline = false;
+  std::queue<std::pair<Coord, int>> frontier;
+  std::unordered_map<Coord, int, Vec2Hash> visited;
+  for (const auto delta : directions) {
+    const auto pos = Coord{intake.x + delta.x, intake.y + delta.y};
+    if (map.isValid(pos) && map.getTile(pos).type == 2) {
+      shoreline = true;
+      visited[pos] = 0;
+      frontier.push({pos, 0});
+    }
+  }
+  if (!shoreline)
+    return 0.f;
+  if (discharge.empty())
+    return 1.f;
+  float exposure = 0.f;
+  while (!frontier.empty()) {
+    const auto [pos, distance] = frontier.front();
+    frontier.pop();
+    const auto source = discharge.find(pos);
+    if (source != discharge.end())
+      exposure = std::max(exposure, source->second * (1.f - distance / 13.f));
+    if (distance == 12)
+      continue;
+    for (const auto delta : directions) {
+      const auto next = Coord{pos.x + delta.x, pos.y + delta.y};
+      if (!map.isValid(next) || map.getTile(next).type != 2 ||
+          visited.count(next))
+        continue;
+      visited[next] = distance + 1;
+      frontier.push({next, distance + 1});
+    }
+  }
+  return 1.f - 0.9f * exposure;
+}
+
 void ServiceSystem::buildCache(
   const RoadNetwork& roads,
   const std::vector<ServiceFacility>& facilities,
@@ -262,7 +324,9 @@ void ServiceSystem::buildCache(
       cache.powerGenerationCapacityMW += capacity;
       cache.powerWeightedEmissions += capacity * std::max(0.0f, facility.emissionsKgPerMWh);
     } else if (facility.type == ServiceType::Water) {
-      cache.waterSupplyUnits += std::max(0.0f, facility.waterSupplyUnits);
+      const float clean = facility.surfaceWater
+        ? intakeCleanFraction(roads, facilities, facility.position) : 1.f;
+      cache.waterSupplyUnits += std::max(0.0f, facility.waterSupplyUnits) * clean;
     }
     Coord anchor;
     if (!roads.resolveRoadAnchor(facility.position, anchor)) {

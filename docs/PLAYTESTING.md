@@ -74,6 +74,16 @@ autonomous growth, successful purchases, utility supply and save continuation.
 Paused means automatic ticking is stopped. N (or period) still advances one
 complete tick; its toast reports that tick while automatic running remains paused.
 
+## Surface-water controls
+
+New City defaults to lakes/river terrain; T selects an explicit flat map. Old
+saves retain their terrain. In the Water or Sanitation service tool, V toggles
+inland/shore mode. Shore mode uses a water intake or untreated sewage outlet on
+land beside water and a road. Intake previews/inspectors report clean-source
+percentage; raw outlets nearby along the same water body reduce usable supply.
+Semantic service requests may set `surface_water: true`; facility inspection
+includes the flag, display name and intake `source_clean_fraction`.
+
 ## Tools and coordinates
 
 | Tool | Use |

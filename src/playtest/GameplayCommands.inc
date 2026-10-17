@@ -262,7 +262,11 @@ if (command == "inspect") {
         items.back()["emissions_kg_per_mwh"] = f.emissionsKgPerMWh;
       } else if (f.type == ServiceType::Water) {
         items.back()["water_supply"] = f.waterSupplyUnits;
+        if (f.surfaceWater) items.back()["source_clean_fraction"] = ServiceSystem::intakeCleanFraction(
+          roads, liveState.budgetPolicy.fundedFacilities(facilities), f.position);
       }
+      items.back()["surface_water"] = f.surfaceWater;
+      items.back()["name"] = ServiceSystem::serviceTypeToString(f.type, f.surfaceWater);
     }
   } else if (section == "districts") {
     for (const auto &d : districts.getDistricts())
@@ -525,11 +529,15 @@ if (command == "tool") {
   if (action == "apply" &&
       (type == PaletteTool::None || !map.isValid(start) || !map.isValid(end)))
     throw std::runtime_error("Placement outside map or tool missing");
+  if (args.contains("surface_water") && (type != PaletteTool::Service ||
+      (args.at("surface_water").get<bool>() && service != ServiceType::Water && service != ServiceType::Sanitation)))
+    throw std::runtime_error("Surface water mode requires the Water or Sanitation service tool");
   activatePaletteTool(type);
   portAction=selectedPortAction;
   selectedRoadClass = roadClass;
   selectedZone = zone;
   selectedService = service;
+  if (type == PaletteTool::Service) surfaceWaterTool = args.value("surface_water", false);
   selectedArchetype = archetype;
   if (action == "apply") {
     toolDragStart = start;

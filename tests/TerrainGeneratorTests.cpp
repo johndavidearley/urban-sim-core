@@ -131,3 +131,48 @@ TEST(TerrainGeneratorTests, WaterIsNotZonedOrBuilt) {
     }
   }
 }
+
+TEST(TerrainGeneratorTests, RiverFeedsOneConnectedLakeWithUsableShorelines) {
+  for (int size : {32, 64, 96}) {
+    for (uint32_t seed : {1u, 42u, 555u}) {
+      CityMap map({size, size});
+      const auto stats = TerrainGenerator::generate(map, seed);
+      std::vector<Coord> pending;
+      std::vector<bool> seen(static_cast<size_t>(size * size), false);
+      bool top = false, bottom = false;
+      uint32_t shores = 0;
+      for (int y = 0; y < size; ++y)
+        for (int x = 0; x < size; ++x) {
+          if (map.getTile({x, y}).type != 2)
+            continue;
+          if (pending.empty()) {
+            pending.push_back({x, y});
+            seen[static_cast<size_t>(y * size + x)] = true;
+          }
+          top |= y == 0;
+          bottom |= y == size - 1;
+        }
+      for (size_t i = 0; i < pending.size(); ++i) {
+        const auto p = pending[i];
+        for (Coord d : {Coord{-1, 0}, Coord{1, 0}, Coord{0, -1}, Coord{0, 1}}) {
+          Coord n{p.x + d.x, p.y + d.y};
+          if (!map.isValid(n))
+            continue;
+          if (map.getTile(n).type != 2) {
+            ++shores;
+            continue;
+          }
+          const auto index = static_cast<size_t>(n.y * size + n.x);
+          if (!seen[index]) {
+            seen[index] = true;
+            pending.push_back(n);
+          }
+        }
+      }
+      EXPECT_EQ(pending.size(), stats.waterTiles) << size << " seed " << seed;
+      EXPECT_TRUE(top);
+      EXPECT_TRUE(bottom);
+      EXPECT_GT(shores, static_cast<uint32_t>(size));
+    }
+  }
+}

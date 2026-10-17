@@ -4,7 +4,9 @@
 #include "src/networks/RoadNetwork.hpp"
 #include "src/world/CityMap.hpp"
 
-int64_t ServiceTool::constructionCost(ServiceType type) {
+int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater) {
+  if (surfaceWater && type == ServiceType::Water) return 3000;
+  if (surfaceWater && type == ServiceType::Sanitation) return 2000;
   switch (type) {
     case ServiceType::Fire: return 5000;
     case ServiceType::Police: return 4500;
@@ -21,7 +23,9 @@ int64_t ServiceTool::constructionCost(ServiceType type) {
   }
 }
 
-int64_t ServiceTool::operatingCostPerTick(ServiceType type) {
+int64_t ServiceTool::operatingCostPerTick(ServiceType type, bool surfaceWater) {
+  if (surfaceWater && type == ServiceType::Water) return 12;
+  if (surfaceWater && type == ServiceType::Sanitation) return 8;
   switch (type) {
     case ServiceType::Fire: return 25;
     case ServiceType::Police: return 22;
@@ -71,7 +75,12 @@ ServicePlan ServiceTool::plan(
     ? options.coverageDistanceOverride
     : coverageDistance(type);
   result.facility = ServiceFacility{type, position, range, 1.0f};
-  result.cost = constructionCost(type);
+  result.facility.surfaceWater = options.surfaceWater;
+  result.cost = constructionCost(type, options.surfaceWater);
+  if (options.surfaceWater && type != ServiceType::Water && type != ServiceType::Sanitation) {
+    result.error = "surface water mode requires Water or Sanitation";
+    return result;
+  }
   if (!map.isValid(position)) {
     result.error = "site is outside the map";
     return result;
@@ -101,6 +110,18 @@ ServicePlan ServiceTool::plan(
   for (const ServiceFacility& facility : facilities) {
     if (facility.position == position) {
       result.error = "site already has a service";
+      return result;
+    }
+  }
+
+  if (options.surfaceWater) {
+    bool shoreline = false;
+    for (const Coord delta : {Coord{-1,0}, Coord{1,0}, Coord{0,-1}, Coord{0,1}}) {
+      const auto next = Coord{position.x + delta.x, position.y + delta.y};
+      shoreline |= map.isValid(next) && map.getTile(next).type == 2;
+    }
+    if (!shoreline) {
+      result.error = "intake / sewage outlet requires land beside a lake or river";
       return result;
     }
   }

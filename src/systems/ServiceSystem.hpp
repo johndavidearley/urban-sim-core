@@ -47,6 +47,9 @@ struct ServiceFacility {
   // Water facilities only. A default plant covers the same small city as a
   // default 100 MW power plant (see utilityDemandFor).
   float waterSupplyUnits = 100.0f;
+  // Water: shoreline intake. Sanitation: untreated shoreline sewage outlet.
+  // False preserves legacy inland water / sanitation facilities.
+  bool surfaceWater = false;
 };
 
 // Occupancy load shared by power (MW) and water (units). Residential draws
@@ -151,7 +154,10 @@ struct ServiceCoverageCache {
 class ServiceSystem {
 public:
   static bool parseServiceType(const std::string& raw, ServiceType& outType);
-  static const char* serviceTypeToString(ServiceType type);
+  static const char* serviceTypeToString(ServiceType type, bool surfaceWater = false);
+  // Bounded raw-discharge exposure along connected water tiles (12 hops).
+  static float intakeCleanFraction(const RoadNetwork& roads,
+      const std::vector<ServiceFacility>& facilities, Coord intake);
   static bool parsePowerSourceType(const std::string& raw, PowerSourceType& outType);
   static const char* powerSourceTypeToString(PowerSourceType type);
   static float defaultPowerEmissions(PowerSourceType type);

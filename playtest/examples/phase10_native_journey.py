@@ -122,6 +122,8 @@ async def main(args):
 
     try:
         await control("size_96")
+        if (await s.request("inspect", {"section": "ui"}))["terrain"]:
+            await control("terrain")
         await control("new")
         if not s.last_state["paused"]:
             await keys("Space")

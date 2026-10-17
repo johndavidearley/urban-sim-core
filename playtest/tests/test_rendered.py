@@ -27,17 +27,137 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_native_default_river_shore_utilities_and_checkpoint(self):
+        s = self.session
+        await record(s, "start")
+        self.assertTrue((await s.request("inspect", {"section": "ui"}))["terrain"])
+
+        async def keys(*names):
+            await s.request(
+                "input", {"events": [{"type": "key", "key": k} for k in names]}
+            )
+
+        async def click(x, y):
+            await s.request(
+                "input",
+                {
+                    "events": [
+                        {"type": "move", "x": x, "y": y},
+                        {"type": "down", "button": "left", "x": x, "y": y},
+                        {"type": "up", "button": "left", "x": x, "y": y},
+                    ]
+                },
+            )
+
+        controls = (await s.request("inspect", {"section": "ui"}))["controls"]
+        button = next(c for c in controls if c["name"] == "new")
+        await click(button["x"] + 10, button["y"] + 10)
+        await keys("F3", "F4", *(["Minus"] * 14))
+        tiles = {}
+        for y in range(0, 64, 8):
+            rows = (
+                await s.request(
+                    "inspect",
+                    {
+                        "section": "tiles",
+                        "x": 0,
+                        "y": y,
+                        "width": 64,
+                        "height": 8,
+                        "limit": 512,
+                    },
+                )
+            )["items"]
+            tiles.update({(t["x"], t["y"]): t["type"] for t in rows})
+        candidates = [
+            (x, y)
+            for y in range(8, 29)
+            for x in range(2, 61)
+            if all(tiles[(x - d, y)] != 2 for d in (0, 1, 2))
+            and any(
+                tiles[(x + dx, y + dy)] == 2
+                for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1))
+            )
+        ]
+        pairs = [
+            (a, b)
+            for a in candidates
+            for b in candidates
+            if 2 <= abs(a[1] - b[1]) and abs(a[0] - b[0]) + abs(a[1] - b[1]) <= 4
+        ]
+        self.assertTrue(pairs)
+        intake, outlet = min(
+            pairs,
+            key=lambda pair: abs(pair[0][0] - pair[1][0])
+            + abs(pair[0][1] - pair[1][1]),
+        )
+
+        async def screen(pos):
+            p = await s.request(
+                "coordinates", {"direction": "tile_to_screen", "x": pos[0], "y": pos[1]}
+            )
+            return {"x": p["x"], "y": p["y"]}
+
+        await keys("R")
+        for x, y in (intake, outlet):
+            a, b = await screen((x - 2, y)), await screen((x - 1, y))
+            await s.request(
+                "input",
+                {
+                    "events": [
+                        {"type": "down", "button": "left", **a},
+                        {"type": "move", **b},
+                        {"type": "up", "button": "left", **b},
+                    ]
+                },
+            )
+        await keys("S")
+        while s.last_state["tools"]["service_type"] != 5:
+            await keys("S")
+        self.assertTrue(s.last_state["tools"]["surface_water"])
+        await keys("V")
+        self.assertFalse(s.last_state["tools"]["surface_water"])
+        await keys("V")
+        self.assertTrue(s.last_state["tools"]["surface_water"])
+        before = s.last_state["funds"]
+        await click(**(await screen(intake)))
+        self.assertEqual(s.last_state["funds"], before - 3000)
+        await keys("S")
+        await click(**(await screen(outlet)))
+        self.assertEqual(s.last_state["funds"], before - 5000)
+        facilities = (await s.request("inspect", {"section": "facilities"}))["items"]
+        self.assertEqual(len(facilities), 2)
+        self.assertTrue(all(f["surface_water"] for f in facilities))
+        self.assertLess(facilities[0]["source_clean_fraction"], 1)
+        await keys("F4", "F5")
+        await s.screenshot("shore-intake-and-raw-outlet")
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        await keys("F3", "F", "F4")
+        await s.screenshot("shore-isometric-minimum")
+        funds = s.last_state["funds"]
+        await keys("N", "F9")
+        self.assertEqual(s.last_state["funds"], funds)
+        self.assertEqual(
+            (await s.request("inspect", {"section": "facilities"}))["items"], facilities
+        )
+        result = await record(s, "stop", "shore-utilities")
+        self.assertTrue((await replay(s, result["scenario"], 2))["identical"])
+
     async def test_city_guide_recognizes_early_utilities_and_paused_steps(self):
         s = self.session
         await s.city("new", 32)
+
         async def key(name):
             await s.request("input", {"events": [{"type": "key", "key": name}]})
+
         if not s.last_state["paused"]:
             await key("Space")
         # Semantic setup isolates the guide regression; the M36 journey uses
         # native construction throughout. Utilities deliberately precede zones.
-        await s.request("tool", {"action": "apply", "name": "road",
-            "x1": 8, "y1": 16, "x2": 24, "y2": 16})
+        await s.request(
+            "tool",
+            {"action": "apply", "name": "road", "x1": 8, "y1": 16, "x2": 24, "y2": 16},
+        )
         for kind, x in (("power", 15), ("water", 17)):
             await s.request("tool", {"action": "apply", "name": "service",
                 "service": kind, "x1": x, "y1": 15})

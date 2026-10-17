@@ -336,6 +336,14 @@ void drawIsometricFacility(DrawList* renderer, ScreenPoint top, int width, int h
     }
     return;
   }
+  if (facility.surfaceWater) {
+    const RGB pipe = facility.type == ServiceType::Water ? RGB{120,205,245} : RGB{155,112,70};
+    drawIsometricObject(renderer, top, width * 3 / 4, height * 3 / 4, color, height / 2);
+    rect(-5,-2,10,2,pipe);
+    rect(3,-2,2,5,pipe);
+    rect(2,3,4,2,facility.type == ServiceType::Water ? RGB{75,165,235} : RGB{133,112,62});
+    return;
+  }
   if (facility.type == ServiceType::Water) {
     // Raised reservoir: legs, narrow tank, and a bright cap.
     rect(-3, -7, 1, 8, {108, 120, 129});

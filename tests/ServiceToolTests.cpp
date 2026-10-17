@@ -141,3 +141,42 @@ TEST(ServiceToolTests, RejectedPurchasePreservesZoningAndFunds) {
   EXPECT_EQ(funds, 100);
   EXPECT_TRUE(facilities.empty());
 }
+
+TEST(ServiceToolTests,
+     ShoreUtilitiesRequireLandWaterRoadAndRevalidateTheShore) {
+  CityMap map({16, 16});
+  RoadNetwork roads(map);
+  for (int x = 4; x < 6; ++x)
+    roads.buildRoad({x, 4}, {x + 1, 4});
+  map.getTile({5, 2}).type = 2;
+  ServicePlacementOptions options;
+  options.surfaceWater = true;
+  int64_t funds = 10000;
+  std::vector<ServiceFacility> facilities;
+  EXPECT_FALSE(ServiceTool::plan(map, roads, facilities, ServiceType::Water,
+                                 {4, 3}, funds, options)
+                   .valid);
+  EXPECT_FALSE(ServiceTool::plan(map, roads, facilities, ServiceType::Water,
+                                 {5, 2}, funds, options)
+                   .valid);
+  EXPECT_FALSE(ServiceTool::plan(map, roads, facilities, ServiceType::Fire,
+                                 {5, 3}, funds, options)
+                   .valid);
+  const auto plan = ServiceTool::plan(
+      map, roads, facilities, ServiceType::Water, {5, 3}, funds, options);
+  ASSERT_TRUE(plan.valid) << plan.error;
+  EXPECT_EQ(plan.cost, 3000);
+  EXPECT_TRUE(plan.facility.surfaceWater);
+  map.getTile({5, 2}).type = 0;
+  EXPECT_FALSE(ServiceTool::build(map, roads, facilities, plan, funds));
+  EXPECT_EQ(funds, 10000);
+  EXPECT_TRUE(facilities.empty());
+  map.getTile({5, 2}).type = 2;
+  ASSERT_TRUE(ServiceTool::build(map, roads, facilities, plan, funds));
+  EXPECT_EQ(funds, 7000);
+  EXPECT_TRUE(facilities.front().surfaceWater);
+  EXPECT_EQ(ServiceTool::operatingCostPerTick(ServiceType::Water, true), 12);
+  EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Sanitation, true), 2000);
+  EXPECT_EQ(ServiceTool::operatingCostPerTick(ServiceType::Sanitation, true),
+            8);
+}

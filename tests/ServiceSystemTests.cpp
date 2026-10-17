@@ -333,3 +333,45 @@ TEST(ServiceSystemTests, ResultCacheInvalidatesOnStructuralStoreMutation) {
   store.createBuilding(BuildingType::Commercial, {2, 2}, 5);
   EXPECT_FALSE(ServiceSystem::isResultCacheValid(store, cache));
 }
+
+TEST(ServiceSystemTests, RawOutletsReduceIntakeSupplyOnlyAlongConnectedWater) {
+  CityMap map({24, 24});
+  RoadNetwork roads(map);
+  for (int y = 5; y < 12; ++y) {
+    roads.buildRoad({10, y}, {10, y + 1});
+    roads.buildRoad({16, y}, {16, y + 1});
+  }
+  for (int y = 0; y < 24; ++y) {
+    map.getTile({12, y}).type = 2;
+    map.getTile({14, y}).type = 2;
+  }
+  ServiceFacility intake{ServiceType::Water, {11, 8}, 20, 1.f};
+  intake.surfaceWater = true;
+  ServiceFacility outlet{ServiceType::Sanitation, {11, 10}, 18, 1.f};
+  outlet.surfaceWater = true;
+  std::vector<ServiceFacility> facilities{intake, outlet};
+  const float polluted =
+      ServiceSystem::intakeCleanFraction(roads, facilities, intake.position);
+  EXPECT_LT(polluted, 0.5f);
+  EXPECT_GE(polluted, 0.1f);
+  ServiceCoverageCache cache;
+  ServiceSystem::buildCache(roads, facilities, cache);
+  EXPECT_NEAR(cache.waterSupplyUnits, 100 * polluted, 0.001f);
+  facilities[1].position = {15, 10};
+  EXPECT_FALSE(ServiceSystem::isCacheValid(roads, facilities, cache));
+  EXPECT_FLOAT_EQ(
+      ServiceSystem::intakeCleanFraction(roads, facilities, intake.position),
+      1.f);
+  facilities[1].position = {11, 10};
+  facilities[1].surfaceWater = false;
+  EXPECT_FLOAT_EQ(
+      ServiceSystem::intakeCleanFraction(roads, facilities, intake.position),
+      1.f);
+  facilities[1].surfaceWater = true;
+  facilities[1].quality = 0;
+  EXPECT_FLOAT_EQ(
+      ServiceSystem::intakeCleanFraction(roads, facilities, intake.position),
+      1.f);
+  EXPECT_FLOAT_EQ(ServiceSystem::intakeCleanFraction(roads, facilities, {3, 3}),
+                  0.f);
+}

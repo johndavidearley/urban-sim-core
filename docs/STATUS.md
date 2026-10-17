@@ -21,6 +21,8 @@ candidate. Strict local checks passed 571 C++ tests, seven Python unit tests and
 in [run 38981010151](https://github.com/johndavidearley/urban-sim-core/actions/runs/38981010151),
 including strict Windows/macOS/Linux, ASan/UBSan, TSan and X11/Wayland playtests.
 See `PHASE10.md` for conditions, limitations, retained evidence and package details.
+M37 / Phase 11 is active: connected lakes/rivers by default, shoreline water
+intakes and untreated sewage outlets. See `PHASE11.md` for scope and verification.
 See `ROADMAP.md` and `PHASE9.md`. Earlier entries below preserve the implementation
 history and the gates that were pending at each stage.
 

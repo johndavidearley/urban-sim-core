@@ -13,7 +13,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", type=Path, default=Path("build-graphics-release"))
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--name", default="UrbanSimCore-m36-rc1")
+    parser.add_argument("--name", default="UrbanSimCore-local")
     args = parser.parse_args()
     if platform.system() != "Darwin":
         parser.error("Run on macOS with a native Release build")
@@ -39,7 +39,7 @@ exec "$package_dir/bin/UrbanSimCore-visualizer" "$@"
     )
     launcher.chmod(0o755)
     (root / "README.txt").write_text(
-        f"""UrbanSimCore M36 local release candidate — macOS {platform.machine()}
+        f"""UrbanSimCore local candidate ({args.name}) — macOS {platform.machine()}
 
 Extract the entire archive, then open Launch UrbanSimCore.command.
 The Vulkan loader, MoltenVK and GLFW runtime are bundled under lib/urban-sim.
@@ -49,6 +49,10 @@ Saves: ~/Library/Application Support/UrbanSimCore/urban_sim_session.json
 Keep its .city.json companion alongside it. F5 saves; F9 loads.
 URBAN_SIM_SAVE_DIR optionally chooses a different save directory.
 F1 opens the city guide. F6 opens the budget. Space pauses; N steps one tick.
+New City defaults to lakes/river terrain. T toggles flat maps on the start screen.
+S cycles civic tools; with Water/Sanitation selected, V toggles shore/inland mode.
+Shore intakes and raw sewage outlets need adjacent water and a road. Nearby
+raw outlets reduce intake supply; separate them along the water body.
 See the in-game controls for road, zoning and civic construction tools.
 
 The bin directory also contains the CLI and native playtest executable.

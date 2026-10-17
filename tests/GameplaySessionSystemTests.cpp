@@ -682,3 +682,66 @@ TEST(GameplaySessionSystemTests, RegionalIDCounterSurvivesEmptyRegistryAndReject
   EXPECT_EQ(loaded.nextRegionalConnectionId,1u);
   std::filesystem::remove(path);std::filesystem::remove(path.string()+".city.json");
 }
+
+TEST(GameplaySessionSystemTests,
+     ShoreFacilitiesPersistAndInvalidSitesRejectAtomically) {
+  CityMap map({16, 16});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore people;
+  for (int y = 0; y < 16; ++y)
+    map.getTile({8, y}).type = 2;
+  for (int y = 4; y < 10; ++y)
+    roads.buildRoad({6, y}, {6, y + 1});
+  GameplaySessionState session;
+  ServiceFacility intake{ServiceType::Water, {7, 5}, 20, 1.f};
+  intake.surfaceWater = true;
+  ServiceFacility outlet{ServiceType::Sanitation, {7, 8}, 18, 1.f};
+  outlet.surfaceWater = true;
+  session.facilities = {intake, outlet};
+  const auto path =
+      std::filesystem::temp_directory_path() / "urban_shore_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store,
+                                          people, session));
+  nlohmann::json valid;
+  {
+    std::ifstream input(path);
+    input >> valid;
+  }
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store,
+                                          people, loaded));
+  ASSERT_EQ(loaded.facilities.size(), 2u);
+  EXPECT_TRUE(loaded.facilities[0].surfaceWater);
+  EXPECT_TRUE(loaded.facilities[1].surfaceWater);
+  BudgetPolicy policy;
+  EXPECT_EQ(policy.serviceCost(loaded.facilities), 20);
+  policy.servicePercent[static_cast<size_t>(ServiceType::Sanitation)] = 0;
+  EXPECT_FLOAT_EQ(
+      ServiceSystem::intakeCleanFraction(
+          roads, policy.fundedFacilities(loaded.facilities), {7, 5}),
+      1.f);
+  auto invalid = valid;
+  invalid["facilities"][0]["x"] = 3;
+  {
+    std::ofstream output(path);
+    output << invalid;
+  }
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(), map, roads, store,
+                                           people, loaded));
+  EXPECT_EQ(loaded.facilities[0].position, Coord(7, 5));
+  EXPECT_EQ(map.getTile({8, 5}).type, 2);
+  // Existing sessions without the added field retain their inland facilities.
+  valid["facilities"][0].erase("surfaceWater");
+  valid["facilities"][1].erase("surfaceWater");
+  {
+    std::ofstream output(path);
+    output << valid;
+  }
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store,
+                                          people, loaded));
+  EXPECT_FALSE(loaded.facilities[0].surfaceWater);
+  EXPECT_FALSE(loaded.facilities[1].surfaceWater);
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
+}

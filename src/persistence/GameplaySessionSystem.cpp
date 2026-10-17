@@ -257,6 +257,7 @@ bool GameplaySessionSystem::save(
       {"emissionsKgPerMWh", facility.emissionsKgPerMWh},
       {"waterSupplyUnits", facility.waterSupplyUnits}
     });
+    if (facility.surfaceWater) facilities.back()["surfaceWater"] = true;
   }
 
   json burning = json::array();
@@ -597,6 +598,9 @@ bool GameplaySessionSystem::load(
       facility.powerCapacityMW = item.value("powerCapacityMW", 100.0f);
       facility.emissionsKgPerMWh = item.value("emissionsKgPerMWh", 400.0f);
       facility.waterSupplyUnits = item.value("waterSupplyUnits", 100.0f);
+      facility.surfaceWater = item.value("surfaceWater", false);
+      if (facility.surfaceWater && facility.type != ServiceType::Water && facility.type != ServiceType::Sanitation)
+        return fail(errorMessage,"invalid surface-water facility type");
       loaded.facilities.push_back(facility);
     }
 
@@ -637,6 +641,16 @@ bool GameplaySessionSystem::load(
     if (!SaveLoadSystem::loadSnapshotFromFile(cityPath,snapshot,&diagnostics)) {
       return fail(errorMessage, diagnostics.errorMessage.empty()
         ? "unable to load core city snapshot" : diagnostics.errorMessage);
+    }
+    for (const auto& facility : loaded.facilities) {
+      if (!facility.surfaceWater) continue;
+      bool land = false, shore = false;
+      for (const auto& tile : snapshot.tiles) {
+        const int distance = std::abs(tile.x-facility.position.x) + std::abs(tile.y-facility.position.y);
+        if (!distance) land = tile.type != 2 && !tile.hasRoad && !tile.buildingId;
+        if (distance == 1 && tile.type == 2) shore = true;
+      }
+      if (!land || !shore) return fail(errorMessage,"surface-water facility requires an empty shoreline site");
     }
     loaded.tourism.state.tick=loaded.tick;
     if (root.contains("tourism")) loaded.tourism=parseTourism(root.at("tourism"),loaded.tick,snapshot,&loaded.transitReport);

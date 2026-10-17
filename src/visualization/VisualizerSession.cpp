@@ -494,7 +494,7 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
                     result.generateTerrain ? RGB{255, 225, 110}
                                            : (terrainHovered ? RGB{185, 205, 235} : RGB{125, 135, 150}), 255);
     drawText(renderer, terrainButton.x + 14, terrainButton.y + 13,
-             result.generateTerrain ? "TERRAIN ON" : "TERRAIN OFF", {235, 238, 242}, 2);
+             result.generateTerrain ? "LAKES / RIVER ON" : "FLAT MAP - NO WATER", {235, 238, 242}, 2);
 
     const bool newHovered = pointInRect(mouseX, mouseY, newButton);
     const bool loadHovered = pointInRect(mouseX, mouseY, loadButton);

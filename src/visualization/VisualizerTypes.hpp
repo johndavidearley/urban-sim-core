@@ -157,7 +157,7 @@ struct StartScreenResult {
   bool quit = false;
   bool loadSession = false;
   int mapSize = 64;
-  bool generateTerrain = false;
+  bool generateTerrain = true;
 };
 
 const char* overlayModeName(OverlayMode mode);

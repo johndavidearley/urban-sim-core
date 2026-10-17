@@ -493,3 +493,21 @@ TEST(RegionalManagement, HotelOccupancyIsSeparateFromJobsAndClosurePolicy) {
   EXPECT_FALSE(regionalControlEnabled(7,true,0));
   EXPECT_TRUE(regionalControlEnabled(6,true,0));
 }
+
+TEST(VisualizerGeometry, ShorePlacementWarningsFitMinimumWindowInBothTextSizes) {
+  const bool previous = gReadableUiText;
+  for (bool readable : {false, true}) {
+    gReadableUiText = readable;
+    for (const std::string& message : {
+        std::string("intake / sewage outlet requires land beside a lake or river"),
+        std::string(200, 'W')}) {
+      DrawList list;
+      drawPlacementWarning(&list, 799, 639, 800, 640, message);
+      for (const auto& vertex : list.vertices) {
+        EXPECT_GE(vertex.x, 0); EXPECT_LE(vertex.x, 800);
+        EXPECT_GE(vertex.y, 0); EXPECT_LE(vertex.y, 640);
+      }
+    }
+  }
+  gReadableUiText = previous;
+}

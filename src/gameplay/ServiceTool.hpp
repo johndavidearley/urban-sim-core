@@ -11,6 +11,7 @@ class RoadNetwork;
 
 struct ServicePlacementOptions {
   bool requireRoadAccess = true;
+  bool surfaceWater = false;
   // -1 keeps the type default from coverageDistance().
   int coverageDistanceOverride = -1;
 };
@@ -26,8 +27,8 @@ struct ServicePlan {
 
 class ServiceTool {
 public:
-  static int64_t constructionCost(ServiceType type);
-  static int64_t operatingCostPerTick(ServiceType type);
+  static int64_t constructionCost(ServiceType type, bool surfaceWater = false);
+  static int64_t operatingCostPerTick(ServiceType type, bool surfaceWater = false);
   static int coverageDistance(ServiceType type);
 
   static ServicePlan plan(

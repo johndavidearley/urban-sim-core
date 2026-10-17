@@ -299,6 +299,7 @@ def create_server(session: Session) -> FastMCP:
         y2: Coordinate | None = None,
         zone: str | None = None,
         service: str | None = None,
+        surface_water: bool | None = None,
         archetype: str | None = None,
         road_class: Literal["local", "arterial"] | None = None,
         id: UInt32 | None = None,
@@ -306,7 +307,7 @@ def create_server(session: Session) -> FastMCP:
         port_action: Literal["cargo", "passenger", "remove", "toggle", "capacity", "airport"] | None = None,
         capacity: Annotated[int, Field(ge=0, le=200)] | None = None,
     ) -> dict[str, Any]:
-        """Use gameplay tools with normal plans, costs and validation. Endpoints are tile coordinates; services use x1/y1. Road class local/arterial supports build or upgrade. Policies support archetype and budget cap. Hotel uses x1/y1 on empty unzoned land with road/power/water; $10000, 32 beds, 12 commercial jobs; building enables tourism; visitors require reachable parks. Terminal tools use x1/y1; name airport defaults to 4x2 airport placement, while port_action selects cargo/passenger/airport/remove/toggle/capacity. Capacity sets 0..200 goods, 0..60 sea passengers or 0..120 air passengers; omission cycles presets."""
+        """Use gameplay tools with normal plans, costs and validation. Endpoints are tile coordinates; services use x1/y1; surface_water selects shoreline intake/raw outlet variants. Road class local/arterial supports build or upgrade. Policies support archetype and budget cap. Hotel uses x1/y1 on empty unzoned land with road/power/water; $10000, 32 beds, 12 commercial jobs; building enables tourism; visitors require reachable parks. Terminal tools use x1/y1; name airport defaults to 4x2 airport placement, while port_action selects cargo/passenger/airport/remove/toggle/capacity. Capacity sets 0..200 goods, 0..60 sea passengers or 0..120 air passengers; omission cycles presets."""
         return await session.request(
             "tool",
             compact(
@@ -318,6 +319,7 @@ def create_server(session: Session) -> FastMCP:
                 y2=y2,
                 zone=zone,
                 service=service,
+                surface_water=surface_water,
                 archetype=archetype,
                 road_class=road_class,
                 id=id,
@@ -542,13 +544,14 @@ def create_server(session: Session) -> FastMCP:
                     "route_heatmap",
                     "transit",
                 ],
-                "start_screen": {"new": "Enter", "load": "L", "terrain": "T"},
+                "start_screen": {"new": "Enter", "load": "L", "terrain": "T toggles lakes/river (default) or flat map"},
                 "gameplay": {
                     "road": "R",
                     "road_class_toggle": "A (road tool active)",
                     "zone": "Z",
                     "bulldoze": "B",
                     "service": "S",
+                    "shore_water": "V toggles inland/shore mode while Water or Sanitation is selected; natural new maps default to shore",
                     "district": "P",
                     "airport": "J or Airport button builds a 4x2 passenger airport; V manages terminals",
                     "hotel": "K or Hotel button places a $10000 hotel with 32 beds and 12 commercial jobs; B removes it",

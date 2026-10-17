@@ -5,8 +5,8 @@
 #include "src/world/CityMap.hpp"
 
 // Tuning for procedural terrain. Fractions are share-of-map targets; the
-// generator hits them exactly (modulo integer rounding) by selecting the
-// lowest/highest tiles of a smoothed height field.
+// generator hits them exactly (modulo integer rounding). Connected river/lake
+// shorelines follow a smoothed height field; rough terrain takes the high ground.
 struct TerrainParams {
   float waterFraction = 0.18f;    // share of tiles marked water (type 2)
   float terrainFraction = 0.12f;  // share marked rough terrain/hills (type 1)
@@ -20,7 +20,7 @@ struct TerrainStats {
 };
 
 // Stamps water (Tile::type == 2) and rough terrain (Tile::type == 1) onto a map
-// from a seeded, smoothed height field. Deterministic for a given seed + params.
+// with a continuous river and connected lake. Deterministic for seed + params.
 // Only writes Tile::type; zones, buildings, roads, and land value are untouched.
 // Intended to run on a freshly constructed (all-empty) map.
 class TerrainGenerator {
