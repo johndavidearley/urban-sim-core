@@ -415,7 +415,7 @@ RGB tileColor(
   RGB color = terrainTint(tile, zoneColor(tile.zone));
 
   for (const ServiceFacility& facility : facilities) {
-    if (facility.position == coord) {
+    if (facilityCoversTile(facility, coord)) {
       return serviceFacilityColor(facility.type);
     }
   }

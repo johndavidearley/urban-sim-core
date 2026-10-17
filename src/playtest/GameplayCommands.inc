@@ -530,6 +530,15 @@ if (command == "tool") {
   if (args.contains("service") &&
       !ServiceSystem::parseServiceType(args.at("service"), service))
     throw std::runtime_error("Unknown service");
+  if (args.contains("power_source")) {
+    if (type != PaletteTool::Service || service != ServiceType::Power)
+      throw std::runtime_error("Power source requires the Power service tool");
+    PowerSourceType source = PowerSourceType::Generic;
+    if (!args.at("power_source").is_string() ||
+        !ServiceSystem::parsePowerSourceType(args.at("power_source").get<std::string>(), source))
+      throw std::runtime_error("Unknown power source");
+    selectedPowerSource = source;
+  }
   if (args.contains("archetype") &&
       !DistrictSystem::parseArchetype(args.at("archetype"), archetype))
     throw std::runtime_error("Unknown archetype");

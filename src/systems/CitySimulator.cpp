@@ -341,6 +341,7 @@ SimResult CitySimulator::run(
     // part of this pass), so - like services/traffic/population - it is
     // interval-gated; values persist on the map between recomputes, so a
     // skipped tick just means slightly stale figures, not stale-forever ones.
+    city_sim::applyPowerPlantPollution(map, roads, fundedFacilities, ax0, ay0, ax1, ay1);
     if (tick % std::max(1, options.landValueInterval) == 0) {
       const auto t0 = Clock::now();
       LandValueSystem::updateLandValues(map, roads, store, &coverageCache, ax0, ay0, ax1, ay1);

@@ -9,9 +9,19 @@
 class CityMap;
 class RoadNetwork;
 
+struct PowerPlantSpec {
+  int64_t constructionCost = 0;
+  int64_t operatingCost = 0;
+  float capacityMW = 0.0f;
+  float emissionsKgPerMWh = 0.0f;
+  bool shoreline = false;
+};
+
 struct ServicePlacementOptions {
   bool requireRoadAccess = true;
   bool surfaceWater = false;
+  // Used when the placed type is Power. Other services ignore it.
+  PowerSourceType powerSource = PowerSourceType::Generic;
   // -1 keeps the type default from coverageDistance().
   int coverageDistanceOverride = -1;
 };
@@ -27,8 +37,13 @@ struct ServicePlan {
 
 class ServiceTool {
 public:
-  static int64_t constructionCost(ServiceType type, bool surfaceWater = false);
-  static int64_t operatingCostPerTick(ServiceType type, bool surfaceWater = false);
+  static PowerPlantSpec powerPlant(PowerSourceType source);
+  static int64_t constructionCost(
+    ServiceType type, bool surfaceWater = false,
+    PowerSourceType source = PowerSourceType::Generic);
+  static int64_t operatingCostPerTick(
+    ServiceType type, bool surfaceWater = false,
+    PowerSourceType source = PowerSourceType::Generic);
   static int coverageDistance(ServiceType type);
 
   static ServicePlan plan(

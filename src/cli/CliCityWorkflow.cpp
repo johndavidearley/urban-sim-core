@@ -242,6 +242,7 @@ int runCityCliWorkflow(CliOptions opts) {
       ServicePlacementOptions placement;
       placement.requireRoadAccess = false;
       placement.coverageDistanceOverride = std::max(0, dist);
+      placement.powerSource = sourceType;
       const ServicePlan plan = ServiceTool::plan(
         map, roads, serviceFacilities, ServiceType::Power, {x, y}, sandboxFunds, placement);
       if (!plan.valid || !ServiceTool::build(map, roads, serviceFacilities, plan, sandboxFunds)) {
@@ -250,7 +251,6 @@ int runCityCliWorkflow(CliOptions opts) {
         return 1;
       }
       ServiceFacility& facility = serviceFacilities.back();
-      facility.powerSource = sourceType;
       facility.powerCapacityMW = capacityMW;
       facility.emissionsKgPerMWh = ServiceSystem::defaultPowerEmissions(sourceType);
       std::cout << "Added " << ServiceSystem::powerSourceTypeToString(sourceType)
@@ -322,8 +322,8 @@ int runCityCliWorkflow(CliOptions opts) {
           continue;
         }
 
-        const RoadPlan plan = RoadTool::plan(map, roads, {x1, y1}, {x2, y2}, sandboxFunds);
-        if (!plan.valid || !RoadTool::build(map, roads, plan, sandboxFunds)) {
+        const RoadPlan plan = RoadTool::plan(map, roads, {x1, y1}, {x2, y2}, sandboxFunds, RoadClass::Local, &serviceFacilities);
+        if (!plan.valid || !RoadTool::build(map, roads, plan, sandboxFunds, &serviceFacilities)) {
           std::cerr << "Error: Cannot place road (" << x1 << "," << y1 << ")-("
                     << x2 << "," << y2 << "): "
                     << (plan.error.empty() ? "build failed" : plan.error) << "\n";

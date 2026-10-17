@@ -6,6 +6,8 @@
 #include <cmath>
 #include <future>
 #include <limits>
+#include <queue>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -344,6 +346,68 @@ void updatePollution(CityMap& map, const EntityStore& store,
   scatterType(BuildingType::Commercial, 0.25f);
 }
 
+void applyPowerPlantPollution(
+  CityMap& map,
+  const RoadNetwork& roads,
+  const std::vector<ServiceFacility>& facilities,
+  int x0, int y0, int x1, int y1
+) {
+  constexpr int kRadius = 6;
+  const Coord directions[] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+  for (const ServiceFacility& facility : facilities) {
+    if (facility.type != ServiceType::Power ||
+        facility.powerSource == PowerSourceType::Generic ||
+        facility.quality <= 0.0f) {
+      continue;
+    }
+    const float intensity = std::clamp(facility.emissionsKgPerMWh, 0.0f, 1000.0f) / 1000.0f
+      * std::clamp(facility.quality, 0.0f, 1.0f);
+    if (intensity <= 0.0f) continue;
+
+    std::unordered_map<Coord, int, Vec2Hash> distance;
+    const int span = facilityFootprintSpan(facility);
+    for (int dy = 0; dy < span; ++dy) {
+      for (int dx = 0; dx < span; ++dx) {
+        distance[{facility.position.x + dx, facility.position.y + dy}] = 0;
+      }
+    }
+    Coord anchor;
+    if (roads.resolveRoadAnchor(facility.position, anchor)) {
+      std::queue<std::pair<Coord, int>> pending;
+      std::unordered_set<Coord, Vec2Hash> seen;
+      pending.push({anchor, 0});
+      seen.insert(anchor);
+      while (!pending.empty()) {
+        const auto [pos, hops] = pending.front();
+        pending.pop();
+        const auto found = distance.find(pos);
+        if (found == distance.end() || hops < found->second) distance[pos] = hops;
+        for (const Coord delta : directions) {
+          const Coord beside{pos.x + delta.x, pos.y + delta.y};
+          if (!map.isValid(beside) || map.getTile(beside).type == 2) continue;
+          const auto besideFound = distance.find(beside);
+          if (besideFound == distance.end() || hops < besideFound->second) distance[beside] = hops;
+        }
+        if (hops == kRadius) continue;
+        const RoadNetwork::Node* node = roads.getNode(pos);
+        if (node == nullptr) continue;
+        for (const RoadNodeId& neighbor : node->adjacent) {
+          if (seen.insert(neighbor.coord).second) pending.push({neighbor.coord, hops + 1});
+        }
+      }
+    }
+
+    for (const auto& [coord, hops] : distance) {
+      if (coord.x < x0 || coord.x > x1 || coord.y < y0 || coord.y > y1) continue;
+      if (!map.isValid(coord)) continue;
+      const float weight = 1.0f - static_cast<float>(hops) / static_cast<float>(kRadius + 1);
+      if (weight <= 0.0f) continue;
+      float& pollution = map.pollution(coord);
+      pollution = std::min(1.0f, pollution + intensity * weight);
+    }
+  }
+}
+
 void applyWastePollution(CityMap& map, float penalty, int x0, int y0, int x1, int y1) {
   if (penalty <= 0.0f || x0 > x1 || y0 > y1) {
     return;
@@ -391,6 +455,14 @@ Coord chooseFacilitySite(
     for (int x = x0; x <= x1; ++x) {
       if (map.getTile({x, y}).type == 2 || map.getTile({x,y}).regionalConnectionId) continue;
       if (!hasRoadAccess(map, {x, y})) continue;
+      bool covered = false;
+      for (const ServiceFacility& facility : facilities) {
+        if (facilityCoversTile(facility, {x, y})) {
+          covered = true;
+          break;
+        }
+      }
+      if (covered) continue;
       long score;
       if (facilities.empty()) {
         // Prefer the center for the first facility (smallest distance wins).
@@ -900,6 +972,18 @@ ConstructionRegion expandConstruction(
     extendZoningCandidates(
       map, center, state.zoningCandidatesExtent, state.extent, pool, state.zoningCandidates);
     state.zoningCandidatesExtent = state.extent;
+
+    bool droppedPads = false;
+    for (const Coord& candidate : state.zoningCandidates.list) {
+      for (const ServiceFacility& facility : facilities) {
+        if (candidate != facility.position && facilityCoversTile(facility, candidate)) {
+          state.zoningCandidates.erase(candidate);
+          droppedPads = true;
+          break;
+        }
+      }
+    }
+    if (droppedPads) state.zoningCandidates.compact();
 
     std::vector<Coord>& candidates = state.zoningCandidates.list;
     const int batchLimit = std::min(static_cast<int>(candidates.size()), options.zoneBatchPerTick);

@@ -106,6 +106,15 @@ float averageResidentialPollution(const CityMap& map, const EntityStore& store);
 // Add uncollected-waste pollution onto zoned tiles in [x0,y0]-[x1,y1].
 void applyWastePollution(CityMap& map, float penalty, int x0, int y0, int x1, int y1);
 
+// Local air pollution from operating, non-generic power plants. Intensity
+// follows kg/MWh and falls with road distance from the plant. Generic plants
+// add nothing, so a generic-only city keeps today's pollution field.
+void applyPowerPlantPollution(
+  CityMap& map,
+  const RoadNetwork& roads,
+  const std::vector<ServiceFacility>& facilities,
+  int x0, int y0, int x1, int y1);
+
 // Graph reachability from the power/water BFS, then load shedding.
 // Buildings on the graph are kept closest-first. Farthest distance sheds
 // first, and a higher EntityId sheds first at the same distance, until

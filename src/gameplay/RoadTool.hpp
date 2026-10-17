@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "src/networks/RoadNetwork.hpp"
+#include "src/systems/ServiceSystem.hpp"
 #include "src/world/Tile.hpp"
 
 class CityMap;
@@ -28,7 +29,9 @@ public:
 
   static RoadPlan plan(const CityMap &map, const RoadNetwork &roads,
                        Coord start, Coord end, int64_t availableFunds,
-                       RoadClass roadClass = RoadClass::Local);
+                       RoadClass roadClass = RoadClass::Local,
+                       const std::vector<ServiceFacility>* facilities = nullptr);
 
-  static bool build(CityMap& map, RoadNetwork& roads, const RoadPlan& plan, int64_t& availableFunds);
+  static bool build(CityMap& map, RoadNetwork& roads, const RoadPlan& plan, int64_t& availableFunds,
+                    const std::vector<ServiceFacility>* facilities = nullptr);
 };

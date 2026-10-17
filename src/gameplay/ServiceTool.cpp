@@ -4,7 +4,21 @@
 #include "src/networks/RoadNetwork.hpp"
 #include "src/world/CityMap.hpp"
 
-int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater) {
+PowerPlantSpec ServiceTool::powerPlant(PowerSourceType source) {
+  switch (source) {
+    case PowerSourceType::Coal: return {10000, 40, 80.0f, 1000.0f, false};
+    case PowerSourceType::NaturalGas: return {14000, 36, 60.0f, 450.0f, false};
+    case PowerSourceType::Nuclear: return {80000, 90, 200.0f, 12.0f, false};
+    case PowerSourceType::Solar: return {8000, 8, 15.0f, 45.0f, false};
+    case PowerSourceType::Wind: return {6000, 6, 10.0f, 11.0f, false};
+    case PowerSourceType::Hydro: return {18000, 18, 40.0f, 24.0f, true};
+    case PowerSourceType::Generic:
+    default: return {12000, 45, 100.0f, 400.0f, false};
+  }
+}
+
+int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater, PowerSourceType source) {
+  if (type == ServiceType::Power) return powerPlant(source).constructionCost;
   if (surfaceWater && type == ServiceType::Water) return 3000;
   if (surfaceWater && type == ServiceType::Sanitation) return 2000;
   switch (type) {
@@ -24,7 +38,8 @@ int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater) {
   }
 }
 
-int64_t ServiceTool::operatingCostPerTick(ServiceType type, bool surfaceWater) {
+int64_t ServiceTool::operatingCostPerTick(ServiceType type, bool surfaceWater, PowerSourceType source) {
+  if (type == ServiceType::Power) return powerPlant(source).operatingCost;
   if (surfaceWater && type == ServiceType::Water) return 12;
   if (surfaceWater && type == ServiceType::Sanitation) return 8;
   switch (type) {
@@ -79,52 +94,68 @@ ServicePlan ServiceTool::plan(
     : coverageDistance(type);
   result.facility = ServiceFacility{type, position, range, 1.0f};
   result.facility.surfaceWater = options.surfaceWater;
-  result.cost = constructionCost(type, options.surfaceWater);
+  const PowerPlantSpec plant = powerPlant(options.powerSource);
+  if (type == ServiceType::Power) {
+    result.facility.powerSource = options.powerSource;
+    result.facility.powerCapacityMW = plant.capacityMW;
+    result.facility.emissionsKgPerMWh = plant.emissionsKgPerMWh;
+    result.cost = plant.constructionCost;
+  } else {
+    result.cost = constructionCost(type, options.surfaceWater);
+  }
   if (options.surfaceWater && type != ServiceType::Water && type != ServiceType::Sanitation) {
     result.error = "surface water mode requires Water or Sanitation";
     return result;
   }
-  if (!map.isValid(position)) {
-    result.error = "site is outside the map";
-    return result;
-  }
-
-  const Tile& tile = map.getTile(position);
-  if (tile.regionalConnectionId) {
-    result.error = "site is reserved by a regional terminal";
-    return result;
-  }
-  if (tile.type == 2) {
-    result.error = "cannot build on water";
-    return result;
-  }
-  if (tile.hasRoad) {
-    result.error = "cannot build on a road";
-    return result;
-  }
-  if (tile.zone == static_cast<int>(ZoneType::Park)) {
-    result.error = "bulldoze the park before placing a service";
-    return result;
-  }
-  if (tile.buildingId != 0) {
-    result.error = "site is occupied";
-    return result;
-  }
-  for (const ServiceFacility& facility : facilities) {
-    if (facility.position == position) {
-      result.error = "site already has a service";
-      return result;
+  const int span = facilityFootprintSpan(result.facility);
+  for (int dy = 0; dy < span; ++dy) {
+    for (int dx = 0; dx < span; ++dx) {
+      const Coord cell{position.x + dx, position.y + dy};
+      if (!map.isValid(cell)) {
+        result.error = span > 1 ? "solar plant needs a clear 2x2" : "site is outside the map";
+        return result;
+      }
+      const Tile& tile = map.getTile(cell);
+      if (tile.regionalConnectionId) {
+        result.error = "site is reserved by a regional terminal";
+        return result;
+      }
+      if (tile.type == 2) {
+        result.error = "cannot build on water";
+        return result;
+      }
+      if (tile.hasRoad) {
+        result.error = "cannot build on a road";
+        return result;
+      }
+      if (tile.zone == static_cast<int>(ZoneType::Park)) {
+        result.error = "bulldoze the park before placing a service";
+        return result;
+      }
+      if (tile.buildingId != 0) {
+        result.error = "site is occupied";
+        return result;
+      }
+      for (const ServiceFacility& facility : facilities) {
+        if (facilityCoversTile(facility, cell)) {
+          result.error = "site already has a service";
+          return result;
+        }
+      }
     }
   }
 
-  if (options.surfaceWater) {
+  const bool needsShore = options.surfaceWater || (type == ServiceType::Power && plant.shoreline);
+  if (needsShore) {
     bool shoreline = false;
     for (const Coord delta : {Coord{-1,0}, Coord{1,0}, Coord{0,-1}, Coord{0,1}}) {
       const auto next = Coord{position.x + delta.x, position.y + delta.y};
       shoreline |= map.isValid(next) && map.getTile(next).type == 2;
     }
     if (!shoreline) {
-      result.error = "intake / sewage outlet requires land beside a lake or river";
+      result.error = type == ServiceType::Power
+        ? "hydro plant requires land beside a lake or river"
+        : "intake / sewage outlet requires land beside a lake or river";
       return result;
     }
   }
@@ -165,7 +196,14 @@ bool ServiceTool::build(
   facilities.push_back(current.facility);
   // Civic sites are not entities. Leaving old zoning here lets the next growth
   // tick spawn a private building beneath the newly purchased facility.
-  map.setZone(current.facility.position, static_cast<int>(ZoneType::None));
+  const int span = facilityFootprintSpan(current.facility);
+  for (int dy = 0; dy < span; ++dy) {
+    for (int dx = 0; dx < span; ++dx) {
+      map.setZone(
+        {current.facility.position.x + dx, current.facility.position.y + dy},
+        static_cast<int>(ZoneType::None));
+    }
+  }
   availableFunds -= current.cost;
   return true;
 }

@@ -910,11 +910,14 @@ void drawTileInspector(
     }
   }
   for (const ServiceFacility& facility : facilities) {
-    if (facility.position == coord) {
-      drawText(renderer, x + 10, y + 111,
-               std::string("SERVICE ") + ServiceSystem::serviceTypeToString(facility.type, facility.surfaceWater)
-                 + " RANGE " + std::to_string(facility.maxTravelDistance),
-               serviceFacilityColor(facility.type), 1);
+    if (facilityCoversTile(facility, coord)) {
+      const std::string serviceLine = facility.type == ServiceType::Power
+        ? std::string(ServiceSystem::powerSourceTypeToString(facility.powerSource)) + " " +
+            std::to_string(static_cast<int>(facility.powerCapacityMW)) + " MW " +
+            std::to_string(static_cast<int>(facility.emissionsKgPerMWh)) + " KG/MWH"
+        : std::string("SERVICE ") + ServiceSystem::serviceTypeToString(facility.type, facility.surfaceWater)
+            + " RANGE " + std::to_string(facility.maxTravelDistance);
+      drawText(renderer, x + 10, y + 111, serviceLine, serviceFacilityColor(facility.type), 1);
       if (facility.type == ServiceType::Incinerator && waste) {
         drawText(renderer, x + 10, y + 95, "CITY BURNED " + std::to_string(waste->incinerated)
           + "/TICK POWER " + std::to_string(waste->powerGenerationMW) + " MW", {255,190,105}, 1);

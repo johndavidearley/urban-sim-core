@@ -21,7 +21,7 @@ HotelPlan HotelTool::plan(const CityMap& map, const RoadNetwork& roads,
     result.error = "hotel requires empty unzoned land"; return result;
   }
   for (const auto& facility : facilities)
-    if (facility.position == position) { result.error = "hotel site has a service"; return result; }
+    if (facilityCoversTile(facility, position)) { result.error = "hotel site has a service"; return result; }
   Coord anchor;
   if (!roads.resolveRoadAnchor(position,anchor)) {
     result.error = "hotel requires road access"; return result;

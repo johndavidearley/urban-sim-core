@@ -44,7 +44,7 @@ ZonePlan ZoneTool::plan(
         return result;
       }
       if (facilities && std::any_of(facilities->begin(), facilities->end(),
-          [&](const ServiceFacility& facility) { return facility.position == coord; })) {
+          [&](const ServiceFacility& facility) { return facilityCoversTile(facility, coord); })) {
         result.error = "area includes a service facility";
         return result;
       }

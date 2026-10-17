@@ -53,6 +53,19 @@ struct ServiceFacility {
   bool surfaceWater = false;
 };
 
+// Solar occupies a 2×2 whose minimum corner is `position`. Every other
+// facility, including every other power source, occupies its anchor tile.
+inline int facilityFootprintSpan(const ServiceFacility& facility) {
+  return facility.type == ServiceType::Power &&
+      facility.powerSource == PowerSourceType::Solar ? 2 : 1;
+}
+
+inline bool facilityCoversTile(const ServiceFacility& facility, Coord coord) {
+  const int span = facilityFootprintSpan(facility);
+  return coord.x >= facility.position.x && coord.y >= facility.position.y &&
+    coord.x < facility.position.x + span && coord.y < facility.position.y + span;
+}
+
 // Occupancy load shared by power (MW) and water (units). Residential draws
 // half as much as every other building type. A default 100 MW / 100-unit
 // plant covers 50,000 residents before shedding starts.

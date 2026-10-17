@@ -4,7 +4,7 @@ For the authoritative current validation baseline and active priorities, see
 [STATUS.md](STATUS.md). This document retains detailed milestone history and
 future ideas.
 
-Last updated: October 15, 2026
+Last updated: October 17, 2026
 
 ## Current Status Snapshot
 
@@ -22,6 +22,8 @@ Last updated: October 15, 2026
   strict, ASan/UBSan, and TSan configurations verified. Live counts are in
   STATUS.md.
 - Phase 6 (M17–M22): implemented; local M22 verification is recorded in STATUS.md.
+- Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
+- Phase 12 (M38–M44): M38 complete locally October 17, 2026. M39–M44 are the active queue. Implement in order.
 
 ---
 
@@ -701,6 +703,232 @@ candidate launches with documented runtime requirements and save location.
 
 ---
 
+## Phase 12: Scarcity the player can spend against (M38–M44)
+
+Defined October 17, 2026. M38 is complete locally. M39–M44 are not started.
+Implement in order. Each milestone keeps the suite deterministic and says
+whether a default `--simulate` run changes.
+
+These stay as they are through the phase:
+
+- Player mutations stay the gameplay tools. A command/query façade waits
+  for a second interactive frontend.
+- Tick scheduling stays the interval fields on `SimOptions`. A bond term is a
+  tick count on the treasury, not a day/week/month calendar.
+- Citizens stay `PopulationGroup` aggregates. School seats and hospital beds
+  are city capacities, not enrolled people.
+- Power and water stay `ServiceSystem` coverage over the road graph, plus a
+  load check. Plant source is a field on the existing power facility.
+- Freight stays in `TrafficSystem`'s commute-batch model. `TrafficMicroSim`
+  stays the separate higher-fidelity demo.
+- Sanitation stays an illness modifier, not a construction gate. Treatment
+  changes shoreline contamination. It does not become a third growth check.
+
+### Milestone 38: Power plants that differ
+
+**Complete locally, October 17, 2026.** Strict `ctest` in `build-strict`
+passed 590 tests. Playtest Python unit tests passed (7). Rendered playtests
+and hosted CI were not re-run.
+
+The service tool places a source on the existing Power facility. One Power
+department slider still funds every plant. Sources are placement modes, in
+the same way shoreline water is a mode of Water. Generic stays the autonomous
+and legacy-save plant and adds no local tile pollution. Player-built sources
+add road-tapered air pollution. Hydro must sit on land beside water and does
+not become a water intake. Nuclear is high capacity and low air pollution only.
+
+- [x] The service tool gains a power-source mode on the existing Power
+      facility. One Power department slider still funds every plant. Sources
+      are placement modes, in the same way shoreline water is a mode of Water.
+- [x] Target catalog, full funding. Generic stays $12,000, $45/tick, 100 MW,
+      400 kg/MWh, one land tile on a road. Coal is $10,000, $40/tick, 80 MW,
+      1000 kg/MWh. Gas is $14,000, $36/tick, 60 MW, 450 kg/MWh. Nuclear is
+      $80,000, $90/tick, 200 MW, 12 kg/MWh. Solar is $8,000, $8/tick, 15 MW,
+      45 kg/MWh, on a 2×2 empty footprint. Wind is $6,000, $6/tick, 10 MW,
+      11 kg/MWh. Hydro is $18,000, $18/tick, 40 MW, 24 kg/MWh, and must pass
+      the M37 shoreline check.
+- [x] Operating emissions add local air pollution on the existing pollution
+      field, tapered by road distance from the plant. A higher kg/MWh plant
+      raises nearby land pollution more. The citywide kg/MWh report stays.
+- [x] Autonomous placement keeps today's generic 100 MW plant. An untouched
+      `--simulate` run stays on that plant. Player-built sources are the new
+      path, on both hosts. Legacy saves load as generic.
+- [x] The inspector and HUD show source, MW, and local emissions. MCP placement
+      accepts the source on the existing power service.
+
+**Acceptance:** A coal plant and a hydro plant of the catalog MW produce
+different nearby pollution, different upkeep, and different supply. Hydro
+placement on inland land is rejected. A generic-only city matches the current
+power and pollution totals.
+**Excluded:** a separate power graph, weather, fuel markets, fuel stockpiles,
+and a new radiation or meltdown system. Nuclear is high capacity and low air
+pollution only.
+
+### Milestone 39: Landfills that fill
+
+`WasteSystem` balances each tick and drops the remainder. `landfilled` units
+do not occupy space. A garbage depot that collects 400 units a tick can do
+that for the life of the city. Incinerators burn only this tick's residual.
+
+- [ ] Each Garbage facility stores a remaining volume. New and auto-placed
+      sites start at 80,000 units. Legacy saves start at that same volume.
+      The volume is saved on the facility.
+- [ ] Recycle this tick's waste first, then burn residual up to incinerator
+      capacity, then burn stored waste with any burn capacity left, then put
+      the rest into landfill volume. A full site adds no collection capacity.
+      Waste that no site can take stays `uncollected` and keeps today's
+      pollution and happiness penalties. Burning stock uses the existing
+      0.02 MW per unit and the incinerator air-pollution term.
+- [ ] The inspector, budget waste line, and an F7 row show remaining volume
+      and the last completed fill rate. Reuse the M26 alert timing. Placing
+      another landfill, or raising recycling or incineration, is the relief.
+- [ ] Default `--simulate` changes once a site fills. At 400 units a tick that
+      is 200 ticks. Short runs that never fill keep today's waste totals. A
+      test forces a small volume and locks the stop, the stock burn, and the
+      uncollected penalty.
+
+**Acceptance:** A depot with less volume than this tick's landfill flow stops
+accepting, stored waste can be burned down, and the alert names the full site.
+A run that never fills reports the same recycled, burned, and landfilled counts
+as today.
+**Excluded:** waste export, a second waste graph, and imported incinerator fuel.
+
+### Milestone 40: School seats and hospital beds
+
+Education and health coverage are the share of buildings inside the road
+radius. One school on a long radius can move the whole labor mix. One hospital
+can supply the full illness reduction. Population groups stay citywide, so
+this milestone adds a city capacity in front of those existing formulas.
+
+- [ ] A fully funded school has 800 student seats. A fully funded hospital has
+      400 beds. Funding scales seats and beds the way it scales utility supply.
+      Zero funding contributes none.
+- [ ] School-age demand is 20% of housed population. The labor lerp uses
+      `min(education reach, seats / school-age demand)`. When seats cover
+      demand, the housed and employed splits match today's reach-only result.
+      Zero seats keeps the uneducated `{50, 35, 15}` baseline.
+- [ ] Patient demand is housed population times the city illness rate, with a
+      floor of one whenever illness is above zero. Hospital mitigation, including
+      the M20 local hospital-distance benefit, scales by
+      `min(1, beds / patient demand)`. Sufficient beds leave M20 rates unchanged.
+- [ ] The HUD and the tile inspector show seats used, beds used, and which
+      limit binds, reach or capacity. Both hosts share the formula. Saves do
+      not need a new seat field; seats are derived from funded facilities.
+- [ ] Default `--simulate` changes when residents exceed seats or beds. A test
+      with capacity forced above demand matches the current labor split and
+      illness rate.
+
+**Acceptance:** A city past its seats employs a lower office share than the
+same city with enough seats. A hospital past its beds leaves a higher illness
+rate than the same hospital with spare beds. Reach still limits a facility
+that has spare capacity and a short road radius.
+**Excluded:** per-student assignment, school catchment maps, and a new
+education or hospital zone.
+
+### Milestone 41: Local fire response
+
+With disasters on, ignition chance, spread chance, and burn duration all use
+one citywide `fireCoverage` fraction. Police and hospitals already use cached
+road distance per building. Fire does not.
+
+- [ ] When disasters are on, a building's ignition, spread, and burn duration
+      use the cached fire-station distance, with the same distance falloff
+      NeighborhoodSystem uses for police. The citywide fraction stays on the
+      HUD and remains the fallback when no station exists.
+- [ ] A station next to a building suppresses more than a station at the edge
+      of the radius. Buildings outside every station radius keep the current
+      no-coverage chance.
+- [ ] Both hosts. The inspector shows local fire reach. Disasters stay off by
+      default, so a normal `--simulate` run is unchanged. With the flag on,
+      where fires start and how long they burn follows station placement.
+- [ ] No second BFS. Read `ServiceCoverageCache`.
+
+**Acceptance:** On one seed with disasters on, a block beside a fire station
+loses fewer buildings than an otherwise similar block outside the radius. The
+HUD still shows the city fire-coverage fraction. A run with disasters off
+matches today's city.
+**Excluded:** per-truck dispatch, which stays in `TrafficMicroSim`, fire boats,
+and a separate fire graph.
+
+### Milestone 42: Shoreline treatment
+
+An M37 raw sewage outlet covers sanitation and cuts nearby intake capacity on
+the same water body, out to 12 orthogonal water hops. The inland sanitation
+plant does not discharge, and it does not replace an outlet in place. There
+is no treatment mode.
+
+- [ ] Sanitation gains a shoreline treatment mode. It uses the M37 shore,
+      road, and utility checks. Construction is $9,000 and enabled upkeep is
+      $34/tick, above the inland plant's $7,000 and $26. It provides
+      sanitation coverage and adds no contamination.
+- [ ] Replacing a raw outlet with treatment removes that outlet's exposure.
+      Intakes on that water body recover capacity on the next service pass.
+      A different water body is unchanged. Zero funding closes the plant:
+      no coverage and no discharge.
+- [ ] The cleanliness preview, inspector, and sanitation panel show treated
+      versus raw. Legacy raw outlets and inland plants keep their costs and
+      behavior. Old saves gain no treatment plant.
+- [ ] Default `--simulate` is unchanged until a treatment plant exists.
+
+**Acceptance:** A raw outlet that cuts an intake, once replaced by a funded
+treatment plant, no longer cuts it. An unfunded treatment plant covers
+nothing and discharges nothing. Two water bodies still ignore each other.
+**Excluded:** currents, advected pollutant mass, pipe networks, and a
+multi-stage treatment ladder.
+
+### Milestone 43: District height caps
+
+Redevelopment doubles capacity up to 64× wherever land value, civic coverage,
+and congestion allow. A district can ban a zone type. It cannot tell a
+neighborhood to stay low.
+
+- [ ] A district stores a maximum capacity multiple: uncapped, or one of
+      1×, 2×, 4×, 8×, 16×, 32×, 64×. Uncapped is the default. Old districts
+      load uncapped.
+- [ ] `GrowthSystem` will not redevelop a building past that multiple.
+      Buildings already above a newly set cap stay until the player
+      bulldozes them. The cap does not change demand, taxes, or zone bans.
+- [ ] The district tool and MCP edit the cap. The playable tick and
+      `CitySimulator` both read it. The map's capacity-tier drawing is the
+      check: a capped block stops climbing.
+- [ ] An uncapped district matches today's redevelopment chance and ladder.
+      Default `--simulate` with no districts is unchanged.
+
+**Acceptance:** Two saturated high-value blocks, one capped at 2× and one
+uncapped, diverge in capacity. The capped block still accepts buildings at
+or below 2×. Saving and loading keeps the cap.
+**Excluded:** a new zone type per density, and automatic demolition of
+buildings that already exceed a cap.
+
+### Milestone 44: Municipal bonds
+
+Unpaid ticks already become overdraft principal at 0.1% per tick, repaid from
+later surplus. The player cannot borrow ahead of a project, and cannot choose
+a term.
+
+- [ ] The budget panel can issue one bond at a time: principal of $10,000,
+      $50,000, or $200,000, repaid in equal principal parts over 100, 200, or
+      400 ticks. Remaining principal accrues 0.15% per tick, separate from
+      the 0.1% overdraft rate. Issuing adds the principal to cash immediately.
+- [ ] The tick pays the bond installment before ordinary expenses. Cash that
+      cannot cover the installment rolls the missed amount into the existing
+      overdraft and keeps the bond on its remaining schedule. Surplus does
+      not prepay the bond unless the player pays it off from the panel.
+- [ ] The last-tick ledger and the next-tick estimate gain a bond line.
+      Saves store principal, term, ticks elapsed, and interest remainder.
+      Legacy saves have no bond. A malformed bond rejects before city mutation.
+- [ ] Default `--simulate` issues no bond. A city with no bond keeps today's
+      cash and debt. Both playable hosts share the ledger.
+
+**Acceptance:** Issuing a bond raises cash, then reduces it by the installment
+plus interest on later ticks. A broke city rolls a missed installment into
+overdraft once. Paying the bond off clears it. Two replays of the same issue
+match.
+**Excluded:** a bond market, a credit rating, more than one open bond, and a
+calendar scheduler. The term is a tick count.
+
+---
+
 ## Timeline
 
 | Phase | Milestones | Est. Duration |
@@ -716,6 +944,7 @@ candidate launches with documented runtime requirements and save location.
 | 9 | M31–M35 | complete; hosted CI verified on bf8c036 |
 | 10 | M36 | complete: end-to-end playability |
 | 11 | M37 | complete: surface water and early waterworks |
+| 12 | M38–M44 | M38 complete locally; M39–M44 not started |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

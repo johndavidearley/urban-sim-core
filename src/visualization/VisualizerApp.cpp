@@ -234,12 +234,25 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       y>=windowHeight-166 && y<windowHeight-66;
   };
   ServiceType selectedService = ServiceType::Fire;
+  PowerSourceType selectedPowerSource = PowerSourceType::Generic;
   bool surfaceWaterTool = start.generateTerrain && !loadedAtStartup;
   auto surfaceMode = [&]() {
     return surfaceWaterTool && (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation);
   };
   auto serviceOptions = [&]() {
-    ServicePlacementOptions options; options.surfaceWater = surfaceMode(); return options;
+    ServicePlacementOptions options;
+    options.surfaceWater = surfaceMode();
+    if (selectedService == ServiceType::Power) options.powerSource = selectedPowerSource;
+    return options;
+  };
+  auto powerPlantLabel = [&]() {
+    const PowerPlantSpec spec = ServiceTool::powerPlant(selectedPowerSource);
+    std::string label = std::string(ServiceSystem::powerSourceTypeToString(selectedPowerSource)) +
+      " PLANT " + std::to_string(static_cast<int>(spec.capacityMW)) + " MW $" +
+      std::to_string(spec.constructionCost) + " + $" + std::to_string(spec.operatingCost) + "/TICK";
+    if (selectedPowerSource == PowerSourceType::Solar) label += " - 2X2";
+    if (selectedPowerSource == PowerSourceType::Hydro) label += " - SHORE";
+    return label;
   };
   ZoneType selectedZone = ZoneType::Residential;
   DistrictArchetype selectedArchetype = DistrictArchetype::General;
@@ -302,10 +315,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       }
     }
     for (const ServiceFacility &facility : facilities) {
+      const int span = facilityFootprintSpan(facility);
       minX = std::min(minX, facility.position.x);
       minY = std::min(minY, facility.position.y);
-      maxX = std::max(maxX, facility.position.x);
-      maxY = std::max(maxY, facility.position.y);
+      maxX = std::max(maxX, facility.position.x + span - 1);
+      maxY = std::max(maxY, facility.position.y + span - 1);
     }
     const Coord center = maxX >= 0 ? Coord{(minX + maxX) / 2, (minY + maxY) / 2}
                                    : Coord{mapSize / 2, mapSize / 2};
@@ -608,9 +622,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                               liveState, 1001u + (liveState.tick * 31u),
                               /*reallocPopulation=*/false,
                               /*runTraffic=*/false);
-      notify(std::string(ServiceSystem::serviceTypeToString(selectedService, surfaceMode())) +
-                 " BUILT $" + std::to_string(cost),
-             true);
+      const std::string built = selectedService == ServiceType::Power
+        ? std::string(ServiceSystem::powerSourceTypeToString(servicePlan.facility.powerSource)) + " PLANT"
+        : ServiceSystem::serviceTypeToString(selectedService, surfaceMode());
+      notify(built + " BUILT $" + std::to_string(cost), true);
     } else {
       notify(servicePlan.error.empty() ? "SERVICE BUILD FAILED"
                                        : servicePlan.error,
@@ -622,9 +637,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   auto applyPlacement = [&](Coord tile) {
     if (roadToolActive) {
       roadPlan = RoadTool::plan(map, roads, toolDragStart, tile, funds,
-                                selectedRoadClass);
+                                selectedRoadClass, &facilities);
       const int64_t cost = roadPlan.cost;
-      if (RoadTool::build(map, roads, roadPlan, funds)) {
+      if (RoadTool::build(map, roads, roadPlan, funds, &facilities)) {
         sessionDirty = true;
         refreshLiveDerivedState(map, roads, store, population, facilities,
                                 liveState, 1003u + (liveState.tick * 31u),
@@ -923,6 +938,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"dragging", toolDragging},
            {"zone_type", static_cast<int>(selectedZone)},
            {"service_type", static_cast<int>(selectedService)},
+           {"power_source", ServiceSystem::powerSourceTypeToString(selectedPowerSource)},
            {"surface_water", surfaceMode()},
            {"archetype", static_cast<int>(selectedArchetype)}}},
          {"preview",
@@ -1288,7 +1304,17 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           notify("AIRPORT $25000 + $30/TICK - 4X2 LAND; UTILITIES ON EVERY TILE",true);
           break;
         case Key::V:
-          if (serviceToolActive && (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation)) {
+          if (serviceToolActive && selectedService == ServiceType::Power) {
+            constexpr std::array<PowerSourceType, 7> sources{{
+              PowerSourceType::Generic, PowerSourceType::Coal, PowerSourceType::NaturalGas,
+              PowerSourceType::Nuclear, PowerSourceType::Solar, PowerSourceType::Wind,
+              PowerSourceType::Hydro
+            }};
+            const auto found = std::find(sources.begin(), sources.end(), selectedPowerSource);
+            selectedPowerSource = sources[static_cast<size_t>(found - sources.begin() + 1) % sources.size()];
+            servicePlan = {};
+            notify(powerPlantLabel(), true);
+          } else if (serviceToolActive && (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation)) {
             surfaceWaterTool = !surfaceWaterTool;
             servicePlan = {};
             notify(surfaceMode() ? "SHORE MODE - WATER INTAKE / RAW SEWAGE OUTLET"
@@ -1788,7 +1814,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         if (map.isValid(tile)) {
           if (roadToolActive) {
             roadPlan = RoadTool::plan(map, roads, toolDragStart, tile, funds,
-                                      selectedRoadClass);
+                                      selectedRoadClass, &facilities);
           } else if (zoneToolActive) {
             zonePlan =
                 ZoneTool::plan(map, toolDragStart, tile, selectedZone, funds, &facilities);
@@ -2158,7 +2184,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     } else if (bulldozeToolActive) {
       activeToolLabel = "BULLDOZE";
     } else if (serviceToolActive) {
-      activeToolLabel = ServiceSystem::serviceTypeToString(selectedService, surfaceMode());
+      activeToolLabel = selectedService == ServiceType::Power
+        ? std::string(ServiceSystem::powerSourceTypeToString(selectedPowerSource)) + " PLANT"
+        : ServiceSystem::serviceTypeToString(selectedService, surfaceMode());
     } else if (districtToolActive) {
       activeToolLabel = DistrictSystem::archetypeToString(selectedArchetype);
     }
@@ -2305,12 +2333,16 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           "BULLDOZER: DRAG TO REMOVE ROADS ZONES BUILDINGS OR SERVICES";
       break;
     case PaletteTool::Service:
-      uiHoverText = std::string(ServiceSystem::serviceTypeToString(selectedService, surfaceMode())) +
-          " $" + std::to_string(ServiceTool::constructionCost(selectedService, surfaceMode())) +
-          " + $" + std::to_string(ServiceTool::operatingCostPerTick(selectedService, surfaceMode())) + "/TICK";
-      if (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation)
-        uiHoverText += " - V INLAND/SHORE";
-      else uiHoverText += " - CLICK BESIDE ROAD";
+      if (selectedService == ServiceType::Power) {
+        uiHoverText = powerPlantLabel() + " - V CYCLES SOURCE";
+      } else {
+        uiHoverText = std::string(ServiceSystem::serviceTypeToString(selectedService, surfaceMode())) +
+            " $" + std::to_string(ServiceTool::constructionCost(selectedService, surfaceMode())) +
+            " + $" + std::to_string(ServiceTool::operatingCostPerTick(selectedService, surfaceMode())) + "/TICK";
+        if (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation)
+          uiHoverText += " - V INLAND/SHORE";
+        else uiHoverText += " - CLICK BESIDE ROAD";
+      }
       break;
     case PaletteTool::District:
       uiHoverText = std::string("DISTRICT ") +

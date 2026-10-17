@@ -264,6 +264,7 @@ void playableCityTick(
 
   if (options.refreshPollution) {
     city_sim::updatePollution(map, store, ax0, ay0, ax1, ay1, pool);
+    city_sim::applyPowerPlantPollution(map, roads, facilities, ax0, ay0, ax1, ay1);
   }
 
   if (!ServiceSystem::isCacheValid(roads, facilities, state.serviceCache)) {

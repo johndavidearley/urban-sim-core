@@ -227,7 +227,11 @@ void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
   }
 
   for (const ServiceFacility& facility : facilities) {
-    if (facility.position != coord) continue;
+    if (!facilityCoversTile(facility, coord)) continue;
+    if (facility.position != coord) {
+      drawFilledRect(renderer, x + 2, y + 2, std::max(1, size - 4), std::max(1, size - 4), {214, 176, 72});
+      break;
+    }
     const RGB color = serviceFacilityColor(facility.type);
     const int margin = std::max(2, size / 6);
     drawFilledRect(renderer, x + margin + 2, y + margin + 2, size - margin * 2, size - margin * 2, {40, 43, 48}, 130);
@@ -385,9 +389,17 @@ void drawIsometricFacility(DrawList* renderer, ScreenPoint top, int width, int h
       const int chimney = facility.type != ServiceType::Crematorium ? height : height / 2;
       drawFilledRect(renderer, cx + 2 * unit, roofY - chimney, 2 * unit, chimney, {98, 104, 107});
       drawFilledRect(renderer, cx + unit, roofY - chimney, 4 * unit, unit, cream);
-      if (facility.type == ServiceType::Power)
+      if (facility.type == ServiceType::Power) {
+        const RGB accent = facility.powerSource == PowerSourceType::Coal ? RGB{90, 86, 82}
+          : facility.powerSource == PowerSourceType::NaturalGas ? RGB{120, 190, 220}
+          : facility.powerSource == PowerSourceType::Nuclear ? RGB{150, 210, 140}
+          : facility.powerSource == PowerSourceType::Solar ? RGB{230, 190, 70}
+          : facility.powerSource == PowerSourceType::Wind ? RGB{220, 225, 230}
+          : facility.powerSource == PowerSourceType::Hydro ? RGB{70, 150, 200}
+          : RGB{71, 103, 132};
         drawDiamond(renderer, {cx - 2 * unit, roofY - unit}, width / 3,
-                    std::max(2, height / 3), {71, 103, 132});
+                    std::max(2, height / 3), accent);
+      }
       break;
     }
     case ServiceType::Sanitation:
@@ -435,7 +447,7 @@ void drawIsometricTile(
   );
   const uint32_t variation = visualHash(coord);
   const bool hasFacility = std::any_of(facilities.begin(), facilities.end(),
-      [&](const ServiceFacility& facility) { return facility.position == coord; });
+      [&](const ServiceFacility& facility) { return facilityCoversTile(facility, coord); });
   if (overlayMode == OverlayMode::Zone && hasFacility) base = {177, 184, 173};
   if (overlayMode == OverlayMode::Zone && !tile.hasRoad && tile.buildingId == 0) {
     const int tone = static_cast<int>(variation % 11u) - 5;
@@ -650,10 +662,13 @@ void drawIsometricTile(
     }
   }
   for (const ServiceFacility& facility : facilities) {
-    if (facility.position == coord) {
-      drawIsometricFacility(renderer, top, width, height, facility);
+    if (!facilityCoversTile(facility, coord)) continue;
+    if (facility.position != coord) {
+      drawDiamond(renderer, top, width * 3 / 4, height * 3 / 4, {214, 176, 72});
       break;
     }
+    drawIsometricFacility(renderer, top, width, height, facility);
+    break;
   }
 
   if (!tile.hasRoad && tile.buildingId == 0 && !hasFacility && tile.zone == 0 && !tile.regionalConnectionId && tile.type == 0

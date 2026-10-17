@@ -43,8 +43,17 @@ hash. The extracted macOS Intel package passed native shore/F5/F9/replay and
 `e89a6012c9098add2c309308c63d9c6a31cb96ee` in
 [run 38991588321](https://github.com/johndavidearley/urban-sim-core/actions/runs/38991588321).
 See `PHASE11.md` for scope, controls, retained evidence and package details.
-See `ROADMAP.md` and `PHASE9.md`. Earlier entries below preserve the implementation
-history and the gates that were pending at each stage.
+See `ROADMAP.md` and `PHASE9.md`. M38 differentiated power plants is complete
+locally (October 17, 2026). The service tool places coal, gas, nuclear, solar,
+wind, and hydro on the existing Power facility. One Power funding slider still
+covers every plant. Autonomous placement and an untouched `--simulate` run stay
+on the generic 100 MW plant, which adds no local tile pollution. Strict `ctest`
+in `build-strict` passed 590 tests. Playtest Python unit tests passed (7).
+Rendered playtests and hosted CI were not re-run. The active backlog is M39–M44
+in `ROADMAP.md`: finite landfill volume, school seats and hospital beds, local
+fire response, shoreline treatment, district height caps, and municipal bonds.
+Earlier entries below preserve the implementation history and the gates that
+were pending at each stage.
 
 This is the authoritative source for the repository's current implementation
 and validation status. `ROADMAP.md` describes milestone history and future
@@ -220,31 +229,23 @@ Quick performance smoke (headless):
 
 ## Current Priorities
 
-Phase 6 in `ROADMAP.md` is the queue. Implement in order.
+Phase 12 in `ROADMAP.md` is the queue. Implement in order. M17–M38 and
+waste-to-energy incinerators are done. M38 is local only: strict `ctest`
+passed 590 tests on October 17, 2026, and rendered playtests were not re-run.
 
-1. **M17 Utility shortage.** Done. `powerSupplyRatio` and `waterSupplyRatio`
-   shed the farthest wired buildings when `enableUtilities` is on (the
-   playable tick always sheds). Default `--simulate` is unchanged.
-2. **M18 Schools and the labor market.** Done. Lagged `educationCoverage`
-   moves the housed mix toward high income and fills office seats from
-   the educated share. Zero coverage keeps today's `{50, 35, 15}` split.
-   Default `--simulate` changes once schools exist.
-3. **M19 Density follows land value.** Done. Redevelopment chance scales
-   with normalized land value and local civic coverage, and falls with
-   road congestion. The 2× step and 64× cap are unchanged. Isometric and
-   top-down views draw the capacity tier. Playable treasury bills a
-   redevelopment more than a new low building.
-4. **M20 Neighborhood crime and illness.** Done. Residential rates reuse
-   service distance fields; nearer police, hospitals and sewage coverage
-   improve the neighborhood. Resident-weighted means feed migration and
-   the HUD. Lagged local rates lower land value; happiness and tile
-   inspection show the local effects.
-5. **M21 Freight and road class.** Done. Batched goods routing adds
-   trucks beside commuters. Player arterials have capacity 40; autonomous
-   local roads stay at 10. Class and freight loads survive save/load.
-6. **M22 Parks and one city on both hosts.** `ZoneType::Park` is
-   rejected by the zone tool. Disasters run only in `CitySimulator`.
-   Debt exists only on the playable treasury.
+1. **M39 Landfills that fill.** Garbage sites start with 80,000 units of
+   volume. Full sites stop accepting. Incinerators can burn stored waste.
+2. **M40 School seats and hospital beds.** Labor and illness keep today's
+   results when seats and beds cover demand. Past that, reach is no longer
+   the only limit.
+3. **M41 Local fire response.** With disasters on, station distance changes
+   ignition, spread, and burn duration. Disasters stay off by default.
+4. **M42 Shoreline treatment.** A funded treatment plant covers sanitation
+   and does not cut intake capacity. Raw outlets stay available.
+5. **M43 District height caps.** A district can stop the redevelopment
+   ladder at a chosen multiple. Uncapped districts match today.
+6. **M44 Municipal bonds.** The budget panel can borrow a fixed principal
+   and repay it over a tick term, separate from the automatic overdraft.
 
 Still constraints, not milestones:
 

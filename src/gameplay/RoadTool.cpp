@@ -20,7 +20,8 @@ void appendAxis(std::vector<Coord>& tiles, Coord& current, int target, bool hori
 
 RoadPlan RoadTool::plan(const CityMap &map, const RoadNetwork &roads,
                         Coord start, Coord end, int64_t availableFunds,
-                        RoadClass roadClass) {
+                        RoadClass roadClass,
+                        const std::vector<ServiceFacility>* facilities) {
   RoadPlan result;
   result.roadClass = roadClass;
   if (roadClass != RoadClass::Local && roadClass != RoadClass::Arterial) {
@@ -50,6 +51,16 @@ RoadPlan RoadTool::plan(const CityMap &map, const RoadNetwork &roads,
     if (mapTile.buildingId != 0 && !mapTile.hasRoad) {
       result.error = "route crosses a building";
       return result;
+    }
+    if (facilities != nullptr) {
+      for (const ServiceFacility& facility : *facilities) {
+        if (facility.type == ServiceType::Power &&
+            facility.powerSource == PowerSourceType::Solar &&
+            facilityCoversTile(facility, tile)) {
+          result.error = "route crosses a solar plant";
+          return result;
+        }
+      }
     }
   }
 
@@ -85,7 +96,8 @@ bool RoadTool::build(
   CityMap& map,
   RoadNetwork& roads,
   const RoadPlan& plan,
-  int64_t& availableFunds
+  int64_t& availableFunds,
+  const std::vector<ServiceFacility>* facilities
 ) {
   if (!plan.valid || plan.cost > availableFunds || plan.tiles.size() < 2) {
     return false;
@@ -93,7 +105,7 @@ bool RoadTool::build(
 
   const RoadPlan current =
       RoadTool::plan(map, roads, plan.tiles.front(), plan.tiles.back(),
-                     availableFunds, plan.roadClass);
+                     availableFunds, plan.roadClass, facilities);
   if (!current.valid || current.tiles != plan.tiles || current.cost != plan.cost) {
     return false;
   }

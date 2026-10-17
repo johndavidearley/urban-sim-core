@@ -48,9 +48,6 @@ BulldozePlan BulldozeTool::plan(
       }
       result.buildings += tile.buildingId != 0 ? 1 : 0;
       result.zonedTiles += map.zone(coord) != static_cast<int>(ZoneType::None) ? 1 : 0;
-      for (const ServiceFacility& facility : facilities) {
-        result.services += facility.position == coord ? 1 : 0;
-      }
 
       const RoadNetwork::Node* node = roads.getNode(coord);
       if (node == nullptr) {
@@ -60,6 +57,12 @@ BulldozePlan BulldozeTool::plan(
         edgeKeys.insert(canonicalEdge(coord, neighbor.coord));
       }
     }
+  }
+
+  for (const ServiceFacility& facility : facilities) {
+    const bool hit = std::any_of(result.tiles.begin(), result.tiles.end(),
+      [&](Coord coord) { return facilityCoversTile(facility, coord); });
+    if (hit) ++result.services;
   }
 
   for (const EdgeKey& edge : edgeKeys) {
@@ -120,7 +123,8 @@ bool BulldozeTool::apply(
   facilities.erase(
     std::remove_if(
       facilities.begin(), facilities.end(), [&plan](const ServiceFacility& facility) {
-        return std::find(plan.tiles.begin(), plan.tiles.end(), facility.position) != plan.tiles.end();
+        return std::any_of(plan.tiles.begin(), plan.tiles.end(),
+          [&](Coord coord) { return facilityCoversTile(facility, coord); });
       }),
     facilities.end()
   );
