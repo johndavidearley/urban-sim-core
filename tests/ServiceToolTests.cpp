@@ -245,6 +245,7 @@ TEST(ServiceToolTests, PowerPlantCatalogMatchesTheMilestone) {
     {PowerSourceType::Solar, 8000, 8, 15.f, 45.f, false, 2},
     {PowerSourceType::Wind, 6000, 6, 10.f, 11.f, false, 1},
     {PowerSourceType::Hydro, 18000, 18, 40.f, 24.f, true, 1},
+    {PowerSourceType::Substation, 1500, 4, 0.f, 0.f, false, 1},
   };
 
   CityMap map({20, 12});

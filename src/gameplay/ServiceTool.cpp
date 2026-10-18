@@ -12,6 +12,7 @@ PowerPlantSpec ServiceTool::powerPlant(PowerSourceType source) {
     case PowerSourceType::Solar: return {8000, 8, 15.0f, 45.0f, false};
     case PowerSourceType::Wind: return {6000, 6, 10.0f, 11.0f, false};
     case PowerSourceType::Hydro: return {18000, 18, 40.0f, 24.0f, true};
+    case PowerSourceType::Substation: return {1500, 4, 0.0f, 0.0f, false};
     case PowerSourceType::Generic:
     default: return {12000, 45, 100.0f, 400.0f, false};
   }

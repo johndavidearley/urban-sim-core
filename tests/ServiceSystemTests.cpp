@@ -527,3 +527,39 @@ TEST(ServiceSystemTests, OneHospitalServesAboutThreeThousandResidents) {
   EXPECT_LT(summary.hospitalCapacityFactor, 1.f);
   EXPECT_FLOAT_EQ(summary.hospitalBedsUsed, 400.f);
 }
+
+TEST(ServiceSystemTests, SubstationExtendsPowerReachWithoutSupply) {
+  CityMap map({40, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+  for (int x = 2; x < 36; ++x) roads.buildRoad({x, 2}, {x + 1, 2});
+  const EntityId nearHome = store.createBuilding(BuildingType::Residential, {4, 2}, 20);
+  const EntityId farHome = store.createBuilding(BuildingType::Residential, {34, 2}, 20);
+  store.getBuilding(nearHome)->occupancy = 10;
+  store.getBuilding(farHome)->occupancy = 10;
+  PowerSourceType parsed;
+  ASSERT_TRUE(ServiceSystem::parsePowerSourceType("substation", parsed));
+  EXPECT_EQ(parsed, PowerSourceType::Substation);
+
+  ServiceFacility plant{ServiceType::Power, {3, 2}, 10, 1.f};
+  plant.powerCapacityMW = 100.f;
+  ServiceFacility substation{ServiceType::Power, {33, 2}, 10, 1.f};
+  substation.powerSource = PowerSourceType::Substation;
+  substation.powerCapacityMW = 0.f;
+  substation.emissionsKgPerMWh = 0.f;
+
+  const auto plantOnly = ServiceSystem::evaluateCoverage(store, roads, {plant});
+  const auto withSubstation = ServiceSystem::evaluateCoverage(store, roads, {plant, substation});
+  EXPECT_GT(withSubstation.powerCoverage, plantOnly.powerCoverage);
+  EXPECT_FLOAT_EQ(withSubstation.powerCoverage, 1.f);
+  EXPECT_FLOAT_EQ(withSubstation.powerGenerationMW, plantOnly.powerGenerationMW);
+  EXPECT_FLOAT_EQ(withSubstation.powerSupplyRatio, 1.f);
+  EXPECT_FLOAT_EQ(withSubstation.powerEmissionsKgPerMWh, plantOnly.powerEmissionsKgPerMWh);
+
+  // Substations alone reach every home and generate nothing: a shortage.
+  const auto substationsOnly = ServiceSystem::evaluateCoverage(store, roads, {substation,
+    ServiceFacility{ServiceType::Power, {5, 2}, 10, 1.f, PowerSourceType::Substation, 0.f, 0.f}});
+  EXPECT_FLOAT_EQ(substationsOnly.powerCoverage, 1.f);
+  EXPECT_FLOAT_EQ(substationsOnly.powerGenerationMW, 0.f);
+  EXPECT_FLOAT_EQ(substationsOnly.powerSupplyRatio, 0.f);
+}

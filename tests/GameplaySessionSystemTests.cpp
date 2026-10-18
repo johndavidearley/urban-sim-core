@@ -1027,3 +1027,28 @@ TEST(GameplaySessionSystemTests, SaveDuringFireContinuesIdentically) {
   std::filesystem::remove(path);
   std::filesystem::remove(path.string() + ".city.json");
 }
+
+TEST(GameplaySessionSystemTests, SubstationRoundTripsAndUnknownPowerSourceRejects) {
+  CityMap map({8, 8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  GameplaySessionState session;
+  ServiceFacility substation{ServiceType::Power, {2, 2}, 10, 1.f};
+  substation.powerSource = PowerSourceType::Substation;
+  substation.powerCapacityMW = 0.f;
+  substation.emissionsKgPerMWh = 0.f;
+  session.facilities.push_back(substation);
+  const auto path = std::filesystem::temp_directory_path() / "urban_substation_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store, people, session));
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  ASSERT_EQ(loaded.facilities.size(), 1u);
+  EXPECT_EQ(loaded.facilities[0].powerSource, PowerSourceType::Substation);
+  EXPECT_FLOAT_EQ(loaded.facilities[0].powerCapacityMW, 0.f);
+  nlohmann::json root;
+  { std::ifstream in(path); in >> root; }
+  root["facilities"][0]["powerSource"] = 8;
+  { std::ofstream out(path); out << root; }
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  EXPECT_EQ(loaded.facilities[0].powerSource, PowerSourceType::Substation);
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
+}

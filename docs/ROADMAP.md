@@ -24,7 +24,7 @@ Last updated: October 18, 2026
 - Phase 6 (M17–M22): implemented; local M22 verification is recorded in STATUS.md.
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
 - Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
-- Phase 13 (M45–M48): M45–M47 complete locally. M48 is next.
+- Phase 13 (M45–M48): M45–M48 complete locally.
 
 ---
 
@@ -940,7 +940,7 @@ calendar scheduler. The term is a tick count.
 ## Phase 13: Phase 12 balance correction (M45–M48) — draft
 
 Drafted October 18, 2026 from the Phase 12 playtest
-(`playtest-artifacts/phase12-playtest/REPORT.md`). M45–M47 are complete locally.
+(`playtest-artifacts/phase12-playtest/REPORT.md`). M45–M48 are complete locally.
 Implement in order. Phase 12's invariants still hold.
 
 The unchanged M36 journey (`playtest/examples/phase10_native_journey.py`)
@@ -1028,16 +1028,21 @@ Buildings beyond every station lose clearly more, and population ends above its
 starting level. Save/load mid-fire continues identically.
 **Excluded:** fire trucks on roads, building materials and insurance.
 
-### Milestone 48: Substations
+### Milestone 48: Substations — implemented locally
+
+**Complete locally, October 18, 2026.** In the 10k journey city, replacing three
+of four generic plants with substations kept 100% coverage and supply (100 MW
+for 50.7 MW demand) and cut power upkeep from $180 to $57 per tick. Replacing
+the last plant left supply at 0 and raised POWER SHORTAGE. See STATUS.md.
 
 Every power source reaches 22 road hops, and reach decides placement. The
 journey city runs 400 MW of plants for 50 MW of demand. The capacity
 differences between M38 sources rarely matter.
 
-- [ ] Substation is a power source: $1,500, $4/tick, 0 MW, the same reach as a
+- [x] Substation is a power source: $1,500, $4/tick, 0 MW, the same reach as a
       plant. It extends coverage and generates nothing.
-- [ ] Plant toasts use the same capitalization as other toasts.
-- [ ] Autonomous placement and legacy saves are unchanged.
+- [x] Plant toasts use the same capitalization as other toasts.
+- [x] Autonomous placement and legacy saves are unchanged.
 
 **Acceptance:** The 10,000-resident journey city keeps 100% power coverage and
 supply with one generating plant plus substations, at lower power upkeep. A
@@ -1071,7 +1076,7 @@ city of substations alone reports a power shortage.
 | 10 | M36 | complete: end-to-end playability |
 | 11 | M37 | complete: surface water and early waterworks |
 | 12 | M38–M44 | complete; hosted CI verified on fd554fd |
-| 13 | M45–M48 | M45–M47 complete locally |
+| 13 | M45–M48 | M45–M48 complete locally |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

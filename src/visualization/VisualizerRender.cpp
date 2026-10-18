@@ -396,6 +396,7 @@ void drawIsometricFacility(DrawList* renderer, ScreenPoint top, int width, int h
           : facility.powerSource == PowerSourceType::Solar ? RGB{230, 190, 70}
           : facility.powerSource == PowerSourceType::Wind ? RGB{220, 225, 230}
           : facility.powerSource == PowerSourceType::Hydro ? RGB{70, 150, 200}
+          : facility.powerSource == PowerSourceType::Substation ? RGB{200, 120, 200}
           : RGB{71, 103, 132};
         drawDiamond(renderer, {cx - 2 * unit, roofY - unit}, width / 3,
                     std::max(2, height / 3), accent);

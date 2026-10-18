@@ -34,7 +34,9 @@ enum class PowerSourceType : int {
   Nuclear = 3,
   Solar = 4,
   Wind = 5,
-  Hydro = 6
+  Hydro = 6,
+  // Extends power reach along roads and generates nothing (M48).
+  Substation = 7
 };
 
 struct ServiceFacility {

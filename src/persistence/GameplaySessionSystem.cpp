@@ -657,7 +657,10 @@ bool GameplaySessionSystem::load(
       facility.position = position;
       facility.maxTravelDistance = item.at("maxTravelDistance").get<int>();
       facility.quality = item.at("quality").get<float>();
-      facility.powerSource = static_cast<PowerSourceType>(item.value("powerSource", 0));
+      const int source = item.value("powerSource", 0);
+      if (source < static_cast<int>(PowerSourceType::Generic) || source > static_cast<int>(PowerSourceType::Substation))
+        return fail(errorMessage, "invalid power source");
+      facility.powerSource = static_cast<PowerSourceType>(source);
       facility.powerCapacityMW = item.value("powerCapacityMW", 100.0f);
       facility.emissionsKgPerMWh = item.value("emissionsKgPerMWh", 400.0f);
       facility.waterSupplyUnits = item.value("waterSupplyUnits", 100.0f);

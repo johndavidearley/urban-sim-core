@@ -2,6 +2,20 @@
 
 Last verified: October 18, 2026
 
+M48 substations are implemented locally (October 18, 2026). This completes
+Phase 13 locally. A substation is a power source: $1,500, $4/tick, 0 MW and
+no emissions, with the same road reach as a plant. It extends power coverage
+and generates nothing. With Power selected, V cycles to it after hydro; MCP
+`power_source` accepts `substation`. Plant toasts and the tool label now use
+capitals like every other toast ("COAL PLANT BUILT"). Saves reject an unknown
+power source; before M48 any value loaded. In the 10k journey city, replacing
+three of four generic plants with substations kept 100% power coverage and
+supply (100 MW for 50.7 MW of demand) and cut power upkeep from $180 to $57 per
+tick. Replacing the last plant left supply at 0 and raised POWER SHORTAGE.
+Autonomous placement and legacy saves are unchanged; the default 400-tick
+`--simulate` CSV is byte-identical to M46. Strict `ctest` in `build-strict`
+passed 637 tests. Hosted CI and sanitizers have not run on M45–M48.
+
 M47 fires a city can contain is implemented locally (October 18, 2026). A
 building that catches fire stays standing and burns for 4 ticks. Each tick,
 local response × 0.8 is the chance it is put out. It burns down only when the
@@ -387,7 +401,9 @@ Quick performance smoke (headless):
 
 Phase 12 is complete. Phase 13 (M45–M48) in `ROADMAP.md` is a balance
 correction from the Phase 12 playtest: hospital demand, landfill lifetime,
-fire containment and substations. M45–M47 are implemented locally; M48 is next. The Phase 12
+fire containment and substations. M45–M48 are implemented locally. The draft's
+open question remains: rerun the Phase 12 playtest to decide whether money
+needs to stay scarce later in the game. The Phase 12
 list below is kept for reference.
 
 1. **M39 Landfills that fill.** Implemented locally. Garbage sites start

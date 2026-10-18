@@ -211,6 +211,7 @@ bool ServiceSystem::parsePowerSourceType(const std::string& raw, PowerSourceType
   else if (normalized == "SOLAR") outType = PowerSourceType::Solar;
   else if (normalized == "WIND") outType = PowerSourceType::Wind;
   else if (normalized == "HYDRO" || normalized == "HYDROELECTRIC") outType = PowerSourceType::Hydro;
+  else if (normalized == "SUBSTATION") outType = PowerSourceType::Substation;
   else return false;
   return true;
 }
@@ -224,6 +225,7 @@ const char* ServiceSystem::powerSourceTypeToString(PowerSourceType type) {
     case PowerSourceType::Solar: return "Solar";
     case PowerSourceType::Wind: return "Wind";
     case PowerSourceType::Hydro: return "Hydro";
+    case PowerSourceType::Substation: return "Substation";
     default: return "Unknown";
   }
 }

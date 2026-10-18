@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include "src/visualization/RegionalManagement.hpp"
 #include <climits>
 #include "src/persistence/CityHistoryJson.hpp"
@@ -253,13 +254,21 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     if (selectedService == ServiceType::Power) options.powerSource = selectedPowerSource;
     return options;
   };
+  // "COAL PLANT", "SUBSTATION": same capitals as every other toast.
+  auto powerFacilityName = [](PowerSourceType source) {
+    if (source == PowerSourceType::Substation) return std::string("SUBSTATION");
+    std::string name = ServiceSystem::powerSourceTypeToString(source);
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::toupper(c); });
+    return name + " PLANT";
+  };
   auto powerPlantLabel = [&]() {
     const PowerPlantSpec spec = ServiceTool::powerPlant(selectedPowerSource);
-    std::string label = std::string(ServiceSystem::powerSourceTypeToString(selectedPowerSource)) +
-      " PLANT " + std::to_string(static_cast<int>(spec.capacityMW)) + " MW $" +
+    std::string label = powerFacilityName(selectedPowerSource) + " " +
+      std::to_string(static_cast<int>(spec.capacityMW)) + " MW $" +
       std::to_string(spec.constructionCost) + " + $" + std::to_string(spec.operatingCost) + "/TICK";
     if (selectedPowerSource == PowerSourceType::Solar) label += " - 2X2";
     if (selectedPowerSource == PowerSourceType::Hydro) label += " - SHORE";
+    if (selectedPowerSource == PowerSourceType::Substation) label += " - REACH ONLY";
     return label;
   };
   ZoneType selectedZone = ZoneType::Residential;
@@ -633,7 +642,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                               /*reallocPopulation=*/false,
                               /*runTraffic=*/false);
       const std::string built = selectedService == ServiceType::Power
-        ? std::string(ServiceSystem::powerSourceTypeToString(servicePlan.facility.powerSource)) + " PLANT"
+        ? powerFacilityName(servicePlan.facility.powerSource)
         : ServiceSystem::serviceTypeToString(selectedService, surfaceMode(), treatmentMode());
       notify(built + " BUILT $" + std::to_string(cost), true);
     } else {
@@ -1380,10 +1389,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         case Key::V:
           if (serviceToolActive && selectedService == ServiceType::Power) {
-            constexpr std::array<PowerSourceType, 7> sources{{
+            constexpr std::array<PowerSourceType, 8> sources{{
               PowerSourceType::Generic, PowerSourceType::Coal, PowerSourceType::NaturalGas,
               PowerSourceType::Nuclear, PowerSourceType::Solar, PowerSourceType::Wind,
-              PowerSourceType::Hydro
+              PowerSourceType::Hydro, PowerSourceType::Substation
             }};
             const auto found = std::find(sources.begin(), sources.end(), selectedPowerSource);
             selectedPowerSource = sources[static_cast<size_t>(found - sources.begin() + 1) % sources.size()];
@@ -2275,7 +2284,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       activeToolLabel = "BULLDOZE";
     } else if (serviceToolActive) {
       activeToolLabel = selectedService == ServiceType::Power
-        ? std::string(ServiceSystem::powerSourceTypeToString(selectedPowerSource)) + " PLANT"
+        ? powerFacilityName(selectedPowerSource)
         : ServiceSystem::serviceTypeToString(selectedService, surfaceMode(), treatmentMode());
     } else if (districtToolActive) {
       activeToolLabel = DistrictSystem::archetypeToString(selectedArchetype);
