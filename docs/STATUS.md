@@ -2,6 +2,23 @@
 
 Last verified: October 18, 2026
 
+Phase 12 is complete (October 18, 2026). Hosted CI passed on `fd554fd` in
+[run 39147629890](https://github.com/johndavidearley/urban-sim-core/actions/runs/39147629890):
+strict Windows/macOS/Linux, ASan/UBSan and TSan. The first push of M44 failed
+on GCC and MSVC because of two M43 test bugs; `dd4a079` fixed both. Local strict
+GCC 16 passed 630 tests, ASan/UBSan 630, and TSan 632. The packaged macOS
+candidate (`fd554fd`, SHA-256 `0cc375a2…`) was extracted into a path containing
+spaces. Its installed binaries passed the M43 and M44 acceptance with the Vulkan
+environment overrides unset, and its launcher passed all 16 graphics probes.
+Evidence: `playtest-artifacts/phase12/REPORT.md`.
+
+A playtest after the phase replayed the M36 journey unchanged. It still reaches
+10,083 residents with no debt, but stalls from tick 6,000 to 12,000. Hospital
+patient demand causes the stall. Landfills fill in about 200 ticks. Fire with
+disasters on destroys most of a covered city. Power plants are placed for
+reach, not capacity. Phase 13 in `ROADMAP.md` is a draft that corrects these.
+Evidence: `playtest-artifacts/phase12-playtest/REPORT.md`.
+
 M44 municipal bonds are implemented locally (October 18, 2026). This completes
 Phase 12. The budget panel's BONDS tab issues one bond at a time: $10,000,
 $50,000, or $200,000 over 100, 200, or 400 ticks. Issuing adds the principal
@@ -320,9 +337,10 @@ Quick performance smoke (headless):
 
 ## Current Priorities
 
-Phase 12 in `ROADMAP.md` is implemented locally through M44. M17–M42 and
-waste-to-energy incinerators are done. M43 district height caps and M44
-municipal bonds are implemented locally.
+Phase 12 is complete. Phase 13 (M45–M48) in `ROADMAP.md` is a draft balance
+correction from the Phase 12 playtest: hospital demand, landfill lifetime,
+fire containment and substations. Review it before implementing. The Phase 12
+list below is kept for reference.
 
 1. **M39 Landfills that fill.** Implemented locally. Garbage sites start
    with 80,000 units of volume. Full sites stop accepting; spare incinerator

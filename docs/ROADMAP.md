@@ -4,7 +4,7 @@ For the authoritative current validation baseline and active priorities, see
 [STATUS.md](STATUS.md). This document retains detailed milestone history and
 future ideas.
 
-Last updated: October 17, 2026
+Last updated: October 18, 2026
 
 ## Current Status Snapshot
 
@@ -23,7 +23,8 @@ Last updated: October 17, 2026
   STATUS.md.
 - Phase 6 (M17–M22): implemented; local M22 verification is recorded in STATUS.md.
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
-- Phase 12 (M38–M44): M38–M44 are complete locally.
+- Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
+- Phase 13 (M45–M48): draft from the Phase 12 playtest; not started.
 
 ---
 
@@ -705,7 +706,10 @@ candidate launches with documented runtime requirements and save location.
 
 ## Phase 12: Scarcity the player can spend against (M38–M44)
 
-Defined October 17, 2026. M38–M44 are complete locally.
+Defined October 17, 2026. Complete October 18, 2026: hosted CI passed on
+`fd554fd` (strict Windows/macOS/Linux, ASan/UBSan, TSan), and the packaged
+macOS candidate passed native acceptance and launcher graphics probes. The
+playtest after the phase found balance problems; Phase 13 corrects them.
 Implement in order. Each milestone keeps the suite deterministic and says
 whether a default `--simulate` run changes.
 
@@ -933,6 +937,106 @@ calendar scheduler. The term is a tick count.
 
 ---
 
+## Phase 13: Phase 12 balance correction (M45–M48) — draft
+
+Drafted October 18, 2026 from the Phase 12 playtest
+(`playtest-artifacts/phase12-playtest/REPORT.md`). Not started. Implement in
+order. Phase 12's invariants still hold.
+
+The unchanged M36 journey (`playtest/examples/phase10_native_journey.py`)
+still reaches 10,000 residents with no debt, but it stalls. From tick 6,000 to
+12,000 it holds 86 buildings and about 2,400–3,400 residents. M36 grew to 100
+buildings and 4,700 residents over the same span. A throwaway build that cut
+patient demand to 10% matched M36 within one resident at tick 10,000. A build
+whose landfills never filled did not change the stall. The journey is the
+shared acceptance driver for this phase.
+
+### Milestone 45: Hospital demand a city can meet
+
+Patient demand is housed population × illness rate. Illness is about 0.5 even
+under full hospital coverage, so half the city always needs a bed. Hospitals
+supply 25–50% of demand all game. At 10,000 residents that is 6,893 patients
+against 1,600 beds.
+
+- [ ] Patients are housed population × illness rate × 0.2. At typical illness
+      (about 0.65), one funded 400-bed hospital serves about 3,000 residents.
+      The bisection solve and the sufficient-capacity fast path stay.
+- [ ] The HUD, tile inspector and MCP show patient demand beside beds used and
+      supplied. The HUD bed line no longer clips under the disasters button.
+- [ ] A default `--simulate` run changes only where beds bind. Record the new
+      400-tick CSV baseline.
+
+**Acceptance:** The unchanged journey is within 5% of the M36 baseline
+population at ticks 8,000 and 12,000. A 6,000-resident city with one hospital
+still reports CAP.
+**Excluded:** per-patient assignment, ambulances, and a new illness model.
+
+### Milestone 46: Landfills that last
+
+A landfill takes at most 400 units per tick and holds 80,000, so a busy site
+fills in about 200 ticks. In the journey all four sites are full by the end,
+and LANDFILL FULL is active from tick 6,000 onward. Garbage coverage still
+reads 53–88% with every site full.
+
+- [ ] A landfill holds 2,000,000 units, so a site at full intake lasts about
+      5,000 ticks. Saves record capacity per facility. Legacy facilities keep
+      their used volume and gain the new free space.
+- [ ] Garbage coverage counts only waste that was recycled, burned or
+      deposited. Full sites lower it.
+- [ ] The Services tab's sewage line no longer overlaps the divider.
+
+**Acceptance:** The journey reaches 10,000 residents without a LANDFILL FULL
+alert. A site serving 10,000 residents with no recycling or incineration fills
+in 4,000–6,000 ticks. A city whose sites are all full shows garbage coverage
+near zero.
+**Excluded:** waste export, transfer stations and landfill closure costs.
+
+### Milestone 47: Fires a city can contain
+
+With disasters on, the 10,000-resident journey city (five stations, 61% fire
+coverage) lost 223 buildings in 800 ticks. Population fell to 5,539 and did not
+recover. Ignition destroys a building at once. Since M41, a building beyond
+every station's radius gets no response.
+
+- [ ] First, measure the same city for 1,000 ticks at the pre-M41 commit and at
+      M44, and record both. This shows whether M41 made losses worse.
+- [ ] Ignition marks a building as burning. It is destroyed only when its burn
+      countdown ends. Local response shortens the countdown and can put the
+      fire out before then.
+- [ ] Disasters stay off by default. A default `--simulate` run is unchanged.
+
+**Acceptance:** The journey city with its existing stations loses at most 5% of
+its buildings over 1,000 ticks with disasters on. A district outside every
+station's reach loses visibly more. Save/load mid-fire continues identically.
+**Excluded:** fire trucks on roads, building materials and insurance.
+
+### Milestone 48: Substations
+
+Every power source reaches 22 road hops, and reach decides placement. The
+journey city runs 400 MW of plants for 50 MW of demand. The capacity
+differences between M38 sources rarely matter.
+
+- [ ] Substation is a power source: $1,500, $4/tick, 0 MW, the same reach as a
+      plant. It extends coverage and generates nothing.
+- [ ] Plant toasts use the same capitalization as other toasts.
+- [ ] Autonomous placement and legacy saves are unchanged.
+
+**Acceptance:** The 10,000-resident journey city keeps 100% power coverage and
+supply with one generating plant plus substations, at lower power upkeep. A
+city of substations alone reports a power shortage.
+**Excluded:** a separate power-line graph and transmission losses.
+
+### Open questions, not yet milestones
+
+- Money stops being scarce after about tick 4,000 ($17.8M at 16,300 in the
+  journey). Bonds matter only early, when even small bonds outweigh revenue.
+  Decide whether to scale late-game costs, or tie revenue to something players
+  must keep investing in.
+- Re-run this playtest after M45. Removing the hospital stall changes the
+  money and growth curve that the other questions depend on.
+
+---
+
 ## Timeline
 
 | Phase | Milestones | Est. Duration |
@@ -948,7 +1052,8 @@ calendar scheduler. The term is a tick count.
 | 9 | M31–M35 | complete; hosted CI verified on bf8c036 |
 | 10 | M36 | complete: end-to-end playability |
 | 11 | M37 | complete: surface water and early waterworks |
-| 12 | M38–M44 | M38–M44 complete locally |
+| 12 | M38–M44 | complete; hosted CI verified on fd554fd |
+| 13 | M45–M48 | draft: Phase 12 balance correction |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.
