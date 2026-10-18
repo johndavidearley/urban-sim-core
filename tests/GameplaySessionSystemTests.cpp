@@ -819,11 +819,26 @@ TEST(GameplaySessionSystemTests, LandfillVolumeRoundTripsAndLegacyStartsEmpty) {
   {std::ofstream out(path); out << root;}
   EXPECT_FALSE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
   EXPECT_EQ(loaded.facilities[0].landfillRemaining, 123);
+  EXPECT_EQ(root["facilities"][0]["landfillCapacity"], ServiceFacility::kLandfillCapacity);
+  root["facilities"][0]["landfillCapacity"] = 5;
+  {std::ofstream out(path); out << root;}
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  EXPECT_EQ(loaded.facilities[0].landfillRemaining, 123);
+  // A pre-M46 site keeps its used volume and gains the new free space.
+  root["facilities"][0].erase("landfillCapacity");
+  root["facilities"][0]["landfillRemaining"] = 123;
+  {std::ofstream out(path); out << root;}
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  EXPECT_EQ(loaded.facilities[0].landfillRemaining, 123 + 2000000 - 80000);
+  EXPECT_EQ(loaded.facilities[0].landfillCapacity, ServiceFacility::kLandfillCapacity);
+  root["facilities"][0]["landfillRemaining"] = 80001;
+  {std::ofstream out(path); out << root;}
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
   root["facilities"][0].erase("landfillRemaining");
   root["facilities"][0].erase("landfillLastFill");
   {std::ofstream out(path); out << root;}
   ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
-  EXPECT_EQ(loaded.facilities[0].landfillRemaining, 80000);
+  EXPECT_EQ(loaded.facilities[0].landfillRemaining, ServiceFacility::kLandfillCapacity);
   EXPECT_EQ(loaded.facilities[0].landfillLastFill, 0);
   std::filesystem::remove(path); std::filesystem::remove(path.string()+".city.json");
 }

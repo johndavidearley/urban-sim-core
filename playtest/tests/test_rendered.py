@@ -581,7 +581,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         fixture["citySnapshot"] = str(s.artifact("urban_sim_session.json.city.json"))
         fixture["funds"] = 100000
         fixture["facilities"].append({"type": 7, "x": 16, "y": 15,
-            "maxTravelDistance": 30, "quality": 1, "landfillRemaining": 1})
+            "maxTravelDistance": 30, "quality": 1, "landfillCapacity": 2000000, "landfillRemaining": 1})
         path = s.artifact("landfill-fixture.json")
         path.write_text(json.dumps(fixture))
         await s.city("load", import_path=str(path))

@@ -1,6 +1,6 @@
 # Finite landfills (M39)
 
-Garbage facilities start with 80,000 units of free volume. Each completed tick
+Garbage facilities start with 2,000,000 units of free volume (80,000 before M46). Each completed tick
 recycles current waste first, burns current residual within incinerator capacity,
 uses spare burn capacity on stored landfill waste, then deposits the remaining
 reachable waste. A landfill accepts at most 400 units per tick at full funding,
@@ -20,8 +20,11 @@ the first full site's coordinates. It activates after three completed bad ticks,
 recovers after two healthy ticks, and repeats notices after 60 ticks. Additional
 landfill space, recycling, and incineration are the available relief measures.
 
-Saves persist `landfillRemaining` and `landfillLastFill` on facilities. Legacy
-facilities load with 80,000 free units and zero last fill. Invalid volumes are
+Saves persist `landfillCapacity`, `landfillRemaining` and `landfillLastFill` on
+facilities. A facility without `landfillCapacity` is from before M46, when sites
+held 80,000. It keeps its used volume and gains the new free space, so 123 free
+units load as 1,920,123. Facilities without any volume fields load empty with
+zero last fill. Invalid volumes are
 rejected before applying a load. Read-only service-power previews, inspection,
 and paused refreshes never consume space. Changing volume updates waste cache
 metadata without rebuilding road-distance fields. Budget funding scales
@@ -32,6 +35,19 @@ Summary metrics and CLI CSV reports add `landfill_remaining`,
 `landfill_fill_rate`, and `waste_stored_incinerated`. Total incineration includes
 stored waste; mass conservation therefore compares current generation plus
 stored waste removed against recycling, total burning, landfilling, and overflow.
+
+## Lifetime (M46)
+
+A city makes 0.25 units of waste per resident per tick, and a site takes at most
+400 per tick, so one site serves about 1,600 residents at full intake. At
+2,000,000 units a site at full intake lasts about 5,000 ticks. In the M36
+journey the first three sites open near tick 5,500 and the first fills at
+tick 10,400.
+
+Garbage coverage in the budget Services tab, the budget coverage list and MCP
+`garbage_coverage` is the share of waste recycled, burned or deposited, capped
+at road reach. Full sites lower it. MCP `garbage_reach` keeps road reach, which
+still decides how much waste is collectible.
 
 ## Local validation — October 18, 2026
 

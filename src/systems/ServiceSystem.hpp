@@ -51,7 +51,12 @@ struct ServiceFacility {
   // Water: shoreline intake. Sanitation: raw outlet or shoreline treatment.
   // False preserves legacy inland water / sanitation facilities.
   bool surfaceWater = false;
-  int64_t landfillRemaining = 80000;
+  // A site at full 400/tick intake lasts about 5,000 ticks (M46).
+  static constexpr int64_t kLandfillCapacity = 2000000;
+  // M39 saves without landfillCapacity used this volume.
+  static constexpr int64_t kLegacyLandfillCapacity = 80000;
+  int64_t landfillCapacity = kLandfillCapacity;
+  int64_t landfillRemaining = kLandfillCapacity;
   int64_t landfillLastFill = 0; // net units deposited on the last completed tick
   bool sewageTreatment = false; // shoreline Sanitation only; no raw discharge
 

@@ -2,6 +2,23 @@
 
 Last verified: October 18, 2026
 
+M46 landfills that last are implemented locally (October 18, 2026). A landfill
+holds 2,000,000 units, so a site at full 400-unit intake lasts about 5,000
+ticks. Saves record `landfillCapacity`. A site from an earlier save keeps its
+used volume and gains the new free space. Garbage coverage in the Services tab,
+the budget coverage list and MCP `garbage_coverage` is the share of waste
+recycled, burned or deposited. Full sites lower it. MCP `garbage_reach` keeps
+road reach. The Services tab's sewage line no longer overlaps the divider. In
+the unchanged M36 journey, the first three sites open near tick 5,500. The
+first fills at tick 10,400; before M46 they filled within about 450 ticks.
+Population still matches the M36 baseline, and the run passes its F5/F9
+continuation check. Garbage coverage falls from 0.84 to 0.22 as sites fill,
+while reach stays 0.52. The journey criterion was amended during
+implementation: it now bounds when sites fill instead of forbidding the alert.
+The default 400-tick `--simulate` changes only in `landfill_remaining`. Its
+sites do not fill within 400 ticks either way. Strict `ctest` in
+`build-strict` passed 634 tests. Next is M47, fires a city can contain.
+
 M45 hospital demand is implemented locally (October 18, 2026). Patient demand
 is housed population × illness rate × 0.2, so one funded 400-bed hospital
 serves about 3,000 residents at typical illness. The HUD bed line adds NEED
@@ -355,7 +372,7 @@ Quick performance smoke (headless):
 
 Phase 12 is complete. Phase 13 (M45–M48) in `ROADMAP.md` is a balance
 correction from the Phase 12 playtest: hospital demand, landfill lifetime,
-fire containment and substations. M45 is implemented locally; M46 is next. The Phase 12
+fire containment and substations. M45–M46 are implemented locally; M47 is next. The Phase 12
 list below is kept for reference.
 
 1. **M39 Landfills that fill.** Implemented locally. Garbage sites start

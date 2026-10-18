@@ -1,3 +1,4 @@
+#include "src/gameplay/BudgetPolicy.hpp"
 #include "gtest/gtest.h"
 
 #include "src/entities/EntityStore.hpp"
@@ -125,6 +126,29 @@ TEST(WasteSystemTests, ShortRunsKeepWasteTotalsAndFundingKeepsPhysicalVolume) {
   EXPECT_EQ(waste.recycled, preview.recycled);
   EXPECT_EQ(waste.landfilled, preview.landfilled);
   EXPECT_EQ(waste.uncollected, preview.uncollected);
-  EXPECT_EQ(facilities[0].landfillRemaining, 80000 - waste.landfilled);
+  EXPECT_EQ(facilities[0].landfillRemaining, ServiceFacility::kLandfillCapacity - waste.landfilled);
   EXPECT_EQ(WasteSystem::evaluate(store, facilities, coverage).landfillFillRate, waste.landfilled);
+}
+
+TEST(WasteSystemTests, SiteServingTenThousandResidentsLastsAboutFiveThousandTicks) {
+  EntityStore store;
+  const auto id = store.createBuilding(BuildingType::Residential, {1,1}, 10000);
+  store.getBuilding(id)->occupancy = 10000;
+  std::vector<ServiceFacility> facilities{{ServiceType::Garbage,{1,2},10,1.f}};
+  ServiceCoverageSummary coverage; coverage.garbageCoverage = 1.f;
+  int ticks = 0;
+  WasteSummary waste;
+  while (facilities[0].landfillRemaining > 0 && ticks < 10000) {
+    waste = WasteSystem::step(store, facilities, coverage);
+    ++ticks;
+  }
+  EXPECT_GE(ticks, 4000);
+  EXPECT_LE(ticks, 6000);
+  // Full and with no recycling or incineration, almost nothing is collected.
+  waste = WasteSystem::step(store, facilities, coverage);
+  EXPECT_EQ(waste.fullLandfills, 1u);
+  EXPECT_LT(waste.collectionRate, .05f);
+  const auto shown = BudgetPolicy::coverage(coverage, waste.collectionRate);
+  EXPECT_LT(shown[static_cast<size_t>(ServiceType::Garbage)], .05f);
+  EXPECT_FLOAT_EQ(BudgetPolicy::coverage(coverage)[static_cast<size_t>(ServiceType::Garbage)], 1.f);
 }

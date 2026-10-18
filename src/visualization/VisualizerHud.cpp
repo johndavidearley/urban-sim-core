@@ -191,12 +191,12 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
         else if (facility.surfaceWater) ++raw;
         else ++inland;
       }
-      drawText(renderer, x + 360, y + 374, "SEWAGE RAW " + std::to_string(raw) + " TREATED " +
+      drawText(renderer, x + 360, y + 370, "SEWAGE RAW " + std::to_string(raw) + " TREATED " +
         std::to_string(treated) + " INLAND " + std::to_string(inland), {160,220,210}, 1);
     }
-    drawText(renderer, x + 360, y + 346, "LANDFILL FREE " + std::to_string(diagnostics.inputs.landfillRemaining)
+    drawText(renderer, x + 360, y + 344, "LANDFILL FREE " + std::to_string(diagnostics.inputs.landfillRemaining)
       + "  LAST FILL " + std::to_string(diagnostics.inputs.landfillFillRate) + "/TICK", {210,210,160}, 1);
-    drawText(renderer, x + 360, y + 360, "CIVIC/TRANSPORT $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
+    drawText(renderer, x + 360, y + 357, "CIVIC/TRANSPORT $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
   }
   for (int action = 0; action < kBudgetControlCount; ++action) {
     if (!budgetControlVisible(action, services, trends, alerts, bonds)) continue;
@@ -1009,7 +1009,7 @@ void drawTileInspector(
       drawText(renderer, x + 10, y + 111, serviceLine, serviceFacilityColor(facility.type), 1);
       if (facility.type == ServiceType::Garbage) {
         drawText(renderer, x + 10, y + 95,
-          "FREE " + std::to_string(facility.landfillRemaining) + "/80000 FILL "
+          "FREE " + std::to_string(facility.landfillRemaining) + "/" + std::to_string(facility.landfillCapacity) + " FILL "
             + std::to_string(facility.landfillLastFill) + "/TICK", {210,210,160}, 1);
       }
       if (facility.type == ServiceType::Incinerator && waste) {

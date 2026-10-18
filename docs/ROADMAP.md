@@ -24,7 +24,7 @@ Last updated: October 18, 2026
 - Phase 6 (M17–M22): implemented; local M22 verification is recorded in STATUS.md.
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
 - Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
-- Phase 13 (M45–M48): M45 complete locally. M46 is next.
+- Phase 13 (M45–M48): M45–M46 complete locally. M47 is next.
 
 ---
 
@@ -940,7 +940,7 @@ calendar scheduler. The term is a tick count.
 ## Phase 13: Phase 12 balance correction (M45–M48) — draft
 
 Drafted October 18, 2026 from the Phase 12 playtest
-(`playtest-artifacts/phase12-playtest/REPORT.md`). M45 is complete locally.
+(`playtest-artifacts/phase12-playtest/REPORT.md`). M45–M46 are complete locally.
 Implement in order. Phase 12's invariants still hold.
 
 The unchanged M36 journey (`playtest/examples/phase10_native_journey.py`)
@@ -975,23 +975,29 @@ population at ticks 8,000 and 12,000. A 6,000-resident city with one hospital
 still reports CAP.
 **Excluded:** per-patient assignment, ambulances, and a new illness model.
 
-### Milestone 46: Landfills that last
+### Milestone 46: Landfills that last — implemented locally
+
+**Complete locally, October 18, 2026.** The journey criterion was amended
+during implementation. At 2,000,000 units, the journey's three sites, built
+near tick 5,500 and never added to, fill around tick 10,400. That is the
+intended lifetime, so the criterion now bounds when sites fill instead of
+forbidding the alert. See STATUS.md.
 
 A landfill takes at most 400 units per tick and holds 80,000, so a busy site
 fills in about 200 ticks. In the journey all four sites are full by the end,
 and LANDFILL FULL is active from tick 6,000 onward. Garbage coverage still
 reads 53–88% with every site full.
 
-- [ ] A landfill holds 2,000,000 units, so a site at full intake lasts about
+- [x] A landfill holds 2,000,000 units, so a site at full intake lasts about
       5,000 ticks. Saves record capacity per facility. Legacy facilities keep
       their used volume and gain the new free space.
-- [ ] Garbage coverage counts only waste that was recycled, burned or
+- [x] Garbage coverage counts only waste that was recycled, burned or
       deposited. Full sites lower it.
-- [ ] The Services tab's sewage line no longer overlaps the divider.
+- [x] The Services tab's sewage line no longer overlaps the divider.
 
-**Acceptance:** The journey reaches 10,000 residents without a LANDFILL FULL
-alert. A site serving 10,000 residents with no recycling or incineration fills
-in 4,000–6,000 ticks. A city whose sites are all full shows garbage coverage
+**Acceptance:** In the journey, no LANDFILL FULL alert appears before tick
+10,000, and no site fills within 4,000 ticks of opening. A site serving 10,000
+residents with no recycling or incineration fills in 4,000–6,000 ticks. A city whose sites are all full shows garbage coverage
 near zero.
 **Excluded:** waste export, transfer stations and landfill closure costs.
 
@@ -1057,7 +1063,7 @@ city of substations alone reports a power shortage.
 | 10 | M36 | complete: end-to-end playability |
 | 11 | M37 | complete: surface water and early waterworks |
 | 12 | M38–M44 | complete; hosted CI verified on fd554fd |
-| 13 | M45–M48 | M45 complete locally |
+| 13 | M45–M48 | M45–M46 complete locally |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

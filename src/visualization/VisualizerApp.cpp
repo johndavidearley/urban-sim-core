@@ -820,6 +820,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       activatePaletteTool(PaletteTool::None);
     }
   };
+  auto garbageCollected = [&]() {
+    return liveState.waste.generated > 0 ? liveState.waste.collectionRate : -1.f;
+  };
   auto bondView = [&]() {
     BudgetBondView view;
     view.open = budgetBonds;
@@ -865,7 +868,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       {"tax_attraction", liveState.budgetPolicy.taxAttraction()},
       {"service_percent", liveState.budgetPolicy.servicePercent},
       {"service_costs", liveState.budgetPolicy.serviceCosts(facilities)},
-      {"service_coverage", BudgetPolicy::coverage(liveState.serviceSummary)},
+      {"service_coverage", BudgetPolicy::coverage(liveState.serviceSummary, garbageCollected())},
       {"bond", {{"active", liveState.bond.active()}, {"principal", liveState.bond.principal},
         {"term", liveState.bond.term}, {"ticks_elapsed", liveState.bond.ticksElapsed},
         {"remaining", TreasurySystem::bondRemaining(liveState.bond)},
@@ -1055,7 +1058,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"power_coverage", liveState.serviceSummary.powerCoverage},
            {"water_coverage", liveState.serviceSummary.waterCoverage},
            {"sanitation_coverage", liveState.serviceSummary.sanitationCoverage},
-           {"garbage_coverage", liveState.serviceSummary.garbageCoverage},
+           {"garbage_coverage", BudgetPolicy::coverage(liveState.serviceSummary, garbageCollected())[7]},
+           {"garbage_reach", liveState.serviceSummary.garbageCoverage},
            {"incinerator_coverage", liveState.serviceSummary.incineratorCoverage},
            {"waste_incinerated", liveState.waste.incinerated},
            {"landfill_remaining", liveState.waste.landfillRemaining},
@@ -2582,7 +2586,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       drawBudgetPanel(renderer, windowWidth, windowHeight, liveState.budgetPolicy,
                       budgetPreview(), liveState.treasuryLedger, funds,
                       liveState.treasuryDebt, mouseX, mouseY, budgetServices,
-                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary), budgetTrends, liveState.history, budgetAlerts, liveState.alerts,budgetFocus,inspectedTrendTick,&facilities,&bondViewForDraw);
+                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary, garbageCollected()), budgetTrends, liveState.history, budgetAlerts, liveState.alerts,budgetFocus,inspectedTrendTick,&facilities,&bondViewForDraw);
     if (showTransportPanel)
       drawTransportPanel(renderer,windowWidth,windowHeight,liveState.transitRoutes,selectedTransitRoute,
         liveState.transitReport,routePeak(selectedTransitRoute).first,

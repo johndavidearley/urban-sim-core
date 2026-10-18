@@ -67,9 +67,13 @@ struct BudgetPolicy {
     }
     return result;
   }
-  static std::array<float, kServiceTypeCount> coverage(const ServiceCoverageSummary& s) {
+  // Garbage shows the share of waste recycled, burned or deposited when the
+  // caller passes one (M46), so full landfills lower it. Otherwise it is reach.
+  static std::array<float, kServiceTypeCount> coverage(const ServiceCoverageSummary& s,
+                                                       float garbageCollected = -1.f) {
     return {{s.fireCoverage, s.policeCoverage, s.healthCoverage, s.educationCoverage,
-      s.powerCoverage, s.waterCoverage, s.sanitationCoverage, s.garbageCoverage,
+      s.powerCoverage, s.waterCoverage, s.sanitationCoverage,
+      garbageCollected >= 0.f ? std::min(s.garbageCoverage, garbageCollected) : s.garbageCoverage,
       s.recyclingCoverage, s.cemeteryCoverage, s.crematoriumCoverage, s.incineratorCoverage}};
   }
   bool valid() const {

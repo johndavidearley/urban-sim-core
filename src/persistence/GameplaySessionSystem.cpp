@@ -256,8 +256,9 @@ bool GameplaySessionSystem::save(
   for (const ServiceFacility& facility : session.facilities) {
     if (facility.sewageTreatment && (!facility.surfaceWater || facility.type != ServiceType::Sanitation))
       return fail(errorMessage, "invalid sewage treatment facility");
-    if (facility.landfillRemaining < 0 || facility.landfillRemaining > 80000
-        || facility.landfillLastFill < -80000 || facility.landfillLastFill > 80000)
+    if (facility.landfillCapacity <= 0 || facility.landfillCapacity > ServiceFacility::kLandfillCapacity
+        || facility.landfillRemaining < 0 || facility.landfillRemaining > facility.landfillCapacity
+        || facility.landfillLastFill < -facility.landfillCapacity || facility.landfillLastFill > facility.landfillCapacity)
       return fail(errorMessage, "invalid landfill volume or fill rate");
     facilities.push_back({
       {"type", static_cast<int>(facility.type)},
@@ -269,6 +270,7 @@ bool GameplaySessionSystem::save(
       {"powerCapacityMW", facility.powerCapacityMW},
       {"emissionsKgPerMWh", facility.emissionsKgPerMWh},
       {"waterSupplyUnits", facility.waterSupplyUnits},
+      {"landfillCapacity", facility.landfillCapacity},
       {"landfillRemaining", facility.landfillRemaining},
       {"landfillLastFill", facility.landfillLastFill}
     });
@@ -662,16 +664,27 @@ bool GameplaySessionSystem::load(
       facility.sewageTreatment = item.value("sewageTreatment", false);
       if (facility.sewageTreatment && (!facility.surfaceWater || facility.type != ServiceType::Sanitation))
         return fail(errorMessage, "invalid sewage treatment facility");
-      for (const char* key : {"landfillRemaining", "landfillLastFill"}) {
+      // Saves before M46 have no capacity: those sites held 80,000. Keep
+      // their used volume and give them the new free space.
+      const bool legacyVolume = !item.contains("landfillCapacity");
+      const int64_t capacity = legacyVolume ? ServiceFacility::kLegacyLandfillCapacity
+                                            : ServiceFacility::kLandfillCapacity;
+      for (const char* key : {"landfillCapacity", "landfillRemaining", "landfillLastFill"}) {
         if (!item.contains(key)) continue;
         const auto& value = item.at(key);
-        if (!value.is_number_integer() || value.get<double>() < -80000 || value.get<double>() > 80000)
+        if (!value.is_number_integer() || value.get<double>() < static_cast<double>(-capacity) ||
+            value.get<double>() > static_cast<double>(capacity))
           return fail(errorMessage, "invalid landfill volume or fill rate");
       }
-      facility.landfillRemaining = item.value("landfillRemaining", int64_t{80000});
+      if (!legacyVolume && item.at("landfillCapacity").get<int64_t>() != ServiceFacility::kLandfillCapacity)
+        return fail(errorMessage, "invalid landfill capacity");
+      facility.landfillRemaining = item.value("landfillRemaining", capacity);
       facility.landfillLastFill = item.value("landfillLastFill", int64_t{0});
       if (facility.landfillRemaining < 0)
         return fail(errorMessage, "invalid landfill remaining volume");
+      if (legacyVolume)
+        facility.landfillRemaining += ServiceFacility::kLandfillCapacity - ServiceFacility::kLegacyLandfillCapacity;
+      facility.landfillCapacity = ServiceFacility::kLandfillCapacity;
       if (facility.surfaceWater && facility.type != ServiceType::Water && facility.type != ServiceType::Sanitation)
         return fail(errorMessage,"invalid surface-water facility type");
       loaded.facilities.push_back(facility);

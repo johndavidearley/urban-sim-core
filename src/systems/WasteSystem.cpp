@@ -39,7 +39,7 @@ WasteSummary WasteSystem::step(
   for (auto& facility : facilities) {
     if (facility.type != ServiceType::Garbage) continue;
     facility.landfillLastFill = 0;
-    const int64_t stock = std::max<int64_t>(0, 80000 - facility.landfillRemaining);
+    const int64_t stock = std::max<int64_t>(0, facility.landfillCapacity - facility.landfillRemaining);
     const int64_t burned = std::min(stock, spareBurn);
     facility.landfillRemaining += burned;
     facility.landfillLastFill -= burned;
