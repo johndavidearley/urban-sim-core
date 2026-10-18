@@ -66,11 +66,22 @@ if (command == "budget") {
     auto policy = liveState.budgetPolicy;
     policy.servicePercent = BudgetPolicy{}.servicePercent;
     setBudgetPolicy(policy);
-  } else if (action == "services" || action == "taxes" || action == "trends" || action == "alerts") {
+  } else if (action == "issue_bond") {
+    if (!args.contains("bond_principal") || !args.contains("bond_term") ||
+        !args.at("bond_principal").is_number_integer() || !args.at("bond_term").is_number_integer())
+      throw std::runtime_error("Provide integer bond_principal and bond_term");
+    const auto principal = args.at("bond_principal").get<int64_t>(), term = args.at("bond_term").get<int64_t>();
+    if (!TreasurySystem::validBondPrincipal(principal) || !TreasurySystem::validBondTerm(term))
+      throw std::runtime_error("Bond principal must be 10000, 50000 or 200000 and term 100, 200 or 400 ticks");
+    issueBond(principal, static_cast<uint32_t>(term));
+  } else if (action == "pay_off_bond") {
+    payOffBond();
+  } else if (action == "services" || action == "taxes" || action == "trends" || action == "alerts" || action == "bonds") {
     showRegionalPanel=false;showTransportPanel=false;
     budgetServices = action == "services";
     budgetTrends = action == "trends";
     budgetAlerts = action == "alerts";
+    budgetBonds = action == "bonds";
     showBudgetPanel = true; toolDragging = false; cameraPanning = false;
   } else if (action == "reset") setBudgetPolicy(BudgetPolicy{});
   else if (action == "open") { showRegionalPanel=false;showTransportPanel=false; showBudgetPanel = true; toolDragging = false; cameraPanning = false; }
@@ -114,8 +125,15 @@ if (command == "inspect") {
         controls.back()["focused"]=i==transportFocus;}
     }
     else if (showBudgetPanel) {
-      for (int i = 0; i < 45; ++i) {
-        if (!budgetControlVisible(i, budgetServices, budgetTrends, budgetAlerts)) continue;
+      const auto bonds = bondView();
+      for (int i = 0; i < kBudgetControlCount; ++i) {
+        if (!budgetControlVisible(i, budgetServices, budgetTrends, budgetAlerts, &bonds)) continue;
+        if (i >= 45) {
+          static const char* bondNames[] = {"budget_bonds", "bond_principal_0", "bond_principal_1", "bond_principal_2",
+            "bond_term_0", "bond_term_1", "bond_term_2", "bond_issue", "bond_pay_off"};
+          rect(bondNames[i - 45], budgetControlRect(i, windowWidth, windowHeight));
+          continue;
+        }
         if (i == 43 || i == 44) { rect(i == 43 ? "funding_11_minus" : "funding_11_plus", budgetControlRect(i, windowWidth, windowHeight, true)); continue; }
         if (i >= 37) { rect(i == 37 ? "budget_alerts" : "alert_view_" + std::to_string(i - 38), budgetControlRect(i, windowWidth, windowHeight)); continue; }
         if (i == 36) { rect("budget_trends", budgetControlRect(i, windowWidth, windowHeight)); continue; }
@@ -148,8 +166,9 @@ if (command == "inspect") {
                 kOverlayKeyY, kOverlayKeyWidth, kOverlayKeyHeight});
     }
     if (showBudgetPanel && !showTransportPanel && !showQuitDialog) for (auto& c:controls) {
-      const int action=budgetHitTest(c["x"].get<int>()+1,c["y"].get<int>()+1,windowWidth,windowHeight,budgetServices,budgetTrends,budgetAlerts);
-      c["enabled"]=budgetControlEnabled(action,liveState.budgetPolicy,budgetServices,budgetTrends,budgetAlerts);
+      const auto bonds = bondView();
+      const int action=budgetHitTest(c["x"].get<int>()+1,c["y"].get<int>()+1,windowWidth,windowHeight,budgetServices,budgetTrends,budgetAlerts,&bonds);
+      c["enabled"]=budgetControlEnabled(action,liveState.budgetPolicy,budgetServices,budgetTrends,budgetAlerts,&bonds);
       c["focused"]=action==budgetFocus;
     }
     Json charts=Json::array();

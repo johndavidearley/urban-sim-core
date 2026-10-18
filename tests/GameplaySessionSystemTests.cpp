@@ -904,3 +904,77 @@ TEST(GameplaySessionSystemTests, DistrictHeightCapRoundTripsAndLegacyLoadsUncapp
   std::filesystem::remove(path);
   std::filesystem::remove(path.string() + ".city.json");
 }
+
+TEST(GameplaySessionSystemTests, BondRoundTripsLegacyHasNoneAndMalformedRejectsAtomically) {
+  CityMap map({16, 16});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore people;
+  GameplaySessionState session;
+  session.funds = 100;
+  ASSERT_TRUE(TreasurySystem::issueBond(session.bond, session.funds, 50000, 200));
+  for (int i = 0; i < 3; ++i) GameplaySessionSystem::advance(map, roads, store, people, session);
+  ASSERT_TRUE(session.bond.active());
+  ASSERT_TRUE(session.treasuryLedger.bond.any());
+  const auto path = std::filesystem::temp_directory_path() / "urban_bond_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store, people, session));
+  nlohmann::json valid;
+  { std::ifstream in(path); in >> valid; }
+  EXPECT_EQ(valid["bond"]["principal"], 50000);
+  EXPECT_EQ(valid["bond"]["term"], 200);
+  EXPECT_EQ(valid["bond"]["ticksElapsed"], 3);
+  EXPECT_TRUE(valid["treasuryLedger"].contains("bond"));
+
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  EXPECT_EQ(loaded.bond, session.bond);
+  EXPECT_EQ(loaded.treasuryLedger.bond.paid, session.treasuryLedger.bond.paid);
+  EXPECT_EQ(loaded.treasuryLedger.bond.remainingAfter, session.treasuryLedger.bond.remainingAfter);
+
+  // Continuing from the reload matches continuing in place.
+  GameplaySessionSystem::advance(map, roads, store, people, session);
+  CityMap map2({16, 16});
+  RoadNetwork roads2(map2);
+  EntityStore store2;
+  PopulationStore people2;
+  GameplaySessionState resumed;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map2, roads2, store2, people2, resumed));
+  GameplaySessionSystem::advance(map2, roads2, store2, people2, resumed);
+  EXPECT_EQ(resumed.funds, session.funds);
+  EXPECT_EQ(resumed.treasuryDebt, session.treasuryDebt);
+  EXPECT_EQ(resumed.bond, session.bond);
+
+  const auto writeAndLoad = [&](const nlohmann::json& root) {
+    { std::ofstream out(path); out << root; }
+    return GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded);
+  };
+  const auto before = loaded.bond;
+  for (const auto& [field, value] : std::vector<std::pair<std::string, nlohmann::json>>{
+         {"principal", 20000}, {"term", 150}, {"ticksElapsed", 200}, {"interestRemainder", 1.5},
+         {"principal", 0}, {"term", "200"}}) {
+    auto bad = valid;
+    bad["bond"][field] = value;
+    EXPECT_FALSE(writeAndLoad(bad)) << field;
+    EXPECT_EQ(loaded.bond, before) << field;
+  }
+  auto bad = valid;
+  bad["bond"] = 5;
+  EXPECT_FALSE(writeAndLoad(bad));
+  bad = valid;
+  bad["treasuryLedger"]["bond"]["missed"] = bad["treasuryLedger"]["bond"]["missed"].get<int64_t>() + 1;
+  EXPECT_FALSE(writeAndLoad(bad));
+  EXPECT_EQ(loaded.bond, before);
+
+  // A no-bond save carries no bond fields, as legacy saves do.
+  ASSERT_TRUE(loaded.bond.active());
+  GameplaySessionState none;
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store, people, none));
+  nlohmann::json plain;
+  { std::ifstream in(path); in >> plain; }
+  EXPECT_FALSE(plain.contains("bond"));
+  EXPECT_FALSE(plain["treasuryLedger"].contains("bond"));
+  ASSERT_TRUE(writeAndLoad(plain));
+  EXPECT_FALSE(loaded.bond.active());
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
+}

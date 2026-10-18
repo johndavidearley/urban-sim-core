@@ -47,6 +47,7 @@ struct GameplaySessionState {
   int64_t treasuryNet = 0;
   int64_t treasuryDebt = 0;
   double treasuryInterestRemainder = 0.0;
+  MunicipalBond bond;
   // Last migration request, retained in saves for compatibility; not a cap.
   uint32_t populationTarget = 480;
   MigrationConditions migrationConditions;

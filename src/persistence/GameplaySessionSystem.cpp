@@ -292,7 +292,7 @@ bool GameplaySessionSystem::save(
                         {"disasterBuildingsDestroyed", events.disaster.buildingsDestroyed}};
   const auto& ledger = session.treasuryLedger;
   const auto& flow = ledger.flow;
-  const json ledgerJson = {{"valid", ledger.valid}, {"tick", ledger.tick},
+  json ledgerJson = {{"valid", ledger.valid}, {"tick", ledger.tick},
     {"revenue", ledger.breakdown.revenue}, {"expenses", ledger.breakdown.expenses},
     {"tourismFees",ledger.breakdown.tourismFees},{"tourismServices",ledger.breakdown.tourismServices},
     {"totalRevenue", ledger.breakdown.totalRevenue},
@@ -302,6 +302,11 @@ bool GameplaySessionSystem::save(
     {"shortfall", flow.shortfall}, {"debtIssued", flow.debtIssued},
     {"debtRepaid", flow.debtRepaid}, {"interestCharged", flow.interestCharged},
     {"outstandingDebt", flow.outstandingDebt}};
+  if (ledger.bond.any())
+    ledgerJson["bond"] = {{"installment", ledger.bond.installment},
+      {"interest", ledger.bond.interest}, {"paid", ledger.bond.paid},
+      {"missed", ledger.bond.missed}, {"remainingBefore", ledger.bond.remainingBefore},
+      {"remainingAfter", ledger.bond.remainingAfter}};
   json root = {{"version", kGameplaySessionVersion},
                {"budgetTaxPercent", session.budgetPolicy.taxPercent},
                {"budgetServicePercent", session.budgetPolicy.servicePercent},
@@ -361,6 +366,11 @@ bool GameplaySessionSystem::save(
                  {"office", session.demand.office}}},
                {"facilities", facilities}};
 
+  // Absent means no bond, so no-bond saves match earlier versions.
+  if (session.bond.active())
+    root["bond"] = {{"principal", session.bond.principal}, {"term", session.bond.term},
+      {"ticksElapsed", session.bond.ticksElapsed},
+      {"interestRemainder", session.bond.interestRemainder}};
   root["growthModifiers"] = json::array();
   for (const auto &modifier : session.growthModifiers) {
     root["growthModifiers"].push_back({{"x1", modifier.minCorner.x},
@@ -500,6 +510,24 @@ bool GameplaySessionSystem::load(
         ledger.flow.debtRepaid = item.at("debtRepaid").get<int64_t>();
         ledger.flow.interestCharged = item.at("interestCharged").get<int64_t>();
         ledger.flow.outstandingDebt = item.at("outstandingDebt").get<int64_t>();
+        if (item.contains("bond")) {
+          const auto& b = item.at("bond");
+          if (!b.is_object())
+            return fail(errorMessage, "gameplay session has invalid ledger bond");
+          for (const char* name : {"installment", "interest", "paid", "missed", "remainingBefore", "remainingAfter"})
+            if (!b.contains(name) || !b.at(name).is_number_integer() || b.at(name).get<int64_t>() < 0)
+              return fail(errorMessage, "gameplay session has invalid ledger bond");
+          auto& bond = ledger.bond;
+          bond.installment = b.at("installment").get<int64_t>();
+          bond.interest = b.at("interest").get<int64_t>();
+          bond.paid = b.at("paid").get<int64_t>();
+          bond.missed = b.at("missed").get<int64_t>();
+          bond.remainingBefore = b.at("remainingBefore").get<int64_t>();
+          bond.remainingAfter = b.at("remainingAfter").get<int64_t>();
+          if (bond.remainingBefore <= 0 || bond.paid + bond.missed != bond.installment + bond.interest ||
+              bond.remainingAfter != bond.remainingBefore - bond.installment)
+            return fail(errorMessage, "gameplay session has invalid ledger bond");
+        }
         bool valid = true;
         for (auto value : ledger.breakdown.revenue) valid = valid && value >= 0;
         for (auto value : ledger.breakdown.expenses) valid = valid && value >= 0;
@@ -514,9 +542,9 @@ bool GameplaySessionSystem::load(
           ledger.breakdown.expenses.end(), 0.L)+ledger.breakdown.tourismServices == flow.expenses;
         valid = valid && flow.net == ledger.fundsAfter - ledger.fundsBefore;
         valid = valid && flow.shortfall == flow.debtIssued;
-        valid = valid && static_cast<long double>(ledger.fundsBefore) + flow.revenue -
+        valid = valid && static_cast<long double>(ledger.fundsBefore) - ledger.bond.paid + flow.revenue -
           flow.expenses + flow.debtIssued - flow.debtRepaid == ledger.fundsAfter;
-        valid = valid && static_cast<long double>(ledger.debtBefore) + flow.debtIssued +
+        valid = valid && static_cast<long double>(ledger.debtBefore) + ledger.bond.missed + flow.debtIssued +
           flow.interestCharged - flow.debtRepaid == flow.outstandingDebt;
         if (!valid) return fail(errorMessage, "gameplay session has inconsistent treasury ledger");
       }
@@ -586,6 +614,22 @@ bool GameplaySessionSystem::load(
     loaded.emptyZonedCount = root.value("emptyZonedCount", int64_t{0});
     if (loaded.funds < 0 || loaded.tickIntervalMs < 16 || loaded.tickIntervalMs > 5000) {
       return fail(errorMessage, "gameplay session has invalid funds or speed");
+    }
+    if (root.contains("bond")) {
+      const auto& b = root.at("bond");
+      if (!b.is_object() || !b.contains("principal") || !b.contains("term") ||
+          !b.contains("ticksElapsed") || !b.contains("interestRemainder") ||
+          !b.at("principal").is_number_integer() || !b.at("term").is_number_integer() ||
+          !b.at("ticksElapsed").is_number_integer() || !b.at("interestRemainder").is_number() ||
+          b.at("term").get<int64_t>() < 0 || b.at("ticksElapsed").get<int64_t>() < 0 ||
+          b.at("term").get<int64_t>() > UINT32_MAX || b.at("ticksElapsed").get<int64_t>() > UINT32_MAX)
+        return fail(errorMessage, "gameplay session has invalid bond");
+      loaded.bond.principal = b.at("principal").get<int64_t>();
+      loaded.bond.term = static_cast<uint32_t>(b.at("term").get<int64_t>());
+      loaded.bond.ticksElapsed = static_cast<uint32_t>(b.at("ticksElapsed").get<int64_t>());
+      loaded.bond.interestRemainder = b.at("interestRemainder").get<double>();
+      if (!loaded.bond.active() || !TreasurySystem::validBond(loaded.bond))
+        return fail(errorMessage, "gameplay session has invalid bond");
     }
     if (loaded.treasuryDebt < 0 || (!std::isfinite(loaded.treasuryInterestRemainder) || loaded.treasuryInterestRemainder < 0.0 || loaded.treasuryInterestRemainder >= 1.0)) {
       return fail(errorMessage, "gameplay session has invalid treasury debt");
@@ -721,6 +765,7 @@ PlayableCityTickState GameplaySessionSystem::advance(
   state.treasuryNet = session.treasuryNet;
   state.treasuryDebt = session.treasuryDebt;
   state.treasuryInterestRemainder = session.treasuryInterestRemainder;
+  state.bond = session.bond;
   state.laggedEducationCoverage = session.laggedEducationCoverage;
   state.transitRoutes = session.transitRoutes;
   state.disasters = session.disasters;
@@ -782,6 +827,7 @@ PlayableCityTickState GameplaySessionSystem::advance(
   session.treasuryNet = state.treasuryNet;
   session.treasuryDebt = state.treasuryDebt;
   session.treasuryInterestRemainder = state.treasuryInterestRemainder;
+  session.bond = state.bond;
   session.laggedEducationCoverage = state.laggedEducationCoverage;
   session.transitRoutes = state.transitRoutes;
   session.disasters = state.disasters;

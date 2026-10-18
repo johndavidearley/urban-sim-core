@@ -121,6 +121,7 @@ struct LiveSimulationState {
   int64_t treasuryNet = 0;
   int64_t treasuryShortfall = 0;
   int64_t treasuryDebt = 0;
+  MunicipalBond bond;
   int64_t treasuryDebtIssued = 0;
   int64_t treasuryDebtRepaid = 0;
   int64_t treasuryInterestCharged = 0;

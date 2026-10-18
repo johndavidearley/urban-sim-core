@@ -2,6 +2,23 @@
 
 Last verified: October 18, 2026
 
+M44 municipal bonds are implemented locally (October 18, 2026). This completes
+Phase 12. The budget panel's BONDS tab issues one bond at a time: $10,000,
+$50,000, or $200,000 over 100, 200, or 400 ticks. Issuing adds the principal
+to cash. Each tick pays an equal principal part plus 0.15% interest on the
+remaining principal, before ordinary expenses. Cash that cannot cover it joins
+the overdraft once, and the bond keeps its schedule. Pay-off clears the bond.
+The next-tick estimate and the last-tick ledger each have a bond line, and
+sessions save the bond. A no-bond city saves without bond fields, so its saves
+match earlier versions. MCP `budget` gains `bonds`, `issue_bond`, and
+`pay_off_bond`. A 400-tick default `--simulate` CSV is byte-identical to M43.
+Strict `ctest` in `build-strict` passed 632 tests on macOS. Playtest Python
+unit tests passed (7). All 40 rendered playtests passed, including the M44
+acceptance: issue, installment plus interest, a broke city rolling a missed
+installment into overdraft once, pay-off, and matching GUI, reload, and
+headless replays. See [MUNICIPAL_BONDS.md](MUNICIPAL_BONDS.md).
+Hosted CI, sanitizers, and packaging were not repeated.
+
 M43 district height caps are implemented locally (October 18, 2026).
 A district stores an uncapped ladder or a maximum of 1×, 2×, 4×, 8×, 16×, 32×,
 or 64×. Uncapped is the default and the legacy-save value. Growth will not
@@ -20,7 +37,7 @@ uncapped block climbs past it, a newly zoned capped tile builds at or below 2×,
 and checkpoint, headless, invalid-cap, and legacy loads all match. See
 [DISTRICT_HEIGHT.md](DISTRICT_HEIGHT.md).
 Hosted CI, sanitizers, and packaging were not repeated.
-Next is M44, municipal bonds.
+M44 is also implemented locally.
 
 M42 shoreline treatment is implemented locally (October 18, 2026).
 Sanitation now supports clean shoreline treatment at $9,000 construction and
@@ -303,9 +320,9 @@ Quick performance smoke (headless):
 
 ## Current Priorities
 
-Phase 12 in `ROADMAP.md` is the queue. Implement in order. M17–M42 and
-waste-to-energy incinerators are done. M43 district height caps are implemented
-locally. M44 is next.
+Phase 12 in `ROADMAP.md` is implemented locally through M44. M17–M42 and
+waste-to-energy incinerators are done. M43 district height caps and M44
+municipal bonds are implemented locally.
 
 1. **M39 Landfills that fill.** Implemented locally. Garbage sites start
    with 80,000 units of volume. Full sites stop accepting; spare incinerator
@@ -320,8 +337,9 @@ locally. M44 is next.
 5. **M43 District height caps.** Implemented locally. A district can stop
    the redevelopment ladder at 1×–64×. Uncapped districts match today.
    See `DISTRICT_HEIGHT.md`.
-6. **M44 Municipal bonds.** The budget panel can borrow a fixed principal
-   and repay it over a tick term, separate from the automatic overdraft.
+6. **M44 Municipal bonds.** Implemented locally. The budget panel borrows a
+   fixed principal and repays it over a tick term, separate from the
+   automatic overdraft. See `MUNICIPAL_BONDS.md`.
 
 Still constraints, not milestones:
 

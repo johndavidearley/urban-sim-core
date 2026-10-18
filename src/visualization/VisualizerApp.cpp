@@ -136,6 +136,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       liveState.treasuryNet = session.treasuryNet;
       liveState.treasuryDebt = session.treasuryDebt;
       liveState.treasuryInterestRemainder = session.treasuryInterestRemainder;
+      liveState.bond = session.bond;
       liveState.populationTarget = session.populationTarget;
       liveState.migrationConditions = session.migrationConditions;
       liveState.populationChange = session.populationChange;
@@ -194,6 +195,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   bool budgetServices = false;
   bool budgetTrends = false;
   bool budgetAlerts = false;
+  bool budgetBonds = false;
+  int bondPrincipalChoice = 0, bondTermChoice = 0;
   bool cleanUiMode = false;
   int isometricCameraX = 0;
   int isometricCameraY = 0;
@@ -406,6 +409,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     session.treasuryNet = liveState.treasuryNet;
     session.treasuryDebt = liveState.treasuryDebt;
     session.treasuryInterestRemainder = liveState.treasuryInterestRemainder;
+    session.bond = liveState.bond;
     session.populationTarget = liveState.populationTarget;
     session.migrationConditions = liveState.migrationConditions;
     session.populationChange = liveState.populationChange;
@@ -462,6 +466,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.treasuryNet = session.treasuryNet;
     liveState.treasuryDebt = session.treasuryDebt;
     liveState.treasuryInterestRemainder = session.treasuryInterestRemainder;
+    liveState.bond = session.bond;
     liveState.treasuryDebtIssued = 0;
     liveState.treasuryDebtRepaid = 0;
     liveState.treasuryInterestCharged = 0;
@@ -743,7 +748,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     budgetAlerts = false; budgetTrends = false;
     toolDragging = false; cameraPanning = false;
     activatePaletteTool(PaletteTool::None);
-    if (index == 4) { showBudgetPanel = true; budgetServices = false; }
+    if (index == 4) { showBudgetPanel = true; budgetServices = false; budgetBonds = false; }
     else {
       showBudgetPanel = false;
       overlayMode = index == 2 ? OverlayMode::Demand : OverlayMode::ServiceCoverage;
@@ -815,6 +820,40 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       activatePaletteTool(PaletteTool::None);
     }
   };
+  auto bondView = [&]() {
+    BudgetBondView view;
+    view.open = budgetBonds;
+    view.principalChoice = bondPrincipalChoice;
+    view.termChoice = bondTermChoice;
+    view.bond = liveState.bond;
+    view.funds = funds;
+    view.nextDue = TreasurySystem::bondDue(liveState.bond);
+    return view;
+  };
+  auto afterBondCash = [&]() {
+    liveState.lowFunds = funds > 0 && funds < 5000;
+    liveState.bankrupt = funds == 0 && liveState.treasuryDebt > 0;
+    sessionDirty = true;
+  };
+  auto issueBond = [&](int64_t principal, uint32_t term) {
+    if (liveState.bond.active()) throw std::runtime_error("A bond is already open");
+    if (!TreasurySystem::issueBond(liveState.bond, funds, principal, term))
+      throw std::runtime_error("Bond principal must be 10000, 50000 or 200000 and term 100, 200 or 400 ticks");
+    afterBondCash();
+    notify("BOND ISSUED $" + std::to_string(principal) + " OVER " + std::to_string(term) + " TICKS", true);
+  };
+  auto payOffBond = [&]() {
+    if (!liveState.bond.active()) throw std::runtime_error("No open bond");
+    const int64_t remaining = TreasurySystem::bondRemaining(liveState.bond);
+    if (!TreasurySystem::payOffBond(liveState.bond, funds))
+      throw std::runtime_error("Paying off the bond needs $" + std::to_string(remaining) + " cash");
+    afterBondCash();
+    notify("BOND PAID OFF $" + std::to_string(remaining), true);
+  };
+  auto bondJson = [](const BondPayment& b) -> Json {
+    return {{"installment", b.installment}, {"interest", b.interest}, {"paid", b.paid},
+      {"missed", b.missed}, {"remaining_before", b.remainingBefore}, {"remaining_after", b.remainingAfter}};
+  };
   auto budgetStatus = [&]() -> Json {
     const auto preview = budgetPreview();
     const auto& ledger = liveState.treasuryLedger;
@@ -827,7 +866,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       {"service_percent", liveState.budgetPolicy.servicePercent},
       {"service_costs", liveState.budgetPolicy.serviceCosts(facilities)},
       {"service_coverage", BudgetPolicy::coverage(liveState.serviceSummary)},
+      {"bond", {{"active", liveState.bond.active()}, {"principal", liveState.bond.principal},
+        {"term", liveState.bond.term}, {"ticks_elapsed", liveState.bond.ticksElapsed},
+        {"remaining", TreasurySystem::bondRemaining(liveState.bond)},
+        {"interest_remainder", liveState.bond.interestRemainder}}},
       {"preview", {{"revenue", preview.revenue}, {"expenses", preview.expenses},
+                   {"bond", bondJson(TreasurySystem::bondDue(liveState.bond))},
                    {"total_revenue", preview.totalRevenue}, {"total_expenses", preview.totalExpenses}}},
       {"last_tick", {{"valid", ledger.valid}, {"tick", ledger.tick},
         {"tourism_fees",ledger.breakdown.tourismFees},{"tourism_services",ledger.breakdown.tourismServices},
@@ -836,15 +880,23 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         {"funds_before", ledger.fundsBefore}, {"funds_after", ledger.fundsAfter},
         {"debt_before", ledger.debtBefore}, {"debt_after", ledger.flow.outstandingDebt},
         {"borrowed", ledger.flow.debtIssued}, {"repaid", ledger.flow.debtRepaid},
-        {"interest", ledger.flow.interestCharged}, {"net", ledger.flow.net}}}};
+        {"interest", ledger.flow.interestCharged}, {"net", ledger.flow.net},
+        {"bond", bondJson(ledger.bond)}}}};
   };
   auto activateBudgetAction = [&](int action) {
-    if (!budgetControlEnabled(action,liveState.budgetPolicy,budgetServices,budgetTrends,budgetAlerts)) return;
+    const auto bonds = bondView();
+    if (!budgetControlEnabled(action,liveState.budgetPolicy,budgetServices,budgetTrends,budgetAlerts,&bonds)) return;
           if (action == 0) showBudgetPanel = false;
-          if (action == 12) { budgetServices = false; budgetTrends = false; budgetAlerts = false; }
-          if (action == 13) { budgetServices = true; budgetTrends = false; budgetAlerts = false; }
-          if (action == 36) { budgetTrends = true; budgetAlerts = false; }
-          if (action == 37) { budgetAlerts = true; budgetTrends = false; }
+          if (action == 12) { budgetServices = false; budgetTrends = false; budgetAlerts = false; budgetBonds = false; }
+          if (action == 13) { budgetServices = true; budgetTrends = false; budgetAlerts = false; budgetBonds = false; }
+          if (action == 36) { budgetTrends = true; budgetAlerts = false; budgetBonds = false; }
+          if (action == 37) { budgetAlerts = true; budgetTrends = false; budgetBonds = false; }
+          if (action == 45) { budgetBonds = true; budgetServices = false; budgetTrends = false; budgetAlerts = false; }
+          if (action >= 46 && action < 49) bondPrincipalChoice = action - 46;
+          if (action >= 49 && action < 52) bondTermChoice = action - 49;
+          if (action == 52) issueBond(TreasurySystem::kBondPrincipals[static_cast<size_t>(bondPrincipalChoice)],
+                                      TreasurySystem::kBondTerms[static_cast<size_t>(bondTermChoice)]);
+          if (action == 53) payOffBond();
           if (action >= 38 && action < 43) viewCityAlert(static_cast<size_t>(action - 38));
           if (action == 1) {
             auto policy = liveState.budgetPolicy;
@@ -872,9 +924,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   };
   auto cycleBudgetFocus = [&](int direction) {
     int candidate=budgetFocus<0 ? (direction>0?-1:0) : budgetFocus;
-    for (int i=0;i<45;++i) {
-      candidate=(candidate+direction+45)%45;
-      if (budgetControlEnabled(candidate,liveState.budgetPolicy,budgetServices,budgetTrends,budgetAlerts)) {budgetFocus=candidate;return;}
+    const auto bonds = bondView();
+    for (int i=0;i<kBudgetControlCount;++i) {
+      candidate=(candidate+direction+kBudgetControlCount)%kBudgetControlCount;
+      if (budgetControlEnabled(candidate,liveState.budgetPolicy,budgetServices,budgetTrends,budgetAlerts,&bonds)) {budgetFocus=candidate;return;}
     }
   };
   auto cycleTransportFocus = [&](int direction) {
@@ -1299,7 +1352,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           if (budgetTrends && !budgetAlerts) {const auto tick=trendHitTick(mouseX,mouseY,windowWidth,windowHeight,liveState.history);if (tick) inspectedTrendTick=tick;}
         }
         if (event.type == EventType::MouseDown && event.button.button == MouseButton::Left) {
-          const int action = budgetHitTest(event.button.x, event.button.y, windowWidth, windowHeight, budgetServices, budgetTrends, budgetAlerts);
+          const auto bonds = bondView();
+          const int action = budgetHitTest(event.button.x, event.button.y, windowWidth, windowHeight, budgetServices, budgetTrends, budgetAlerts, &bonds);
           budgetFocus=action;
           if (action<0 && budgetTrends) {const auto tick=trendHitTick(event.button.x,event.button.y,windowWidth,windowHeight,liveState.history);if (tick) inspectedTrendTick=tick;}
           activateBudgetAction(action);
@@ -2523,11 +2577,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       lastHudRefreshMs = nowMs;
     }
 
+    const auto bondViewForDraw = bondView();
     if (showBudgetPanel)
       drawBudgetPanel(renderer, windowWidth, windowHeight, liveState.budgetPolicy,
                       budgetPreview(), liveState.treasuryLedger, funds,
                       liveState.treasuryDebt, mouseX, mouseY, budgetServices,
-                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary), budgetTrends, liveState.history, budgetAlerts, liveState.alerts,budgetFocus,inspectedTrendTick,&facilities);
+                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary), budgetTrends, liveState.history, budgetAlerts, liveState.alerts,budgetFocus,inspectedTrendTick,&facilities,&bondViewForDraw);
     if (showTransportPanel)
       drawTransportPanel(renderer,windowWidth,windowHeight,liveState.transitRoutes,selectedTransitRoute,
         liveState.transitReport,routePeak(selectedTransitRoute).first,

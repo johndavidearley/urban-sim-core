@@ -88,6 +88,7 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   tickState.treasuryDebtRepaid = liveState.treasuryDebtRepaid;
   tickState.treasuryInterestCharged = liveState.treasuryInterestCharged;
   tickState.treasuryInterestRemainder = liveState.treasuryInterestRemainder;
+  tickState.bond = liveState.bond;
   tickState.lowFunds = liveState.lowFunds;
   tickState.bankrupt = liveState.bankrupt;
   tickState.transitRoutes = std::move(liveState.transitRoutes);
@@ -133,6 +134,7 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
   liveState.treasuryDebtRepaid = tickState.treasuryDebtRepaid;
   liveState.treasuryInterestCharged = tickState.treasuryInterestCharged;
   liveState.treasuryInterestRemainder = tickState.treasuryInterestRemainder;
+  liveState.bond = tickState.bond;
   liveState.lowFunds = tickState.lowFunds;
   liveState.bankrupt = tickState.bankrupt;
   liveState.transitRoutes = std::move(tickState.transitRoutes);

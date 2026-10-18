@@ -340,13 +340,15 @@ def create_server(session: Session) -> FastMCP:
 
     @server.tool(annotations=local)
     async def budget(
-        action: Literal["inspect", "set_taxes", "set_funding", "reset_funding", "reset", "open", "close", "services", "taxes", "trends", "alerts", "view_alert", "transport", "set_route_vehicles", "set_tourism", "set_hotel"] = "inspect",
+        action: Literal["inspect", "set_taxes", "set_funding", "reset_funding", "reset", "open", "close", "services", "taxes", "trends", "alerts", "view_alert", "transport", "set_route_vehicles", "set_tourism", "set_hotel", "bonds", "issue_bond", "pay_off_bond"] = "inspect",
         alert_index: Annotated[int, Field(ge=0, le=4)] | None = None,
         route_id: Annotated[int, Field(ge=0, le=4294967295)] | None = None,
         vehicles: Annotated[int, Field(ge=0, le=20)] | None = None,
         tourism_enabled: bool | None = None,
         hotel_id: Annotated[int, Field(ge=1, le=4294967295)] | None = None,
         hotel_open: bool | None = None,
+        bond_principal: Literal[10000, 50000, 200000] | None = None,
+        bond_term: Literal[100, 200, 400] | None = None,
         tax_percent: Annotated[
             list[Annotated[int, Field(ge=0, le=20)]], Field(min_length=5, max_length=5)
         ] | None = None,
@@ -357,7 +359,8 @@ def create_server(session: Session) -> FastMCP:
         """Inspect/open the city budget or set integer tax percentages (R,C,I,O,income).
 
         Defaults are [5,8,6,9,10]; allowed range is 0..20. Taxes affect revenue.
-        The next-tick estimate excludes new growth, visitors and debt flows. Last-tick
+        The next-tick estimate excludes new growth, visitors and overdraft flows;
+        preview.bond is the next bond installment and interest. Last-tick
         ledger is immutable until the next simulation tick. Service funding is
         ordered Fire, Police, Health, Education, Power, Water, Sanitation,
         Garbage, Recycling, Cemetery, Crematorium, Incinerator; 0..100%, default all 100.
@@ -377,8 +380,15 @@ def create_server(session: Session) -> FastMCP:
         Municipal fees are $2 per admitted day visitor and $4 per occupied bed
         each tick, with $1 services per day visitor/occupied bed. Separate
         tourism_fees/tourism_services reconcile to last_tick treasury totals.
+        bonds opens the bond tab. issue_bond with bond_principal (10000, 50000,
+        200000) and bond_term (100, 200, 400 ticks) adds the principal to cash;
+        only one bond may be open. Each tick pays an equal principal part plus
+        0.15% interest on remaining principal before ordinary expenses; cash it
+        cannot cover joins the overdraft and the schedule continues.
+        pay_off_bond pays the remaining principal from cash. bond reports the
+        open bond; last_tick.bond reports paid, missed and remaining principal.
         """
-        return await session.request("budget", compact(action=action, alert_index=alert_index, route_id=route_id, vehicles=vehicles, tourism_enabled=tourism_enabled, hotel_id=hotel_id, hotel_open=hotel_open, tax_percent=tax_percent, service_percent=service_percent))
+        return await session.request("budget", compact(action=action, alert_index=alert_index, route_id=route_id, vehicles=vehicles, tourism_enabled=tourism_enabled, hotel_id=hotel_id, hotel_open=hotel_open, bond_principal=bond_principal, bond_term=bond_term, tax_percent=tax_percent, service_percent=service_percent))
 
     @server.tool(annotations=local)
     async def view(

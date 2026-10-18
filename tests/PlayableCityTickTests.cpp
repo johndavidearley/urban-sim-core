@@ -1082,3 +1082,91 @@ TEST(PlayableCityTickTests, DistrictHeightCapStopsPlayableRedevelopment) {
   EXPECT_EQ(run(2), 16);
   EXPECT_GT(run(0), 16);
 }
+
+namespace {
+
+struct BondCity {
+  CityMap map{{24, 24}};
+  RoadNetwork roads{map};
+  EntityStore store;
+  PopulationStore population;
+  std::vector<ServiceFacility> facilities{{ServiceType::Fire, {11, 11}, 16, 1.0f}};
+  PlayableCityTickState state;
+  PlayableCityTickOptions options;
+  BondCity() {
+    laySpine(map, roads);
+    state.populationTarget = 0;
+    options.requireUtilities = false;
+    options.growthChance = 0.0f;
+    options.enableTransit = false;
+    options.treasuryInterestRate = 0.0;
+  }
+  void tick(int64_t& funds) { playableCityTick(map, roads, store, population, facilities, state, funds, options); }
+};
+
+}  // namespace
+
+TEST(PlayableCityTickTests, BondRaisesCashThenPaysInstallmentBeforeExpenses) {
+  BondCity city;
+  int64_t funds = 0;
+  ASSERT_TRUE(TreasurySystem::issueBond(city.state.bond, funds, 10000, 100));
+  EXPECT_EQ(funds, 10000);
+  city.tick(funds);
+  const auto& ledger = city.state.treasuryLedger;
+  EXPECT_EQ(ledger.bond.installment, 100);
+  EXPECT_EQ(ledger.bond.interest, 15);
+  EXPECT_EQ(ledger.bond.paid, 115);
+  EXPECT_EQ(ledger.bond.missed, 0);
+  EXPECT_EQ(ledger.flow.expenses, 25);
+  EXPECT_EQ(funds, 10000 - 115 - 25);
+  EXPECT_EQ(ledger.fundsBefore, 10000);
+  EXPECT_EQ(ledger.flow.net, ledger.fundsAfter - ledger.fundsBefore);
+  EXPECT_EQ(city.state.treasuryDebt, 0);
+  EXPECT_EQ(TreasurySystem::bondRemaining(city.state.bond), 9900);
+}
+
+TEST(PlayableCityTickTests, BrokeCityRollsMissedInstallmentIntoOverdraftOnce) {
+  BondCity city;
+  int64_t funds = 0;
+  ASSERT_TRUE(TreasurySystem::issueBond(city.state.bond, funds, 10000, 100));
+  funds = 50;
+  city.tick(funds);
+  const auto& ledger = city.state.treasuryLedger;
+  EXPECT_EQ(ledger.bond.paid, 50);
+  EXPECT_EQ(ledger.bond.missed, 65);
+  EXPECT_EQ(ledger.flow.debtIssued, 25);  // ordinary expenses after the bond took the cash
+  EXPECT_EQ(funds, 0);
+  EXPECT_EQ(city.state.treasuryDebt, 65 + 25);
+  EXPECT_EQ(ledger.debtBefore + ledger.bond.missed + ledger.flow.debtIssued +
+            ledger.flow.interestCharged - ledger.flow.debtRepaid, ledger.flow.outstandingDebt);
+  EXPECT_TRUE(city.state.bankrupt);
+  EXPECT_EQ(city.state.bond.ticksElapsed, 1u);
+  EXPECT_EQ(TreasurySystem::bondRemaining(city.state.bond), 9900);
+}
+
+TEST(PlayableCityTickTests, NoBondLedgerHasNoBondLine) {
+  BondCity city;
+  int64_t funds = 1000;
+  city.tick(funds);
+  EXPECT_FALSE(city.state.treasuryLedger.bond.any());
+  EXPECT_EQ(funds, 975);
+  EXPECT_EQ(city.state.treasuryLedger.flow.net, -25);
+}
+
+TEST(PlayableCityTickTests, BondReplaysMatchAndMatureOnSchedule) {
+  auto run = []() {
+    BondCity city;
+    int64_t funds = 2000;
+    EXPECT_TRUE(TreasurySystem::issueBond(city.state.bond, funds, 10000, 100));
+    std::vector<int64_t> trail;
+    for (int i = 0; i < 101; ++i) {
+      city.tick(funds);
+      trail.push_back(funds);
+      trail.push_back(city.state.treasuryLedger.bond.paid);
+    }
+    EXPECT_FALSE(city.state.bond.active());
+    EXPECT_FALSE(city.state.treasuryLedger.bond.any());
+    return trail;
+  };
+  EXPECT_EQ(run(), run());
+}

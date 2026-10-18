@@ -62,6 +62,73 @@ TreasuryFlow TreasurySystem::applyEconomy(
   return flow;
 }
 
+bool TreasurySystem::validBondPrincipal(int64_t principal) {
+  return std::find(kBondPrincipals.begin(), kBondPrincipals.end(), principal) != kBondPrincipals.end();
+}
+
+bool TreasurySystem::validBondTerm(int64_t term) {
+  return std::find(kBondTerms.begin(), kBondTerms.end(), term) != kBondTerms.end();
+}
+
+bool TreasurySystem::validBond(const MunicipalBond& bond) {
+  if (!bond.active()) return bond == MunicipalBond{};
+  return validBondPrincipal(bond.principal) && validBondTerm(bond.term) &&
+    bond.ticksElapsed < bond.term && std::isfinite(bond.interestRemainder) &&
+    bond.interestRemainder >= 0.0 && bond.interestRemainder < 1.0;
+}
+
+namespace {
+// Cumulative rounding keeps equal parts summing exactly to principal.
+int64_t scheduledPaid(const MunicipalBond& bond, uint32_t ticks) {
+  return bond.principal * static_cast<int64_t>(ticks) / static_cast<int64_t>(bond.term);
+}
+}
+
+int64_t TreasurySystem::bondRemaining(const MunicipalBond& bond) {
+  if (!bond.active() || bond.term == 0) return 0;
+  return bond.principal - scheduledPaid(bond, std::min(bond.ticksElapsed, bond.term));
+}
+
+BondPayment TreasurySystem::bondDue(const MunicipalBond& bond, double interestRatePerTick) {
+  BondPayment due;
+  if (!validBond(bond) || !bond.active()) return due;
+  due.remainingBefore = bondRemaining(bond);
+  due.installment = scheduledPaid(bond, bond.ticksElapsed + 1) - scheduledPaid(bond, bond.ticksElapsed);
+  const double accrued = bond.interestRemainder +
+    static_cast<double>(due.remainingBefore) * std::max(0.0, interestRatePerTick);
+  due.interest = static_cast<int64_t>(std::floor(accrued));
+  due.remainingAfter = due.remainingBefore - due.installment;
+  return due;
+}
+
+BondPayment TreasurySystem::payBond(MunicipalBond& bond, int64_t& funds, double interestRatePerTick) {
+  BondPayment payment = bondDue(bond, interestRatePerTick);
+  if (!payment.any()) return payment;
+  bond.interestRemainder += static_cast<double>(payment.remainingBefore) * std::max(0.0, interestRatePerTick);
+  bond.interestRemainder -= static_cast<double>(payment.interest);
+  const int64_t due = payment.installment + payment.interest;
+  payment.paid = std::min(std::max<int64_t>(0, funds), due);
+  payment.missed = due - payment.paid;
+  funds -= payment.paid;
+  if (++bond.ticksElapsed >= bond.term) bond = {};
+  return payment;
+}
+
+bool TreasurySystem::issueBond(MunicipalBond& bond, int64_t& funds, int64_t principal, uint32_t term) {
+  if (bond.active() || !validBondPrincipal(principal) || !validBondTerm(term)) return false;
+  bond = {principal, term, 0, 0.0};
+  funds += principal;
+  return true;
+}
+
+bool TreasurySystem::payOffBond(MunicipalBond& bond, int64_t& funds) {
+  const int64_t remaining = bondRemaining(bond);
+  if (!bond.active() || funds < remaining) return false;
+  funds -= remaining;
+  bond = {};
+  return true;
+}
+
 TreasuryBreakdown TreasurySystem::breakdown(const EconomyState& economy,
   double tickScale, int64_t serviceCosts, int64_t constructionCosts,
   int64_t tourismFees, int64_t tourismServices) {

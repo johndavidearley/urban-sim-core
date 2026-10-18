@@ -90,16 +90,21 @@ void drawToolPalette(
 Rect budgetPanelRect(int windowWidth, int windowHeight) {
   return {(windowWidth - 720) / 2, (windowHeight - 540) / 2, 720, 540};
 }
-bool budgetControlVisible(int action, bool services, bool trends, bool alerts) {
-  if (action == 0 || action == 12 || action == 13 || action == 36 || action == 37) return true;
+bool budgetControlVisible(int action, bool services, bool trends, bool alerts, const BudgetBondView* bonds) {
+  const bool bondTab = bonds && bonds->open && !services && !trends && !alerts;
+  if (action == 0 || action == 12 || action == 13 || action == 36 || action == 37 || action == 45) return true;
+  if (action >= 46 && action < kBudgetControlCount) return bondTab;
+  if (action < 0 || action >= kBudgetControlCount || bondTab) return false;
   if (action == 43 || action == 44) return services && !trends && !alerts;
   if (action >= 38) return alerts;
   if (alerts) return false;
   if (trends) return false;
   return !((action >= 2 && action < 12 && services) || (action >= 14 && !services));
 }
-bool budgetControlEnabled(int action,const BudgetPolicy& policy,bool services,bool trends,bool alerts) {
-  if (action<0 || action>=45 || !budgetControlVisible(action,services,trends,alerts)) return false;
+bool budgetControlEnabled(int action,const BudgetPolicy& policy,bool services,bool trends,bool alerts,const BudgetBondView* bonds) {
+  if (action<0 || action>=kBudgetControlCount || !budgetControlVisible(action,services,trends,alerts,bonds)) return false;
+  if (action>=46 && action<=52) return !bonds->bond.active();
+  if (action==53) return bonds->bond.active() && bonds->funds>=TreasurySystem::bondRemaining(bonds->bond);
   if (action>=2 && action<12) {const int v=policy.taxPercent[(action-2)/2];return action%2 ? v<20 : v>0;}
   if (action==43 || action==44) {const int v=policy.servicePercent[11];return action==44 ? v<100 : v>0;}
   if (action>=14 && action<36) {const int v=policy.servicePercent[(action-14)/2];return action%2 ? v<100 : v>0;}
@@ -109,6 +114,10 @@ Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool servi
   const auto panel = budgetPanelRect(windowWidth, windowHeight);
   if (action == 43 || action == 44) return {panel.x + 220 + (action - 43) * 40, panel.y + 130 + 11 * 18, 30, 16};
   if (action == 0) return {panel.x + 664, panel.y + 12, 40, 26};
+  if (action == 45) return {panel.x + 344, panel.y + 76, 76, 24};
+  if (action >= 46 && action < 49) return {panel.x + 24 + (action - 46) * 108, panel.y + 150, 100, 24};
+  if (action >= 49 && action < 52) return {panel.x + 24 + (action - 49) * 108, panel.y + 214, 100, 24};
+  if (action == 52 || action == 53) return {panel.x + 24 + (action - 52) * 172, panel.y + 270, 160, 26};
   if (action == 1) return {panel.x + 24, panel.y + (services ? 352 : 278), 240, 24};
   if (action >= 38 && action < 43) return {panel.x + 552, panel.y + 116 + (action - 38) * 54, 144, 24};
   if (action == 37) return {panel.x + 264, panel.y + 76, 76, 24};
@@ -122,9 +131,9 @@ Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool servi
             panel.y + 112 + ((action - 2) / 2) * 30, 30, 26};
   return {};
 }
-int budgetHitTest(int x, int y, int windowWidth, int windowHeight, bool services, bool trends, bool alerts) {
-  for (int action = 0; action < 45; ++action) {
-    if (!budgetControlVisible(action, services, trends, alerts)) continue;
+int budgetHitTest(int x, int y, int windowWidth, int windowHeight, bool services, bool trends, bool alerts, const BudgetBondView* bonds) {
+  for (int action = 0; action < kBudgetControlCount; ++action) {
+    if (!budgetControlVisible(action, services, trends, alerts, bonds)) continue;
     const auto r = budgetControlRect(action, windowWidth, windowHeight, services);
     if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return action;
   }
@@ -135,7 +144,9 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   const TreasuryLedger& ledger, int64_t funds, int64_t debt, int mouseX, int mouseY,
   bool services, const std::array<int64_t, kServiceTypeCount>& serviceCosts,
   const std::array<float, kServiceTypeCount>& serviceCoverage,
-  bool trends, const CityHistory& history, bool alerts, const CityAlerts& diagnostics,int focus,uint32_t inspectedTick,const std::vector<ServiceFacility>* facilities) {
+  bool trends, const CityHistory& history, bool alerts, const CityAlerts& diagnostics,int focus,uint32_t inspectedTick,const std::vector<ServiceFacility>* facilities,const BudgetBondView* bonds) {
+  const bool bondTab = bonds && bonds->open && !services && !trends && !alerts;
+  const bool taxTab = !services && !trends && !alerts && !bondTab;
   drawFilledRect(renderer, 0, 0, windowWidth, windowHeight, {5, 10, 18}, 195);
   const auto panel = budgetPanelRect(windowWidth, windowHeight);
   const int x = panel.x, y = panel.y;
@@ -146,12 +157,12 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     "CASH $" + std::to_string(funds) + "   DEBT $" + std::to_string(debt), {255, 220, 130}, 1);
   drawText(renderer,x+360,y+50,"TAB/UP/DOWN FOCUS. ENTER SELECT.",{165,185,205},1);
   const std::array<const char*, 5> taxNames{{"RESIDENTIAL", "COMMERCIAL", "INDUSTRIAL", "OFFICE", "INCOME"}};
-  if (!services && !trends && !alerts) for (size_t i = 0; i < taxNames.size(); ++i) {
+  if (taxTab) for (size_t i = 0; i < taxNames.size(); ++i) {
     drawText(renderer, x + 24, y + 121 + static_cast<int>(i) * 30, taxNames[i], {205, 220, 235}, 1);
     drawText(renderer, x + 156, y + 118 + static_cast<int>(i) * 30,
              std::to_string(policy.taxPercent[i]) + "%", {240, 245, 250}, 2);
   }
-  if (!services && !trends && !alerts) {
+  if (taxTab) {
     const auto attraction = policy.taxAttraction();
     const char* names[] = {"R", "C", "I", "O"};
     for (size_t i = 0; i < attraction.size(); ++i) {
@@ -187,8 +198,8 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       + "  LAST FILL " + std::to_string(diagnostics.inputs.landfillFillRate) + "/TICK", {210,210,160}, 1);
     drawText(renderer, x + 360, y + 360, "CIVIC/TRANSPORT $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
   }
-  for (int action = 0; action < 45; ++action) {
-    if (!budgetControlVisible(action, services, trends, alerts)) continue;
+  for (int action = 0; action < kBudgetControlCount; ++action) {
+    if (!budgetControlVisible(action, services, trends, alerts, bonds)) continue;
     const auto r = budgetControlRect(action, windowWidth, windowHeight, services);
     const bool hovered = mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
     bool disabled = false;
@@ -196,7 +207,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       const int rate = policy.taxPercent[static_cast<size_t>((action - 2) / 2)];
       disabled = (action % 2 == 0 && rate == 0) || (action % 2 == 1 && rate == 20);
     }
-    if (action == 43 || action == 44) disabled = !budgetControlEnabled(action, policy, services, trends, alerts);
+    if (action == 43 || action == 44 || action >= 46) disabled = !budgetControlEnabled(action, policy, services, trends, alerts, bonds);
     if (action >= 14 && action < 36) {
       const int percent = policy.servicePercent[static_cast<size_t>((action - 14) / 2)];
       disabled = (action % 2 == 0 && percent == 0) || (action % 2 == 1 && percent == 100);
@@ -204,12 +215,16 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     drawFilledRect(renderer, r.x, r.y, r.w, r.h,
                    disabled ? RGB{28, 32, 40} : (hovered ? RGB{65, 90, 115} : RGB{42, 58, 75}));
     if (action==focus) drawRectOutline(renderer,r.x-2,r.y-2,r.w+4,r.h+4,{235,245,255});
-    const bool activeTab = (action == 12 && !services && !trends && !alerts) || (action == 13 && services && !trends && !alerts) || (action == 36 && trends && !alerts) || (action == 37 && alerts);
+    const bool activeTab = (action == 12 && taxTab) || (action == 45 && bondTab) || (action == 13 && services && !trends && !alerts) || (action == 36 && trends && !alerts) || (action == 37 && alerts);
     drawRectOutline(renderer, r.x, r.y, r.w, r.h, activeTab ? RGB{255, 225, 110} :
                     (disabled ? RGB{65, 70, 80} : RGB{135, 165, 190}));
-    const char* label = action == 0 ? "X" : (action == 1 ? (services ? "RESTORE FULL FUNDING" : "RESET DEFAULT TAXES") :
+    const bool chosen = bondTab && ((action >= 46 && action < 49 && action - 46 == bonds->principalChoice) ||
+      (action >= 49 && action < 52 && action - 49 == bonds->termChoice));
+    if (chosen) drawRectOutline(renderer, r.x, r.y, r.w, r.h, {255, 225, 110});
+    static const char* bondLabels[] = {"BONDS", "$10K", "$50K", "$200K", "100 TICKS", "200 TICKS", "400 TICKS", "ISSUE BOND", "PAY OFF BOND"};
+    const char* label = action >= 45 ? bondLabels[action - 45] : action == 0 ? "X" : (action == 1 ? (services ? "RESTORE FULL FUNDING" : "RESET DEFAULT TAXES") :
       (action == 12 ? "TAXES" : (action == 13 ? "SERVICES" : (action == 36 ? "TRENDS" : (action == 37 ? "ALERTS" : (action == 43 ? "-" : (action == 44 ? "+" : (action >= 38 ? "VIEW" : (action % 2 == 0 ? "-" : "+")))))))));
-    drawText(renderer, r.x + 10, r.y + (((action >= 14 && action < 36) || action >= 43) ? 3 : 7), label, disabled ? RGB{95, 100, 110} : RGB{235, 245, 250}, 1);
+    drawText(renderer, r.x + 10, r.y + (((action >= 14 && action < 36) || action == 43 || action == 44) ? 3 : 7), label, disabled ? RGB{95, 100, 110} : RGB{235, 245, 250}, 1);
   }
   if (alerts) {
     const auto& v = diagnostics.inputs;
@@ -312,29 +327,53 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     drawText(renderer,x+24,y+512,"HOVER/ARROWS: INSPECT. HOME/END: FIRST/LATEST. NET INCLUDES DEATHS.",{165,185,205},1);
     return;
   }
-  if (!services && !trends && !alerts) {
+  if (taxTab) {
   drawText(renderer, x + 24, y + 324, "TAXES AFFECT GROWTH AND MIGRATION.", {165, 185, 205}, 1);
   drawText(renderer, x + 24, y + 342, "DEFAULT RATES ARE NEUTRAL.", {165, 185, 205}, 1);
-  drawText(renderer, x + 360, y + 76, "NEXT TICK ESTIMATE", {135, 215, 240}, 1);
+  drawText(renderer, x + 436, y + 76, "NEXT TICK ESTIMATE", {135, 215, 240}, 1);
   const std::array<const char*, 6> revenueNames{{"RES TAX", "COM TAX", "IND TAX", "OFF TAX", "INCOME TAX", "EXPORTS"}};
   for (size_t i = 0; i < revenueNames.size(); ++i) {
-    const int row = y + 98 + static_cast<int>(i) * 16;
+    const int row = y + 102 + static_cast<int>(i) * 16;
     drawText(renderer, x + 360, row, revenueNames[i], {185, 205, 220}, 1);
     drawText(renderer, x + 580, row, "+$" + std::to_string(preview.revenue[i]), {120, 225, 155}, 1);
   }
   const std::array<const char*, 5> costNames{{"BUILDING UPKEEP", "PARK UPKEEP", "IMPORTS", "CIVIC/TRANSPORT", "BUILDING GROWTH"}};
   for (size_t i = 0; i < costNames.size(); ++i) {
-    const int row = y + 204 + static_cast<int>(i) * 16;
+    const int row = y + 208 + static_cast<int>(i) * 16;
     drawText(renderer, x + 360, row, costNames[i], {185, 205, 220}, 1);
     drawText(renderer, x + 580, row, "-$" + std::to_string(preview.expenses[i]), {250, 170, 125}, 1);
   }
-  drawText(renderer, x + 360, y + 298, "IN $" + std::to_string(preview.totalRevenue) +
-           " OUT $" + std::to_string(preview.totalExpenses), {235, 240, 250}, 1);
-  drawText(renderer, x + 360, y + 316, "SURPLUS $" + std::to_string(preview.totalRevenue - preview.totalExpenses), {255, 220, 130}, 1);
-  drawText(renderer, x + 360, y + 336, "EXCLUDES GROWTH, VISITORS AND DEBT", {165, 185, 205}, 1);
+  const int64_t bondDue = bonds ? bonds->nextDue.installment + bonds->nextDue.interest : 0;
+  drawText(renderer, x + 360, y + 288, "BOND PAYMENT", {185, 205, 220}, 1);
+  drawText(renderer, x + 580, y + 288, "-$" + std::to_string(bondDue), {250, 170, 125}, 1);
+  drawText(renderer, x + 360, y + 306, "IN $" + std::to_string(preview.totalRevenue) +
+           " OUT $" + std::to_string(preview.totalExpenses + bondDue), {235, 240, 250}, 1);
+  drawText(renderer, x + 360, y + 324, "SURPLUS $" + std::to_string(preview.totalRevenue - preview.totalExpenses - bondDue), {255, 220, 130}, 1);
+  drawText(renderer, x + 360, y + 344, "EXCLUDES GROWTH, VISITORS, OVERDRAFT", {165, 185, 205}, 1);
+  }
+  if (bondTab) {
+    const auto& bond = bonds->bond;
+    drawText(renderer, x + 24, y + 128, "PRINCIPAL", {135, 215, 240}, 1);
+    drawText(renderer, x + 24, y + 192, "TERM", {135, 215, 240}, 1);
+    drawText(renderer, x + 24, y + 316, "ONE BOND AT A TIME. EQUAL PRINCIPAL PARTS.", {165, 185, 205}, 1);
+    drawText(renderer, x + 24, y + 334, "INTEREST $15 PER $10000 REMAINING PER TICK", {165, 185, 205}, 1);
+    drawText(renderer, x + 360, y + 128, bond.active() ? "OPEN BOND" : "NO OPEN BOND", {135, 215, 240}, 1);
+    if (bond.active()) {
+      drawText(renderer, x + 360, y + 150, "PRINCIPAL $" + std::to_string(bond.principal), {215, 230, 240}, 1);
+      drawText(renderer, x + 360, y + 168, "TICK " + std::to_string(bond.ticksElapsed) + " OF " + std::to_string(bond.term), {215, 230, 240}, 1);
+      drawText(renderer, x + 360, y + 186, "REMAINING $" + std::to_string(TreasurySystem::bondRemaining(bond)), {255, 220, 130}, 1);
+      drawText(renderer, x + 360, y + 210, "NEXT INSTALLMENT $" + std::to_string(bonds->nextDue.installment), {250, 170, 125}, 1);
+      drawText(renderer, x + 360, y + 228, "NEXT INTEREST $" + std::to_string(bonds->nextDue.interest), {250, 170, 125}, 1);
+      drawText(renderer, x + 360, y + 252, "PAY OFF NEEDS $" + std::to_string(TreasurySystem::bondRemaining(bond)) + " CASH", {165, 185, 205}, 1);
+    } else {
+      drawText(renderer, x + 360, y + 150, "ISSUING ADDS THE PRINCIPAL TO CASH.", {165, 185, 205}, 1);
+      drawText(renderer, x + 360, y + 168, "INSTALLMENTS COME BEFORE EXPENSES.", {165, 185, 205}, 1);
+      drawText(renderer, x + 360, y + 186, "UNPAID PARTS JOIN THE OVERDRAFT.", {165, 185, 205}, 1);
+    }
   }
   drawFilledRect(renderer, x + 24, y + (services ? 382 : 368), panel.w - 48, 1, {85, 105, 125});
-  drawText(renderer, x + 24, y + 512, services ? "CUTS REDUCE REACH AND CAPACITY. ZERO SUSPENDS OPERATION." : "TOOL PURCHASES ARE PAID OUTSIDE TICK TOTALS.", {165, 185, 205}, 1);
+  drawText(renderer, x + 24, y + 512, services ? "CUTS REDUCE REACH AND CAPACITY. ZERO SUSPENDS OPERATION." :
+    (bondTab ? "ISSUE AND PAY OFF ARE OUTSIDE TICK TOTALS." : "TOOL PURCHASES ARE PAID OUTSIDE TICK TOTALS."), {165, 185, 205}, 1);
   if (!ledger.valid) {
     drawText(renderer, x + 24, y + 392, "NO COMPLETED TICK RECORDED YET", {185, 205, 220}, 1);
     return;
@@ -350,6 +389,12 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     " TO $" + std::to_string(ledger.fundsAfter), {230, 240, 245}, 1);
   drawText(renderer, x + 24, y + 476, "DEBT $" + std::to_string(ledger.debtBefore) +
     " TO $" + std::to_string(ledger.flow.outstandingDebt), {230, 240, 245}, 1);
+  if (ledger.bond.any()) {
+    drawText(renderer, x + 360, y + 454, "BOND PAID $" + std::to_string(ledger.bond.paid) +
+      " MISSED $" + std::to_string(ledger.bond.missed), {255, 195, 135}, 1);
+    drawText(renderer, x + 360, y + 476, "BOND LEFT $" + std::to_string(ledger.bond.remainingBefore) +
+      " TO $" + std::to_string(ledger.bond.remainingAfter), {230, 240, 245}, 1);
+  }
   drawText(renderer,x+24,y+494,"VISITOR FEES $"+std::to_string(ledger.breakdown.tourismFees)+
     " SERVICES $"+std::to_string(ledger.breakdown.tourismServices)+" NET $"+
     std::to_string(ledger.breakdown.tourismFees-ledger.breakdown.tourismServices),{150,215,200},1);

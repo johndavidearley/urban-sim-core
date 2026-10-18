@@ -122,3 +122,67 @@ TEST(TreasurySystemTests, ExplicitVisitorFeesAndServicesSettleOnceAlongsideDebt)
   EXPECT_EQ(breakdown.tourismFees,40);EXPECT_EQ(breakdown.tourismServices,10);
   EXPECT_EQ(breakdown.revenue[0],1);EXPECT_EQ(breakdown.expenses[0],3);
 }
+
+TEST(TreasurySystemTests, BondIssuesOnceFromCatalogAndPaysEqualParts) {
+  MunicipalBond bond;
+  int64_t funds = 1000;
+  EXPECT_FALSE(TreasurySystem::issueBond(bond, funds, 20000, 100));
+  EXPECT_FALSE(TreasurySystem::issueBond(bond, funds, 10000, 150));
+  EXPECT_EQ(funds, 1000);
+  ASSERT_TRUE(TreasurySystem::issueBond(bond, funds, 50000, 400));
+  EXPECT_EQ(funds, 51000);
+  EXPECT_FALSE(TreasurySystem::issueBond(bond, funds, 10000, 100));
+  EXPECT_EQ(funds, 51000);
+
+  const BondPayment due = TreasurySystem::bondDue(bond);
+  EXPECT_EQ(due.installment, 125);
+  EXPECT_EQ(due.interest, 75);  // 0.15% of 50,000
+  const BondPayment first = TreasurySystem::payBond(bond, funds);
+  EXPECT_EQ(first.installment, due.installment);
+  EXPECT_EQ(first.interest, due.interest);
+  EXPECT_EQ(first.paid, 200);
+  EXPECT_EQ(first.missed, 0);
+  EXPECT_EQ(first.remainingAfter, 49875);
+  EXPECT_EQ(funds, 50800);
+  EXPECT_EQ(TreasurySystem::bondRemaining(bond), 49875);
+
+  int64_t principalPaid = first.installment;
+  while (bond.active()) principalPaid += TreasurySystem::payBond(bond, funds).installment;
+  EXPECT_EQ(principalPaid, 50000);
+  EXPECT_EQ(bond, MunicipalBond{});
+  EXPECT_FALSE(TreasurySystem::bondDue(bond).any());
+}
+
+TEST(TreasurySystemTests, BondMissedCashKeepsScheduleAndPayOffClears) {
+  MunicipalBond bond;
+  int64_t funds = 0;
+  ASSERT_TRUE(TreasurySystem::issueBond(bond, funds, 10000, 100));
+  funds = 40;
+  const BondPayment short_ = TreasurySystem::payBond(bond, funds);
+  EXPECT_EQ(short_.installment, 100);
+  EXPECT_EQ(short_.interest, 15);
+  EXPECT_EQ(short_.paid, 40);
+  EXPECT_EQ(short_.missed, 75);
+  EXPECT_EQ(funds, 0);
+  EXPECT_EQ(bond.ticksElapsed, 1u);
+  EXPECT_EQ(TreasurySystem::bondRemaining(bond), 9900);
+
+  funds = 9899;
+  EXPECT_FALSE(TreasurySystem::payOffBond(bond, funds));
+  EXPECT_EQ(funds, 9899);
+  funds = 10000;
+  ASSERT_TRUE(TreasurySystem::payOffBond(bond, funds));
+  EXPECT_EQ(funds, 100);
+  EXPECT_FALSE(bond.active());
+  EXPECT_FALSE(TreasurySystem::payOffBond(bond, funds));
+}
+
+TEST(TreasurySystemTests, BondValidationAcceptsOnlyCatalogMidSchedule) {
+  EXPECT_TRUE(TreasurySystem::validBond({}));
+  EXPECT_TRUE(TreasurySystem::validBond({200000, 400, 399, 0.5}));
+  EXPECT_FALSE(TreasurySystem::validBond({200000, 400, 400, 0.0}));
+  EXPECT_FALSE(TreasurySystem::validBond({20000, 100, 0, 0.0}));
+  EXPECT_FALSE(TreasurySystem::validBond({10000, 300, 0, 0.0}));
+  EXPECT_FALSE(TreasurySystem::validBond({10000, 100, 0, 1.0}));
+  EXPECT_FALSE(TreasurySystem::validBond({0, 100, 0, 0.0}));
+}

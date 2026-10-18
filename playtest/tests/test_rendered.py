@@ -27,6 +27,144 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_municipal_bond_issue_service_overdraft_payoff_and_replay(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "service", "service": "power", "x1": 15, "y1": 15})
+        await s.request("time", {"action": "step", "ticks": 1})
+        self.assertFalse(s.last_state["budget"]["bond"]["active"])
+        self.assertEqual(s.last_state["budget"]["last_tick"]["bond"]["remaining_before"], 0)
+
+        await s.request("window", {"action": "resize", "width": 1280, "height": 800})
+        await s.request("budget", {"action": "open"})
+        async def click(name):
+            controls = {c["name"]: c for c in (await s.request("inspect", {"section": "ui"}))["controls"]}
+            c = controls[name]
+            x, y = c["x"] + c["width"] // 2, c["y"] + c["height"] // 2
+            await s.request("input", {"events": [{"type": "down", "button": "left", "x": x, "y": y},
+                                                 {"type": "up", "button": "left", "x": x, "y": y}]})
+            return c
+        await click("budget_bonds")
+        controls = {c["name"]: c for c in (await s.request("inspect", {"section": "ui"}))["controls"]}
+        self.assertNotIn("tax_0_plus", controls)
+        self.assertTrue(controls["bond_issue"]["enabled"])
+        self.assertFalse(controls["bond_pay_off"]["enabled"])
+        await click("bond_principal_1")
+        await click("bond_term_1")
+        before = s.last_state["funds"]
+        await click("bond_issue")
+        self.assertEqual(s.last_state["toast"], "BOND ISSUED $50000 OVER 200 TICKS")
+        self.assertEqual(s.last_state["funds"], before + 50000)
+        bond = s.last_state["budget"]["bond"]
+        self.assertEqual((bond["active"], bond["principal"], bond["term"], bond["ticks_elapsed"], bond["remaining"]),
+                         (True, 50000, 200, 0, 50000))
+        controls = {c["name"]: c for c in (await s.request("inspect", {"section": "ui"}))["controls"]}
+        self.assertFalse(controls["bond_issue"]["enabled"])
+        self.assertTrue(controls["bond_pay_off"]["enabled"])
+        with self.assertRaises(PlaytestError):
+            await s.request("budget", {"action": "issue_bond", "bond_principal": 10000, "bond_term": 100})
+        with self.assertRaises(PlaytestError):
+            await s.request("budget", {"action": "issue_bond", "bond_principal": 20000, "bond_term": 100})
+        self.assertEqual(s.last_state["funds"], before + 50000)
+        await s.request("input", {"events": [{"type": "move", "x": 0, "y": 0}]})
+        await s.screenshot("bond-tab-open")
+
+        due = s.last_state["budget"]["preview"]["bond"]
+        self.assertEqual((due["installment"], due["interest"]), (250, 75))
+        await s.request("time", {"action": "step", "ticks": 1})
+        ledger = s.last_state["budget"]["last_tick"]
+        self.assertEqual(ledger["bond"]["installment"], 250)
+        self.assertEqual(ledger["bond"]["interest"], 75)
+        self.assertEqual(ledger["bond"]["paid"], 325)
+        self.assertEqual(ledger["bond"]["missed"], 0)
+        self.assertEqual(ledger["funds_before"] - ledger["bond"]["paid"] + ledger["total_revenue"] -
+                         ledger["total_expenses"] + ledger["borrowed"] - ledger["repaid"], ledger["funds_after"])
+        self.assertEqual(ledger["net"], ledger["funds_after"] - ledger["funds_before"])
+        self.assertLess(s.last_state["funds"], before + 50000)
+        self.assertEqual(s.last_state["budget"]["bond"]["remaining"], 49750)
+        await s.screenshot("bond-tab-after-tick")
+
+        # Two replays of the same issue: GUI continuation and headless session.
+        await s.city("save")
+        frozen = json.loads(s.artifact("urban_sim_session.json").read_text())
+        self.assertEqual(frozen["bond"]["ticksElapsed"], 1)
+        core_copy = s.artifact("bond-checkpoint.city.json")
+        core_copy.write_bytes(Path(frozen["citySnapshot"]).read_bytes())
+        frozen["citySnapshot"] = str(core_copy)
+        checkpoint = s.artifact("bond-checkpoint.json")
+        checkpoint.write_text(json.dumps(frozen))
+        await s.request("time", {"action": "step", "ticks": 3})
+        await s.city("save")
+        gui = json.loads(s.artifact("urban_sim_session.json").read_text())
+        cli = Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest", "-cli"))
+        output = s.artifact("bond-headless.json")
+        process = await asyncio.create_subprocess_exec(
+            str(cli), "--simulate", "3", "--simulate-session", str(checkpoint),
+            "--simulate-session-out", str(output),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+        self.assertEqual(process.returncode, 0, stderr.decode())
+        self.assertIn("BOND REMAINING $49000 TICK 4 OF 200", stdout.decode())
+        headless = json.loads(output.read_text())
+        for key in ("funds", "tick", "treasuryDebt", "treasuryInterestRemainder", "treasuryLedger", "bond", "cityHistory"):
+            self.assertEqual(headless[key], gui[key], key)
+        await s.city("load", import_path=str(checkpoint))
+        await s.request("time", {"action": "step", "ticks": 3})
+        await s.city("save")
+        again = json.loads(s.artifact("urban_sim_session.json").read_text())
+        for key in ("funds", "treasuryDebt", "treasuryLedger", "bond"):
+            self.assertEqual(again[key], gui[key], key)
+
+        # A broke city rolls the missed installment into overdraft once.
+        broke = json.loads(checkpoint.read_text())
+        broke["funds"] = 0
+        broke_path = s.artifact("bond-broke.json")
+        broke_path.write_text(json.dumps(broke))
+        await s.city("load", import_path=str(broke_path))
+        self.assertEqual(s.last_state["funds"], 0)
+        debt_before = s.last_state["debt"]
+        await s.request("time", {"action": "step", "ticks": 1})
+        ledger = s.last_state["budget"]["last_tick"]
+        missed = ledger["bond"]["missed"]
+        self.assertEqual(ledger["bond"]["paid"], 0)
+        self.assertEqual(missed, ledger["bond"]["installment"] + ledger["bond"]["interest"])
+        self.assertEqual(ledger["debt_before"], debt_before)
+        self.assertEqual(ledger["debt_before"] + missed + ledger["borrowed"] + ledger["interest"] -
+                         ledger["repaid"], ledger["debt_after"])
+        self.assertEqual(s.last_state["debt"], ledger["debt_after"])
+        self.assertEqual(s.last_state["budget"]["bond"]["ticks_elapsed"], 2)
+        self.assertEqual(s.last_state["budget"]["bond"]["remaining"], 49500)
+        with self.assertRaises(PlaytestError):
+            await s.request("budget", {"action": "pay_off_bond"})
+        self.assertTrue(s.last_state["budget"]["bond"]["active"])
+
+        # Paying it off clears the bond and its ledger line.
+        await s.city("save")
+        rich = json.loads(s.artifact("urban_sim_session.json").read_text())
+        rich["funds"] = 500000
+        rich_path = s.artifact("bond-rich.json")
+        rich_path.write_text(json.dumps(rich))
+        await s.city("load", import_path=str(rich_path))
+        await s.request("budget", {"action": "pay_off_bond"})
+        self.assertEqual(s.last_state["toast"], "BOND PAID OFF $49500")
+        self.assertEqual(s.last_state["funds"], 500000 - 49500)
+        self.assertFalse(s.last_state["budget"]["bond"]["active"])
+        await s.request("time", {"action": "step", "ticks": 1})
+        self.assertEqual(s.last_state["budget"]["last_tick"]["bond"]["remaining_before"], 0)
+        await s.city("save")
+        self.assertNotIn("bond", json.loads(s.artifact("urban_sim_session.json").read_text()))
+
+        bad = json.loads(checkpoint.read_text())
+        bad["bond"]["term"] = 300
+        bad_path = s.artifact("bond-invalid.json")
+        bad_path.write_text(json.dumps(bad))
+        funds = s.last_state["funds"]
+        with self.assertRaises(PlaytestError):
+            await s.city("load", import_path=str(bad_path))
+        self.assertEqual(s.last_state["funds"], funds)
+        self.assertFalse(s.last_state["budget"]["bond"]["active"])
+
     async def test_district_height_cap_diverges_and_round_trips(self):
         s = self.session
         await s.city("new", 32)
@@ -1812,7 +1950,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                                              {"type": "up", "x": button["x"]+2, "y": button["y"]+2}]})
         self.assertTrue(s.last_state["ui"]["budget_trends"])
         controls = (await s.request("inspect", {"section": "ui"}))["controls"]
-        self.assertEqual({c["name"] for c in controls}, {"budget_close", "budget_taxes", "budget_services", "budget_trends", "budget_alerts"})
+        self.assertEqual({c["name"] for c in controls}, {"budget_close", "budget_taxes", "budget_services", "budget_trends", "budget_alerts", "budget_bonds"})
         await s.screenshot("trends-normal")
         await s.request("window", {"action": "resize", "width": 800, "height": 640})
         await s.screenshot("trends-minimum-window")

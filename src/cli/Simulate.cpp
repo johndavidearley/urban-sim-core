@@ -633,6 +633,11 @@ int runGameplaySessionSimulation(const std::string& inputPath,
             << session.disasters.fire.activeFires << " LOST FIRE "
             << session.disasters.buildingsLostToFire << " DISASTER "
             << session.disasters.buildingsLostToDisaster << "\n";
+  if (session.bond.active() || session.treasuryLedger.bond.any())
+    std::cout << "BOND REMAINING $" << TreasurySystem::bondRemaining(session.bond)
+              << " TICK " << session.bond.ticksElapsed << " OF " << session.bond.term
+              << " LAST PAID $" << session.treasuryLedger.bond.paid
+              << " MISSED $" << session.treasuryLedger.bond.missed << "\n";
   std::cout << "TOURISM " << (session.tourism.enabled ? "ON" : "OFF")
             << " DAY " << session.tourism.report.dayArrivals
             << " NIGHT " << session.tourism.report.overnightArrivals

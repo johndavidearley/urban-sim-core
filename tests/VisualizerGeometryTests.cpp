@@ -544,3 +544,41 @@ TEST(VisualizerGeometryTests, IncineratorFundingControlsFitMinimumWindow) {
   EXPECT_FALSE(budgetControlEnabled(43, policy, true, false, false));
   EXPECT_TRUE(budgetControlEnabled(44, policy, true, false, false));
 }
+
+TEST(VisualizerGeometry, BondTabControlsFitAndFollowBondState) {
+  const auto panel = budgetPanelRect(800, 640);
+  BudgetBondView bonds;
+  bonds.open = true;
+  bonds.funds = 0;
+  BudgetPolicy policy;
+  for (int action = 45; action < kBudgetControlCount; ++action) {
+    ASSERT_TRUE(budgetControlVisible(action, false, false, false, &bonds));
+    const auto r = budgetControlRect(action, 800, 640);
+    EXPECT_GE(r.x, panel.x);
+    EXPECT_LE(r.x + r.w, panel.x + panel.w);
+    EXPECT_LE(r.y + r.h, panel.y + panel.h);
+    EXPECT_EQ(budgetHitTest(r.x + 1, r.y + 1, 800, 640, false, false, false, &bonds), action);
+  }
+  // The bond tab hides tax controls; other tabs hide bond controls but keep the tab.
+  EXPECT_FALSE(budgetControlVisible(2, false, false, false, &bonds));
+  EXPECT_FALSE(budgetControlVisible(1, false, false, false, &bonds));
+  EXPECT_TRUE(budgetControlVisible(45, false, false, false));
+  EXPECT_FALSE(budgetControlVisible(52, false, false, false));
+  EXPECT_FALSE(budgetControlVisible(52, true, false, false, &bonds));
+  const auto tab = budgetControlRect(45, 800, 640);
+  const auto alerts = budgetControlRect(37, 800, 640);
+  EXPECT_GE(tab.x, alerts.x + alerts.w);
+  EXPECT_TRUE(budgetControlEnabled(52, policy, false, false, false, &bonds));
+  EXPECT_FALSE(budgetControlEnabled(53, policy, false, false, false, &bonds));
+  ASSERT_TRUE(TreasurySystem::issueBond(bonds.bond, bonds.funds, 10000, 100));
+  EXPECT_FALSE(budgetControlEnabled(52, policy, false, false, false, &bonds));
+  EXPECT_FALSE(budgetControlEnabled(46, policy, false, false, false, &bonds));
+  EXPECT_TRUE(budgetControlEnabled(53, policy, false, false, false, &bonds));
+  bonds.funds = 9999;
+  EXPECT_FALSE(budgetControlEnabled(53, policy, false, false, false, &bonds));
+  bonds.nextDue = TreasurySystem::bondDue(bonds.bond);
+  DrawList list;
+  drawBudgetPanel(&list, 800, 640, policy, {}, {}, bonds.funds, 0, 0, 0, false, {}, {}, false, {},
+                  false, {}, 52, 0, nullptr, &bonds);
+  EXPECT_GT(area(list), 0.f);
+}

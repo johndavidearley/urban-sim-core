@@ -72,6 +72,8 @@ struct PlayableCityTickState {
   int64_t treasuryDebtRepaid = 0;
   int64_t treasuryInterestCharged = 0;
   double treasuryInterestRemainder = 0.0;
+  // Player-issued; paid before ordinary expenses. Default ticks issue none.
+  MunicipalBond bond;
   bool lowFunds = false;
   bool bankrupt = false;
   // Persist across ticks so auto-placed routes accumulate like CitySimulator.
@@ -96,6 +98,7 @@ struct PlayableCityTickOptions {
   bool requireUtilities = true;
   double treasuryTickScale = 0.01;
   double treasuryInterestRate = 0.001;
+  double bondInterestRate = TreasurySystem::kBondInterestRate;
   // Base seed mixed with tick for deterministic subsystem RNGs.
   uint32_t baseSeed = 1000u;
   bool enableFreight = true;

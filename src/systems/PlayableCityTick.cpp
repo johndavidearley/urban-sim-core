@@ -427,13 +427,16 @@ void playableCityTick(
   state.treasuryLedger.fundsBefore = funds;
   state.treasuryLedger.debtBefore = state.treasuryDebt;
   serviceOperatingCosts += growth.constructionSpend + state.tourism.accounting.services;
+  // The bond installment comes first; cash it cannot cover joins the overdraft.
+  state.treasuryLedger.bond = TreasurySystem::payBond(state.bond, funds, options.bondInterestRate);
   TreasuryDebt debt;
-  debt.principal = state.treasuryDebt;
+  debt.principal = state.treasuryDebt + state.treasuryLedger.bond.missed;
   debt.interestRemainder = state.treasuryInterestRemainder;
-  const TreasuryFlow flow = TreasurySystem::applyEconomy(
+  TreasuryFlow flow = TreasurySystem::applyEconomy(
     state.economy, funds, options.treasuryTickScale, serviceOperatingCosts,
     &debt, options.treasuryInterestRate, state.tourism.accounting.fees()
   );
+  flow.net = funds - state.treasuryLedger.fundsBefore;
   state.treasuryLedger.flow = flow;
   state.treasuryLedger.fundsAfter = funds;
   state.treasuryRevenue = flow.revenue;

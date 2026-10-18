@@ -23,7 +23,7 @@ Last updated: October 17, 2026
   STATUS.md.
 - Phase 6 (M17–M22): implemented; local M22 verification is recorded in STATUS.md.
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
-- Phase 12 (M38–M44): M38–M43 are complete locally. M44 is the active milestone. Implement in order.
+- Phase 12 (M38–M44): M38–M44 are complete locally.
 
 ---
 
@@ -705,7 +705,7 @@ candidate launches with documented runtime requirements and save location.
 
 ## Phase 12: Scarcity the player can spend against (M38–M44)
 
-Defined October 17, 2026. M38–M43 are complete locally. M44 is not started.
+Defined October 17, 2026. M38–M44 are complete locally.
 Implement in order. Each milestone keeps the suite deterministic and says
 whether a default `--simulate` run changes.
 
@@ -904,24 +904,24 @@ or below 2×. Saving and loading keeps the cap.
 **Excluded:** a new zone type per density, and automatic demolition of
 buildings that already exceed a cap.
 
-### Milestone 44: Municipal bonds
+### Milestone 44: Municipal bonds — implemented locally
 
 Unpaid ticks already become overdraft principal at 0.1% per tick, repaid from
-later surplus. The player cannot borrow ahead of a project, and cannot choose
-a term.
+later surplus. A bond lets the player borrow ahead of a project on a chosen
+term. See [MUNICIPAL_BONDS.md](MUNICIPAL_BONDS.md).
 
-- [ ] The budget panel can issue one bond at a time: principal of $10,000,
+- [x] The budget panel can issue one bond at a time: principal of $10,000,
       $50,000, or $200,000, repaid in equal principal parts over 100, 200, or
       400 ticks. Remaining principal accrues 0.15% per tick, separate from
       the 0.1% overdraft rate. Issuing adds the principal to cash immediately.
-- [ ] The tick pays the bond installment before ordinary expenses. Cash that
+- [x] The tick pays the bond installment before ordinary expenses. Cash that
       cannot cover the installment rolls the missed amount into the existing
       overdraft and keeps the bond on its remaining schedule. Surplus does
       not prepay the bond unless the player pays it off from the panel.
-- [ ] The last-tick ledger and the next-tick estimate gain a bond line.
+- [x] The last-tick ledger and the next-tick estimate gain a bond line.
       Saves store principal, term, ticks elapsed, and interest remainder.
       Legacy saves have no bond. A malformed bond rejects before city mutation.
-- [ ] Default `--simulate` issues no bond. A city with no bond keeps today's
+- [x] Default `--simulate` issues no bond. A city with no bond keeps today's
       cash and debt. Both playable hosts share the ledger.
 
 **Acceptance:** Issuing a bond raises cash, then reduces it by the installment
@@ -948,7 +948,7 @@ calendar scheduler. The term is a tick count.
 | 9 | M31–M35 | complete; hosted CI verified on bf8c036 |
 | 10 | M36 | complete: end-to-end playability |
 | 11 | M37 | complete: surface water and early waterworks |
-| 12 | M38–M44 | M38–M43 complete locally; M44 not started |
+| 12 | M38–M44 | M38–M44 complete locally |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.
