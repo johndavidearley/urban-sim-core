@@ -55,6 +55,11 @@ Shore intakes and raw sewage outlets need adjacent water and a road. Nearby
 raw outlets reduce intake supply; separate them along the water body.
 Incinerator (S, after Crematorium): $18,000, $60/tick; burns residual garbage
 for up to 6 MW. F6 Services controls funding. Recycling takes priority.
+With Power selected, V cycles generic, coal, gas, nuclear, solar, wind and
+hydro plants. With Sanitation on the shore, V also offers clean treatment.
+Landfills fill up; schools and hospitals have seats and beds.
+P selects a district; its HEIGHT button caps redevelopment at 1X to 64X.
+F6 BONDS issues one municipal bond ($10K/$50K/$200K over 100/200/400 ticks).
 See the in-game controls for road, zoning and civic construction tools.
 
 The bin directory also contains the CLI and native playtest executable.
