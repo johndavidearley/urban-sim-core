@@ -111,7 +111,7 @@ TEST(NeighborhoodSystem, InsufficientBedsSolveAgainstActualCityIllness) {
   const auto limited=NeighborhoodSystem::evaluate(city.map,city.roads,city.store,city.cache,
     .1f,.5f,100.f,.0f);
   const float local=city.store.getBuilding(city.near)->illnessRate;
-  const float scale=400.f/(10000.f*limited.illnessRate);
+  const float scale=400.f/(10000.f*limited.illnessRate*ServiceSystem::kPatientShare);
   ASSERT_LT(scale,1.f);
   // Home anchor is the hospital node: full M20 strength before the city cap.
   EXPECT_NEAR(local,HealthSystem::evaluate(.5f,0.f,scale,0.f).illnessRate,1.e-6f);

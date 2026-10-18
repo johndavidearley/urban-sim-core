@@ -985,10 +985,12 @@ TEST(PlayableCityTickTests, CivicCapacitiesDriveEducationLagAndSurviveReadOnlyRe
   std::vector<ServiceFacility> facilities{{ServiceType::Education,{14,11},32,1.f},
     {ServiceType::Health,{16,11},32,1.f}};
   PlayableCityTickState state; int64_t funds=1000000;
+  state.budgetPolicy.servicePercent[2]=25;  // 100 beds: 6,000 residents need more
   PlayableCityTickOptions options; options.requireUtilities=false; options.growthChance=0.f;
   options.enableTransit=false; options.refreshPollution=false; options.updateLandValues=false;
   playableCityTick(map,roads,store,people,facilities,state,funds,options);
   EXPECT_FLOAT_EQ(state.serviceSummary.schoolSeats,800.f);
+  EXPECT_FLOAT_EQ(state.serviceSummary.hospitalBeds,100.f);
   EXPECT_LT(state.laggedEducationCoverage,state.serviceSummary.educationCoverage);
   EXPECT_FLOAT_EQ(state.laggedEducationCoverage,state.serviceSummary.effectiveEducationCoverage);
   EXPECT_LT(state.serviceSummary.hospitalCapacityFactor,1.f);

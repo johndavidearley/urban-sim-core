@@ -521,24 +521,25 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         core_path.write_text(json.dumps(core))
         fixture["citySnapshot"] = str(core_path)
         fixture["funds"] = 1000000
-        for kind, x in ((3, 14), (2, 16)):
-            fixture["facilities"].append({"type": kind, "x": x, "y": 15, "maxTravelDistance": 30, "quality": 1})
+        # A quarter-quality hospital (100 beds) binds for 5,000 residents.
+        for kind, x, quality in ((3, 14, 1), (2, 16, 0.25)):
+            fixture["facilities"].append({"type": kind, "x": x, "y": 15, "maxTravelDistance": 30, "quality": quality})
         path = s.artifact("civic-capacity.json")
         path.write_text(json.dumps(fixture))
         await s.city("load", import_path=str(path))
         await s.request("time", {"action": "step", "ticks": 1})
         metrics = s.last_state["metrics"]
         self.assertEqual(metrics["school_seats"], 800)
-        self.assertEqual(metrics["hospital_beds"], 400)
+        self.assertEqual(metrics["hospital_beds"], 100)
         self.assertLess(metrics["effective_education_coverage"], metrics["education_coverage"])
         self.assertLess(metrics["hospital_capacity_factor"], 1)
-        self.assertAlmostEqual(metrics["patient_demand"], s.last_state["population"] * metrics["illness_rate"], delta=.01)
+        self.assertAlmostEqual(metrics["patient_demand"], s.last_state["population"] * metrics["illness_rate"] * 0.2, delta=.01)
         await s.screenshot("civic-capacity-hud")
         funding = [100] * 12
         funding[2] = funding[3] = 50
         await s.request("budget", {"action": "set_funding", "service_percent": funding})
         self.assertEqual(s.last_state["metrics"]["school_seats"], 400)
-        self.assertEqual(s.last_state["metrics"]["hospital_beds"], 200)
+        self.assertEqual(s.last_state["metrics"]["hospital_beds"], 50)
         await s.request("budget", {"action": "reset_funding"})
         for service, x, y in (("education",14,17),("education",16,17),
             ("health",15,15),("health",17,15),("health",19,15),("health",21,15),("health",22,15),

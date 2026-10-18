@@ -49,7 +49,7 @@ std::string schoolCapacityLine(const ServiceCoverageSummary& s) {
 }
 std::string hospitalCapacityLine(const ServiceCoverageSummary& s) {
   return "BEDS " + std::to_string(std::lround(s.hospitalBedsUsed)) + "/" +
-    std::to_string(std::lround(s.hospitalBeds)) +
+    std::to_string(std::lround(s.hospitalBeds)) + " NEED " + std::to_string(std::lround(s.patientDemand)) +
     (s.healthCoverage > 0.f && s.hospitalCapacityFactor < 1.f ? " CAP" : " REACH");
 }
 }
@@ -614,14 +614,11 @@ void drawGameplayHud(
            {175, 205, 235}, 1);
 
   const auto &freight = liveState.trafficSummary.freight;
-  drawText(renderer, x + 12, y + 270,
+  drawText(renderer, x + 12, y + 268,
            "TRUCKS " + std::to_string(freight.trucks) + " UNROUTED " +
-               std::to_string(freight.unroutedGoods),
-           {180, 200, 225}, 1);
-  drawText(renderer, x + 12, y + 286,
-           "TRADE GATE " + std::to_string(freight.gate.x) + " " +
-               std::to_string(freight.gate.y) +
-               (freight.gateConnected ? " CONNECTED" : " NO ROAD"),
+               std::to_string(freight.unroutedGoods) + " GATE " +
+               std::to_string(freight.gate.x) + "," + std::to_string(freight.gate.y) +
+               (freight.gateConnected ? " OK" : " NO ROAD"),
            {180, 200, 225}, 1);
 
   const auto& events = liveState.disasters;
@@ -630,9 +627,9 @@ void drawGameplayHud(
            " LOST FIRE " + std::to_string(events.buildingsLostToFire) +
            " OTHER " + std::to_string(events.buildingsLostToDisaster) +
            " COV " + std::to_string(static_cast<int>(liveState.serviceSummary.fireCoverage * 100.f)) + "%", {255, 175, 110}, 1);
-  drawText(renderer, x + 12, y + 302,
-    schoolCapacityLine(liveState.serviceSummary) + "  " + hospitalCapacityLine(liveState.serviceSummary),
-    {185, 215, 225}, 1);
+  // Both civic rows end above the disaster and budget buttons at y = 322.
+  drawText(renderer, x + 12, y + 283, schoolCapacityLine(liveState.serviceSummary), {185, 215, 225}, 1);
+  drawText(renderer, x + 12, y + 298, hospitalCapacityLine(liveState.serviceSummary), {185, 215, 225}, 1);
   drawText(renderer, x + 12, y + 356,
            events.disaster.earthquakeOccurred ? "EARTHQUAKE" :
            (events.disaster.floodOccurred ? "FLOOD" : ""), {255, 145, 100}, 1);

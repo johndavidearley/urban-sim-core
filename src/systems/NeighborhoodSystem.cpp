@@ -62,7 +62,7 @@ NeighborhoodSummary NeighborhoodSystem::evaluate(
   }
   const auto fullCare = summarize(store);
   const auto demand = [&](double illness) {
-    return illness > 0.0 ? std::max(1.0, population * illness) : 0.0;
+    return illness > 0.0 ? std::max(1.0, population * illness * ServiceSystem::kPatientShare) : 0.0;
   };
   if (cache.hospitalBeds <= 0.f || cache.hospitalBeds >= demand(fullCare.illnessRate))
     return fullCare;

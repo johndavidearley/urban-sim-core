@@ -24,7 +24,7 @@ Last updated: October 18, 2026
 - Phase 6 (M17–M22): implemented; local M22 verification is recorded in STATUS.md.
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
 - Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
-- Phase 13 (M45–M48): draft from the Phase 12 playtest; not started.
+- Phase 13 (M45–M48): M45 complete locally. M46 is next.
 
 ---
 
@@ -940,8 +940,8 @@ calendar scheduler. The term is a tick count.
 ## Phase 13: Phase 12 balance correction (M45–M48) — draft
 
 Drafted October 18, 2026 from the Phase 12 playtest
-(`playtest-artifacts/phase12-playtest/REPORT.md`). Not started. Implement in
-order. Phase 12's invariants still hold.
+(`playtest-artifacts/phase12-playtest/REPORT.md`). M45 is complete locally.
+Implement in order. Phase 12's invariants still hold.
 
 The unchanged M36 journey (`playtest/examples/phase10_native_journey.py`)
 still reaches 10,000 residents with no debt, but it stalls. From tick 6,000 to
@@ -951,19 +951,23 @@ patient demand to 10% matched M36 within one resident at tick 10,000. A build
 whose landfills never filled did not change the stall. The journey is the
 shared acceptance driver for this phase.
 
-### Milestone 45: Hospital demand a city can meet
+### Milestone 45: Hospital demand a city can meet — implemented locally
+
+**Complete locally, October 18, 2026.** The unchanged journey matched the M36
+baseline within one resident at every 2,000-tick checkpoint and reached 10,379
+residents at tick 16,100 with no debt. See STATUS.md.
 
 Patient demand is housed population × illness rate. Illness is about 0.5 even
 under full hospital coverage, so half the city always needs a bed. Hospitals
 supply 25–50% of demand all game. At 10,000 residents that is 6,893 patients
 against 1,600 beds.
 
-- [ ] Patients are housed population × illness rate × 0.2. At typical illness
+- [x] Patients are housed population × illness rate × 0.2. At typical illness
       (about 0.65), one funded 400-bed hospital serves about 3,000 residents.
       The bisection solve and the sufficient-capacity fast path stay.
-- [ ] The HUD, tile inspector and MCP show patient demand beside beds used and
+- [x] The HUD, tile inspector and MCP show patient demand beside beds used and
       supplied. The HUD bed line no longer clips under the disasters button.
-- [ ] A default `--simulate` run changes only where beds bind. Record the new
+- [x] A default `--simulate` run changes only where beds bind. Record the new
       400-tick CSV baseline.
 
 **Acceptance:** The unchanged journey is within 5% of the M36 baseline
@@ -1053,7 +1057,7 @@ city of substations alone reports a power shortage.
 | 10 | M36 | complete: end-to-end playability |
 | 11 | M37 | complete: surface water and early waterworks |
 | 12 | M38–M44 | complete; hosted CI verified on fd554fd |
-| 13 | M45–M48 | draft: Phase 12 balance correction |
+| 13 | M45–M48 | M45 complete locally |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

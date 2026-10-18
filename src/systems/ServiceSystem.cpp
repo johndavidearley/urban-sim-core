@@ -646,7 +646,7 @@ void ServiceSystem::applyCivicCapacity(ServiceCoverageSummary& summary,
     ? std::min(summary.educationCoverage, seatRatio) : 0.f;
   summary.schoolSeatsUsed = summary.schoolDemand * summary.effectiveEducationCoverage;
   summary.patientDemand = illnessRate > 0.f
-    ? std::max(1.f, static_cast<float>(housedPopulation) * illnessRate) : 0.f;
+    ? std::max(1.f, static_cast<float>(housedPopulation) * illnessRate * kPatientShare) : 0.f;
   summary.hospitalCapacityFactor = summary.patientDemand > 0.f
     ? std::min(1.f, summary.hospitalBeds / summary.patientDemand) : 1.f;
   summary.hospitalBedsUsed = std::min(summary.hospitalBeds, summary.patientDemand);

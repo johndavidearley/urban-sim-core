@@ -19,7 +19,11 @@ contains effective coverage, so paused tool edits do not advance that lag.
 ## Hospitals
 
 Patient demand is housed population times the population-weighted city illness
-rate, floored at one when illness is positive. Hospital capacity scales every
+rate times a patient share of 0.2, floored at one when illness is positive. The
+illness rate is a severity index, about 0.5 even under full care, so a fifth of
+it needs a bed. At typical illness (about 0.65) one funded 400-bed hospital
+serves about 3,000 residents. M45 added the share: before it, half the city
+always needed a bed and hospitals bound for the whole game. Hospital capacity scales every
 M20 local hospital-distance strength by `min(1, beds / patient demand)` before
 illness is evaluated. Pollution, sanitation, crowding, crime and deathcare keep
 their existing roles. Beds used are the smaller of beds and city patient demand;
@@ -35,7 +39,8 @@ extend road reach or remove its distance taper.
 
 ## Inspection and continuation
 
-The full and compact HUD show seats/beds used and supplied. CAP means city
+The full and compact HUD show seats/beds used and supplied, and beds also show
+patient demand as NEED. Seats and beds each have their own row in the full HUD. CAP means city
 capacity binds; REACH means spare capacity leaves road coverage as the limit.
 The tile inspector labels these counters CITY, not local assignments.
 

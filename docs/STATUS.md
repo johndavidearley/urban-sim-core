@@ -2,6 +2,22 @@
 
 Last verified: October 18, 2026
 
+M45 hospital demand is implemented locally (October 18, 2026). Patient demand
+is housed population × illness rate × 0.2, so one funded 400-bed hospital
+serves about 3,000 residents at typical illness. The HUD bed line adds NEED
+(patient demand), and seats and beds each have their own HUD row above the
+disaster and budget buttons. The unchanged M36 journey now matches the M36
+baseline within one resident at every 2,000-tick checkpoint. It reaches 10,379
+residents and $26,466,996 at tick 16,100 with no debt, and passes its F5/F9
+continuation check. Before M45 it stalled at 86 buildings from tick 6,000 to
+12,000. The default 400-tick `--simulate` changes because its single hospital
+binds. At tick 400, patient demand falls from 3,271 to 674, the capacity factor
+rises from 0.12 to 0.59, and population rises from 4,042 to 4,153. The new
+baseline CSV is `playtest-artifacts/m45/simulate-400.csv`. Strict `ctest` in
+`build-strict` passed 633 tests. Playtest Python unit tests passed (7). All 40
+rendered playtests passed. Hosted CI and sanitizers were not repeated.
+Next is M46, landfills that last.
+
 Phase 12 is complete (October 18, 2026). Hosted CI passed on `fd554fd` in
 [run 39147629890](https://github.com/johndavidearley/urban-sim-core/actions/runs/39147629890):
 strict Windows/macOS/Linux, ASan/UBSan and TSan. The first push of M44 failed
@@ -337,9 +353,9 @@ Quick performance smoke (headless):
 
 ## Current Priorities
 
-Phase 12 is complete. Phase 13 (M45–M48) in `ROADMAP.md` is a draft balance
+Phase 12 is complete. Phase 13 (M45–M48) in `ROADMAP.md` is a balance
 correction from the Phase 12 playtest: hospital demand, landfill lifetime,
-fire containment and substations. Review it before implementing. The Phase 12
+fire containment and substations. M45 is implemented locally; M46 is next. The Phase 12
 list below is kept for reference.
 
 1. **M39 Landfills that fill.** Implemented locally. Garbage sites start

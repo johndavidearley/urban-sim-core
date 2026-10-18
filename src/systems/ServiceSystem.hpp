@@ -243,6 +243,9 @@ public:
     ThreadPool* pool = nullptr
   );
 
+  // Illness rate is a severity index, about 0.5 even under full care. A fifth
+  // of it needs a bed, so one 400-bed hospital serves about 3,000 residents.
+  static constexpr float kPatientShare = 0.2f;
   static void applyCivicCapacity(ServiceCoverageSummary& summary, uint32_t housedPopulation, float illnessRate);
 
   static void applyToMetrics(const ServiceCoverageSummary& summary, CityMetrics& metrics);

@@ -455,8 +455,8 @@ TEST(ServiceSystemTests, SchoolAndHospitalCapacityScalesWithFundingAndReach) {
   EXPECT_FLOAT_EQ(summary.schoolDemand,1000.f);
   EXPECT_FLOAT_EQ(summary.effectiveEducationCoverage,.4f);
   EXPECT_FLOAT_EQ(summary.schoolSeatsUsed,400.f);
-  EXPECT_FLOAT_EQ(summary.patientDemand,1000.f);
-  EXPECT_FLOAT_EQ(summary.hospitalCapacityFactor,.1f);
+  EXPECT_FLOAT_EQ(summary.patientDemand,200.f);  // 5,000 x 0.2 illness x 0.2 share
+  EXPECT_FLOAT_EQ(summary.hospitalCapacityFactor,.5f);
   EXPECT_FLOAT_EQ(summary.hospitalBedsUsed,100.f);
   summary.educationCoverage=.1f; summary.healthCoverage=.05f;
   ServiceSystem::applyCivicCapacity(summary,5000,.2f);
@@ -513,4 +513,17 @@ TEST(ServiceSystemTests, TreatmentRestoresIntakeOnNextPassWithoutAffectingSepara
   EXPECT_FLOAT_EQ(cache.waterSupplyUnits,200.f);
   EXPECT_FLOAT_EQ(ServiceSystem::evaluateFromCache(store,roads,cache).sanitationCoverage,0.f);
   EXPECT_FLOAT_EQ(ServiceSystem::intakeCleanFraction(roads,closed,intake.position),1.f);
+}
+
+TEST(ServiceSystemTests, OneHospitalServesAboutThreeThousandResidents) {
+  ServiceCoverageSummary summary;
+  summary.hospitalBeds = 400.f;
+  summary.healthCoverage = 1.f;
+  ServiceSystem::applyCivicCapacity(summary, 3000, .65f);
+  EXPECT_FLOAT_EQ(summary.patientDemand, 390.f);
+  EXPECT_FLOAT_EQ(summary.hospitalCapacityFactor, 1.f);
+  ServiceSystem::applyCivicCapacity(summary, 6000, .65f);
+  EXPECT_FLOAT_EQ(summary.patientDemand, 780.f);
+  EXPECT_LT(summary.hospitalCapacityFactor, 1.f);
+  EXPECT_FLOAT_EQ(summary.hospitalBedsUsed, 400.f);
 }
