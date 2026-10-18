@@ -41,7 +41,7 @@ static const char *kCSVHeader =
     "deaths_this_tick,deathcare_backlog,deathcare_happiness_penalty,"
     "power_supply_ratio,water_supply_ratio,freight_trucks,freight_domestic_"
     "goods,freight_imported_goods,freight_exported_goods,freight_unrouted_"
-    "goods,funds,debt,debt_issued,debt_repaid,interest_charged,treasury_revenue,treasury_expenses,treasury_net\n";
+    "goods,funds,debt,debt_issued,debt_repaid,interest_charged,treasury_revenue,treasury_expenses,treasury_net,landfill_remaining,landfill_fill_rate,waste_stored_incinerated,school_seats,school_demand,school_seats_used,effective_education_coverage,hospital_beds,patient_demand,hospital_beds_used,hospital_capacity_factor\n";
 
 void printRow(const SimTickMetrics& row) {
   std::cout << "  " << std::setw(5) << row.tick
@@ -90,7 +90,16 @@ void writeCSVRow(std::ostream& out, const SimTickMetrics& row) {
       << row.funds << "," << row.treasury.outstandingDebt << ","
       << row.treasury.debtIssued << "," << row.treasury.debtRepaid << ","
       << row.treasury.interestCharged << "," << row.treasury.revenue << ","
-      << row.treasury.expenses << "," << row.treasury.net << "\n";
+      << row.treasury.expenses << "," << row.treasury.net << ","
+      << row.landfillRemaining << "," << row.landfillFillRate << "," << row.wasteStoredIncinerated
+      << "," << row.schoolSeats
+      << "," << row.schoolDemand
+      << "," << row.schoolSeatsUsed
+      << "," << row.effectiveEducationCoverage
+      << "," << row.hospitalBeds
+      << "," << row.patientDemand
+      << "," << row.hospitalBedsUsed
+      << "," << row.hospitalCapacityFactor << "\n";
 }
 
 bool writeReportCSV(const std::string& path, const std::vector<SimTickMetrics>& rows) {
@@ -592,8 +601,19 @@ int runGameplaySessionSimulation(const std::string& inputPath,
     row.floodOccurred = state.disasters.disaster.floodOccurred;
     row.crimeRate = state.crimeRate;
     row.illnessRate = state.illnessRate;
+    row.schoolSeats = state.serviceSummary.schoolSeats;
+    row.schoolDemand = state.serviceSummary.schoolDemand;
+    row.schoolSeatsUsed = state.serviceSummary.schoolSeatsUsed;
+    row.effectiveEducationCoverage = state.serviceSummary.effectiveEducationCoverage;
+    row.hospitalBeds = state.serviceSummary.hospitalBeds;
+    row.patientDemand = state.serviceSummary.patientDemand;
+    row.hospitalBedsUsed = state.serviceSummary.hospitalBedsUsed;
+    row.hospitalCapacityFactor = state.serviceSummary.hospitalCapacityFactor;
     row.wasteCollectionRate = state.waste.collectionRate;
     row.wasteUncollected = state.waste.uncollected;
+    row.landfillRemaining = state.waste.landfillRemaining;
+    row.landfillFillRate = state.waste.landfillFillRate;
+    row.wasteStoredIncinerated = state.waste.storedIncinerated;
     row.wastePollutionPenalty = state.waste.pollutionPenalty;
     row.deathsThisTick = state.deathcare.deaths;
     row.deathcareBacklog = state.deathcare.awaitingDisposition;

@@ -304,6 +304,7 @@ def create_server(session: Session) -> FastMCP:
         service: str | None = None,
         power_source: str | None = None,
         surface_water: bool | None = None,
+        sewage_treatment: bool | None = None,
         archetype: str | None = None,
         road_class: Literal["local", "arterial"] | None = None,
         id: UInt32 | None = None,
@@ -311,7 +312,7 @@ def create_server(session: Session) -> FastMCP:
         port_action: Literal["cargo", "passenger", "remove", "toggle", "capacity", "airport"] | None = None,
         capacity: Annotated[int, Field(ge=0, le=200)] | None = None,
     ) -> dict[str, Any]:
-        """Use gameplay tools with normal plans, costs and validation. Endpoints are tile coordinates; services use x1/y1; surface_water selects shoreline intake/raw outlet variants. power_source on service power selects generic, coal, gas, nuclear, solar, wind, or hydro. Road class local/arterial supports build or upgrade. Policies support archetype and budget cap. Hotel uses x1/y1 on empty unzoned land with road/power/water; $10000, 32 beds, 12 commercial jobs; building enables tourism; visitors require reachable parks. Terminal tools use x1/y1; name airport defaults to 4x2 airport placement, while port_action selects cargo/passenger/airport/remove/toggle/capacity. Capacity sets 0..200 goods, 0..60 sea passengers or 0..120 air passengers; omission cycles presets."""
+        """Use gameplay tools with normal plans, costs and validation. Endpoints are tile coordinates; services use x1/y1; surface_water selects shoreline intake/raw outlet variants. sewage_treatment=true with shoreline sanitation builds clean treatment ($9000, $34/tick), replacing raw outlets in place. power_source on service power selects generic, coal, gas, nuclear, solar, wind, or hydro. Road class local/arterial supports build or upgrade. Policies support archetype and budget cap. Hotel uses x1/y1 on empty unzoned land with road/power/water; $10000, 32 beds, 12 commercial jobs; building enables tourism; visitors require reachable parks. Terminal tools use x1/y1; name airport defaults to 4x2 airport placement, while port_action selects cargo/passenger/airport/remove/toggle/capacity. Capacity sets 0..200 goods, 0..60 sea passengers or 0..120 air passengers; omission cycles presets."""
         return await session.request(
             "tool",
             compact(
@@ -325,6 +326,7 @@ def create_server(session: Session) -> FastMCP:
                 service=service,
                 power_source=power_source,
                 surface_water=surface_water,
+                sewage_treatment=sewage_treatment,
                 archetype=archetype,
                 road_class=road_class,
                 id=id,

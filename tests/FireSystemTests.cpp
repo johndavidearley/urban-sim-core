@@ -168,3 +168,96 @@ TEST(FireSystemTests, DeterministicForSameSeed) {
 
   EXPECT_EQ(runOnce(99), runOnce(99));
 }
+
+namespace {
+struct LocalFireCity {
+  CityMap map{{20, 12}};
+  RoadNetwork roads{map};
+  EntityStore store;
+  ServiceCoverageCache cache;
+  LocalFireCity() {
+    for (int x = 2; x < 16; ++x) roads.buildRoad({x, 4}, {x + 1, 4});
+    ServiceSystem::buildCache(roads, {{ServiceType::Fire, {2, 5}, 4}}, cache);
+  }
+};
+}
+
+TEST(FireSystemTests, LocalResponseFallsOffAndStopsAtStationRadius) {
+  LocalFireCity city;
+  EXPECT_FLOAT_EQ(FireSystem::responseAt(city.roads, city.cache, {2, 3}), 1.f);
+  EXPECT_NEAR(FireSystem::responseAt(city.roads, city.cache, {6, 3}), .2f, .00001f);
+  EXPECT_FLOAT_EQ(FireSystem::responseAt(city.roads, city.cache, {7, 3}, 1.f), 0.f);
+  EXPECT_FLOAT_EQ(FireSystem::responseAt(city.roads, city.cache, {2, 10}, 1.f), 0.f);
+  ServiceCoverageCache empty;
+  EXPECT_FLOAT_EQ(FireSystem::responseAt(city.roads, empty, {2, 10}, .7f), .7f);
+}
+
+TEST(FireSystemTests, SameSeedProtectedBlockLosesFewerBuildings) {
+  uint32_t nearLoss = 0, farLoss = 0;
+  FireParams params = zeroRiskParams();
+  params.baseIgnitionChance = .5f;
+  params.coverageIgnitionReduction = .9f;
+  for (uint32_t seed = 0; seed < 100; ++seed) {
+    for (bool near : {true, false}) {
+      LocalFireCity city;
+      placeBuilding(city.map, city.store, BuildingType::Residential, {near ? 2 : 12, 3}, 20);
+      std::vector<BurningTile> burning;
+      const auto loss = FireSystem::step(city.map, city.store, burning, 1.f, seed, params,
+        &city.roads, &city.cache).buildingsDestroyed;
+      (near ? nearLoss : farLoss) += loss;
+    }
+  }
+  EXPECT_GT(farLoss, nearLoss);
+}
+
+TEST(FireSystemTests, SpreadUsesReceivingBuildingsLocalResponse) {
+  for (bool near : {true, false}) {
+    LocalFireCity city;
+    const int x = near ? 2 : 12;
+    placeBuilding(city.map, city.store, BuildingType::Residential, {x, 3}, 20);
+    std::vector<BurningTile> burning{{{x, 2}, 3}};
+    auto params = zeroRiskParams();
+    params.spreadChance = 1.f;
+    params.coverageSpreadReduction = 1.f;
+    const auto result = FireSystem::step(city.map, city.store, burning, 1.f, 7, params,
+      &city.roads, &city.cache);
+    EXPECT_EQ(result.buildingsDestroyed, near ? 0u : 1u);
+  }
+}
+
+TEST(FireSystemTests, BurnDurationUsesEachIgnitedTilesDistance) {
+  LocalFireCity city;
+  for (int x : {2, 6, 12}) placeBuilding(city.map, city.store, BuildingType::Residential, {x, 3}, 20);
+  auto params = zeroRiskParams();
+  params.baseIgnitionChance = 1.f;
+  params.coverageIgnitionReduction = 0.f;
+  params.baseDuration = 8;
+  std::vector<BurningTile> burning;
+  FireSystem::step(city.map, city.store, burning, 1.f, 7, params, &city.roads, &city.cache);
+  ASSERT_EQ(burning.size(), 3u);
+  for (const auto& tile : burning)
+    EXPECT_EQ(tile.ticksRemaining, tile.position.x == 2 ? 2 : (tile.position.x == 6 ? 7 : 8));
+}
+
+TEST(FireSystemTests, NoStationsPreservesScalarFallbackExactly) {
+  LocalFireCity a, b;
+  ServiceCoverageCache empty;
+  for (int x = 2; x <= 12; ++x) {
+    placeBuilding(a.map, a.store, BuildingType::Residential, {x, 3}, 20);
+    placeBuilding(b.map, b.store, BuildingType::Residential, {x, 3}, 20);
+  }
+  std::vector<BurningTile> firesA, firesB;
+  auto params = zeroRiskParams();
+  params.baseIgnitionChance = .4f;
+  params.spreadChance = .5f;
+  for (uint32_t seed = 0; seed < 8; ++seed) {
+    const auto legacy = FireSystem::step(a.map, a.store, firesA, .6f, seed, params);
+    const auto local = FireSystem::step(b.map, b.store, firesB, .6f, seed, params, &b.roads, &empty);
+    EXPECT_EQ(legacy.newIgnitions, local.newIgnitions);
+    ASSERT_EQ(firesA.size(), firesB.size());
+    for (size_t i = 0; i < firesA.size(); ++i) {
+      EXPECT_EQ(firesA[i].position, firesB[i].position);
+      EXPECT_EQ(firesA[i].ticksRemaining, firesB[i].ticksRemaining);
+    }
+  }
+}

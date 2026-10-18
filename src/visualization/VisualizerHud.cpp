@@ -41,6 +41,19 @@
 
 
 namespace visualizer {
+namespace {
+std::string schoolCapacityLine(const ServiceCoverageSummary& s) {
+  return "SEATS " + std::to_string(std::lround(s.schoolSeatsUsed)) + "/" +
+    std::to_string(std::lround(s.schoolSeats)) +
+    (s.effectiveEducationCoverage < s.educationCoverage ? " CAP" : " REACH");
+}
+std::string hospitalCapacityLine(const ServiceCoverageSummary& s) {
+  return "BEDS " + std::to_string(std::lround(s.hospitalBedsUsed)) + "/" +
+    std::to_string(std::lround(s.hospitalBeds)) +
+    (s.healthCoverage > 0.f && s.hospitalCapacityFactor < 1.f ? " CAP" : " REACH");
+}
+}
+
 
 void drawToolPalette(
   DrawList* renderer,
@@ -97,7 +110,7 @@ Rect budgetControlRect(int action, int windowWidth, int windowHeight, bool servi
   if (action == 43 || action == 44) return {panel.x + 220 + (action - 43) * 40, panel.y + 130 + 11 * 18, 30, 16};
   if (action == 0) return {panel.x + 664, panel.y + 12, 40, 26};
   if (action == 1) return {panel.x + 24, panel.y + (services ? 352 : 278), 240, 24};
-  if (action >= 38 && action < 43) return {panel.x + 552, panel.y + 116 + (action - 38) * 64, 144, 24};
+  if (action >= 38 && action < 43) return {panel.x + 552, panel.y + 116 + (action - 38) * 54, 144, 24};
   if (action == 37) return {panel.x + 264, panel.y + 76, 76, 24};
   if (action == 36) return {panel.x + 184, panel.y + 76, 76, 24};
   if (action == 12 || action == 13) return {panel.x + 24 + (action - 12) * 80, panel.y + 76, 76, 24};
@@ -122,7 +135,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   const TreasuryLedger& ledger, int64_t funds, int64_t debt, int mouseX, int mouseY,
   bool services, const std::array<int64_t, kServiceTypeCount>& serviceCosts,
   const std::array<float, kServiceTypeCount>& serviceCoverage,
-  bool trends, const CityHistory& history, bool alerts, const CityAlerts& diagnostics,int focus,uint32_t inspectedTick) {
+  bool trends, const CityHistory& history, bool alerts, const CityAlerts& diagnostics,int focus,uint32_t inspectedTick,const std::vector<ServiceFacility>* facilities) {
   drawFilledRect(renderer, 0, 0, windowWidth, windowHeight, {5, 10, 18}, 195);
   const auto panel = budgetPanelRect(windowWidth, windowHeight);
   const int x = panel.x, y = panel.y;
@@ -160,6 +173,18 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       drawText(renderer, x + 360, row, "$" + std::to_string(serviceCosts[i]), {255, 195, 135}, 1);
       drawText(renderer, x + 520, row, std::to_string(static_cast<int>(serviceCoverage[i] * 100.f)) + "%", {135, 225, 175}, 1);
     }
+    if (facilities) {
+      int raw = 0, treated = 0, inland = 0;
+      for (const auto& facility : *facilities) if (facility.type == ServiceType::Sanitation) {
+        if (facility.sewageTreatment) ++treated;
+        else if (facility.surfaceWater) ++raw;
+        else ++inland;
+      }
+      drawText(renderer, x + 360, y + 374, "SEWAGE RAW " + std::to_string(raw) + " TREATED " +
+        std::to_string(treated) + " INLAND " + std::to_string(inland), {160,220,210}, 1);
+    }
+    drawText(renderer, x + 360, y + 346, "LANDFILL FREE " + std::to_string(diagnostics.inputs.landfillRemaining)
+      + "  LAST FILL " + std::to_string(diagnostics.inputs.landfillFillRate) + "/TICK", {210,210,160}, 1);
     drawText(renderer, x + 360, y + 360, "CIVIC/TRANSPORT $" + std::to_string(preview.expenses[3]) + "/TICK", {255, 220, 130}, 1);
   }
   for (int action = 0; action < 45; ++action) {
@@ -191,7 +216,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     auto percent = [](float value) { return std::to_string(static_cast<int>(std::lround(value * 100.f))) + "%"; };
     for (size_t i = 0; i < diagnostics.records.size(); ++i) {
       const auto& r = diagnostics.records[i];
-      const int row = y + 118 + static_cast<int>(i) * 64;
+      const int row = y + 118 + static_cast<int>(i) * 54;
       const std::string state = !diagnostics.checkedTick ? "UNCHECKED" : (r.active ? "ACTIVE" : (r.badTicks ? "WATCHING" : "CLEAR"));
       drawText(renderer, x + 24, row, std::string(CityAlerts::name(i)) + " - " + state,
         r.active ? RGB{255, 180, 110} : RGB{165, 205, 190}, 1);
@@ -208,6 +233,10 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
       } else if (i == 3) {
         measured = "LOWEST FIRE/POLICE/HEALTH/EDU COVERAGE " + percent(v.serviceCoverage);
         advice = "CHECK FACILITY REACH, ROAD LINKS AND FUNDING.";
+      } else if (i == 5) {
+        measured = (v.fullLandfills ? "FULL SITE " + std::to_string(v.landfillX) + "," + std::to_string(v.landfillY)
+          : std::string("NO FULL SITES")) + "  FREE " + std::to_string(v.landfillRemaining) + " FILL " + std::to_string(v.landfillFillRate) + "/TICK";
+        advice = "ADD LANDFILL, RECYCLING OR INCINERATION.";
       } else {
         measured = "REVENUE $" + std::to_string(v.revenue) + "  EXPENSES $" + std::to_string(v.expenses);
         advice = "REVIEW TAXES, FUNDING AND CONSTRUCTION SPENDING.";
@@ -554,8 +583,12 @@ void drawGameplayHud(
   drawText(renderer, x + 12, y + 340,
            "FIRES " + std::to_string(events.fire.activeFires) +
            " LOST FIRE " + std::to_string(events.buildingsLostToFire) +
-           " OTHER " + std::to_string(events.buildingsLostToDisaster), {255, 175, 110}, 1);
-  drawText(renderer, x + 210, y + 302,
+           " OTHER " + std::to_string(events.buildingsLostToDisaster) +
+           " COV " + std::to_string(static_cast<int>(liveState.serviceSummary.fireCoverage * 100.f)) + "%", {255, 175, 110}, 1);
+  drawText(renderer, x + 12, y + 302,
+    schoolCapacityLine(liveState.serviceSummary) + "  " + hospitalCapacityLine(liveState.serviceSummary),
+    {185, 215, 225}, 1);
+  drawText(renderer, x + 12, y + 356,
            events.disaster.earthquakeOccurred ? "EARTHQUAKE" :
            (events.disaster.floodOccurred ? "FLOOD" : ""), {255, 145, 100}, 1);
   const std::array<std::pair<HudAction, const char*>, 10> controls = {{
@@ -593,11 +626,11 @@ void drawCompactGameplayHud(DrawList *renderer, int windowWidth, bool paused,
                             const PopulationChange &change,
                             const FreightSummary &freight,
                             const CityDisasterState* disasters,
-                            bool enableDisasters) {
+                            bool enableDisasters, const ServiceCoverageSummary* civic) {
   constexpr int width = 330;
   const bool showDisasters = disasters && (enableDisasters ||
     disasters->buildingsLostToFire > 0 || disasters->buildingsLostToDisaster > 0);
-  const int height = showDisasters ? 118 : 82;
+  const int height = (showDisasters ? 118 : 82) + (civic ? 36 : 0);
   const int x = windowWidth - width - 12;
   constexpr int y = 12;
   drawFilledRect(renderer, x, y, width, height, {14, 17, 21}, 165);
@@ -617,11 +650,17 @@ void drawCompactGameplayHud(DrawList *renderer, int windowWidth, bool paused,
            "TRUCKS " + std::to_string(freight.trucks) + " UNROUTED " +
                std::to_string(freight.unroutedGoods),
            {175, 205, 235}, 1);
+  if (civic) {
+    drawText(renderer,x+10,y+83,schoolCapacityLine(*civic),{185,215,225},1);
+    drawText(renderer,x+10,y+101,hospitalCapacityLine(*civic),{185,215,225},1);
+  }
+  const int civicOffset = civic ? 36 : 0;
   if (showDisasters) {
-    drawText(renderer, x + 10, y + 83,
+    drawText(renderer, x + 10, y + 83 + civicOffset,
              std::string("DISASTERS ") + (enableDisasters ? "ON" : "OFF") +
-             " FIRES " + std::to_string(disasters->fire.activeFires), {255, 175, 110}, 1);
-    drawText(renderer, x + 10, y + 101,
+             " FIRES " + std::to_string(disasters->fire.activeFires) +
+             (civic ? " COV " + std::to_string(static_cast<int>(civic->fireCoverage * 100.f)) + "%" : ""), {255, 175, 110}, 1);
+    drawText(renderer, x + 10, y + 101 + civicOffset,
              "LOST FIRE " + std::to_string(disasters->buildingsLostToFire) +
              " OTHER " + std::to_string(disasters->buildingsLostToDisaster), {255, 175, 110}, 1);
   }
@@ -822,7 +861,7 @@ void drawTileInspector(
   const EntityStore& store,
   const std::vector<ServiceFacility>& facilities,
   Coord coord,
-  const DistrictSystem* districts, const BuildingDiagnostics* diagnostics, float cityJoblessness,bool pinned, const WasteSummary* waste
+  const DistrictSystem* districts, const BuildingDiagnostics* diagnostics, float cityJoblessness,bool pinned, const WasteSummary* waste, const ServiceCoverageSummary* civic
 ) {
   if (!map.isValid(coord)) {
     return;
@@ -830,7 +869,7 @@ void drawTileInspector(
   constexpr int x = 14;
   constexpr int y = 170;
   constexpr int width = 360;
-  const int height = diagnostics ? 326 : 132;
+  const int height = diagnostics ? (civic ? 358 : 326) : (civic ? 166 : 132);
   drawFilledRect(renderer, x, y, width, height, {14, 17, 22}, 185);
   drawRectOutline(renderer, x, y, width, height, {150, 160, 175}, 240);
 
@@ -915,9 +954,14 @@ void drawTileInspector(
         ? std::string(ServiceSystem::powerSourceTypeToString(facility.powerSource)) + " " +
             std::to_string(static_cast<int>(facility.powerCapacityMW)) + " MW " +
             std::to_string(static_cast<int>(facility.emissionsKgPerMWh)) + " KG/MWH"
-        : std::string("SERVICE ") + ServiceSystem::serviceTypeToString(facility.type, facility.surfaceWater)
+        : std::string("SERVICE ") + ServiceSystem::serviceTypeToString(facility.type, facility.surfaceWater, facility.sewageTreatment)
             + " RANGE " + std::to_string(facility.maxTravelDistance);
       drawText(renderer, x + 10, y + 111, serviceLine, serviceFacilityColor(facility.type), 1);
+      if (facility.type == ServiceType::Garbage) {
+        drawText(renderer, x + 10, y + 95,
+          "FREE " + std::to_string(facility.landfillRemaining) + "/80000 FILL "
+            + std::to_string(facility.landfillLastFill) + "/TICK", {210,210,160}, 1);
+      }
       if (facility.type == ServiceType::Incinerator && waste) {
         drawText(renderer, x + 10, y + 95, "CITY BURNED " + std::to_string(waste->incinerated)
           + "/TICK POWER " + std::to_string(waste->powerGenerationMW) + " MW", {255,190,105}, 1);
@@ -925,7 +969,7 @@ void drawTileInspector(
       if (facility.surfaceWater) {
         const std::string info = facility.type == ServiceType::Water
           ? "SOURCE CLEAN " + std::to_string(static_cast<int>(100 * ServiceSystem::intakeCleanFraction(roads, facilities, coord))) + "%"
-          : "RAW SEWAGE: INTAKE BUFFER 13 WATER HOPS";
+          : (facility.sewageTreatment ? "TREATED SEWAGE: NO RAW DISCHARGE" : "RAW SEWAGE: INTAKE BUFFER 13 WATER HOPS");
         drawText(renderer, x + 10, y + 95, info, {255,190,105}, 1);
       }
       break;
@@ -943,7 +987,7 @@ void drawTileInspector(
       " CONGEST " + pct(d.growth.congestion),{190,205,220},1);
     std::string coverage = "REACH F/P/H/E ";
     for (int i = 0; i < 4; ++i) coverage += (d.services & (1u << i)) ? "Y " : "N ";
-    drawText(renderer,x+10,y+180,coverage,{190,205,220},1);
+    drawText(renderer,x+10,y+180,coverage + " FIRE " + pct(d.fireResponse),{190,205,220},1);
     if (d.growth.occupied) {
       drawText(renderer,x+10,y+196,std::string(d.residential ? "VACANT HOUSING SLOTS " : "UNFILLED JOBS ") +
         std::to_string(std::max(0,d.capacity-d.occupancy)),{220,225,210},1);
@@ -957,6 +1001,10 @@ void drawTileInspector(
     drawText(renderer,x+10,y+264,"RES-WEIGHTED CRIME " + pct(n.crime) + " ILL " + pct(n.illness),{210,190,165},1);
     drawText(renderer,x+10,y+280,"CITY JOBLESS " + pct(cityJoblessness) + " - NOT LOCAL",{165,185,205},1);
     drawText(renderer,x+10,y+302,"LOCAL GATES ONLY. GROWTH IS PROBABILISTIC.",{165,185,205},1);
+  }
+  if (civic) {
+    drawText(renderer,x+10,y+(diagnostics ? 318 : 132),"CITY " + schoolCapacityLine(*civic),{185,215,225},1);
+    drawText(renderer,x+10,y+(diagnostics ? 334 : 148),"CITY " + hospitalCapacityLine(*civic),{185,215,225},1);
   }
 
 }

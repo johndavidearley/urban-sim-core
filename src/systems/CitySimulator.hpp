@@ -60,13 +60,24 @@ struct SimTickMetrics {
   uint32_t activeFires = 0;          // burning tiles right now (only nonzero when options.enableDisasters is set)
   uint32_t buildingsLostToFire = 0;  // cumulative buildings destroyed by fire since the run started
   float crimeRate = 0.0f;            // 0-1 city-wide crime rate this tick (see CrimeSystem)
-  float illnessRate = 0.0f;          // 0-1 city-wide illness rate this tick (see HealthSystem)
+  float illnessRate = 0.0f; // 0-1 city-wide illness rate (HealthSystem)
+  float schoolSeats = 0.0f;
+  float schoolDemand = 0.0f;
+  float schoolSeatsUsed = 0.0f;
+  float effectiveEducationCoverage = 0.0f;
+  float hospitalBeds = 0.0f;
+  float patientDemand = 0.0f;
+  float hospitalBedsUsed = 0.0f;
+  float hospitalCapacityFactor = 1.0f; // scales local hospital mitigation
   bool earthquakeOccurred = false;         // an earthquake struck this tick (only possible when options.enableDisasters is set)
   bool floodOccurred = false;              // a flood struck this tick (only possible when options.enableDisasters is set)
   uint32_t buildingsLostToDisaster = 0;    // cumulative buildings destroyed by earthquake/flood since the run started
   // Waste / deathcare (same systems as the playable visualizer path).
   float wasteCollectionRate = 1.0f;        // 0-1 fraction of generated waste collected/recycled
   int64_t wasteUncollected = 0;
+  int64_t landfillRemaining = 0;
+  int64_t landfillFillRate = 0;
+  int64_t wasteStoredIncinerated = 0;
   float wastePollutionPenalty = 0.0f;
   uint32_t deathsThisTick = 0;
   uint32_t deathcareBacklog = 0;           // awaiting disposition after processing capacity

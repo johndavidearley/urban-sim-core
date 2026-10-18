@@ -8,6 +8,11 @@
 class EntityStore;
 
 struct WasteSummary {
+  int64_t landfillRemaining = 0;
+  int64_t landfillFillRate = 0;
+  int64_t storedIncinerated = 0;
+  uint32_t fullLandfills = 0;
+  Coord firstFullLandfill{0, 0};
   int64_t generated = 0;
   int64_t recycled = 0;
   int64_t landfilled = 0;
@@ -25,6 +30,11 @@ struct WasteSummary {
 
 class WasteSystem {
 public:
+  // Only completed ticks mutate volume. Evaluation and service-power previews are pure.
+  static WasteSummary step(const EntityStore& store, std::vector<ServiceFacility>& facilities,
+    const ServiceCoverageSummary& coverage,
+    const std::vector<ServiceFacility>* operatingFacilities = nullptr);
+
   static WasteSummary evaluate(
     const EntityStore& store,
     const std::vector<ServiceFacility>& facilities,

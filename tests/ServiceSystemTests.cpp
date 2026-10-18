@@ -407,3 +407,110 @@ TEST(ServiceSystemTests, IncineratorGenerationTracksFuelAndRoadConnectivity) {
   ServiceSystem::buildCache(roads, facilities, cache);
   EXPECT_FLOAT_EQ(ServiceSystem::evaluateFromCache(store, roads, cache).powerGenerationMW, 0.f);
 }
+
+TEST(ServiceSystemTests, LandfillStorageRefreshPreservesCoverageCacheAndPowersEmptyCity) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store;
+  roads.buildRoad({1,1},{2,1});
+  std::vector<ServiceFacility> facilities{{ServiceType::Garbage,{1,2},10,1.f},
+    {ServiceType::Incinerator,{2,2},10,1.f}};
+  ServiceCoverageCache cache;
+  ServiceSystem::buildCache(roads, facilities, cache);
+  facilities[0].landfillRemaining = 0;
+  EXPECT_TRUE(ServiceSystem::isCacheValid(roads, facilities, cache));
+  ServiceSystem::refreshWasteStorage(facilities, cache);
+  EXPECT_FLOAT_EQ(ServiceSystem::evaluateFromCache(store, roads, cache).powerGenerationMW, 6.f);
+  EXPECT_EQ(facilities[0].landfillRemaining, 0);
+}
+
+TEST(ServiceSystemTests, UnfundedLandfillRetainsFuelWithoutAcceptingDeposits) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store;
+  roads.buildRoad({1,1},{2,1});
+  std::vector<ServiceFacility> facilities{{ServiceType::Garbage,{1,2},10,1.f},
+    {ServiceType::Incinerator,{2,2},10,1.f}};
+  facilities[0].landfillRemaining=0;
+  ServiceCoverageCache cache;
+  ServiceSystem::buildCache(roads,{facilities[1]},cache);
+  ServiceSystem::refreshWasteStorage(facilities,cache);
+  const auto summary=ServiceSystem::evaluateFromCache(store,roads,cache);
+  EXPECT_FLOAT_EQ(summary.powerGenerationMW,6.f);
+  const auto waste=WasteSystem::step(store,facilities,summary,&cache.wasteFacilities);
+  EXPECT_EQ(waste.landfilled,0);
+  EXPECT_EQ(waste.storedIncinerated,300);
+  EXPECT_EQ(facilities[0].landfillRemaining,300);
+}
+
+TEST(ServiceSystemTests, SchoolAndHospitalCapacityScalesWithFundingAndReach) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store;
+  roads.buildRoad({1,1},{2,1});
+  std::vector<ServiceFacility> facilities{{ServiceType::Education,{1,2},10,1.f},
+    {ServiceType::Health,{2,2},10,1.f}};
+  BudgetPolicy policy; policy.servicePercent[3]=50; policy.servicePercent[2]=25;
+  const auto funded=policy.fundedFacilities(facilities);
+  ServiceCoverageCache cache; ServiceSystem::buildCache(roads,funded,cache);
+  auto summary=ServiceSystem::evaluateFromCache(store,roads,cache);
+  EXPECT_FLOAT_EQ(summary.schoolSeats,400.f);
+  EXPECT_FLOAT_EQ(summary.hospitalBeds,100.f);
+  summary.educationCoverage=1.f; summary.healthCoverage=1.f;
+  ServiceSystem::applyCivicCapacity(summary,5000,.2f);
+  EXPECT_FLOAT_EQ(summary.schoolDemand,1000.f);
+  EXPECT_FLOAT_EQ(summary.effectiveEducationCoverage,.4f);
+  EXPECT_FLOAT_EQ(summary.schoolSeatsUsed,400.f);
+  EXPECT_FLOAT_EQ(summary.patientDemand,1000.f);
+  EXPECT_FLOAT_EQ(summary.hospitalCapacityFactor,.1f);
+  EXPECT_FLOAT_EQ(summary.hospitalBedsUsed,100.f);
+  summary.educationCoverage=.1f; summary.healthCoverage=.05f;
+  ServiceSystem::applyCivicCapacity(summary,5000,.2f);
+  EXPECT_FLOAT_EQ(summary.effectiveEducationCoverage,.1f);
+  EXPECT_FLOAT_EQ(summary.schoolSeatsUsed,100.f);
+  EXPECT_FLOAT_EQ(summary.hospitalBedsUsed,100.f);
+  policy.servicePercent[3]=policy.servicePercent[2]=0;
+  ServiceSystem::buildCache(roads,policy.fundedFacilities(facilities),cache);
+  summary=ServiceSystem::evaluateFromCache(store,roads,cache);
+  ServiceSystem::applyCivicCapacity(summary,100,.01f);
+  EXPECT_FLOAT_EQ(summary.schoolSeats,0.f);
+  EXPECT_FLOAT_EQ(summary.hospitalBeds,0.f);
+  EXPECT_FLOAT_EQ(summary.effectiveEducationCoverage,0.f);
+  EXPECT_FLOAT_EQ(summary.patientDemand,1.f);
+  EXPECT_FLOAT_EQ(summary.hospitalCapacityFactor,0.f);
+}
+
+TEST(ServiceSystemTests, CivicDemandIsDerivedWithoutInvalidatingRoadFields) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store;
+  std::vector<ServiceFacility> facilities{{ServiceType::Education,{1,2},10,1.f}};
+  ServiceCoverageCache cache; ServiceSystem::buildCache(roads,facilities,cache);
+  ServiceCoverageSummary summary; summary.schoolSeats=800.f; summary.educationCoverage=.75f;
+  ServiceSystem::applyCivicCapacity(summary,1000,0.f);
+  EXPECT_FLOAT_EQ(summary.effectiveEducationCoverage,.75f);
+  EXPECT_FLOAT_EQ(summary.schoolSeatsUsed,150.f);
+  EXPECT_FLOAT_EQ(summary.hospitalCapacityFactor,1.f);
+  EXPECT_TRUE(ServiceSystem::isCacheValid(roads,facilities,cache));
+  facilities[0].quality=.5f;
+  EXPECT_FALSE(ServiceSystem::isCacheValid(roads,facilities,cache));
+}
+
+TEST(ServiceSystemTests, TreatmentRestoresIntakeOnNextPassWithoutAffectingSeparateWaterBody) {
+  CityMap map({24,24}); RoadNetwork roads(map); EntityStore store;
+  for (int y=0;y<24;++y) { map.getTile({12,y}).type=2; map.getTile({14,y}).type=2; }
+  for (int y=5;y<12;++y) {
+    roads.buildRoad({10,y},{10,y+1}); roads.buildRoad({16,y},{16,y+1});
+  }
+  store.createBuilding(BuildingType::Residential,{9,8},20);
+  ServiceFacility intake{ServiceType::Water,{11,8},20,1.f}; intake.surfaceWater=true;
+  ServiceFacility other{ServiceType::Water,{15,8},20,1.f}; other.surfaceWater=true;
+  ServiceFacility raw{ServiceType::Sanitation,{11,10},18,1.f}; raw.surfaceWater=true;
+  std::vector<ServiceFacility> facilities{intake,other,raw};
+  ServiceCoverageCache cache; ServiceSystem::buildCache(roads,facilities,cache);
+  EXPECT_LT(cache.waterSupplyUnits,200.f);
+  EXPECT_FLOAT_EQ(ServiceSystem::intakeCleanFraction(roads,facilities,other.position),1.f);
+  facilities[2].sewageTreatment=true;
+  EXPECT_FALSE(ServiceSystem::isCacheValid(roads,facilities,cache));
+  ServiceSystem::buildCache(roads,facilities,cache);
+  EXPECT_FLOAT_EQ(cache.waterSupplyUnits,200.f);
+  EXPECT_FLOAT_EQ(ServiceSystem::evaluateFromCache(store,roads,cache).sanitationCoverage,1.f);
+  BudgetPolicy policy; policy.servicePercent[6]=0;
+  const auto closed=policy.fundedFacilities(facilities);
+  ServiceSystem::buildCache(roads,closed,cache);
+  EXPECT_FLOAT_EQ(cache.waterSupplyUnits,200.f);
+  EXPECT_FLOAT_EQ(ServiceSystem::evaluateFromCache(store,roads,cache).sanitationCoverage,0.f);
+  EXPECT_FLOAT_EQ(ServiceSystem::intakeCleanFraction(roads,closed,intake.position),1.f);
+}

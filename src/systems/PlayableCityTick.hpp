@@ -155,8 +155,16 @@ void playableCityTick(
   RoadNetwork& roads,
   EntityStore& store,
   PopulationStore& population,
-  const std::vector<ServiceFacility>& facilities,
+  std::vector<ServiceFacility>& facilities,
   PlayableCityTickState& state,
   int64_t& funds,
   const PlayableCityTickOptions& options = PlayableCityTickOptions{}
 );
+
+// Hosts without persistent facilities may supply a temporary list.
+inline void playableCityTick(CityMap& map, RoadNetwork& roads, EntityStore& store,
+  PopulationStore& population, std::vector<ServiceFacility>&& facilities,
+  PlayableCityTickState& state, int64_t& funds,
+  const PlayableCityTickOptions& options = PlayableCityTickOptions{}) {
+  playableCityTick(map, roads, store, population, facilities, state, funds, options);
+}

@@ -48,9 +48,13 @@ struct ServiceFacility {
   // Water facilities only. A default plant covers the same small city as a
   // default 100 MW power plant (see utilityDemandFor).
   float waterSupplyUnits = 100.0f;
-  // Water: shoreline intake. Sanitation: untreated shoreline sewage outlet.
+  // Water: shoreline intake. Sanitation: raw outlet or shoreline treatment.
   // False preserves legacy inland water / sanitation facilities.
   bool surfaceWater = false;
+  int64_t landfillRemaining = 80000;
+  int64_t landfillLastFill = 0; // net units deposited on the last completed tick
+  bool sewageTreatment = false; // shoreline Sanitation only; no raw discharge
+
 };
 
 // Solar occupies a 2×2 whose minimum corner is `position`. Every other
@@ -83,6 +87,14 @@ struct ServiceCoverageSummary {
   float policeCoverage = 0.0f;
   float healthCoverage = 0.0f;
   float educationCoverage = 0.0f;
+  float schoolSeats = 0.0f;
+  float schoolDemand = 0.0f;
+  float schoolSeatsUsed = 0.0f;
+  float effectiveEducationCoverage = 0.0f;
+  float hospitalBeds = 0.0f;
+  float patientDemand = 0.0f;
+  float hospitalBedsUsed = 0.0f;
+  float hospitalCapacityFactor = 1.0f;
 
   // Utilities are tracked separately from overallCoverage/satisfaction
   // below (which stay exactly (fire+police+health+education)/4, unchanged)
@@ -137,6 +149,8 @@ struct ServiceCoverageCache {
   float powerGenerationCapacityMW = 0.0f;
   float powerWeightedEmissions = 0.0f;
   float waterSupplyUnits = 0.0f;
+  float schoolSeats = 0.0f;
+  float hospitalBeds = 0.0f;
 
   // Nearest distance to *any* facility of *any* type, merged (min) across all
   // entries' distance fields once here in buildCache() rather than re-derived
@@ -170,8 +184,11 @@ struct ServiceCoverageCache {
 
 class ServiceSystem {
 public:
+  // Local response at an already-resolved road anchor; reads cached BFS fields.
+  static float coverageStrength(const ServiceCoverageCache& cache, ServiceType type, Coord anchor);
+
   static bool parseServiceType(const std::string& raw, ServiceType& outType);
-  static const char* serviceTypeToString(ServiceType type, bool surfaceWater = false);
+  static const char* serviceTypeToString(ServiceType type, bool surfaceWater = false, bool sewageTreatment = false);
   // Bounded raw-discharge exposure along connected water tiles (12 hops).
   static float intakeCleanFraction(const RoadNetwork& roads,
       const std::vector<ServiceFacility>& facilities, Coord intake);
@@ -195,6 +212,9 @@ public:
 
   // True when the topology and every coverage-relevant facility property
   // still match the state used by buildCache().
+  static void refreshWasteStorage(const std::vector<ServiceFacility>& facilities,
+    ServiceCoverageCache& cache);
+
   static bool isCacheValid(
     const RoadNetwork& roads,
     const std::vector<ServiceFacility>& facilities,
@@ -222,6 +242,8 @@ public:
     const ServiceCoverageCache& cache,
     ThreadPool* pool = nullptr
   );
+
+  static void applyCivicCapacity(ServiceCoverageSummary& summary, uint32_t housedPopulation, float illnessRate);
 
   static void applyToMetrics(const ServiceCoverageSummary& summary, CityMetrics& metrics);
 };

@@ -36,7 +36,7 @@ struct BudgetPolicy {
     for (const auto& facility : facilities) {
       const auto index = static_cast<size_t>(facility.type);
       if (index < costs.size()) costs[index] += ServiceTool::operatingCostPerTick(
-        facility.type, facility.surfaceWater, facility.powerSource);
+        facility.type, facility.surfaceWater, facility.powerSource, facility.sewageTreatment);
     }
     for (size_t i = 0; i < costs.size(); ++i)
       costs[i] = static_cast<int64_t>(std::llround(costs[i] * std::clamp(servicePercent[i], 0, 100) / 100.0));

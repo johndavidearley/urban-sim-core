@@ -102,3 +102,36 @@ TEST(NeighborhoodSystem,
   EXPECT_FLOAT_EQ(city.store.getBuilding(city.far)->crimeRate,
                   CrimeSystem::evaluate(0.0f, 0.0f, 200.0f).overallRate);
 }
+
+TEST(NeighborhoodSystem, InsufficientBedsSolveAgainstActualCityIllness) {
+  NeighborhoodCity city;
+  city.store.getBuilding(city.near)->occupancy=2500;
+  city.store.getBuilding(city.far)->occupancy=7500;
+  ServiceSystem::buildCache(city.roads,{{ServiceType::Health,{3,3},32,1.f}},city.cache);
+  const auto limited=NeighborhoodSystem::evaluate(city.map,city.roads,city.store,city.cache,
+    .1f,.5f,100.f,.0f);
+  const float local=city.store.getBuilding(city.near)->illnessRate;
+  const float scale=400.f/(10000.f*limited.illnessRate);
+  ASSERT_LT(scale,1.f);
+  // Home anchor is the hospital node: full M20 strength before the city cap.
+  EXPECT_NEAR(local,HealthSystem::evaluate(.5f,0.f,scale,0.f).illnessRate,1.e-6f);
+  city.cache.hospitalBeds=100000.f;
+  const auto enough=NeighborhoodSystem::evaluate(city.map,city.roads,city.store,city.cache,
+    .1f,.5f,100.f,.0f);
+  EXPECT_LT(enough.illnessRate,limited.illnessRate);
+  EXPECT_FLOAT_EQ(city.store.getBuilding(city.near)->illnessRate,
+    HealthSystem::evaluate(.5f,0.f,1.f,0.f).illnessRate);
+  const float once=enough.illnessRate;
+  EXPECT_FLOAT_EQ(NeighborhoodSystem::evaluate(city.map,city.roads,city.store,city.cache,
+    .1f,.5f,100.f,.0f).illnessRate,once);
+}
+
+TEST(NeighborhoodSystem, SpareBedsDoNotExtendHospitalRoadReach) {
+  NeighborhoodCity city;
+  ServiceSystem::buildCache(city.roads,{{ServiceType::Health,{3,3},2,1.f}},city.cache);
+  city.cache.hospitalBeds=100000.f;
+  NeighborhoodSystem::evaluate(city.map,city.roads,city.store,city.cache,.1f,.5f,100.f,0.f);
+  EXPECT_FLOAT_EQ(city.store.getBuilding(city.far)->illnessRate,
+    HealthSystem::evaluate(.5f,0.f,0.f,0.f).illnessRate);
+  EXPECT_LT(city.store.getBuilding(city.near)->illnessRate,city.store.getBuilding(city.far)->illnessRate);
+}

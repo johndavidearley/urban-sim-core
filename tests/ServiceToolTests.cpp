@@ -586,3 +586,47 @@ TEST(ServiceToolTests, SolarPadsStayOutOfAutonomousZoning) {
   EXPECT_EQ(map.zone({14, 14}), static_cast<int>(ZoneType::None));
   EXPECT_EQ(map.zone(anchor), static_cast<int>(ZoneType::Residential));
 }
+
+TEST(ServiceToolTests, ShoreTreatmentReplacesRawOutletWithFullPriceAndUpkeep) {
+  CityMap map({16,16}); RoadNetwork roads(map);
+  map.getTile({8,6}).type = 2;
+  roads.buildRoad({6,6},{6,7});
+  ServiceFacility raw{ServiceType::Sanitation,{7,6},18,1.f}; raw.surfaceWater = true;
+  std::vector<ServiceFacility> facilities{raw};
+  ServicePlacementOptions options; options.surfaceWater = true; options.sewageTreatment = true;
+  int64_t funds = 20000;
+  const auto plan = ServiceTool::plan(map,roads,facilities,ServiceType::Sanitation,{7,6},funds,options);
+  ASSERT_TRUE(plan.valid) << plan.error;
+  EXPECT_EQ(plan.cost,9000);
+  ASSERT_TRUE(ServiceTool::build(map,roads,facilities,plan,funds));
+  ASSERT_EQ(facilities.size(),1u);
+  EXPECT_TRUE(facilities[0].sewageTreatment);
+  EXPECT_EQ(funds,11000);
+  BudgetPolicy policy;
+  EXPECT_EQ(policy.serviceCost(facilities),34);
+  policy.servicePercent[6] = 50;
+  EXPECT_EQ(policy.serviceCost(facilities),17);
+  policy.servicePercent[6] = 0;
+  EXPECT_EQ(policy.serviceCost(facilities),0);
+  EXPECT_TRUE(policy.fundedFacilities(facilities).empty());
+  EXPECT_FALSE(ServiceTool::build(map,roads,facilities,plan,funds));
+  EXPECT_EQ(funds,11000);
+}
+
+TEST(ServiceToolTests, TreatmentRequiresSanitationShoreRoadAndFunds) {
+  CityMap map({16,16}); RoadNetwork roads(map);
+  ServicePlacementOptions options; options.surfaceWater = true; options.sewageTreatment = true;
+  EXPECT_FALSE(ServiceTool::plan(map,roads,{},ServiceType::Water,{7,6},20000,options).valid);
+  EXPECT_FALSE(ServiceTool::plan(map,roads,{},ServiceType::Sanitation,{7,6},20000,options).valid);
+  map.getTile({8,6}).type = 2;
+  EXPECT_FALSE(ServiceTool::plan(map,roads,{},ServiceType::Sanitation,{7,6},20000,options).valid);
+  roads.buildRoad({6,6},{6,7});
+  EXPECT_FALSE(ServiceTool::plan(map,roads,{},ServiceType::Sanitation,{7,6},8999,options).valid);
+  EXPECT_TRUE(ServiceTool::plan(map,roads,{},ServiceType::Sanitation,{7,6},9000,options).valid);
+  options.surfaceWater = false;
+  EXPECT_FALSE(ServiceTool::plan(map,roads,{},ServiceType::Sanitation,{7,6},20000,options).valid);
+  EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Sanitation),7000);
+  EXPECT_EQ(ServiceTool::operatingCostPerTick(ServiceType::Sanitation),26);
+  EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Sanitation,true),2000);
+  EXPECT_EQ(ServiceTool::operatingCostPerTick(ServiceType::Sanitation,true),8);
+}

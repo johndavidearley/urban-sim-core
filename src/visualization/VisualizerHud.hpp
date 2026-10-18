@@ -52,7 +52,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   bool services = false, const std::array<int64_t, kServiceTypeCount>& serviceCosts = {},
   const std::array<float, kServiceTypeCount>& serviceCoverage = {},
   bool trends = false, const CityHistory& history = {},
-  bool alerts = false, const CityAlerts& diagnostics = {}, int focus = -1, uint32_t inspectedTick = 0);
+  bool alerts = false, const CityAlerts& diagnostics = {}, int focus = -1, uint32_t inspectedTick = 0, const std::vector<ServiceFacility>* facilities = nullptr);
 
 bool transportControlEnabled(int action,const std::vector<TransitRoute>& routes,size_t selected);
 Rect transportControlRect(int action,int width,int height);
@@ -82,7 +82,8 @@ void drawCompactGameplayHud(DrawList *renderer, int windowWidth, bool paused,
                             const PopulationChange &change = {},
                             const FreightSummary &freight = {},
                             const CityDisasterState* disasters = nullptr,
-                            bool enableDisasters = false);
+                            bool enableDisasters = false,
+                            const ServiceCoverageSummary* civic = nullptr);
 
 void drawToast(
   DrawList* renderer,
@@ -131,7 +132,8 @@ void drawTileInspector(
   Coord coord,
   const DistrictSystem* districts = nullptr,
   const BuildingDiagnostics* diagnostics = nullptr, float cityJoblessness = 0.f, bool pinned = false,
-  const WasteSummary* waste = nullptr
+  const WasteSummary* waste = nullptr,
+  const ServiceCoverageSummary* civic = nullptr
 );
 
 Rect quitButtonRect(QuitAction action, int windowWidth, int windowHeight);

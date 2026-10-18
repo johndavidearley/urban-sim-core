@@ -3,6 +3,7 @@
 #include <array>
 #include <algorithm>
 #include "src/systems/GrowthSystem.hpp"
+#include "src/systems/FireSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 
 struct NeighborhoodDiagnostics {
@@ -15,6 +16,7 @@ struct NeighborhoodDiagnostics {
 struct BuildingDiagnostics {
   GrowthSiteDiagnostics growth;
   ServiceCoverageMask services = 0;
+  float fireResponse = 0.f;
   int capacity = 0, occupancy = 0;
   bool residential = false;
   NeighborhoodDiagnostics neighborhood;
@@ -32,6 +34,7 @@ struct BuildingDiagnostics {
     d.growth = GrowthSystem::diagnoseSite(map,roads,store,pos,demand,&cache,true,burning,modifiers);
     if (!map.isValid(pos)) return d;
     d.services = serviceMask(roads,cache,pos);
+    d.fireResponse = FireSystem::responseAt(roads,cache,pos);
     if (const auto* b = store.getBuilding(map.getTile(pos).buildingId)) {
       d.capacity = b->capacity; d.occupancy = b->occupancy;
       d.residential = b->type == BuildingType::Residential;

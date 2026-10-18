@@ -246,6 +246,11 @@ bool GameplaySessionSystem::save(
 
   json facilities = json::array();
   for (const ServiceFacility& facility : session.facilities) {
+    if (facility.sewageTreatment && (!facility.surfaceWater || facility.type != ServiceType::Sanitation))
+      return fail(errorMessage, "invalid sewage treatment facility");
+    if (facility.landfillRemaining < 0 || facility.landfillRemaining > 80000
+        || facility.landfillLastFill < -80000 || facility.landfillLastFill > 80000)
+      return fail(errorMessage, "invalid landfill volume or fill rate");
     facilities.push_back({
       {"type", static_cast<int>(facility.type)},
       {"x", facility.position.x},
@@ -255,9 +260,12 @@ bool GameplaySessionSystem::save(
       {"powerSource", static_cast<int>(facility.powerSource)},
       {"powerCapacityMW", facility.powerCapacityMW},
       {"emissionsKgPerMWh", facility.emissionsKgPerMWh},
-      {"waterSupplyUnits", facility.waterSupplyUnits}
+      {"waterSupplyUnits", facility.waterSupplyUnits},
+      {"landfillRemaining", facility.landfillRemaining},
+      {"landfillLastFill", facility.landfillLastFill}
     });
     if (facility.surfaceWater) facilities.back()["surfaceWater"] = true;
+    if (facility.sewageTreatment) facilities.back()["sewageTreatment"] = true;
   }
 
   json burning = json::array();
@@ -599,6 +607,19 @@ bool GameplaySessionSystem::load(
       facility.emissionsKgPerMWh = item.value("emissionsKgPerMWh", 400.0f);
       facility.waterSupplyUnits = item.value("waterSupplyUnits", 100.0f);
       facility.surfaceWater = item.value("surfaceWater", false);
+      facility.sewageTreatment = item.value("sewageTreatment", false);
+      if (facility.sewageTreatment && (!facility.surfaceWater || facility.type != ServiceType::Sanitation))
+        return fail(errorMessage, "invalid sewage treatment facility");
+      for (const char* key : {"landfillRemaining", "landfillLastFill"}) {
+        if (!item.contains(key)) continue;
+        const auto& value = item.at(key);
+        if (!value.is_number_integer() || value.get<double>() < -80000 || value.get<double>() > 80000)
+          return fail(errorMessage, "invalid landfill volume or fill rate");
+      }
+      facility.landfillRemaining = item.value("landfillRemaining", int64_t{80000});
+      facility.landfillLastFill = item.value("landfillLastFill", int64_t{0});
+      if (facility.landfillRemaining < 0)
+        return fail(errorMessage, "invalid landfill remaining volume");
       if (facility.surfaceWater && facility.type != ServiceType::Water && facility.type != ServiceType::Sanitation)
         return fail(errorMessage,"invalid surface-water facility type");
       loaded.facilities.push_back(facility);

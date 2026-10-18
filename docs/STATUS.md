@@ -1,6 +1,61 @@
 # Project Status
 
-Last verified: October 17, 2026
+Last verified: October 18, 2026
+
+M42 shoreline treatment is implemented locally (October 18, 2026).
+Sanitation now supports clean shoreline treatment at $9,000 construction and
+$34/tick upkeep. Treatment replaces a raw outlet in place, restores affected
+intake capacity on the next service pass, and follows existing funding rules.
+The V cycle, placement preview, inspector, Services panel, MCP and optional save
+field distinguish treatment from raw outlets and inland sanitation. Legacy
+facilities keep their behavior and costs. Strict Windows Debug and Release CLI
+builds, 614 C++ tests, seven Python unit tests and all 38 rendered playtests
+passed. Native acceptance verifies two water bodies, replacement cost, zero
+funding, 800×640 UI, exact persisted save/load
+continuation and gameplay/headless parity. A 400-tick default simulation CSV is
+byte-identical to M41.
+See [SHORELINE_TREATMENT.md](SHORELINE_TREATMENT.md). Hosted CI, sanitizers and
+packaging were not repeated. Next is M43, district height caps.
+
+M41 local fire response is implemented locally (October 18, 2026).
+Both hosts reuse cached road-distance fields for ignition, incoming spread and
+new-fire duration, with the same falloff as neighborhood police response. The
+inspector/MCP expose local response and the disaster HUD retains citywide fire
+coverage. Disasters remain off by default; no new save fields or BFS are added.
+Strict Windows Debug and Release CLI builds, 610 C++ tests, seven Python unit
+tests and all 37 rendered playtests passed. Native inspector/save-load acceptance
+passed at 800×640. A
+400-tick disasters-off CSV matches M40 byte-for-byte; two enabled-fire replays
+also match. A 500×500, 1,000-tick Release smoke benchmark with disasters enabled
+had median 8.314 ms/tick (three trials, range 7.910–8.368); concurrent checks make
+this a smoke result rather than a performance comparison. See
+[LOCAL_FIRE_RESPONSE.md](LOCAL_FIRE_RESPONSE.md). Hosted CI, sanitizers and
+packaging were not repeated. M42 is also implemented locally.
+
+M40 school seats and hospital beds is implemented locally (October 18, 2026).
+Funded schools supply 800 seats and hospitals 400 beds each. Education uses the
+smaller of road reach and seats per school-age demand; local hospital mitigation
+also respects beds per current city illness demand. No new seat/bed save fields
+or patient tick lag are introduced. The full/compact HUD, tile inspector, MCP and
+CLI reports expose usage and limits. Strict Windows Debug and Release CLI builds,
+604 C++ tests, seven Python unit tests and all 36 rendered playtests passed.
+A 5,000-resident rendered fixture verifies shortages, funding, recovery and exact
+save/load continuation. Repeated 400-tick CLI reports were byte-identical; the
+500×500 Release smoke benchmark median was 6.330 ms/tick. See
+[CIVIC_CAPACITY.md](CIVIC_CAPACITY.md). Hosted CI, sanitizers and packaging were
+not repeated. M41 is also implemented locally.
+
+
+M39 finite landfills is implemented locally (October 18, 2026). Garbage sites
+persist 80,000 units of initial free volume, stop accepting when full, and can
+supply stored waste to spare incinerator capacity. Both hosts mutate storage
+once per tick; previews and loads preserve it. The inspector, budget panel,
+F7 alerts, MCP and CLI reports expose capacity and last fill. Strict Windows
+Debug and Release CLI builds passed, along with 598 C++ tests, seven Python
+unit tests and all 35 rendered playtests. Two 400-tick CLI reports matched
+byte-for-byte. Hosted CI, sanitizers and packaging were not repeated for M39.
+See [LANDFILLS.md](LANDFILLS.md). M40 follows this milestone.
+
 
 Waste-to-energy incinerators are implemented: native construction, recycling-first
 residual waste processing, fuel-dependent electricity (up to 6 MW per plant),
@@ -49,7 +104,7 @@ wind, and hydro on the existing Power facility. One Power funding slider still
 covers every plant. Autonomous placement and an untouched `--simulate` run stay
 on the generic 100 MW plant, which adds no local tile pollution. Strict `ctest`
 in `build-strict` passed 590 tests. Playtest Python unit tests passed (7).
-Rendered playtests and hosted CI were not re-run. The active backlog is M39–M44
+Rendered playtests and hosted CI were not re-run. The active backlog is M43–M44
 in `ROADMAP.md`: finite landfill volume, school seats and hospital beds, local
 fire response, shoreline treatment, district height caps, and municipal bonds.
 Earlier entries below preserve the implementation history and the gates that
@@ -230,17 +285,20 @@ Quick performance smoke (headless):
 ## Current Priorities
 
 Phase 12 in `ROADMAP.md` is the queue. Implement in order. M17–M38 and
-waste-to-energy incinerators are done. M38 is local only: strict `ctest`
-passed 590 tests on October 17, 2026, and rendered playtests were not re-run.
+waste-to-energy incinerators are done. M39 is also implemented locally:
+strict Windows validation passed 598 C++ tests and all 35 rendered playtests
+on October 18, 2026. M40 is also implemented locally (604 C++ tests and 36 rendered tests);
+M41 and M42 are implemented locally; M43–M44 are next.
 
-1. **M39 Landfills that fill.** Garbage sites start with 80,000 units of
-   volume. Full sites stop accepting. Incinerators can burn stored waste.
-2. **M40 School seats and hospital beds.** Labor and illness keep today's
-   results when seats and beds cover demand. Past that, reach is no longer
-   the only limit.
-3. **M41 Local fire response.** With disasters on, station distance changes
+1. **M39 Landfills that fill.** Implemented locally. Garbage sites start
+   with 80,000 units of volume. Full sites stop accepting; spare incinerator
+   capacity burns stored waste. See `LANDFILLS.md`.
+2. **M40 School seats and hospital beds.** Implemented locally. Sufficient
+   capacity preserves the reach-only labor and M20 illness results. Shortages
+   constrain education and local hospital mitigation. See `CIVIC_CAPACITY.md`.
+3. **M41 Local fire response.** Implemented locally. With disasters on, station distance changes
    ignition, spread, and burn duration. Disasters stay off by default.
-4. **M42 Shoreline treatment.** A funded treatment plant covers sanitation
+4. **M42 Shoreline treatment.** Implemented locally. A funded treatment plant covers sanitation
    and does not cut intake capacity. Raw outlets stay available.
 5. **M43 District height caps.** A district can stop the redevelopment
    ladder at a chosen multiple. Uncapped districts match today.

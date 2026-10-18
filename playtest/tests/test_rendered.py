@@ -27,6 +27,247 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_shore_treatment_replacement_funding_and_checkpoint(self):
+        s = self.session
+        await s.city("new", 32)
+        for x in (10, 16):
+            await s.request("tool", {"action":"apply", "name":"road", "x1":x, "y1":5, "x2":x, "y2":12})
+        await s.city("save")
+        core_path = s.artifact("urban_sim_session.json.city.json")
+        core = json.loads(core_path.read_text())
+        for tile in core["tiles"]:
+            if tile["x"] in (12, 14):
+                tile["type"] = 2
+        core_path.write_text(json.dumps(core))
+        await s.city("load")
+        for service, x, y, shore in (("water",11,8,True), ("water",15,8,True),
+                                      ("sanitation",11,10,True), ("power",9,6,False)):
+            await s.request("tool", {"action":"apply", "name":"service", "service":service,
+                                     "x1":x, "y1":y, "surface_water":shore})
+        await s.request("tool", {"action":"apply", "name":"zone", "zone":"residential", "x1":9, "y1":8})
+        await s.request("time", {"action":"step", "ticks":20})
+        facilities = (await s.request("inspect", {"section":"facilities"}))["items"]
+        water = [f for f in facilities if f["type"] == "Water"]
+        self.assertEqual(len(water), 2)
+        self.assertLess(water[0]["source_clean_fraction"], 1.)
+        self.assertEqual(water[1]["source_clean_fraction"], 1.)
+        self.assertGreater(s.last_state["budget"]["service_coverage"][6], 0.)
+        # Select raw sanitation and cycle V to treatment, then buy at the raw site.
+        await s.request("tool", {"action":"select", "name":"service", "service":"sanitation", "surface_water":True})
+        await s.request("input", {"events":[{"type":"key", "key":"V"}]})
+        self.assertTrue(s.last_state["tools"]["sewage_treatment"])
+        await s.request("window", {"action":"resize", "width":800, "height":640})
+        await s.request("view", {"action":"projection", "projection":"top_down"})
+        await s.request("view", {"action":"camera", "tile_pixels":40, "view_x":3, "view_y":2})
+        point = await s.request("coordinates", {"direction":"tile_to_screen", "x":11, "y":10})
+        await s.request("input", {"events":[{"type":"move", "x":point["x"], "y":point["y"]}]})
+        self.assertEqual(s.last_state["preview"]["service"]["cost"], 9000)
+        self.assertTrue(s.last_state["preview"]["service"]["valid"])
+        await s.screenshot("shore-treatment-preview")
+        funds = s.last_state["funds"]
+        await s.request("input", {"events":[{"type":"down", "button":"left", "x":point["x"], "y":point["y"]},
+                                                           {"type":"up", "button":"left", "x":point["x"], "y":point["y"]}]})
+        self.assertEqual(s.last_state["funds"], funds - 9000)
+        await s.request("time", {"action":"step", "ticks":1})
+        facilities = (await s.request("inspect", {"section":"facilities"}))["items"]
+        self.assertEqual(len(facilities), 4)
+        treatment = next(f for f in facilities if f["type"] == "Sanitation")
+        self.assertTrue(treatment["sewage_treatment"])
+        self.assertEqual(treatment["name"], "Shore Treatment")
+        self.assertTrue(all(f["source_clean_fraction"] == 1. for f in facilities if f["type"] == "Water"))
+        self.assertEqual(s.last_state["budget"]["service_costs"][6], 34)
+        await s.request("input", {"events":[{"type":"key", "key":"Escape"}]})
+        await s.screenshot("shore-treatment-inspector")
+        await s.request("budget", {"action":"services"})
+        await s.screenshot("shore-treatment-sanitation-panel")
+        await s.request("budget", {"action":"close"})
+        await s.city("save")
+        frozen = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core_copy = s.artifact("treatment-checkpoint.city.json")
+        core_copy.write_bytes(Path(frozen["citySnapshot"]).read_bytes())
+        frozen["citySnapshot"] = str(core_copy)
+        checkpoint = s.artifact("treatment-checkpoint.json")
+        checkpoint.write_text(json.dumps(frozen))
+        await s.request("time", {"action":"step", "ticks":3})
+        await s.city("save")
+        expected = json.loads(s.artifact("urban_sim_session.json").read_text())
+        expected_core = json.loads(Path(expected["citySnapshot"]).read_text())
+        await s.city("load", import_path=str(checkpoint))
+        await s.request("time", {"action":"step", "ticks":3})
+        await s.city("save")
+        restored = json.loads(s.artifact("urban_sim_session.json").read_text())
+        self.assertEqual(json.loads(Path(restored["citySnapshot"]).read_text()), expected_core)
+        self.assertEqual({k:v for k,v in restored.items() if k != "citySnapshot"},
+                         {k:v for k,v in expected.items() if k != "citySnapshot"})
+        cli = Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest", "-cli"))
+        output = s.artifact("treatment-headless.json")
+        process = await asyncio.create_subprocess_exec(str(cli), "--simulate", "3",
+            "--simulate-session", str(checkpoint), "--simulate-session-out", str(output),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        _, stderr = await process.communicate()
+        self.assertEqual(process.returncode, 0, stderr.decode())
+        headless = json.loads(output.read_text())
+        self.assertEqual(json.loads(Path(headless["citySnapshot"]).read_text()), expected_core)
+        self.assertEqual({k:v for k,v in headless.items() if k != "citySnapshot"},
+                         {k:v for k,v in expected.items() if k != "citySnapshot"})
+        funding = [100] * 12
+        funding[6] = 0
+        await s.request("budget", {"action":"set_funding", "service_percent":funding})
+        await s.request("time", {"action":"step", "ticks":1})
+        self.assertEqual(s.last_state["budget"]["service_costs"][6], 0)
+        self.assertEqual(s.last_state["budget"]["service_coverage"][6], 0.)
+        facilities = (await s.request("inspect", {"section":"facilities"}))["items"]
+        self.assertTrue(all(f["source_clean_fraction"] == 1. for f in facilities if f["type"] == "Water"))
+        with self.assertRaises(PlaytestError):
+            await s.request("tool", {"action":"apply", "name":"service", "service":"water",
+                                     "surface_water":True, "sewage_treatment":True, "x1":11, "y1":9})
+
+    async def test_local_fire_response_distance_and_checkpoint(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action":"apply", "name":"road", "x1":6, "y1":16, "x2":26, "y2":16})
+        await s.request("tool", {"action":"apply", "name":"service", "service":"fire", "x1":8, "y1":15})
+        await s.request("time", {"action":"step", "ticks":1})
+        await s.city("save")
+        fixture = json.loads(s.artifact("urban_sim_session.json").read_text())
+        station = next(f for f in fixture["facilities"] if f["type"] == 0)
+        station["maxTravelDistance"] = 4
+        s.artifact("urban_sim_session.json").write_text(json.dumps(fixture))
+        await s.city("load")
+        values = []
+        for x in (8, 10, 12, 20):
+            d = await s.request("inspect", {"section":"diagnostics", "x":x, "y":17})
+            values.append(d["local_fire_response"])
+        for actual, expected in zip(values, (1., .6, .2, 0.)):
+            self.assertAlmostEqual(actual, expected, places=5)
+        await s.city("save")
+        await s.city("load")
+        restored = await s.request("inspect", {"section":"diagnostics", "x":10, "y":17})
+        self.assertAlmostEqual(restored["local_fire_response"], values[1], places=5)
+        await s.request("window", {"action":"resize", "width":800, "height":640})
+        await s.request("view", {"action":"projection", "projection":"top_down"})
+        await s.request("view", {"action":"camera", "tile_pixels":40, "view_x":3, "view_y":7})
+        point = await s.request("coordinates", {"direction":"tile_to_screen", "x":10, "y":17})
+        await s.request("input", {"events":[{"type":"move", "x":point["x"], "y":point["y"]}]})
+        await s.screenshot("local-fire-response-inspector")
+
+    async def test_school_seats_hospital_beds_funding_and_checkpoint(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        for service, x in (("power", 18), ("water", 20)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
+        for zone, y in (("residential", 15), ("commercial", 17)):
+            await s.request("tool", {"action": "apply", "name": "zone", "zone": zone, "x1": 6, "y1": y, "x2": 13, "y2": y})
+        await s.request("time", {"action": "step", "ticks": 20})
+        await s.city("save")
+        fixture = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        home = next(b for b in core["buildings"] if b["type"] == 1)
+        job = next(b for b in core["buildings"] if b["type"] == 2)
+        for b in core["buildings"]:
+            b["occupancy"] = 0
+        home["capacity"] = job["capacity"] = 10000
+        home["occupancy"] = job["occupancy"] = 5000
+        for group, size in zip(core["populationGroups"], (2500, 1750, 750)):
+            group["size"] = group["employed"] = size
+        core_path = s.artifact("civic-capacity.city.json")
+        core_path.write_text(json.dumps(core))
+        fixture["citySnapshot"] = str(core_path)
+        fixture["funds"] = 1000000
+        for kind, x in ((3, 14), (2, 16)):
+            fixture["facilities"].append({"type": kind, "x": x, "y": 15, "maxTravelDistance": 30, "quality": 1})
+        path = s.artifact("civic-capacity.json")
+        path.write_text(json.dumps(fixture))
+        await s.city("load", import_path=str(path))
+        await s.request("time", {"action": "step", "ticks": 1})
+        metrics = s.last_state["metrics"]
+        self.assertEqual(metrics["school_seats"], 800)
+        self.assertEqual(metrics["hospital_beds"], 400)
+        self.assertLess(metrics["effective_education_coverage"], metrics["education_coverage"])
+        self.assertLess(metrics["hospital_capacity_factor"], 1)
+        self.assertAlmostEqual(metrics["patient_demand"], s.last_state["population"] * metrics["illness_rate"], delta=.01)
+        await s.screenshot("civic-capacity-hud")
+        funding = [100] * 12
+        funding[2] = funding[3] = 50
+        await s.request("budget", {"action": "set_funding", "service_percent": funding})
+        self.assertEqual(s.last_state["metrics"]["school_seats"], 400)
+        self.assertEqual(s.last_state["metrics"]["hospital_beds"], 200)
+        await s.request("budget", {"action": "reset_funding"})
+        for service, x, y in (("education",14,17),("education",16,17),
+            ("health",15,15),("health",17,15),("health",19,15),("health",21,15),("health",22,15),
+            ("health",15,17),("health",17,17)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": y})
+        await s.request("time", {"action": "step", "ticks": 2})
+        metrics = s.last_state["metrics"]
+        self.assertEqual(metrics["effective_education_coverage"], metrics["education_coverage"])
+        self.assertEqual(metrics["hospital_capacity_factor"], 1)
+        await s.city("save")
+        await s.request("time", {"action": "step", "ticks": 2})
+        expected = s.last_state.copy()
+        await s.city("load")
+        await s.request("time", {"action": "step", "ticks": 2})
+        for key in ("population", "funds", "tick"):
+            self.assertEqual(s.last_state[key], expected[key])
+        for key in ("effective_education_coverage", "hospital_capacity_factor", "illness_rate"):
+            self.assertEqual(s.last_state["metrics"][key], expected["metrics"][key])
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 40, "view_x": 5, "view_y": 5})
+        point = await s.request("coordinates", {"direction": "tile_to_screen", "x": 14, "y": 15})
+        await s.request("input", {"events": [{"type": "move", "x": point["x"], "y": point["y"]}]})
+        await s.screenshot("civic-capacity-inspector")
+        await s.request("view", {"action": "toggle", "name": "compact_ui", "enabled": True})
+        await s.screenshot("civic-capacity-compact-hud")
+
+    async def test_landfill_full_alert_storage_and_incinerator_recovery(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        for service, x in (("power", 18), ("water", 20)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
+        for zone, y in (("residential", 15), ("commercial", 17)):
+            await s.request("tool", {"action": "apply", "name": "zone", "zone": zone, "x1": 6, "y1": y, "x2": 13, "y2": y})
+        await s.request("time", {"action": "step", "ticks": 20})
+        await s.city("save")
+        fixture = json.loads(s.artifact("urban_sim_session.json").read_text())
+        fixture["citySnapshot"] = str(s.artifact("urban_sim_session.json.city.json"))
+        fixture["funds"] = 100000
+        fixture["facilities"].append({"type": 7, "x": 16, "y": 15,
+            "maxTravelDistance": 30, "quality": 1, "landfillRemaining": 1})
+        path = s.artifact("landfill-fixture.json")
+        path.write_text(json.dumps(fixture))
+        await s.city("load", import_path=str(path))
+        sites = (await s.request("inspect", {"section": "facilities"}))["items"]
+        self.assertEqual(next(f for f in sites if f["type"] == "Garbage")["landfill_remaining"], 1)
+        await s.request("time", {"action": "step", "ticks": 3})
+        self.assertEqual(s.last_state["metrics"]["landfill_remaining"], 0)
+        await s.city("save")
+        checkpoint = json.loads(s.artifact("urban_sim_session.json").read_text())
+        self.assertTrue(checkpoint["cityAlerts"]["records"][5]["active"])
+        await s.city("load")
+        sites = (await s.request("inspect", {"section": "facilities"}))["items"]
+        self.assertEqual(next(f for f in sites if f["type"] == "Garbage")["landfill_remaining"], 0)
+        await s.request("input", {"events": [{"type": "key", "key": "F7"}]})
+        await s.screenshot("landfill-full-alert")
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        await s.request("budget", {"action": "services"})
+        await s.screenshot("landfill-budget-volume")
+        await s.request("budget", {"action": "close"})
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 40, "view_x": 7, "view_y": 5})
+        point = await s.request("coordinates", {"direction": "tile_to_screen", "x": 16, "y": 15})
+        await s.request("input", {"events": [{"type": "move", "x": point["x"], "y": point["y"]}]})
+        await s.screenshot("landfill-inspector")
+        await s.request("tool", {"action": "apply", "name": "service", "service": "incinerator", "x1": 22, "y1": 15})
+        await s.request("time", {"action": "step", "ticks": 2})
+        self.assertGreater(s.last_state["metrics"]["landfill_remaining"], 0)
+        self.assertGreater(s.last_state["metrics"]["waste_stored_incinerated"], 0)
+        self.assertGreater(s.last_state["metrics"]["waste_power_mw"], 0)
+        await s.city("save")
+        recovered = json.loads(s.artifact("urban_sim_session.json").read_text())
+        self.assertFalse(recovered["cityAlerts"]["records"][5]["active"])
+
     async def test_incinerator_native_purchase_fuel_funding_and_checkpoint(self):
         s = self.session
         await record(s, "start")

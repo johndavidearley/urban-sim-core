@@ -764,25 +764,25 @@ power and pollution totals.
 and a new radiation or meltdown system. Nuclear is high capacity and low air
 pollution only.
 
-### Milestone 39: Landfills that fill
+### Milestone 39: Landfills that fill — implemented locally
 
-`WasteSystem` balances each tick and drops the remainder. `landfilled` units
-do not occupy space. A garbage depot that collects 400 units a tick can do
-that for the life of the city. Incinerators burn only this tick's residual.
+Garbage facilities now retain occupied volume across ticks. Collection is
+limited by remaining space, and spare incinerator capacity can recover space
+by burning stored waste after current residual.
 
-- [ ] Each Garbage facility stores a remaining volume. New and auto-placed
+- [x] Each Garbage facility stores a remaining volume. New and auto-placed
       sites start at 80,000 units. Legacy saves start at that same volume.
       The volume is saved on the facility.
-- [ ] Recycle this tick's waste first, then burn residual up to incinerator
+- [x] Recycle this tick's waste first, then burn residual up to incinerator
       capacity, then burn stored waste with any burn capacity left, then put
       the rest into landfill volume. A full site adds no collection capacity.
       Waste that no site can take stays `uncollected` and keeps today's
       pollution and happiness penalties. Burning stock uses the existing
       0.02 MW per unit and the incinerator air-pollution term.
-- [ ] The inspector, budget waste line, and an F7 row show remaining volume
+- [x] The inspector, budget waste line, and an F7 row show remaining volume
       and the last completed fill rate. Reuse the M26 alert timing. Placing
       another landfill, or raising recycling or incineration, is the relief.
-- [ ] Default `--simulate` changes once a site fills. At 400 units a tick that
+- [x] Default `--simulate` changes once a site fills. At 400 units a tick that
       is 200 ticks. Short runs that never fill keep today's waste totals. A
       test forces a small volume and locks the stop, the stock burn, and the
       uncollected penalty.
@@ -793,28 +793,31 @@ A run that never fills reports the same recycled, burned, and landfilled counts
 as today.
 **Excluded:** waste export, a second waste graph, and imported incinerator fuel.
 
-### Milestone 40: School seats and hospital beds
+Local validation (October 18, 2026): strict Windows builds, 598 C++ tests,
+seven Python unit tests, and all 35 rendered playtests passed. See
+[LANDFILLS.md](LANDFILLS.md) for behavior, evidence, and validation limits.
 
-Education and health coverage are the share of buildings inside the road
-radius. One school on a long radius can move the whole labor mix. One hospital
-can supply the full illness reduction. Population groups stay citywide, so
-this milestone adds a city capacity in front of those existing formulas.
+### Milestone 40: School seats and hospital beds — implemented locally
 
-- [ ] A fully funded school has 800 student seats. A fully funded hospital has
+Education and health retain their road-reach fields, with derived city seats
+and beds constraining education and local hospital mitigation. Population
+groups remain citywide; there are no individual student or patient assignments.
+
+- [x] A fully funded school has 800 student seats. A fully funded hospital has
       400 beds. Funding scales seats and beds the way it scales utility supply.
       Zero funding contributes none.
-- [ ] School-age demand is 20% of housed population. The labor lerp uses
+- [x] School-age demand is 20% of housed population. The labor lerp uses
       `min(education reach, seats / school-age demand)`. When seats cover
       demand, the housed and employed splits match today's reach-only result.
       Zero seats keeps the uneducated `{50, 35, 15}` baseline.
-- [ ] Patient demand is housed population times the city illness rate, with a
+- [x] Patient demand is housed population times the city illness rate, with a
       floor of one whenever illness is above zero. Hospital mitigation, including
       the M20 local hospital-distance benefit, scales by
       `min(1, beds / patient demand)`. Sufficient beds leave M20 rates unchanged.
-- [ ] The HUD and the tile inspector show seats used, beds used, and which
+- [x] The HUD and the tile inspector show seats used, beds used, and which
       limit binds, reach or capacity. Both hosts share the formula. Saves do
       not need a new seat field; seats are derived from funded facilities.
-- [ ] Default `--simulate` changes when residents exceed seats or beds. A test
+- [x] Default `--simulate` changes when residents exceed seats or beds. A test
       with capacity forced above demand matches the current labor split and
       illness rate.
 
@@ -825,23 +828,26 @@ that has spare capacity and a short road radius.
 **Excluded:** per-student assignment, school catchment maps, and a new
 education or hospital zone.
 
-### Milestone 41: Local fire response
+Local validation (October 18, 2026): strict Windows builds, 604 C++ tests,
+seven Python unit tests and all 36 rendered playtests passed. See
+[CIVIC_CAPACITY.md](CIVIC_CAPACITY.md) for formulas, evidence and limits.
 
-With disasters on, ignition chance, spread chance, and burn duration all use
-one citywide `fireCoverage` fraction. Police and hospitals already use cached
-road distance per building. Fire does not.
+### Milestone 41: Local fire response — implemented locally
 
-- [ ] When disasters are on, a building's ignition, spread, and burn duration
+Fire response now uses cached road distance per building. See
+[LOCAL_FIRE_RESPONSE.md](LOCAL_FIRE_RESPONSE.md).
+
+- [x] When disasters are on, a building's ignition, spread, and burn duration
       use the cached fire-station distance, with the same distance falloff
       NeighborhoodSystem uses for police. The citywide fraction stays on the
       HUD and remains the fallback when no station exists.
-- [ ] A station next to a building suppresses more than a station at the edge
+- [x] A station next to a building suppresses more than a station at the edge
       of the radius. Buildings outside every station radius keep the current
       no-coverage chance.
-- [ ] Both hosts. The inspector shows local fire reach. Disasters stay off by
+- [x] Both hosts. The inspector shows local fire reach. Disasters stay off by
       default, so a normal `--simulate` run is unchanged. With the flag on,
       where fires start and how long they burn follows station placement.
-- [ ] No second BFS. Read `ServiceCoverageCache`.
+- [x] No second BFS. Read `ServiceCoverageCache`.
 
 **Acceptance:** On one seed with disasters on, a block beside a fire station
 loses fewer buildings than an otherwise similar block outside the radius. The
@@ -850,25 +856,23 @@ matches today's city.
 **Excluded:** per-truck dispatch, which stays in `TrafficMicroSim`, fire boats,
 and a separate fire graph.
 
-### Milestone 42: Shoreline treatment
+### Milestone 42: Shoreline treatment — implemented locally
 
-An M37 raw sewage outlet covers sanitation and cuts nearby intake capacity on
-the same water body, out to 12 orthogonal water hops. The inland sanitation
-plant does not discharge, and it does not replace an outlet in place. There
-is no treatment mode.
+Shoreline sanitation now supports raw outlets and clean treatment. See
+[SHORELINE_TREATMENT.md](SHORELINE_TREATMENT.md).
 
-- [ ] Sanitation gains a shoreline treatment mode. It uses the M37 shore,
+- [x] Sanitation gains a shoreline treatment mode. It uses the M37 shore,
       road, and utility checks. Construction is $9,000 and enabled upkeep is
       $34/tick, above the inland plant's $7,000 and $26. It provides
       sanitation coverage and adds no contamination.
-- [ ] Replacing a raw outlet with treatment removes that outlet's exposure.
+- [x] Replacing a raw outlet with treatment removes that outlet's exposure.
       Intakes on that water body recover capacity on the next service pass.
       A different water body is unchanged. Zero funding closes the plant:
       no coverage and no discharge.
-- [ ] The cleanliness preview, inspector, and sanitation panel show treated
+- [x] The cleanliness preview, inspector, and sanitation panel show treated
       versus raw. Legacy raw outlets and inland plants keep their costs and
       behavior. Old saves gain no treatment plant.
-- [ ] Default `--simulate` is unchanged until a treatment plant exists.
+- [x] Default `--simulate` is unchanged until a treatment plant exists.
 
 **Acceptance:** A raw outlet that cuts an intake, once replaced by a funded
 treatment plant, no longer cuts it. An unfunded treatment plant covers

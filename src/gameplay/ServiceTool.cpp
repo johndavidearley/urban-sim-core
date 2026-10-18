@@ -17,10 +17,10 @@ PowerPlantSpec ServiceTool::powerPlant(PowerSourceType source) {
   }
 }
 
-int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater, PowerSourceType source) {
+int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater, PowerSourceType source, bool sewageTreatment) {
   if (type == ServiceType::Power) return powerPlant(source).constructionCost;
   if (surfaceWater && type == ServiceType::Water) return 3000;
-  if (surfaceWater && type == ServiceType::Sanitation) return 2000;
+  if (surfaceWater && type == ServiceType::Sanitation) return sewageTreatment ? 9000 : 2000;
   switch (type) {
     case ServiceType::Fire: return 5000;
     case ServiceType::Police: return 4500;
@@ -38,10 +38,10 @@ int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater, Power
   }
 }
 
-int64_t ServiceTool::operatingCostPerTick(ServiceType type, bool surfaceWater, PowerSourceType source) {
+int64_t ServiceTool::operatingCostPerTick(ServiceType type, bool surfaceWater, PowerSourceType source, bool sewageTreatment) {
   if (type == ServiceType::Power) return powerPlant(source).operatingCost;
   if (surfaceWater && type == ServiceType::Water) return 12;
-  if (surfaceWater && type == ServiceType::Sanitation) return 8;
+  if (surfaceWater && type == ServiceType::Sanitation) return sewageTreatment ? 34 : 8;
   switch (type) {
     case ServiceType::Fire: return 25;
     case ServiceType::Police: return 22;
@@ -94,6 +94,11 @@ ServicePlan ServiceTool::plan(
     : coverageDistance(type);
   result.facility = ServiceFacility{type, position, range, 1.0f};
   result.facility.surfaceWater = options.surfaceWater;
+  result.facility.sewageTreatment = options.sewageTreatment;
+  if (options.sewageTreatment && (!options.surfaceWater || type != ServiceType::Sanitation)) {
+    result.error = "treatment requires shoreline Sanitation";
+    return result;
+  }
   const PowerPlantSpec plant = powerPlant(options.powerSource);
   if (type == ServiceType::Power) {
     result.facility.powerSource = options.powerSource;
@@ -101,7 +106,7 @@ ServicePlan ServiceTool::plan(
     result.facility.emissionsKgPerMWh = plant.emissionsKgPerMWh;
     result.cost = plant.constructionCost;
   } else {
-    result.cost = constructionCost(type, options.surfaceWater);
+    result.cost = constructionCost(type, options.surfaceWater, options.powerSource, options.sewageTreatment);
   }
   if (options.surfaceWater && type != ServiceType::Water && type != ServiceType::Sanitation) {
     result.error = "surface water mode requires Water or Sanitation";
@@ -138,6 +143,9 @@ ServicePlan ServiceTool::plan(
       }
       for (const ServiceFacility& facility : facilities) {
         if (facilityCoversTile(facility, cell)) {
+          // A paid treatment replacement reuses a raw outlet site.
+          if (options.sewageTreatment && facility.type == ServiceType::Sanitation &&
+              facility.surfaceWater && !facility.sewageTreatment && facility.position == position) continue;
           result.error = "site already has a service";
           return result;
         }
@@ -155,7 +163,7 @@ ServicePlan ServiceTool::plan(
     if (!shoreline) {
       result.error = type == ServiceType::Power
         ? "hydro plant requires land beside a lake or river"
-        : "intake / sewage outlet requires land beside a lake or river";
+        : "intake / sewage facility requires land beside a lake or river";
       return result;
     }
   }
@@ -193,7 +201,12 @@ bool ServiceTool::build(
   if (!current.valid || current.cost != plan.cost) {
     return false;
   }
-  facilities.push_back(current.facility);
+  auto raw = std::find_if(facilities.begin(), facilities.end(), [&](const auto& facility) {
+    return current.facility.sewageTreatment && facility.type == ServiceType::Sanitation &&
+      facility.surfaceWater && !facility.sewageTreatment && facility.position == current.facility.position;
+  });
+  if (raw != facilities.end()) *raw = current.facility;
+  else facilities.push_back(current.facility);
   // Civic sites are not entities. Leaving old zoning here lets the next growth
   // tick spawn a private building beneath the newly purchased facility.
   const int span = facilityFootprintSpan(current.facility);

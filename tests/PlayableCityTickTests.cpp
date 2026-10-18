@@ -811,7 +811,7 @@ TEST(PlayableCityTickTests, FundingChangesReachCapacityAndBillsWithoutMutatingFa
     map.getTile(c).buildingId = store.createBuilding(BuildingType::Residential, c, 40);
   }
   PopulationSystem::allocate(store, population, 40, 1);
-  const std::vector<ServiceFacility> facilities{
+  std::vector<ServiceFacility> facilities{
     {ServiceType::Fire, {4,15}, 24, 1.f}, {ServiceType::Power, {14,15}, 30, 1.f},
     {ServiceType::Water, {15,15}, 30, 1.f}, {ServiceType::Garbage, {6,15}, 24, 1.f},
     {ServiceType::Cemetery, {7,15}, 24, 1.f}};
@@ -915,7 +915,7 @@ TEST(PlayableCityTickTests, AlertsUseCompletedLedgerAndIgnorePausedRefresh) {
   CityMap map({24,24}); RoadNetwork roads(map); EntityStore store; PopulationStore population;
   PlayableCityTickState state;
   PlayableCityTickOptions options; options.growthChance = 0;
-  const std::vector<ServiceFacility> facilities{{ServiceType::Fire,{12,12},12,1.f}};
+  std::vector<ServiceFacility> facilities{{ServiceType::Fire,{12,12},12,1.f}};
   int64_t funds = 10000;
   for (int i = 0; i < 3; ++i) playableCityTick(map,roads,store,population,facilities,state,funds,options);
   EXPECT_TRUE(state.alerts.records[4].active);
@@ -947,4 +947,87 @@ TEST(PlayableCityTickTests, BusFleetCostsAreBilledAndUsageIsCompletedTickState) 
   playableCityTick(map,roads,store,population,{},state,funds,options);
   EXPECT_EQ(state.treasuryLedger.breakdown.expenses[3],0);
   EXPECT_EQ(state.transitReport.routes[0].capacity,0u);
+}
+
+TEST(PlayableCityTickTests, LandfillAdvancesOnceAndPausedRefreshPreservesVolume) {
+  CityMap map({24,24}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  laySpine(map,roads);
+  const Coord house{10,11};
+  Zoning::applyZoneRect(map,house,house,ZoneType::Residential);
+  map.getTile(house).buildingId=store.createBuilding(BuildingType::Residential,house,100);
+  PopulationSystem::allocate(store,people,80,1u);
+  std::vector<ServiceFacility> facilities{{ServiceType::Garbage,{11,11},20,1.f}};
+  facilities[0].landfillRemaining=1;
+  PlayableCityTickState state; PlayableCityTickOptions options;
+  options.requireUtilities=false; options.growthChance=0.f; options.enableTransit=false;
+  int64_t funds=10000;
+  playableCityTick(map,roads,store,people,facilities,state,funds,options);
+  ASSERT_GT(state.waste.generated,0);
+  EXPECT_EQ(facilities[0].landfillRemaining,0);
+  EXPECT_EQ(facilities[0].landfillLastFill,1);
+  EXPECT_EQ(state.waste.landfilled,1);
+  EXPECT_GT(state.waste.uncollected,0);
+  const auto tick=state.tick;
+  refreshDerivedCityState(map,roads,store,people,facilities,state,{});
+  refreshDerivedCityState(map,roads,store,people,facilities,state,{});
+  EXPECT_EQ(state.tick,tick);
+  EXPECT_EQ(facilities[0].landfillRemaining,0);
+  EXPECT_EQ(facilities[0].landfillLastFill,1);
+}
+
+TEST(PlayableCityTickTests, CivicCapacitiesDriveEducationLagAndSurviveReadOnlyRefresh) {
+  CityMap map({24,24}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  laySpine(map,roads);
+  const auto home=store.createBuilding(BuildingType::Residential,{10,11},10000);
+  const auto office=store.createBuilding(BuildingType::Office,{12,11},10000);
+  map.getTile({10,11}).buildingId=home; map.getTile({12,11}).buildingId=office;
+  PopulationSystem::allocate(store,people,6000,1u);
+  std::vector<ServiceFacility> facilities{{ServiceType::Education,{14,11},32,1.f},
+    {ServiceType::Health,{16,11},32,1.f}};
+  PlayableCityTickState state; int64_t funds=1000000;
+  PlayableCityTickOptions options; options.requireUtilities=false; options.growthChance=0.f;
+  options.enableTransit=false; options.refreshPollution=false; options.updateLandValues=false;
+  playableCityTick(map,roads,store,people,facilities,state,funds,options);
+  EXPECT_FLOAT_EQ(state.serviceSummary.schoolSeats,800.f);
+  EXPECT_LT(state.laggedEducationCoverage,state.serviceSummary.educationCoverage);
+  EXPECT_FLOAT_EQ(state.laggedEducationCoverage,state.serviceSummary.effectiveEducationCoverage);
+  EXPECT_LT(state.serviceSummary.hospitalCapacityFactor,1.f);
+  const auto lag=state.laggedEducationCoverage;
+  const auto tick=state.tick;
+  state.budgetPolicy.servicePercent[3]=state.budgetPolicy.servicePercent[2]=0;
+  refreshDerivedCityState(map,roads,store,people,facilities,state,{});
+  EXPECT_EQ(state.tick,tick);
+  EXPECT_FLOAT_EQ(state.laggedEducationCoverage,lag);
+  EXPECT_FLOAT_EQ(state.serviceSummary.schoolSeats,0.f);
+  EXPECT_FLOAT_EQ(state.serviceSummary.hospitalBeds,0.f);
+  EXPECT_FLOAT_EQ(state.serviceSummary.effectiveEducationCoverage,0.f);
+}
+
+TEST(PlayableCityTickTests, LocalFireStationProtectsNearbyHomeButNotUncoveredHome) {
+  CityMap map({24, 24});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore population;
+  laySpine(map, roads);
+  const auto near = store.createBuilding(BuildingType::Residential, {5, 13}, 16);
+  const auto far = store.createBuilding(BuildingType::Residential, {18, 13}, 16);
+  map.getTile({5, 13}).buildingId = near;
+  map.getTile({18, 13}).buildingId = far;
+  PopulationSystem::allocate(store, population, 32, 1);
+  std::vector<ServiceFacility> facilities{{ServiceType::Fire, {5, 11}, 4}};
+  PlayableCityTickState state;
+  PlayableCityTickOptions options;
+  options.growthChance = 0.f;
+  options.requireUtilities = false;
+  options.enableDisasters = true;
+  options.fireParams.baseIgnitionChance = 1.f;
+  options.fireParams.coverageIgnitionReduction = 1.f;
+  options.fireParams.spreadChance = 0.f;
+  options.disasterParams.earthquakeChancePerTick = 0.f;
+  options.disasterParams.floodChancePerTick = 0.f;
+  int64_t funds = 50000;
+  playableCityTick(map, roads, store, population, facilities, state, funds, options);
+  EXPECT_NE(store.getBuilding(near), nullptr);
+  EXPECT_EQ(store.getBuilding(far), nullptr);
+  EXPECT_EQ(state.disasters.fire.buildingsDestroyed, 1u);
 }

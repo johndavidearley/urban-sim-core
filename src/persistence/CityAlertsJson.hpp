@@ -19,7 +19,9 @@ inline nlohmann::json cityAlertsJson(const CityAlerts& alerts) {
     {"power_coverage", v.powerCoverage}, {"power_supply", v.powerSupply},
     {"water_coverage", v.waterCoverage}, {"water_supply", v.waterSupply},
     {"unemployment", v.unemployment}, {"service_coverage", v.serviceCoverage},
-    {"revenue", v.revenue}, {"expenses", v.expenses}}}};
+    {"revenue", v.revenue}, {"expenses", v.expenses},
+    {"full_landfills", v.fullLandfills}, {"landfill_x", v.landfillX}, {"landfill_y", v.landfillY},
+    {"landfill_remaining", v.landfillRemaining}, {"landfill_fill_rate", v.landfillFillRate}}}};
 }
 inline CityAlerts parseCityAlerts(const nlohmann::json& root, uint32_t tick) {
   auto integer = [](const nlohmann::json& value, uint64_t maximum) -> uint64_t {
@@ -50,11 +52,20 @@ inline CityAlerts parseCityAlerts(const nlohmann::json& root, uint32_t tick) {
   v.unemployment = ratio("unemployment"); v.serviceCoverage = ratio("service_coverage");
   v.revenue = static_cast<int64_t>(integer(values.at("revenue"), INT64_MAX));
   v.expenses = static_cast<int64_t>(integer(values.at("expenses"), INT64_MAX));
+  v.fullLandfills = static_cast<uint32_t>(integer(values.value("full_landfills", nlohmann::json(0)), UINT32_MAX));
+  v.landfillX = values.value("landfill_x", 0);
+  v.landfillY = values.value("landfill_y", 0);
+  v.landfillRemaining = static_cast<int64_t>(integer(values.value("landfill_remaining", nlohmann::json(0)), INT64_MAX));
+  const auto fill = values.value("landfill_fill_rate", nlohmann::json(0));
+  if (!fill.is_number_integer()) throw std::runtime_error("Invalid landfill fill rate");
+  v.landfillFillRate = fill.get<int64_t>();
   const auto& rows = root.at("records");
-  if (!rows.is_array() || rows.size() != result.records.size())
+  if (!rows.is_array() || (rows.size() != result.records.size() && rows.size() != 5))
     throw std::runtime_error("Invalid city alert count");
   for (size_t i = 0; i < rows.size(); ++i) {
     const auto& row = rows[i]; auto& r = result.records[i];
+    if (row.at("name").get<std::string>() != CityAlerts::name(i))
+      throw std::runtime_error("Invalid city alert ordering");
     r.active = row.at("active").get<bool>();
     r.badTicks = static_cast<uint32_t>(integer(row.at("bad_ticks"), 3));
     r.goodTicks = static_cast<uint32_t>(integer(row.at("good_ticks"), 2));

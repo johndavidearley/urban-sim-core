@@ -784,3 +784,76 @@ TEST(GameplaySessionSystemTests, LegacyBudgetHistoryDefaultsNewDepartmentToFullF
   ASSERT_EQ(parsed.samples.size(), 1u);
   EXPECT_EQ(parsed.samples[0].policy.servicePercent[11], 100);
 }
+
+TEST(CityAlertsTests, FullLandfillUsesExistingDebounceAndLegacyAlertsLoad) {
+  CityAlerts alerts; CityAlertInputs inputs;
+  inputs.fullLandfills = 1; inputs.landfillX = 3; inputs.landfillY = 4;
+  for (uint32_t t = 1; t <= 2; ++t) alerts.update(t, inputs);
+  EXPECT_FALSE(alerts.records[5].active);
+  alerts.update(3, inputs);
+  EXPECT_TRUE(alerts.records[5].active);
+  auto saved = cityAlertsJson(alerts);
+  EXPECT_EQ(cityAlertsJson(parseCityAlerts(saved,3)), saved);
+  inputs.fullLandfills = 0;
+  alerts.update(4, inputs); EXPECT_TRUE(alerts.records[5].active);
+  alerts.update(5, inputs); EXPECT_FALSE(alerts.records[5].active);
+  saved["records"].erase(5);
+  EXPECT_FALSE(parseCityAlerts(saved,3).records[5].active);
+}
+
+TEST(GameplaySessionSystemTests, LandfillVolumeRoundTripsAndLegacyStartsEmpty) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  GameplaySessionState state;
+  state.facilities.push_back({ServiceType::Garbage,{2,2},10,1.f});
+  state.facilities[0].landfillRemaining = 123;
+  state.facilities[0].landfillLastFill = -20;
+  const auto path = std::filesystem::temp_directory_path()/"urban_landfill_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store, people, state));
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  ASSERT_EQ(loaded.facilities.size(), 1u);
+  EXPECT_EQ(loaded.facilities[0].landfillRemaining, 123);
+  EXPECT_EQ(loaded.facilities[0].landfillLastFill, -20);
+  nlohmann::json root; {std::ifstream in(path); in >> root;}
+  root["facilities"][0]["landfillRemaining"] = -1;
+  {std::ofstream out(path); out << root;}
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  EXPECT_EQ(loaded.facilities[0].landfillRemaining, 123);
+  root["facilities"][0].erase("landfillRemaining");
+  root["facilities"][0].erase("landfillLastFill");
+  {std::ofstream out(path); out << root;}
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  EXPECT_EQ(loaded.facilities[0].landfillRemaining, 80000);
+  EXPECT_EQ(loaded.facilities[0].landfillLastFill, 0);
+  std::filesystem::remove(path); std::filesystem::remove(path.string()+".city.json");
+}
+
+TEST(GameplaySessionSystemTests, TreatmentRoundTripLegacyDefaultAndInvalidModeAreAtomic) {
+  CityMap map({16,16}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  map.getTile({8,6}).type=2; roads.buildRoad({6,6},{6,7});
+  GameplaySessionState session;
+  ServiceFacility treatment{ServiceType::Sanitation,{7,6},18,1.f};
+  treatment.surfaceWater=true; treatment.sewageTreatment=true; session.facilities={treatment};
+  const auto path=std::filesystem::temp_directory_path()/"urban_treatment_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(),map,roads,store,people,session));
+  nlohmann::json valid; {std::ifstream input(path); input>>valid;}
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  ASSERT_EQ(loaded.facilities.size(),1u);
+  EXPECT_TRUE(loaded.facilities[0].sewageTreatment);
+  auto invalid=valid; invalid["facilities"][0]["surfaceWater"]=false;
+  {std::ofstream output(path);output<<invalid;}
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_TRUE(loaded.facilities[0].sewageTreatment);
+  EXPECT_EQ(map.getTile({8,6}).type,2);
+  invalid=valid; invalid["facilities"][0]["type"]=5;
+  {std::ofstream output(path);output<<invalid;}
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_TRUE(loaded.facilities[0].sewageTreatment);
+  valid["facilities"][0].erase("sewageTreatment");
+  {std::ofstream output(path);output<<valid;}
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_FALSE(loaded.facilities[0].sewageTreatment);
+  EXPECT_EQ(BudgetPolicy{}.serviceCost(loaded.facilities),8);
+  std::filesystem::remove(path);std::filesystem::remove(path.string()+".city.json");
+}

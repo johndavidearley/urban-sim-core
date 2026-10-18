@@ -377,3 +377,22 @@ TEST(PopulationStoreTests, ImportedIdsRemainReservedForNewGroups) {
   EXPECT_GT(created, imported);
   EXPECT_EQ(population.getTotalPopulation(), 30u);
 }
+
+#include "src/systems/ServiceSystem.hpp"
+
+TEST(PopulationSystemTests, SchoolSeatLimitReducesOfficeShareAndSpareSeatsMatchReach) {
+  auto allocate = [](float seats) {
+    EntityStore store; PopulationStore people;
+    store.createBuilding(BuildingType::Residential,{1,1},10000);
+    store.createBuilding(BuildingType::Office,{2,1},10000);
+    store.createBuilding(BuildingType::Commercial,{3,1},10000);
+    store.createBuilding(BuildingType::Industrial,{4,1},10000);
+    ServiceCoverageSummary service; service.schoolSeats=seats; service.educationCoverage=1.f;
+    ServiceSystem::applyCivicCapacity(service,10000,0.f);
+    PopulationSystem::allocate(store,people,10000,7,service.effectiveEducationCoverage);
+    return occupancyByType(store,BuildingType::Office);
+  };
+  EXPECT_LT(allocate(800.f),allocate(2000.f));
+  EXPECT_EQ(allocate(2000.f),allocate(100000.f));
+  EXPECT_LT(allocate(0.f),allocate(800.f));
+}

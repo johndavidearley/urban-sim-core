@@ -6,7 +6,7 @@
 #include <cstdint>
 
 // Stable ordering for saves, diagnostics and native alert actions.
-enum class CityAlertType : size_t { Power, Water, Unemployment, Services, Budget };
+enum class CityAlertType : size_t { Power, Water, Unemployment, Services, Budget, Landfill };
 struct CityAlertRecord {
   bool active = false;
   uint32_t badTicks = 0;
@@ -26,19 +26,24 @@ struct CityAlertInputs {
   float serviceCoverage = 1.f;
   int64_t revenue = 0;
   int64_t expenses = 0;
+  uint32_t fullLandfills = 0;
+  int landfillX = 0;
+  int landfillY = 0;
+  int64_t landfillRemaining = 0;
+  int64_t landfillFillRate = 0;
 };
 struct CityAlerts {
   static constexpr uint32_t cooldown = 60;
   uint32_t checkedTick = 0;
   CityAlertInputs inputs;
-  std::array<CityAlertRecord, 5> records{};
+  std::array<CityAlertRecord, 6> records{};
   static const char* name(size_t i) {
-    const char* names[] = {"POWER SHORTAGE", "WATER SHORTAGE", "UNEMPLOYMENT", "SERVICE GAPS", "BUDGET DEFICIT"};
-    return i < 5 ? names[i] : "UNKNOWN";
+    const char* names[] = {"POWER SHORTAGE", "WATER SHORTAGE", "UNEMPLOYMENT", "SERVICE GAPS", "BUDGET DEFICIT", "LANDFILL FULL"};
+    return i < 6 ? names[i] : "UNKNOWN";
   }
   static const char* action(size_t i) {
-    const char* actions[] = {"SERVICE OVERLAY", "SERVICE OVERLAY", "DEMAND OVERLAY", "SERVICE OVERLAY", "TAXES AND BUDGET"};
-    return i < 5 ? actions[i] : "UNKNOWN";
+    const char* actions[] = {"SERVICE OVERLAY", "SERVICE OVERLAY", "DEMAND OVERLAY", "SERVICE OVERLAY", "TAXES AND BUDGET", "WASTE SERVICES"};
+    return i < 6 ? actions[i] : "UNKNOWN";
   }
   void update(uint32_t tick, const CityAlertInputs& next) {
     if (tick <= checkedTick) return;
@@ -47,12 +52,12 @@ struct CityAlerts {
     const float power = std::min(next.powerCoverage, next.powerSupply);
     const float water = std::min(next.waterCoverage, next.waterSupply);
     const bool utility = next.hasBuildings && next.requireUtilities;
-    const std::array<bool, 5> bad{{utility && power < .95f, utility && water < .95f,
+    const std::array<bool, 6> bad{{utility && power < .95f, utility && water < .95f,
       next.hasResidents && next.unemployment > .20f,
-      next.hasBuildings && next.serviceCoverage < .50f, next.expenses > next.revenue}};
-    const std::array<bool, 5> good{{!utility || power >= .99f, !utility || water >= .99f,
+      next.hasBuildings && next.serviceCoverage < .50f, next.expenses > next.revenue, next.fullLandfills > 0}};
+    const std::array<bool, 6> good{{!utility || power >= .99f, !utility || water >= .99f,
       !next.hasResidents || next.unemployment <= .15f,
-      !next.hasBuildings || next.serviceCoverage >= .65f, next.expenses <= next.revenue}};
+      !next.hasBuildings || next.serviceCoverage >= .65f, next.expenses <= next.revenue, next.fullLandfills == 0}};
     for (size_t i = 0; i < records.size(); ++i) {
       auto& r = records[i];
       r.badTicks = bad[i] ? std::min(3u, r.badTicks + 1) : 0;

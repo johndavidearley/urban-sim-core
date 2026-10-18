@@ -23,16 +23,31 @@ void destroyBuildingAt(CityMap& map, EntityStore& store, Coord pos) {
 
 } // namespace
 
+float FireSystem::responseAt(const RoadNetwork& roads, const ServiceCoverageCache& cache,
+    Coord position, float fallbackCoverage) {
+  const bool hasStation = std::any_of(cache.entries.begin(), cache.entries.end(),
+    [](const auto& entry) { return entry.type == ServiceType::Fire; });
+  if (!hasStation) return std::clamp(fallbackCoverage, 0.f, 1.f);
+  Coord anchor;
+  return roads.resolveRoadAnchor(position, anchor)
+    ? ServiceSystem::coverageStrength(cache, ServiceType::Fire, anchor) : 0.f;
+}
+
 FireSummary FireSystem::step(
   CityMap& map,
   EntityStore& store,
   std::vector<BurningTile>& burning,
   float fireCoverage,
   uint32_t seed,
-  const FireParams& params
+  const FireParams& params,
+  const RoadNetwork* roads,
+  const ServiceCoverageCache* cache
 ) {
   FireSummary summary;
   const float coverage = std::clamp(fireCoverage, 0.0f, 1.0f);
+  const auto response = [&](Coord position) {
+    return roads && cache ? responseAt(*roads, *cache, position, coverage) : coverage;
+  };
   DeterministicRandom rng(seed);
 
   // Fixed order for determinism: burning tiles sorted by position.
@@ -48,7 +63,6 @@ FireSummary FireSystem::step(
   }
 
   // Phase 1: spread from existing fires to adjacent occupied, non-burning tiles.
-  const float spreadChance = params.spreadChance * (1.0f - coverage * params.coverageSpreadReduction);
   std::vector<Coord> ignitedThisStep;
   std::unordered_set<Coord, Vec2HashLocal> ignitedSet;
   for (const BurningTile& bt : sortedBurning) {
@@ -61,6 +75,7 @@ FireSummary FireSystem::step(
       if (alreadyBurning.count(n) != 0 || ignitedSet.count(n) != 0) continue;
       const Tile& nt = map.getTile(n);
       if (nt.buildingId == EntityIdUtils::NullEntity) continue;
+      const float spreadChance = params.spreadChance * (1.f - response(n) * params.coverageSpreadReduction);
       if (rng.chance(std::max(0.0f, spreadChance))) {
         ignitedThisStep.push_back(n);
         ignitedSet.insert(n);
@@ -86,7 +101,7 @@ FireSummary FireSystem::step(
     }
     const float pollution = std::clamp(map.pollution(b->position), 0.0f, 1.0f);
     risk *= (1.0f + pollution * params.pollutionRiskMultiplier);
-    risk *= (1.0f - coverage * params.coverageIgnitionReduction);
+    risk *= (1.0f - response(b->position) * params.coverageIgnitionReduction);
     if (rng.chance(std::max(0.0f, risk))) {
       ignitedThisStep.push_back(b->position);
       ignitedSet.insert(b->position);
@@ -96,8 +111,6 @@ FireSummary FireSystem::step(
   // Phase 3: apply ignitions - the structure is destroyed immediately, the
   // tile keeps burning (posing further spread risk) for a coverage-shortened
   // duration.
-  const int duration = std::max(1, static_cast<int>(
-    std::lround(static_cast<double>(params.baseDuration) * (1.0 - static_cast<double>(coverage) * params.coverageDurationReduction))));
   for (const Coord& c : ignitedThisStep) {
     destroyBuildingAt(map, store, c);
   }
@@ -114,6 +127,9 @@ FireSummary FireSystem::step(
     }
   }
   for (const Coord& c : ignitedThisStep) {
+    const int duration = std::max(1, static_cast<int>(std::lround(
+      static_cast<double>(params.baseDuration) *
+      (1.0 - static_cast<double>(response(c)) * params.coverageDurationReduction))));
     next.push_back({c, duration});
   }
 

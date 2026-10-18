@@ -77,6 +77,7 @@ void evaluateHealthAndCrime(const CityMap &map, const RoadNetwork &roads,
       state.economy.averageLandValue, tickResPollution);
   state.illnessRate = local.illnessRate;
   state.crimeRate = local.crimeRate;
+  ServiceSystem::applyCivicCapacity(state.serviceSummary, pop, state.illnessRate);
 }
 
 }  // namespace
@@ -113,6 +114,7 @@ void refreshDerivedCityState(
   if (!ServiceSystem::isCacheValid(roads, facilities, state.serviceCache)) {
     ServiceSystem::buildCache(roads, facilities, state.serviceCache);
   }
+  ServiceSystem::refreshWasteStorage(baseFacilities, state.serviceCache);
   city_sim::updateUtilityConnectivity(
     map, roads, store, state.serviceCache, ax0, ay0, ax1, ay1, pool);
 
@@ -227,6 +229,7 @@ void refreshDerivedCityState(
     const auto local = NeighborhoodSystem::summarize(store);
     state.illnessRate = local.illnessRate;
     state.crimeRate = local.crimeRate;
+    ServiceSystem::applyCivicCapacity(state.serviceSummary, population.getTotalPopulation(), state.illnessRate);
   } else {
     evaluateHealthAndCrime(map, roads, store, population, state);
   }
@@ -237,7 +240,7 @@ void playableCityTick(
   RoadNetwork& roads,
   EntityStore& store,
   PopulationStore& population,
-  const std::vector<ServiceFacility>& baseFacilities,
+  std::vector<ServiceFacility>& baseFacilities,
   PlayableCityTickState& state,
   int64_t& funds,
   const PlayableCityTickOptions& options
@@ -270,6 +273,7 @@ void playableCityTick(
   if (!ServiceSystem::isCacheValid(roads, facilities, state.serviceCache)) {
     ServiceSystem::buildCache(roads, facilities, state.serviceCache);
   }
+  ServiceSystem::refreshWasteStorage(baseFacilities, state.serviceCache);
   city_sim::updateUtilityConnectivity(
     map, roads, store, state.serviceCache, ax0, ay0, ax1, ay1, pool);
 
@@ -323,7 +327,7 @@ void playableCityTick(
     auto& events = state.disasters;
     events.fire = FireSystem::step(map, store, events.burningTiles,
                                    state.serviceSummary.fireCoverage,
-                                   tickSeed + 6u, options.fireParams);
+                                   tickSeed + 6u, options.fireParams, &roads, &state.serviceCache);
     events.disaster = NaturalDisasterSystem::step(
         map, store, tickSeed + 7u, options.disasterParams);
     events.buildingsLostToFire += events.fire.buildingsDestroyed;
@@ -340,7 +344,7 @@ void playableCityTick(
   }
 
   float tickResPollution = city_sim::averageResidentialPollution(map, store);
-  state.waste = WasteSystem::evaluate(store, state.serviceCache.wasteFacilities, state.serviceSummary);
+  state.waste = WasteSystem::step(store, baseFacilities, state.serviceSummary, &state.serviceCache.wasteFacilities);
   if (state.waste.pollutionPenalty > 0.0f) {
     city_sim::applyWastePollution(map, state.waste.pollutionPenalty, ax0, ay0, ax1, ay1);
     tickResPollution = city_sim::averageResidentialPollution(map, store);
@@ -443,7 +447,8 @@ void playableCityTick(
   state.treasuryInterestRemainder = debt.interestRemainder;
   state.lowFunds = funds > 0 && funds < 5000;
   state.bankrupt = funds == 0 && (flow.shortfall > 0 || state.treasuryDebt > 0);
-  state.laggedEducationCoverage = state.serviceSummary.educationCoverage;
+  ServiceSystem::applyCivicCapacity(state.serviceSummary, population.getTotalPopulation(), state.illnessRate);
+  state.laggedEducationCoverage = state.serviceSummary.effectiveEducationCoverage;
 
   ++state.tick;
   state.transitReport = {true,state.tick,state.trafficSummary.commutingPopulation,state.transitSummary.routeUsage};
@@ -453,7 +458,9 @@ void playableCityTick(
     state.serviceSummary.waterCoverage, state.serviceSummary.waterSupplyRatio,
     residents ? static_cast<float>(residents - std::min(residents, population.getTotalEmployed())) / residents : 0.f,
     std::min({state.serviceSummary.fireCoverage, state.serviceSummary.policeCoverage,
-      state.serviceSummary.healthCoverage, state.serviceSummary.educationCoverage}), flow.revenue, flow.expenses});
+      state.serviceSummary.healthCoverage, state.serviceSummary.educationCoverage}), flow.revenue, flow.expenses, state.waste.fullLandfills,
+    state.waste.firstFullLandfill.x, state.waste.firstFullLandfill.y,
+    state.waste.landfillRemaining, state.waste.landfillFillRate});
   state.history.append({state.tick, population.getTotalPopulation(), state.populationChange,
     flow.revenue, flow.expenses, funds, state.treasuryDebt, state.budgetPolicy});
 }

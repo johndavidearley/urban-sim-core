@@ -20,6 +20,9 @@ struct HealthSummary {
 // level of fidelity belongs to the opt-in, destructive disaster systems).
 class HealthSystem {
 public:
+  static float unmitigatedRate(float housingDensity, float pollution, float sanitationCoverage,
+    const HealthParams& params = {});
+
   // housingDensity is population/residentialCapacity (0-1, crowding proxy);
   // averagePollution is the same residential-weighted pollution figure
   // CitySimulator already computes for desirability; healthCoverage and

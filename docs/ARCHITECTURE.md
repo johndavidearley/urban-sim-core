@@ -585,3 +585,53 @@ Keep the four stores and static systems. Close the host fork:
 Compile isolation of large reporters (`CityPrinters`,
 `GrowthPressureReport`, `VisualizerGLFW.cpp`) is a build-time concern, not
 an architecture change. See `STATUS.md` for current priorities.
+
+### Finite landfill storage (M39)
+
+Garbage facilities own remaining volume and last net fill. `WasteSystem::step`
+mutates the host-owned facility vector once per completed tick; `evaluate`
+previews processing on a copy. Both autonomous and playable hosts pass funded
+operating facilities separately, so funding cannot reset or scale physical stock.
+Spare incinerator capacity consumes stored waste after current residual and
+contributes electricity and bounded air pollution even with no new waste.
+Service caches refresh storage metadata without rebuilding road-distance fields.
+Unfunded Garbage sites remain available as fuel stock with zero collection
+throughput. Session loading accepts legacy volume defaults and five-row alert
+records. The added full-landfill alert uses the existing completed-tick debounce,
+recovery and repeat timing. See [LANDFILLS.md](LANDFILLS.md) for controls and units.
+
+### Civic capacity (M40)
+
+The service cache derives school seats (800 per full-quality funded school) and
+hospital beds (400 per hospital) alongside installed utility supply. Funding and
+quality affect the cache signature. `ServiceSystem::applyCivicCapacity` combines
+this supply with current housed population and city illness for shared counters.
+Education's existing saved lag now carries `min(road reach, seats / (0.2*pop))`;
+PopulationSystem's allocation itself is unchanged. NeighborhoodSystem applies a
+single hospital-capacity factor to every local hospital-distance strength. It
+returns the exact previous M20 calculation when beds suffice, otherwise solves
+current illness and patient demand together with 32 bounded scalar probes over
+reused coefficients. This introduces neither a new BFS nor persisted capacity
+state. Read-only checkpoint refresh preserves saved rates and the education lag.
+See [CIVIC_CAPACITY.md](CIVIC_CAPACITY.md) for formulas, UI fields and validation.
+
+
+### Local fire response
+
+M41 shares `ServiceSystem::coverageStrength` with neighborhood service response.
+`FireSystem` reads the cached fire-station fields at each receiving building's
+road anchor for ignition/spread and at each new burning tile for its duration.
+Both hosts pass their existing road network and service cache. No additional BFS
+or persistent state is introduced; absent stations retain scalar fallback.
+See [LOCAL_FIRE_RESPONSE.md](LOCAL_FIRE_RESPONSE.md).
+
+
+### Shoreline treatment
+
+M42 adds the optional `ServiceFacility::sewageTreatment` flag for shoreline
+sanitation. ServiceTool can replace a raw outlet in place at full treatment
+cost. The facility signature invalidates distance/supply results on mode changes;
+`intakeCleanFraction` skips treatment when collecting raw-discharge sources.
+BudgetPolicy applies the variant upkeep and existing funding rules in both hosts.
+Sessions default the absent flag to false and validate its type/shore combination.
+See [SHORELINE_TREATMENT.md](SHORELINE_TREATMENT.md).

@@ -5,6 +5,7 @@
 
 #include "src/entities/EntityStore.hpp"
 #include "src/world/CityMap.hpp"
+#include "src/systems/ServiceSystem.hpp"
 
 // A tile currently on fire: ignited buildings are destroyed immediately (the
 // structure is gone), but the tile keeps burning for a few ticks, posing an
@@ -36,15 +37,13 @@ struct FireSummary {
 // Models fire as a per-tick stochastic process over the tile grid rather
 // than literal responding vehicles (TrafficMicroSim's emergency-vehicle
 // dispatch already covers that fidelity separately, as a standalone demo).
-// Fire station coverage (ServiceCoverageSummary::fireCoverage, already
-// computed by ServiceSystem every tick CitySimulator runs) is read as a
-// single city-wide fraction and reduces ignition chance, spread chance, and
-// burn duration alike - a proxy for faster emergency response, not a
-// per-building distance lookup (a deliberate fidelity tradeoff to avoid a
-// second per-tile BFS pass; ServiceSystem already pays that cost for the
-// aggregate coverage number this reuses).
+// Local response reuses service distance fields, with the same falloff as
+// neighborhood police response. Without a fire station, use the city fraction.
 class FireSystem {
 public:
+  static float responseAt(const RoadNetwork& roads, const ServiceCoverageCache& cache,
+    Coord position, float fallbackCoverage = 0.f);
+
   // Advances the fire simulation by one tick: existing fires may spread to
   // adjacent occupied tiles and burn down; new ignitions can occur
   // independently, weighted by building type and local pollution. `burning`
@@ -58,6 +57,8 @@ public:
     std::vector<BurningTile>& burning,
     float fireCoverage,  // 0-1, e.g. ServiceCoverageSummary::fireCoverage
     uint32_t seed,
-    const FireParams& params = {}
+    const FireParams& params = {},
+    const RoadNetwork* roads = nullptr,
+    const ServiceCoverageCache* cache = nullptr
   );
 };

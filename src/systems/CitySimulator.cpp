@@ -238,6 +238,8 @@ SimResult CitySimulator::run(
       result.timings.serviceMs += elapsedMs(t0, Clock::now());
     }
 
+    ServiceSystem::refreshWasteStorage(facilities, coverageCache);
+
     // Submit service evaluation to a pool worker so it runs concurrently with
     // the traffic pathfinding that follows on the main thread.
     // Skip if neither the building coordinates nor distance fields changed.
@@ -302,17 +304,17 @@ SimResult CitySimulator::run(
     // Labor allocation already ran on last tick's coverage. This tick's
     // schools feed the next allocate, including a deathcare re-allocate
     // later in this same tick (that one still uses educationNow).
-    lastEducationCoverage = service.educationCoverage;
+    ServiceSystem::applyCivicCapacity(service, population.getTotalPopulation(), lastIllnessRate);
+    lastEducationCoverage = service.effectiveEducationCoverage;
 
     // Disasters: fire ignition/spread, gated off by default (destructive,
-    // unlike the additive M12/M13 systems). Reuses service.fireCoverage -
-    // already computed above - as a city-wide response-speed proxy instead
-    // of a second per-tile BFS pass.
+    // unlike the additive M12/M13 systems). Local response reads the existing
+    // service distance cache without a second BFS pass.
     FireSummary fire;
     DisasterSummary disaster;
     if (options.enableDisasters) {
       const auto t0 = Clock::now();
-      fire = FireSystem::step(map, store, burningTiles, service.fireCoverage, tickSeed + 5u, options.fireParams);
+      fire = FireSystem::step(map, store, burningTiles, service.fireCoverage, tickSeed + 5u, options.fireParams, &roads, &coverageCache);
       cumulativeBuildingsLostToFire += fire.buildingsDestroyed;
       result.timings.fireMs += elapsedMs(t0, Clock::now());
 
@@ -412,7 +414,7 @@ SimResult CitySimulator::run(
     WasteSummary waste;
     {
       const auto t0 = Clock::now();
-      waste = WasteSystem::evaluate(store, coverageCache.wasteFacilities, service);
+      waste = WasteSystem::step(store, facilities, service, &coverageCache.wasteFacilities);
       if (waste.pollutionPenalty > 0.0f) {
         city_sim::applyWastePollution(map, waste.pollutionPenalty, ax0, ay0, ax1, ay1);
         tickResPollution = city_sim::averageResidentialPollution(map, store);
@@ -510,12 +512,25 @@ SimResult CitySimulator::run(
     row.activeFires = fire.activeFires;
     row.buildingsLostToFire = cumulativeBuildingsLostToFire;
     row.crimeRate = crime.overallRate;
+    ServiceSystem::applyCivicCapacity(service, population.getTotalPopulation(), health.illnessRate);
+    lastEducationCoverage = service.effectiveEducationCoverage;
     row.illnessRate = health.illnessRate;
+    row.schoolSeats = service.schoolSeats;
+    row.schoolDemand = service.schoolDemand;
+    row.schoolSeatsUsed = service.schoolSeatsUsed;
+    row.effectiveEducationCoverage = service.effectiveEducationCoverage;
+    row.hospitalBeds = service.hospitalBeds;
+    row.patientDemand = service.patientDemand;
+    row.hospitalBedsUsed = service.hospitalBedsUsed;
+    row.hospitalCapacityFactor = service.hospitalCapacityFactor;
     row.earthquakeOccurred = disaster.earthquakeOccurred;
     row.floodOccurred = disaster.floodOccurred;
     row.buildingsLostToDisaster = cumulativeBuildingsLostToDisaster;
     row.wasteCollectionRate = waste.collectionRate;
     row.wasteUncollected = waste.uncollected;
+    row.landfillRemaining = waste.landfillRemaining;
+    row.landfillFillRate = waste.landfillFillRate;
+    row.wasteStoredIncinerated = waste.storedIncinerated;
     row.wastePollutionPenalty = waste.pollutionPenalty;
     row.deathsThisTick = deathcare.deaths;
     row.deathcareBacklog = deathcare.awaitingDisposition;

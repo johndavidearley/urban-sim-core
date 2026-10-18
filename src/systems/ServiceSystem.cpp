@@ -26,6 +26,8 @@ uint64_t facilitySignature(const std::vector<ServiceFacility>& facilities) {
     mix(static_cast<uint32_t>(facility.position.x));
     mix(static_cast<uint32_t>(facility.position.y));
     mix(static_cast<uint32_t>(facility.maxTravelDistance));
+    if (facility.sewageTreatment) mix(0x54524541u);
+    mix(static_cast<uint32_t>(std::hash<float>{}(facility.quality)));
     mix(static_cast<uint32_t>(facility.powerSource));
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.powerCapacityMW)));
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.emissionsKgPerMWh)));
@@ -166,7 +168,8 @@ bool ServiceSystem::parseServiceType(const std::string& raw, ServiceType& outTyp
   return false;
 }
 
-const char* ServiceSystem::serviceTypeToString(ServiceType type, bool surfaceWater) {
+const char* ServiceSystem::serviceTypeToString(ServiceType type, bool surfaceWater, bool sewageTreatment) {
+  if (sewageTreatment && surfaceWater && type == ServiceType::Sanitation) return "Shore Treatment";
   if (surfaceWater && type == ServiceType::Water) return "Water Intake";
   if (surfaceWater && type == ServiceType::Sanitation) return "Sewage Outlet";
   switch (type) {
@@ -246,7 +249,7 @@ float ServiceSystem::intakeCleanFraction(
   std::unordered_map<Coord, float, Vec2Hash> discharge;
   for (const auto &facility : facilities) {
     Coord anchor;
-    if (!facility.surfaceWater || facility.type != ServiceType::Sanitation ||
+    if (!facility.surfaceWater || facility.sewageTreatment || facility.type != ServiceType::Sanitation ||
         facility.quality <= 0 ||
         !roads.resolveRoadAnchor(facility.position, anchor))
       continue;
@@ -304,6 +307,8 @@ void ServiceSystem::buildCache(
   cache.powerGenerationCapacityMW = 0.0f;
   cache.powerWeightedEmissions = 0.0f;
   cache.waterSupplyUnits = 0.0f;
+  cache.schoolSeats = 0.0f;
+  cache.hospitalBeds = 0.0f;
   cache.entries.reserve(facilities.size());
 
   // Group road-anchored facilities by (type, maxTravelDistance). Equal-radius
@@ -325,6 +330,10 @@ void ServiceSystem::buildCache(
   groups.reserve(facilities.size());
 
   for (const ServiceFacility& facility : facilities) {
+    if (facility.type == ServiceType::Education)
+      cache.schoolSeats += 800.0f * std::clamp(facility.quality, 0.0f, 1.0f);
+    if (facility.type == ServiceType::Health)
+      cache.hospitalBeds += 400.0f * std::clamp(facility.quality, 0.0f, 1.0f);
     // Generation exists independently of road-based distribution coverage.
     // A disconnected plant still contributes to the city's installed source
     // mix, while buildings only receive Power coverage through the graph.
@@ -399,6 +408,33 @@ void ServiceSystem::buildCache(
   }
 }
 
+void ServiceSystem::refreshWasteStorage(const std::vector<ServiceFacility>& facilities,
+  ServiceCoverageCache& cache) {
+  // Volume changes do not invalidate road-distance fields.
+  for (auto& cached : cache.wasteFacilities) {
+    if (cached.type != ServiceType::Garbage) continue;
+    const auto current = std::find_if(facilities.begin(), facilities.end(), [&](const auto& f) {
+      return f.type == cached.type && f.position == cached.position;
+    });
+    if (current != facilities.end()) {
+      cached.landfillRemaining = current->landfillRemaining;
+      cached.landfillLastFill = current->landfillLastFill;
+    }
+  }
+  // Closed collection departments retain their physical stock. Incinerators
+  // may burn it, but zero quality prevents new deposits at an unfunded site.
+  for (const auto& facility : facilities) {
+    if (facility.type != ServiceType::Garbage) continue;
+    const auto found = std::find_if(cache.wasteFacilities.begin(), cache.wasteFacilities.end(),
+      [&](const auto& f) { return f.type == facility.type && f.position == facility.position; });
+    if (found == cache.wasteFacilities.end()) {
+      auto stored = facility;
+      stored.quality = 0.f;
+      cache.wasteFacilities.push_back(stored);
+    }
+  }
+}
+
 bool ServiceSystem::isCacheValid(
   const RoadNetwork& roads,
   const std::vector<ServiceFacility>& facilities,
@@ -449,11 +485,18 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
 ) {
   ServiceCoverageSummary summary;
   summary.totalBuildings = static_cast<uint32_t>(store.getBuildingCount());
+  summary.schoolSeats = cache.schoolSeats;
+  summary.hospitalBeds = cache.hospitalBeds;
   summary.powerGenerationMW = cache.powerGenerationCapacityMW;
   summary.powerEmissionsKgPerMWh = summary.powerGenerationMW > 0.0f
     ? cache.powerWeightedEmissions / summary.powerGenerationMW
     : 0.0f;
   if (summary.totalBuildings == 0) {
+    const auto waste = WasteSystem::evaluate(store, cache.wasteFacilities, summary);
+    summary.powerGenerationMW += waste.powerGenerationMW;
+    if (summary.powerGenerationMW > 0.f)
+      summary.powerEmissionsKgPerMWh = (cache.powerWeightedEmissions
+        + waste.powerGenerationMW * waste.emissionsKgPerMWh) / summary.powerGenerationMW;
     summary.satisfaction = 0.5f;
     return summary;
   }
@@ -563,7 +606,8 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   summary.cemeteryCoverage   = coveredByType[typeIndex(ServiceType::Cemetery)] / denom;
   summary.crematoriumCoverage = coveredByType[typeIndex(ServiceType::Crematorium)] / denom;
   summary.incineratorCoverage = coveredByType[typeIndex(ServiceType::Incinerator)] / denom;
-  const auto waste = summary.incineratorCoverage > 0.f
+  const auto waste = std::any_of(cache.wasteFacilities.begin(), cache.wasteFacilities.end(),
+    [](const ServiceFacility& f) { return f.type == ServiceType::Incinerator; })
     ? WasteSystem::evaluate(store, cache.wasteFacilities, summary) : WasteSummary{};
   const float weightedEmissions = cache.powerWeightedEmissions
     + waste.powerGenerationMW * waste.emissionsKgPerMWh;
@@ -591,4 +635,37 @@ void ServiceSystem::applyToMetrics(const ServiceCoverageSummary& summary, CityMe
 
   const float happinessDelta = (summary.satisfaction - 0.5f) * 0.25f;
   metrics.happiness = std::clamp(metrics.happiness + happinessDelta, 0.0f, 1.0f);
+}
+
+void ServiceSystem::applyCivicCapacity(ServiceCoverageSummary& summary,
+  uint32_t housedPopulation, float illnessRate) {
+  summary.schoolDemand = static_cast<float>(housedPopulation) * 0.2f;
+  const float seatRatio = summary.schoolDemand > 0.f
+    ? summary.schoolSeats / summary.schoolDemand : 1.f;
+  summary.effectiveEducationCoverage = summary.schoolSeats > 0.f
+    ? std::min(summary.educationCoverage, seatRatio) : 0.f;
+  summary.schoolSeatsUsed = summary.schoolDemand * summary.effectiveEducationCoverage;
+  summary.patientDemand = illnessRate > 0.f
+    ? std::max(1.f, static_cast<float>(housedPopulation) * illnessRate) : 0.f;
+  summary.hospitalCapacityFactor = summary.patientDemand > 0.f
+    ? std::min(1.f, summary.hospitalBeds / summary.patientDemand) : 1.f;
+  summary.hospitalBedsUsed = std::min(summary.hospitalBeds, summary.patientDemand);
+}
+
+float ServiceSystem::coverageStrength(const ServiceCoverageCache &cache, ServiceType type,
+               Coord anchor) {
+  float result = 0.0f;
+  for (const auto &entry : cache.entries) {
+    if (entry.type != type)
+      continue;
+    const auto it = entry.distanceField.find(anchor);
+    if (it == entry.distanceField.end())
+      continue;
+    const float strength =
+        1.0f -
+        static_cast<float>(it->second) /
+            (static_cast<float>(std::max(0, entry.maxTravelDistance)) + 1.0f);
+    result = std::max(result, std::clamp(strength, 0.0f, 1.0f));
+  }
+  return result;
 }

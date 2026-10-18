@@ -17,16 +17,16 @@ HealthSummary HealthSystem::evaluate(
 ) {
   HealthSummary summary;
 
-  const float density = clamp01(housingDensity);
-  const float pollution = clamp01(averagePollution);
   const float coverage = clamp01(healthCoverage);
-  const float sewage = 1.0f - clamp01(sanitationCoverage);
-
-  const float rawRate = params.baseIllnessRate +
-    params.densityWeight * density +
-    params.pollutionWeight * pollution +
-    params.sanitationWeight * sewage;
+  const float rawRate = unmitigatedRate(housingDensity, averagePollution, sanitationCoverage, params);
 
   summary.illnessRate = clamp01(rawRate * (1.0f - coverage * params.healthCoverageReduction));
   return summary;
+}
+
+float HealthSystem::unmitigatedRate(float housingDensity, float pollution,
+  float sanitationCoverage, const HealthParams& params) {
+  return params.baseIllnessRate + params.densityWeight * clamp01(housingDensity)
+    + params.pollutionWeight * clamp01(pollution)
+    + params.sanitationWeight * (1.0f - clamp01(sanitationCoverage));
 }

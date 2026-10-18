@@ -188,7 +188,7 @@ if (command == "inspect") {
         {"congestion",d.growth.congestion},{"location_factor",d.growth.locationFactor},
         {"scope","local gates; city balance and seeded chance still apply"}}},
       {"building",{{"capacity",d.capacity},{"occupancy",d.occupancy},{"residential",d.residential}}},
-      {"services_mask",d.services},
+      {"services_mask",d.services},{"local_fire_response",d.fireResponse},
       {"neighborhood",{{"radius",n.radius},{"tiles",n.tiles},{"buildings",n.buildings},
         {"residents",n.residents},{"housing_capacity",n.housingCapacity},{"filled_jobs",n.filledJobs},
         {"job_capacity",n.jobCapacity},{"crime_rate",n.crime},{"illness_rate",n.illness},
@@ -257,6 +257,16 @@ if (command == "inspect") {
                        {"y", f.position.y},
                        {"quality", f.quality},
                        {"distance", f.maxTravelDistance}});
+      if (f.type == ServiceType::Education || f.type == ServiceType::Health) {
+        const size_t index = static_cast<size_t>(f.type);
+        const float funded = std::clamp(liveState.budgetPolicy.servicePercent[index], 0, 100) / 100.f;
+        items.back()["funded_capacity"] = (f.type == ServiceType::Education ? 800.f : 400.f)
+          * std::clamp(f.quality, 0.f, 1.f) * funded;
+      }
+      if (f.type == ServiceType::Garbage) {
+        items.back()["landfill_remaining"] = f.landfillRemaining;
+        items.back()["landfill_last_fill"] = f.landfillLastFill;
+      }
       if (f.type == ServiceType::Power) {
         items.back()["power_source"] = ServiceSystem::powerSourceTypeToString(f.powerSource);
         items.back()["power_capacity_mw"] = f.powerCapacityMW;
@@ -277,7 +287,8 @@ if (command == "inspect") {
         items.back()["emissions_kg_per_mwh"] = waste.emissionsKgPerMWh;
       }
       items.back()["surface_water"] = f.surfaceWater;
-      items.back()["name"] = ServiceSystem::serviceTypeToString(f.type, f.surfaceWater);
+      items.back()["sewage_treatment"] = f.sewageTreatment;
+      items.back()["name"] = ServiceSystem::serviceTypeToString(f.type, f.surfaceWater, f.sewageTreatment);
     }
   } else if (section == "districts") {
     for (const auto &d : districts.getDistricts())
@@ -552,12 +563,18 @@ if (command == "tool") {
   if (args.contains("surface_water") && (type != PaletteTool::Service ||
       (args.at("surface_water").get<bool>() && service != ServiceType::Water && service != ServiceType::Sanitation)))
     throw std::runtime_error("Surface water mode requires the Water or Sanitation service tool");
+  if (args.value("sewage_treatment", false) && (type != PaletteTool::Service ||
+      service != ServiceType::Sanitation || !args.value("surface_water", false)))
+    throw std::runtime_error("Treatment requires shoreline Sanitation");
   activatePaletteTool(type);
   portAction=selectedPortAction;
   selectedRoadClass = roadClass;
   selectedZone = zone;
   selectedService = service;
-  if (type == PaletteTool::Service) surfaceWaterTool = args.value("surface_water", false);
+  if (type == PaletteTool::Service) {
+    surfaceWaterTool = args.value("surface_water", false);
+    sewageTreatmentTool = args.value("sewage_treatment", false);
+  }
   selectedArchetype = archetype;
   if (action == "apply") {
     toolDragStart = start;

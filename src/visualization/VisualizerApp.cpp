@@ -236,12 +236,17 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   ServiceType selectedService = ServiceType::Fire;
   PowerSourceType selectedPowerSource = PowerSourceType::Generic;
   bool surfaceWaterTool = start.generateTerrain && !loadedAtStartup;
+  bool sewageTreatmentTool = false;
+  auto treatmentMode = [&]() {
+    return surfaceWaterTool && sewageTreatmentTool && selectedService == ServiceType::Sanitation;
+  };
   auto surfaceMode = [&]() {
     return surfaceWaterTool && (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation);
   };
   auto serviceOptions = [&]() {
     ServicePlacementOptions options;
     options.surfaceWater = surfaceMode();
+    options.sewageTreatment = treatmentMode();
     if (selectedService == ServiceType::Power) options.powerSource = selectedPowerSource;
     return options;
   };
@@ -624,7 +629,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                               /*runTraffic=*/false);
       const std::string built = selectedService == ServiceType::Power
         ? std::string(ServiceSystem::powerSourceTypeToString(servicePlan.facility.powerSource)) + " PLANT"
-        : ServiceSystem::serviceTypeToString(selectedService, surfaceMode());
+        : ServiceSystem::serviceTypeToString(selectedService, surfaceMode(), treatmentMode());
       notify(built + " BUILT $" + std::to_string(cost), true);
     } else {
       notify(servicePlan.error.empty() ? "SERVICE BUILD FAILED"
@@ -939,7 +944,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"zone_type", static_cast<int>(selectedZone)},
            {"service_type", static_cast<int>(selectedService)},
            {"power_source", ServiceSystem::powerSourceTypeToString(selectedPowerSource)},
-           {"surface_water", surfaceMode()},
+           {"surface_water", surfaceMode()},{"sewage_treatment", treatmentMode()},
            {"archetype", static_cast<int>(selectedArchetype)}}},
          {"preview",
           {{"road_error", roadPlan.error},
@@ -986,12 +991,23 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"police_coverage", liveState.serviceSummary.policeCoverage},
            {"health_coverage", liveState.serviceSummary.healthCoverage},
            {"education_coverage", liveState.serviceSummary.educationCoverage},
+           {"school_seats", liveState.serviceSummary.schoolSeats},
+           {"school_demand", liveState.serviceSummary.schoolDemand},
+           {"school_seats_used", liveState.serviceSummary.schoolSeatsUsed},
+           {"effective_education_coverage", liveState.serviceSummary.effectiveEducationCoverage},
+           {"hospital_beds", liveState.serviceSummary.hospitalBeds},
+           {"patient_demand", liveState.serviceSummary.patientDemand},
+           {"hospital_beds_used", liveState.serviceSummary.hospitalBedsUsed},
+           {"hospital_capacity_factor", liveState.serviceSummary.hospitalCapacityFactor},
            {"power_coverage", liveState.serviceSummary.powerCoverage},
            {"water_coverage", liveState.serviceSummary.waterCoverage},
            {"sanitation_coverage", liveState.serviceSummary.sanitationCoverage},
            {"garbage_coverage", liveState.serviceSummary.garbageCoverage},
            {"incinerator_coverage", liveState.serviceSummary.incineratorCoverage},
            {"waste_incinerated", liveState.waste.incinerated},
+           {"landfill_remaining", liveState.waste.landfillRemaining},
+           {"landfill_fill_rate", liveState.waste.landfillFillRate},
+           {"waste_stored_incinerated", liveState.waste.storedIncinerated},
            {"waste_power_mw", liveState.waste.powerGenerationMW},
            {"recycling_coverage", liveState.serviceSummary.recyclingCoverage},
            {"cemetery_coverage", liveState.serviceSummary.cemeteryCoverage},
@@ -1315,10 +1331,15 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
             servicePlan = {};
             notify(powerPlantLabel(), true);
           } else if (serviceToolActive && (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation)) {
-            surfaceWaterTool = !surfaceWaterTool;
+            if (selectedService == ServiceType::Sanitation && surfaceWaterTool && !sewageTreatmentTool) {
+              sewageTreatmentTool = true;
+            } else {
+              surfaceWaterTool = !surfaceWaterTool;
+              sewageTreatmentTool = false;
+            }
             servicePlan = {};
-            notify(surfaceMode() ? "SHORE MODE - WATER INTAKE / RAW SEWAGE OUTLET"
-                                 : "INLAND WATER / TREATED SANITATION", true);
+            notify(treatmentMode() ? "SHORE TREATMENT $9000 + $34/TICK - NO RAW DISCHARGE" :
+              (surfaceMode() ? "SHORE MODE - WATER INTAKE / RAW SEWAGE OUTLET" : "INLAND WATER / SANITATION"), true);
           } else selectPortAction();
           break;
         case Key::I:
@@ -2027,7 +2048,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         cleanUiMode
             ? (mouseX >= windowWidth - 342 && mouseY >= 12 && mouseY <
                 ((liveState.enableDisasters || liveState.disasters.buildingsLostToFire > 0 ||
-                  liveState.disasters.buildingsLostToDisaster > 0) ? 130 : 94))
+                  liveState.disasters.buildingsLostToDisaster > 0) ? 166 : 130))
             : (mouseX >= windowWidth - kHudPanelWidth - 12 && mouseY >= 12 &&
                mouseY < 12 + kHudPanelHeight);
     const bool mouseOverLegend = !cleanUiMode && showLegend && mouseX >= 12 &&
@@ -2165,7 +2186,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       const auto residents = population.getTotalPopulation();
       const float joblessness = residents ? static_cast<float>(residents-std::min(residents,population.getTotalEmployed()))/residents : 0.f;
       drawTileInspector(renderer, map, roads, store, deliveredFacilities, hoveredTile,
-                        &districts, &diagnostics, joblessness,map.isValid(pinnedInspector), &liveState.waste);
+                        &districts, &diagnostics, joblessness,map.isValid(pinnedInspector), &liveState.waste, &liveState.serviceSummary);
     }
     if (!cleanUiMode) {
       if (const District *selected =
@@ -2186,7 +2207,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     } else if (serviceToolActive) {
       activeToolLabel = selectedService == ServiceType::Power
         ? std::string(ServiceSystem::powerSourceTypeToString(selectedPowerSource)) + " PLANT"
-        : ServiceSystem::serviceTypeToString(selectedService, surfaceMode());
+        : ServiceSystem::serviceTypeToString(selectedService, surfaceMode(), treatmentMode());
     } else if (districtToolActive) {
       activeToolLabel = DistrictSystem::archetypeToString(selectedArchetype);
     }
@@ -2195,7 +2216,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                              population.getTotalPopulation(), funds,
                              activeToolLabel, liveState.populationChange,
                              liveState.trafficSummary.freight,
-                             &liveState.disasters, liveState.enableDisasters);
+                             &liveState.disasters, liveState.enableDisasters, &liveState.serviceSummary);
     } else {
       drawGameplayHud(renderer, windowWidth, population.getTotalPopulation(),
                       store.getBuildingCount(), funds, activeToolLabel,
@@ -2336,11 +2357,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       if (selectedService == ServiceType::Power) {
         uiHoverText = powerPlantLabel() + " - V CYCLES SOURCE";
       } else {
-        uiHoverText = std::string(ServiceSystem::serviceTypeToString(selectedService, surfaceMode())) +
-            " $" + std::to_string(ServiceTool::constructionCost(selectedService, surfaceMode())) +
-            " + $" + std::to_string(ServiceTool::operatingCostPerTick(selectedService, surfaceMode())) + "/TICK";
+        uiHoverText = std::string(ServiceSystem::serviceTypeToString(selectedService, surfaceMode(), treatmentMode())) +
+            " $" + std::to_string(ServiceTool::constructionCost(selectedService, surfaceMode(), selectedPowerSource, treatmentMode())) +
+            " + $" + std::to_string(ServiceTool::operatingCostPerTick(selectedService, surfaceMode(), selectedPowerSource, treatmentMode())) + "/TICK";
         if (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation)
-          uiHoverText += " - V INLAND/SHORE";
+          uiHoverText += selectedService == ServiceType::Sanitation ? " - V INLAND/RAW/TREATED" : " - V INLAND/SHORE";
         else uiHoverText += " - CLICK BESIDE ROAD";
       }
       break;
@@ -2452,7 +2473,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       uiHoverText = selectedService == ServiceType::Water
         ? "INTAKE CLEAN SOURCE " + std::to_string(static_cast<int>(100 * ServiceSystem::intakeCleanFraction(
             roads, liveState.budgetPolicy.fundedFacilities(facilities), servicePlan.facility.position))) + "% - KEEP AWAY FROM RAW OUTLETS"
-        : "RAW SEWAGE - NEARBY INTAKES LOSE CLEAN WATER SUPPLY";
+        : (treatmentMode() ? "TREATED SEWAGE - NO INTAKE CONTAMINATION; REPLACES RAW OUTLETS"
+                           : "RAW SEWAGE - NEARBY INTAKES LOSE CLEAN WATER SUPPLY");
     }
     drawUiTooltip(renderer, mouseX, mouseY, windowWidth, windowHeight,
                   uiHoverText);
@@ -2491,7 +2513,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       drawBudgetPanel(renderer, windowWidth, windowHeight, liveState.budgetPolicy,
                       budgetPreview(), liveState.treasuryLedger, funds,
                       liveState.treasuryDebt, mouseX, mouseY, budgetServices,
-                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary), budgetTrends, liveState.history, budgetAlerts, liveState.alerts,budgetFocus,inspectedTrendTick);
+                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary), budgetTrends, liveState.history, budgetAlerts, liveState.alerts,budgetFocus,inspectedTrendTick,&facilities);
     if (showTransportPanel)
       drawTransportPanel(renderer,windowWidth,windowHeight,liveState.transitRoutes,selectedTransitRoute,
         liveState.transitReport,routePeak(selectedTransitRoute).first,
