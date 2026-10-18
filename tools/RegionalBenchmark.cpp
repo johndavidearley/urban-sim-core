@@ -49,6 +49,7 @@ int main(int argc,char** argv) {
         {record.x1,record.y1},{record.x2,record.y2});
       districts.setDistrictArchetype(id,static_cast<DistrictArchetype>(record.archetype));
       districts.setDistrictServiceBudgetCap(id,record.serviceBudgetCap);
+      districts.setDistrictHeightCap(id,record.heightCap);
     }
     PlayableCityTickOptions options;
     options.baseSeed=1000u+session.simulationSeed-98765u;

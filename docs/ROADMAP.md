@@ -23,7 +23,7 @@ Last updated: October 17, 2026
   STATUS.md.
 - Phase 6 (M17–M22): implemented; local M22 verification is recorded in STATUS.md.
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
-- Phase 12 (M38–M44): M38 complete locally October 17, 2026. M39–M44 are the active queue. Implement in order.
+- Phase 12 (M38–M44): M38–M43 are complete locally. M44 is the active milestone. Implement in order.
 
 ---
 
@@ -705,7 +705,7 @@ candidate launches with documented runtime requirements and save location.
 
 ## Phase 12: Scarcity the player can spend against (M38–M44)
 
-Defined October 17, 2026. M38 is complete locally. M39–M44 are not started.
+Defined October 17, 2026. M38–M43 are complete locally. M44 is not started.
 Implement in order. Each milestone keeps the suite deterministic and says
 whether a default `--simulate` run changes.
 
@@ -880,22 +880,22 @@ nothing and discharges nothing. Two water bodies still ignore each other.
 **Excluded:** currents, advected pollutant mass, pipe networks, and a
 multi-stage treatment ladder.
 
-### Milestone 43: District height caps
+### Milestone 43: District height caps — implemented locally
 
 Redevelopment doubles capacity up to 64× wherever land value, civic coverage,
-and congestion allow. A district can ban a zone type. It cannot tell a
-neighborhood to stay low.
+and congestion allow. A district can stop that ladder. See
+[DISTRICT_HEIGHT.md](DISTRICT_HEIGHT.md).
 
-- [ ] A district stores a maximum capacity multiple: uncapped, or one of
+- [x] A district stores a maximum capacity multiple: uncapped, or one of
       1×, 2×, 4×, 8×, 16×, 32×, 64×. Uncapped is the default. Old districts
       load uncapped.
-- [ ] `GrowthSystem` will not redevelop a building past that multiple.
+- [x] `GrowthSystem` will not redevelop a building past that multiple.
       Buildings already above a newly set cap stay until the player
       bulldozes them. The cap does not change demand, taxes, or zone bans.
-- [ ] The district tool and MCP edit the cap. The playable tick and
+- [x] The district tool and MCP edit the cap. The playable tick and
       `CitySimulator` both read it. The map's capacity-tier drawing is the
       check: a capped block stops climbing.
-- [ ] An uncapped district matches today's redevelopment chance and ladder.
+- [x] An uncapped district matches today's redevelopment chance and ladder.
       Default `--simulate` with no districts is unchanged.
 
 **Acceptance:** Two saturated high-value blocks, one capped at 2× and one
@@ -948,7 +948,7 @@ calendar scheduler. The term is a tick count.
 | 9 | M31–M35 | complete; hosted CI verified on bf8c036 |
 | 10 | M36 | complete: end-to-end playability |
 | 11 | M37 | complete: surface water and early waterworks |
-| 12 | M38–M44 | M38 complete locally; M39–M44 not started |
+| 12 | M38–M44 | M38–M43 complete locally; M44 not started |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

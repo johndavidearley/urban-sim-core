@@ -4,6 +4,7 @@
 #include <future>
 
 #include "src/core/Random.hpp"
+#include "src/systems/DistrictSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 
 int defaultBuildingCapacity(BuildingType type) {
@@ -144,6 +145,19 @@ int defaultCapacity(ZoneType zone) {
     default:
       return 0;
   }
+}
+
+// Global ladder is 64×. A district height cap stops sooner. 0 keeps 64×.
+int redevelopmentCeiling(ZoneType zone, const DistrictSystem* districts, Coord pos) {
+  const int global = defaultCapacity(zone) * 64;
+  if (global <= 0 || districts == nullptr) {
+    return global;
+  }
+  const int multiple = districts->heightCapAt(pos);
+  if (multiple <= 0) {
+    return global;
+  }
+  return std::min(global, defaultCapacity(zone) * multiple);
 }
 
 void incrementZonedCount(ZoneBalance& balance, ZoneType zone) {
@@ -418,7 +432,8 @@ float roadCongestionAt(const RoadNetwork* roads, Coord pos) {
 GrowthSiteDiagnostics GrowthSystem::diagnoseSite(
   const CityMap& map, const RoadNetwork& roads, const EntityStore& store,
   Coord pos, const ZoneDemand& demand, const ServiceCoverageCache* services,
-  bool requireUtilities, bool burning, const std::vector<GrowthChanceModifier>* modifiers) {
+  bool requireUtilities, bool burning, const std::vector<GrowthChanceModifier>* modifiers,
+  const DistrictSystem* districts) {
   GrowthSiteDiagnostics d;
   if (!map.isValid(pos)) { d.blockers.push_back("outside_map"); return d; }
   const auto& tile = map.getTile(pos);
@@ -446,7 +461,9 @@ GrowthSiteDiagnostics GrowthSystem::diagnoseSite(
     if (chanceModifierForCoord(pos, modifiers) <= 0) d.blockers.push_back("district_growth_disabled");
   } else {
     if (d.demand < kRedevelopmentDemandFloor) d.blockers.push_back("low_redevelopment_demand");
+    const int ceiling = redevelopmentCeiling(zone, districts, pos);
     if (building->capacity >= defaultCapacity(zone) * 64) d.blockers.push_back("density_cap");
+    else if (building->capacity >= ceiling) d.blockers.push_back("height_cap");
     if (d.locationFactor <= 0) d.blockers.push_back("zero_location_factor");
   }
   return d;
@@ -464,7 +481,8 @@ GrowthStats GrowthSystem::runStep(
   ThreadPool* pool,
   bool requireUtilities,
   const RoadNetwork* roads,
-  const ServiceCoverageCache* services
+  const ServiceCoverageCache* services,
+  const DistrictSystem* districts
 ) {
   GrowthStats stats;
   DeterministicRandom rng(seed);
@@ -570,14 +588,14 @@ GrowthStats GrowthSystem::runStep(
 
         if (!demolished) {
           // Redevelopment: when demand is sustained and the zone is saturated,
-          // replace at 2× capacity. Capped at 64× default (6 doublings).
-          // Where it happens follows land value, civic coverage, and the
-          // tile's road congestion. The capacity ladder is unchanged.
+          // replace at 2× capacity. Capped at 64× default (6 doublings), or
+          // sooner when the top-most district sets a height cap. The chance
+          // is unchanged. A building already above that cap stays put.
           const Building* existing = store.getBuilding(tile.buildingId);
           if (existing != nullptr) {
             const float demandWeight = demandForZone(zone, demand);
             if (demandWeight >= kRedevelopmentDemandFloor) {
-              const int maxCap = defaultCapacity(zone) * 64;
+              const int maxCap = redevelopmentCeiling(zone, districts, {x, y});
               if (existing->capacity < maxCap) {
                 const int   zoned      = zonedCountForZone(balance, zone);
                 const int   built      = builtCountForZone(balance, zone);

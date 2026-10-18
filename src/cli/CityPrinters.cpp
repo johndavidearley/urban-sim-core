@@ -72,6 +72,7 @@ void printHelp() {
             << "  --set-district-service DIST_ID FIRE POLICE HEALTH EDUCATION  Set service priorities (0-1)\n"
             << "  --set-district-allocation DIST_ID PERCENT  Set district service allocation share (0-1)\n"
             << "  --set-district-budget-cap DIST_ID AMOUNT  Set district service budget cap (negative disables cap)\n"
+            << "  --set-district-height-cap DIST_ID MULTIPLE  Redevelopment cap 0 or 1 2 4 8 16 32 64\n"
             << "  --assign-facility DIST_ID FACILITY_ID  Assign service facility to district\n"
             << "  --unassign-facility DIST_ID FACILITY_ID  Remove service facility from district\n"
             << "  --print-district-facilities DIST_ID  Print facilities assigned to district\n"

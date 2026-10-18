@@ -362,6 +362,12 @@ CitySnapshot SaveLoadSystem::captureSnapshot(
     (void)id;
     snapshot.populationGroups.push_back(group);
   }
+  // Hash-map order depends on insertion and removal history; sort by id so
+  // equal stores always write identical snapshots.
+  std::sort(snapshot.buildings.begin(), snapshot.buildings.end(),
+            [](const Building& a, const Building& b) { return a.id < b.id; });
+  std::sort(snapshot.populationGroups.begin(), snapshot.populationGroups.end(),
+            [](const auto& a, const auto& b) { return a.id < b.id; });
 
   const auto edgeTraffic = roads.getAllEdgeTraffic();
   snapshot.roads.reserve(edgeTraffic.size());

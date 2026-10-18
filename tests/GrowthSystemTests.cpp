@@ -1,11 +1,13 @@
 #include "gtest/gtest.h"
 #include <array>
+#include <tuple>
 #include <vector>
 
 #include "src/entities/EntityStore.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/systems/GrowthSystem.hpp"
 #include "src/gameplay/BuildingDiagnostics.hpp"
+#include "src/systems/DistrictSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 #include "src/world/Zoning.hpp"
 
@@ -525,6 +527,130 @@ TEST(GrowthSystemTests, HighestCapacityFollowsLandValueNotTheSaturatedFringe) {
   EXPECT_GT(primeBuilding->capacity, jammedBuilding->capacity);
 }
 
+namespace {
+struct HeightCity {
+  CityMap map{{12, 6}};
+  RoadNetwork roads{map};
+  EntityStore store;
+  DistrictSystem districts;
+  ServiceCoverageCache cache;
+  Coord capped{3, 2};
+  Coord open{9, 2};
+  Coord tall{5, 2};
+
+  HeightCity() {
+    for (int x = 1; x < 10; ++x) {
+      roads.buildRoad({x, 2}, {x + 1, 2});
+    }
+    for (const Coord site : {capped, tall, open}) {
+      map.getTile(site).zone = static_cast<int>(ZoneType::Residential);
+      map.landValue(site) = kRedevelopmentLandValueCeiling;
+    }
+    map.getTile(capped).buildingId =
+      store.createBuilding(BuildingType::Residential, capped, 8);
+    map.getTile(tall).buildingId =
+      store.createBuilding(BuildingType::Residential, tall, 64);
+    map.getTile(open).buildingId =
+      store.createBuilding(BuildingType::Residential, open, 8);
+    std::vector<ServiceFacility> facilities;
+    for (ServiceType type : {ServiceType::Fire, ServiceType::Police,
+                             ServiceType::Health, ServiceType::Education}) {
+      facilities.push_back(ServiceFacility{type, {6, 2}, 20, 1.0f});
+    }
+    ServiceSystem::buildCache(roads, facilities, cache);
+    const DistrictId outer = districts.createDistrict("Outer", {2, 1}, {10, 3});
+    const DistrictId inner = districts.createDistrict("Inner", {8, 1}, {10, 3});
+    districts.setDistrictHeightCap(outer, 2);
+    districts.setDistrictHeightCap(inner, 0);
+  }
+
+  int capacity(Coord site) const {
+    const Building* building = store.getBuilding(map.getTile(site).buildingId);
+    return building == nullptr ? -1 : building->capacity;
+  }
+};
+}  // namespace
+
+// Two saturated high-value blocks. The top-most cap stops one at 2×.
+// The other stays uncapped and climbs further. A building already above
+// the new cap is left standing.
+TEST(GrowthSystemTests, DistrictHeightCapDivergesFromAnUncappedBlock) {
+  HeightCity city;
+  ZoneDemand demand;
+  demand.residential = 1.0f;
+  for (int step = 0; step < 300; ++step) {
+    GrowthSystem::runStep(
+      city.map, city.store, demand, static_cast<uint32_t>(40 + step), 0.0f,
+      nullptr, {-1, -1}, {-1, -1}, nullptr, false, &city.roads, &city.cache,
+      &city.districts);
+  }
+
+  EXPECT_EQ(city.capacity(city.capped), 16);
+  EXPECT_EQ(city.capacity(city.tall), 64);
+  EXPECT_GT(city.capacity(city.open), 16);
+}
+
+TEST(GrowthSystemTests, HeightCapDoesNotBlockANewLowBuilding) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+  roads.buildRoad({2, 2}, {3, 2});
+  EXPECT_TRUE(Zoning::applyZoneRect(map, {2, 3}, {2, 3}, ZoneType::Residential));
+  DistrictSystem districts;
+  const DistrictId id = districts.createDistrict("Low", {0, 0}, {7, 7});
+  ASSERT_TRUE(districts.setDistrictHeightCap(id, 1));
+  const GrowthStats stats = GrowthSystem::runStep(
+    map, store, ZoneDemand{1.0f, 0.0f, 0.0f, 0.0f}, 7, 1.0f,
+    nullptr, {-1, -1}, {-1, -1}, nullptr, false, nullptr, nullptr, &districts);
+  EXPECT_EQ(stats.spawnedResidential, 1);
+  const Building* building = store.getBuilding(map.getTile({2, 3}).buildingId);
+  ASSERT_NE(building, nullptr);
+  EXPECT_EQ(building->capacity, defaultBuildingCapacity(BuildingType::Residential));
+}
+
+TEST(GrowthSystemTests, UncappedDistrictMatchesRedevelopmentWithoutDistricts) {
+  auto run = [](bool withDistrict) {
+    CityMap map({8, 6});
+    RoadNetwork roads(map);
+    EntityStore store;
+    roads.buildRoad({1, 2}, {2, 2});
+    roads.buildRoad({2, 2}, {3, 2});
+    const Coord site{2, 2};
+    map.getTile(site).zone = static_cast<int>(ZoneType::Residential);
+    map.landValue(site) = kRedevelopmentLandValueCeiling;
+    map.getTile(site).buildingId =
+      store.createBuilding(BuildingType::Residential, site, 8);
+    std::vector<ServiceFacility> facilities;
+    for (ServiceType type : {ServiceType::Fire, ServiceType::Police,
+                             ServiceType::Health, ServiceType::Education}) {
+      facilities.push_back(ServiceFacility{type, site, 12, 1.0f});
+    }
+    ServiceCoverageCache cache;
+    ServiceSystem::buildCache(roads, facilities, cache);
+    DistrictSystem districts;
+    const DistrictSystem* passed = nullptr;
+    if (withDistrict) {
+      districts.createDistrict("Open", {0, 0}, {7, 5});
+      passed = &districts;
+    }
+    int redeveloped = 0;
+    int64_t spend = 0;
+    for (int step = 0; step < 40; ++step) {
+      const GrowthStats stats = GrowthSystem::runStep(
+        map, store, ZoneDemand{1.0f, 0.0f, 0.0f, 0.0f},
+        static_cast<uint32_t>(80 + step), 0.25f,
+        nullptr, {-1, -1}, {-1, -1}, nullptr, false, &roads, &cache, passed);
+      redeveloped += stats.redevelopedResidential;
+      spend += stats.constructionSpend;
+    }
+    const Building* building = store.getBuilding(map.getTile(site).buildingId);
+    return std::tuple<int, int, int64_t>{
+      building == nullptr ? -1 : building->capacity, redeveloped, spend};
+  };
+
+  EXPECT_EQ(run(false), run(true));
+}
+
 TEST(GrowthSystemTests, LowDemandDoesNotDemolishOccupiedHousingOrJobs) {
   CityMap map({8, 8});
   EntityStore store;
@@ -597,6 +723,17 @@ TEST(GrowthDiagnosticsTests, RedevelopmentDoesNotInventNewConstructionGates) {
   store.getBuilding(tile.buildingId)->capacity = 512;
   d = GrowthSystem::diagnoseSite(map,roads,store,pos,demand);
   EXPECT_EQ(d.blockers.front(),"density_cap");
+  store.getBuilding(tile.buildingId)->capacity = 16;
+  DistrictSystem districts;
+  const DistrictId id = districts.createDistrict("Low", {0, 0}, {11, 11});
+  ASSERT_TRUE(districts.setDistrictHeightCap(id, 2));
+  d = GrowthSystem::diagnoseSite(map,roads,store,pos,demand,nullptr,true,false,nullptr,&districts);
+  EXPECT_EQ(d.blockers.front(),"height_cap");
+  EXPECT_EQ(BuildingDiagnostics::advice("height_cap"),
+    "THIS DISTRICT HEIGHT CAP STOPS FURTHER REDEVELOPMENT.");
+  store.getBuilding(tile.buildingId)->capacity = 8;
+  d = GrowthSystem::diagnoseSite(map,roads,store,pos,demand,nullptr,true,false,nullptr,&districts);
+  EXPECT_TRUE(d.blockers.empty());
   d = GrowthSystem::diagnoseSite(map,roads,store,pos,demand,nullptr,true,true);
   EXPECT_EQ(d.blockers.front(),"burning");
   demand.residential = 0;

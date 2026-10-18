@@ -256,6 +256,54 @@ bool DistrictSystem::setDistrictArchetype(DistrictId id, DistrictArchetype arche
   return true;
 }
 
+bool DistrictSystem::isHeightCap(int multiple) {
+  switch (multiple) {
+    case 0:
+    case 1:
+    case 2:
+    case 4:
+    case 8:
+    case 16:
+    case 32:
+    case 64:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool DistrictSystem::setDistrictHeightCap(DistrictId id, int multiple) {
+  District* district = getDistrict(id);
+  if (district == nullptr || !isHeightCap(multiple)) {
+    return false;
+  }
+  district->heightCap = multiple;
+  return true;
+}
+
+int DistrictSystem::nextHeightCap(int multiple) {
+  switch (multiple) {
+    case 0: return 1;
+    case 1: return 2;
+    case 2: return 4;
+    case 4: return 8;
+    case 8: return 16;
+    case 16: return 32;
+    case 32: return 64;
+    default: return 0;
+  }
+}
+
+int DistrictSystem::heightCapAt(glm::ivec2 coord) const {
+  int cap = 0;
+  for (const District& district : districts) {
+    if (district.contains(coord)) {
+      cap = district.heightCap;
+    }
+  }
+  return isHeightCap(cap) ? cap : 0;
+}
+
 bool DistrictSystem::parseArchetype(const std::string& raw, DistrictArchetype& outArchetype) {
   const std::string normalized = upper(raw);
   if (normalized == "GENERAL") {

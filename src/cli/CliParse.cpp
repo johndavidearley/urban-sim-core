@@ -159,6 +159,10 @@ std::optional<int> parseCliArgs(int argc, char* argv[], CliOptions& opts) {
       int districtId = std::atoi(argv[++i]);
       int64_t cap = std::strtoll(argv[++i], nullptr, 10);
       opts.districtRequests.setBudgetCap.emplace_back(districtId, cap);
+    } else if (arg == "--set-district-height-cap" && i + 2 < argc) {
+      int districtId = std::atoi(argv[++i]);
+      int multiple = std::atoi(argv[++i]);
+      opts.districtRequests.setHeightCap.emplace_back(districtId, multiple);
     } else if (arg == "--assign-facility" && i + 2 < argc) {
       int districtId = std::atoi(argv[++i]);
       int facilityId = std::atoi(argv[++i]);

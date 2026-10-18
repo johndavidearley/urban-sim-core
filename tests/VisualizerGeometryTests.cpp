@@ -437,6 +437,23 @@ TEST(ManagementUiTests, DisabledControlsAreExcludedFromKeyboardActions) {
   EXPECT_FALSE(transportControlEnabled(3,{route},0));
 }
 
+TEST(VisualizerGeometry, DistrictHeightButtonStaysInsideThePanel) {
+  const visualizer::Rect panel = districtPanelRect();
+  const visualizer::Rect height = districtPanelButtonRect(DistrictPanelAction::CycleHeight);
+  const visualizer::Rect starve = districtPanelButtonRect(DistrictPanelAction::ToggleCap);
+  const visualizer::Rect arch = districtPanelButtonRect(DistrictPanelAction::CycleArchetype);
+  for (const visualizer::Rect& button : {arch, starve, height}) {
+    EXPECT_GE(button.x, panel.x);
+    EXPECT_GE(button.y, panel.y);
+    EXPECT_LE(button.x + button.w, panel.x + panel.w);
+    EXPECT_LE(button.y + button.h, panel.y + panel.h);
+  }
+  EXPECT_EQ(districtPanelHitTest(height.x + 1, height.y + 1), DistrictPanelAction::CycleHeight);
+  EXPECT_EQ(districtPanelHitTest(starve.x + 1, starve.y + 1), DistrictPanelAction::ToggleCap);
+  EXPECT_EQ(districtPanelHitTest(arch.x + 1, arch.y + 1), DistrictPanelAction::CycleArchetype);
+  EXPECT_TRUE(pointInDistrictPanel(height.x + 1, height.y + 1));
+}
+
 TEST(VisualizerGeometry, PortObjectsKeepGeometryAndShadowsWithinTheirTile) {
   for (const bool iso:{false,true}) for (const auto kind:{regional::Kind::CargoPort,regional::Kind::PassengerTerminal}) {
     DrawList list;

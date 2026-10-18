@@ -2,6 +2,26 @@
 
 Last verified: October 18, 2026
 
+M43 district height caps are implemented locally (October 18, 2026).
+A district stores an uncapped ladder or a maximum of 1×, 2×, 4×, 8×, 16×, 32×,
+or 64×. Uncapped is the default and the legacy-save value. Growth will not
+redevelop past the top-most district's cap. Buildings already above a new cap
+stay until bulldozed. The cap does not change demand, taxes, zone bans, or new
+low-building construction. The district panel, MCP `height_cap`, and
+`--set-district-height-cap` edit it. Playable ticks and `CitySimulator` both
+read it. An uncapped district matches today's redevelopment chance. A default
+`--simulate` run with no districts is unchanged. City snapshots now write
+buildings and population groups in id order. Before this, a store that had
+bulldozed buildings could save the same city in a different order than its
+reloaded copy. Strict `ctest` in `build-strict` passed 623 tests on macOS.
+Playtest Python unit tests passed (7). All 39 rendered playtests passed,
+including the M43 acceptance: a block capped at 2× stops at 16 while the
+uncapped block climbs past it, a newly zoned capped tile builds at or below 2×,
+and checkpoint, headless, invalid-cap, and legacy loads all match. See
+[DISTRICT_HEIGHT.md](DISTRICT_HEIGHT.md).
+Hosted CI, sanitizers, and packaging were not repeated.
+Next is M44, municipal bonds.
+
 M42 shoreline treatment is implemented locally (October 18, 2026).
 Sanitation now supports clean shoreline treatment at $9,000 construction and
 $34/tick upkeep. Treatment replaces a raw outlet in place, restores affected
@@ -15,7 +35,7 @@ funding, 800×640 UI, exact persisted save/load
 continuation and gameplay/headless parity. A 400-tick default simulation CSV is
 byte-identical to M41.
 See [SHORELINE_TREATMENT.md](SHORELINE_TREATMENT.md). Hosted CI, sanitizers and
-packaging were not repeated. Next is M43, district height caps.
+packaging were not repeated. M43 is also implemented locally.
 
 M41 local fire response is implemented locally (October 18, 2026).
 Both hosts reuse cached road-distance fields for ignition, incoming spread and
@@ -104,9 +124,8 @@ wind, and hydro on the existing Power facility. One Power funding slider still
 covers every plant. Autonomous placement and an untouched `--simulate` run stay
 on the generic 100 MW plant, which adds no local tile pollution. Strict `ctest`
 in `build-strict` passed 590 tests. Playtest Python unit tests passed (7).
-Rendered playtests and hosted CI were not re-run. The active backlog is M43–M44
-in `ROADMAP.md`: finite landfill volume, school seats and hospital beds, local
-fire response, shoreline treatment, district height caps, and municipal bonds.
+Rendered playtests and hosted CI were not re-run for that entry. M39–M43 are
+also implemented locally. The active backlog is M44 in `ROADMAP.md`.
 Earlier entries below preserve the implementation history and the gates that
 were pending at each stage.
 
@@ -284,11 +303,9 @@ Quick performance smoke (headless):
 
 ## Current Priorities
 
-Phase 12 in `ROADMAP.md` is the queue. Implement in order. M17–M38 and
-waste-to-energy incinerators are done. M39 is also implemented locally:
-strict Windows validation passed 598 C++ tests and all 35 rendered playtests
-on October 18, 2026. M40 is also implemented locally (604 C++ tests and 36 rendered tests);
-M41 and M42 are implemented locally; M43–M44 are next.
+Phase 12 in `ROADMAP.md` is the queue. Implement in order. M17–M42 and
+waste-to-energy incinerators are done. M43 district height caps are implemented
+locally. M44 is next.
 
 1. **M39 Landfills that fill.** Implemented locally. Garbage sites start
    with 80,000 units of volume. Full sites stop accepting; spare incinerator
@@ -300,8 +317,9 @@ M41 and M42 are implemented locally; M43–M44 are next.
    ignition, spread, and burn duration. Disasters stay off by default.
 4. **M42 Shoreline treatment.** Implemented locally. A funded treatment plant covers sanitation
    and does not cut intake capacity. Raw outlets stay available.
-5. **M43 District height caps.** A district can stop the redevelopment
-   ladder at a chosen multiple. Uncapped districts match today.
+5. **M43 District height caps.** Implemented locally. A district can stop
+   the redevelopment ladder at 1×–64×. Uncapped districts match today.
+   See `DISTRICT_HEIGHT.md`.
 6. **M44 Municipal bonds.** The budget panel can borrow a fixed principal
    and repay it over a tick term, separate from the automatic overdraft.
 

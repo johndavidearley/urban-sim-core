@@ -259,6 +259,7 @@ void captureSessionDistricts(const DistrictSystem& districts, GameplaySessionSta
     record.y2 = district.maxCorner.y;
     record.archetype = static_cast<int>(district.archetype);
     record.serviceBudgetCap = district.serviceBudgetCap;
+    record.heightCap = district.heightCap;
     session.districts.push_back(std::move(record));
   }
 }
@@ -278,6 +279,7 @@ void applySessionDistricts(DistrictSystem& districts, const GameplaySessionState
     if (id != 0) {
       districts.setDistrictArchetype(id, archetype);
       districts.setDistrictServiceBudgetCap(id, record.serviceBudgetCap);
+      districts.setDistrictHeightCap(id, record.heightCap);
     }
   }
 }

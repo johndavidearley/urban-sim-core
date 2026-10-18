@@ -671,7 +671,14 @@ void runGrowthStepsWithPressure(
       demand,
       baseSeed + static_cast<uint32_t>(step),
       0.5f,
-      growthModifiers.empty() ? nullptr : &growthModifiers
+      growthModifiers.empty() ? nullptr : &growthModifiers,
+      {-1, -1},
+      {-1, -1},
+      nullptr,
+      false,
+      nullptr,
+      nullptr,
+      &districtSystem
     );
 
     if (printStepOutput) {

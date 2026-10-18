@@ -175,7 +175,7 @@ SimResult CitySimulator::run(
       const GrowthStats growth = GrowthSystem::runStep(
         map, store, demand, tickSeed, options.buildChance,
         &districtGrowthModifiers, {ax0, ay0}, {ax1, ay1}, &pool,
-        options.enableUtilities, &roads, &coverageCache);
+        options.enableUtilities, &roads, &coverageCache, districts);
       constructionSpend = growth.constructionSpend;
       // Spawn fills empty zoned tiles; demolition frees them. Redevelopment
       // is excluded from both counters inside GrowthSystem.

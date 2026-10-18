@@ -90,7 +90,8 @@ json serializeDistricts(const std::vector<GameplaySessionState::DistrictRecord>&
       {"x2", district.x2},
       {"y2", district.y2},
       {"archetype", district.archetype},
-      {"serviceBudgetCap", district.serviceBudgetCap}
+      {"serviceBudgetCap", district.serviceBudgetCap},
+      {"heightCap", district.heightCap}
     });
   }
   return out;
@@ -111,6 +112,13 @@ bool parseDistricts(
     district.y2 = item.at("y2").get<int>();
     district.archetype = item.value("archetype", 0);
     district.serviceBudgetCap = item.value("serviceBudgetCap", int64_t{-1});
+    if (item.contains("heightCap")) {
+      const json& value = item.at("heightCap");
+      if (!value.is_number_integer() || !DistrictSystem::isHeightCap(value.get<int>())) {
+        return fail(errorMessage, "gameplay session contains an invalid district height cap");
+      }
+      district.heightCap = value.get<int>();
+    }
     if (district.x1 > district.x2 || district.y1 > district.y2
         || !map.isValid({district.x1, district.y1})
         || !map.isValid({district.x2, district.y2})) {
@@ -724,6 +732,7 @@ PlayableCityTickState GameplaySessionSystem::advance(
                                              {record.x1, record.y1}, {record.x2, record.y2});
     districts.setDistrictArchetype(id, static_cast<DistrictArchetype>(record.archetype));
     districts.setDistrictServiceBudgetCap(id, record.serviceBudgetCap);
+    districts.setDistrictHeightCap(id, record.heightCap);
   }
   city_sim::ConstructionState construction;
   construction.extent = session.autonomousExtent;

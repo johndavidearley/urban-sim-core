@@ -107,7 +107,8 @@ struct PlayableCityTickOptions {
   bool refreshPollution = true;
   bool updateLandValues = true;
   // When non-null, ordinances are host-owned (G-mode autoZone) and growth
-  // pressure is applied here. Null matches prior playable behavior.
+  // pressure is applied here. The same districts supply height caps to
+  // redevelopment. Null matches prior playable behavior.
   const DistrictSystem* districts = nullptr;
 };
 

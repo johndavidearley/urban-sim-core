@@ -19,12 +19,13 @@ constexpr int kHudPanelHeight = 370;
 constexpr int kDistrictPanelX = 14;
 constexpr int kDistrictPanelY = 308;
 constexpr int kDistrictPanelWidth = 390;
-constexpr int kDistrictPanelHeight = 78;
+constexpr int kDistrictPanelHeight = 106;
 
 enum class DistrictPanelAction {
   None,
   CycleArchetype,
   ToggleCap,
+  CycleHeight,
 };
 
 void drawToolPalette(

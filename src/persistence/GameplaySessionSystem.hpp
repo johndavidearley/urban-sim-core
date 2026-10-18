@@ -71,6 +71,9 @@ struct GameplaySessionState {
     int y2 = 0;
     int archetype = 0;
     int64_t serviceBudgetCap = -1;  // negative = uncapped
+    // 0 is uncapped. Otherwise 1, 2, 4, 8, 16, 32, or 64. Older sessions
+    // omit the field and load uncapped.
+    int heightCap = 0;
   };
   std::vector<DistrictRecord> districts;
 };

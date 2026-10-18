@@ -10,6 +10,7 @@
 #include "src/world/Zoning.hpp"
 
 struct ServiceCoverageCache;
+class DistrictSystem;
 
 struct GrowthStats {
   int evaluatedTiles = 0;
@@ -54,7 +55,8 @@ struct GrowthChanceModifier {
 };
 
 // Capacity of a building placed on an empty zoned tile. Redevelopment
-// doubles it, capped at 64× inside GrowthSystem::runStep.
+// doubles it, capped at 64× inside GrowthSystem::runStep. A district height
+// cap can stop the ladder sooner. It does not change the chance.
 int defaultBuildingCapacity(BuildingType type);
 
 // How many times `capacity` has doubled past defaultBuildingCapacity.
@@ -100,7 +102,8 @@ public:
   static GrowthSiteDiagnostics diagnoseSite(const CityMap& map, const RoadNetwork& roads,
     const EntityStore& store, Coord position, const ZoneDemand& demand,
     const ServiceCoverageCache* services = nullptr, bool requireUtilities = true,
-    bool burning = false, const std::vector<GrowthChanceModifier>* modifiers = nullptr);
+    bool burning = false, const std::vector<GrowthChanceModifier>* modifiers = nullptr,
+    const DistrictSystem* districts = nullptr);
   // activeMin/activeMax optionally clamp the tile scan to the city's current
   // developed extent. Pass {-1,-1}/{-1,-1} (default) to scan the full map.
   // If pool is non-null, the read-only zone balance scan is fanned out across
@@ -115,6 +118,9 @@ public:
   // `roads` and `services` feed the redevelopment location weight. A null
   // road network contributes no congestion. A null service cache contributes
   // no civic coverage. Land value always comes from the map.
+  // `districts` lowers the redevelopment ceiling where a height cap is set.
+  // Null, or an uncapped district, keeps the 64× ladder and the same chance.
+  // A building already above a cap is left in place.
   static GrowthStats runStep(
     CityMap& map,
     EntityStore& store,
@@ -127,6 +133,7 @@ public:
     ThreadPool* pool = nullptr,
     bool requireUtilities = false,
     const RoadNetwork* roads = nullptr,
-    const ServiceCoverageCache* services = nullptr
+    const ServiceCoverageCache* services = nullptr,
+    const DistrictSystem* districts = nullptr
   );
 };

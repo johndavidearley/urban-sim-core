@@ -55,6 +55,13 @@ struct District {
   std::vector<ZoneType> bannedZoneTypes;
   DistrictArchetype archetype = DistrictArchetype::General;
 
+  // Maximum capacity / defaultBuildingCapacity. 0 is uncapped and keeps the
+  // global 64× redevelopment ladder. Otherwise one of 1, 2, 4, 8, 16, 32, 64.
+  // Growth will not redevelop past it. Taller buildings already standing stay
+  // until the player bulldozes them. The cap does not change demand, taxes,
+  // or zone bans.
+  int heightCap = 0;
+
   bool contains(glm::ivec2 coord) const {
     return coord.x >= minCorner.x && coord.x <= maxCorner.x &&
            coord.y >= minCorner.y && coord.y <= maxCorner.y;
@@ -142,8 +149,18 @@ public:
 
   // Apply a named archetype's default ordinance + service priorities (see
   // DistrictArchetype). Overwrites both; call the general setters afterward
-  // to customize further.
+  // to customize further. Does not change the height cap.
   bool setDistrictArchetype(DistrictId id, DistrictArchetype archetype);
+
+  // 0, or one of 1, 2, 4, 8, 16, 32, 64. Other values are rejected.
+  static bool isHeightCap(int multiple);
+  // False when the district is missing or `multiple` is not a height cap.
+  bool setDistrictHeightCap(DistrictId id, int multiple);
+  // Uncapped, then 1× through 64×, then uncapped again.
+  static int nextHeightCap(int multiple);
+  // Last containing district wins. 0 when the tile is outside every district
+  // or that district is uncapped.
+  int heightCapAt(glm::ivec2 coord) const;
 
   // Parse a case-insensitive archetype name ("GENERAL"/"INDUSTRIAL"/"TECHHUB",
   // "TECH_HUB", "TECH-HUB"). Mirrors Zoning::parseZoneType/ServiceSystem::

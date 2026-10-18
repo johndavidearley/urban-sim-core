@@ -790,14 +790,17 @@ Rect districtPanelButtonRect(DistrictPanelAction action) {
       return {kDistrictPanelX + 270, kDistrictPanelY + 24, 106, 22};
     case DistrictPanelAction::ToggleCap:
       return {kDistrictPanelX + 270, kDistrictPanelY + 50, 106, 22};
+    case DistrictPanelAction::CycleHeight:
+      return {kDistrictPanelX + 270, kDistrictPanelY + 76, 106, 22};
     default:
       return {0, 0, 0, 0};
   }
 }
 
 DistrictPanelAction districtPanelHitTest(int mouseX, int mouseY) {
-  const std::array<DistrictPanelAction, 2> actions = {
-    DistrictPanelAction::CycleArchetype, DistrictPanelAction::ToggleCap
+  const std::array<DistrictPanelAction, 3> actions = {
+    DistrictPanelAction::CycleArchetype, DistrictPanelAction::ToggleCap,
+    DistrictPanelAction::CycleHeight
   };
   for (const DistrictPanelAction action : actions) {
     const Rect rect = districtPanelButtonRect(action);
@@ -837,10 +840,15 @@ void drawDistrictPanel(
   drawText(renderer, panel.x + 10, panel.y + 60,
            starved ? "GROWTH SLOWED" : "GROWTH NORMAL",
            {175, 185, 200}, 1);
+  const std::string height = district.heightCap <= 0
+    ? "HEIGHT UNCAPPED"
+    : "HEIGHT " + std::to_string(district.heightCap) + "X";
+  drawText(renderer, panel.x + 10, panel.y + 80, height, {175, 205, 230}, 1);
 
-  const std::array<std::pair<DistrictPanelAction, const char*>, 2> buttons = {{
+  const std::array<std::pair<DistrictPanelAction, const char*>, 3> buttons = {{
     {DistrictPanelAction::CycleArchetype, "ARCH"},
     {DistrictPanelAction::ToggleCap, starved ? "FUND" : "STARVE"},
+    {DistrictPanelAction::CycleHeight, "HEIGHT"},
   }};
   for (const auto& [action, label] : buttons) {
     const Rect rect = districtPanelButtonRect(action);

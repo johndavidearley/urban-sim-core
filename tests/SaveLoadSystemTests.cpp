@@ -27,6 +27,32 @@ TEST(SaveLoadSystemTests, RestoresAllocatorIncludingRemovedEntitiesAndLegacyFall
   EXPECT_EQ(people.createGroup(10,0),static_cast<uint64_t>(live)+1);
 }
 
+TEST(SaveLoadSystemTests, SnapshotOrderDoesNotDependOnStoreHistory) {
+  CityMap map({16,16}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  std::vector<EntityId> removed;
+  for (int i = 0; i < 64; ++i) {
+    const auto id = store.createBuilding(BuildingType::Residential,{i%16,i/16},8);
+    people.createGroup(4,0);
+    if (i % 3 != 0) removed.push_back(id);
+  }
+  for (const auto id : removed) store.removeBuilding(id);
+  const auto live = SaveLoadSystem::captureSnapshot(map,roads,store,people);
+  CityMap loadedMap({16,16}); RoadNetwork loadedRoads(loadedMap);
+  EntityStore loadedStore; PopulationStore loadedPeople;
+  ASSERT_TRUE(SaveLoadSystem::applySnapshot(live,loadedMap,loadedRoads,loadedStore,loadedPeople));
+  const auto reloaded = SaveLoadSystem::captureSnapshot(loadedMap,loadedRoads,loadedStore,loadedPeople);
+  ASSERT_EQ(live.buildings.size(),reloaded.buildings.size());
+  ASSERT_EQ(live.populationGroups.size(),reloaded.populationGroups.size());
+  for (size_t i = 0; i < live.buildings.size(); ++i) {
+    EXPECT_EQ(live.buildings[i].id,reloaded.buildings[i].id);
+    if (i > 0) EXPECT_LT(live.buildings[i-1].id,live.buildings[i].id);
+  }
+  for (size_t i = 0; i < live.populationGroups.size(); ++i) {
+    EXPECT_EQ(live.populationGroups[i].id,reloaded.populationGroups[i].id);
+    if (i > 0) EXPECT_LT(live.populationGroups[i-1].id,live.populationGroups[i].id);
+  }
+}
+
 TEST(SaveLoadSystemTests, AllocatorCounterPersistsAndRejectsMalformedFiles) {
   CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
   store.createBuilding(BuildingType::Residential,{2,2},40);

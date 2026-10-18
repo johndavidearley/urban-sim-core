@@ -138,7 +138,7 @@ if (command == "inspect") {
                                         "district"}[static_cast<size_t>(i)],
              paletteButtonRect(i, windowWidth, windowHeight));
       if (!cleanUiMode && selectedDistrictId != 0)
-        for (int i = 1; i <= 2; ++i)
+        for (int i = 1; i <= 3; ++i)
           rect("district_" + std::to_string(i),
                districtPanelButtonRect(static_cast<DistrictPanelAction>(i)));
       if (!cleanUiMode && showLegend)
@@ -177,7 +177,7 @@ if (command == "inspect") {
     const bool burning = std::any_of(liveState.disasters.burningTiles.begin(),liveState.disasters.burningTiles.end(),
       [&](const auto& tile) { return tile.position == pos; });
     const auto d = BuildingDiagnostics::evaluate(map,roads,store,pos,liveState.demand,liveState.serviceCache,
-      burning,&liveState.districtGrowthModifiers);
+      burning,&liveState.districtGrowthModifiers,&districts);
     const auto& n = d.neighborhood;
     Json advice = Json::array();
     for (const auto& code : d.growth.blockers) advice.push_back(BuildingDiagnostics::advice(code));
@@ -300,7 +300,8 @@ if (command == "inspect") {
            {"x2", d.maxCorner.x},
            {"y2", d.maxCorner.y},
            {"archetype", DistrictSystem::archetypeToString(d.archetype)},
-           {"budget_cap", d.serviceBudgetCap}});
+           {"budget_cap", d.serviceBudgetCap},
+           {"height_cap", d.heightCap}});
   } else if (section == "regional_connections") {
     const regional::SeaAccess sea(map);
     for (const auto& c:liveState.regionalConnections) {
@@ -468,15 +469,24 @@ if (command == "tool") {
     const auto id = args.at("id").get<DistrictId>();
     if (!districts.getDistrictConst(id))
       throw std::runtime_error("Unknown district id");
-    if (args.contains("archetype")) {
-      DistrictArchetype a;
-      if (!DistrictSystem::parseArchetype(args.at("archetype"), a))
-        throw std::runtime_error("Unknown archetype");
-      districts.setDistrictArchetype(id, a);
-    }
-    if (args.contains("budget_cap"))
-      districts.setDistrictServiceBudgetCap(
-          id, args.at("budget_cap").get<int64_t>());
+    const bool setArchetype = args.contains("archetype");
+    DistrictArchetype archetype = DistrictArchetype::General;
+    if (setArchetype &&
+        !DistrictSystem::parseArchetype(args.at("archetype"), archetype))
+      throw std::runtime_error("Unknown archetype");
+    const bool setBudget = args.contains("budget_cap");
+    const int64_t budget = setBudget ? args.at("budget_cap").get<int64_t>() : 0;
+    const bool setHeight = args.contains("height_cap");
+    const int height = setHeight ? args.at("height_cap").get<int>() : 0;
+    if (setHeight && !DistrictSystem::isHeightCap(height))
+      throw std::runtime_error(
+          "Height cap must be 0, 1, 2, 4, 8, 16, 32, or 64");
+    if (setArchetype)
+      districts.setDistrictArchetype(id, archetype);
+    if (setBudget)
+      districts.setDistrictServiceBudgetCap(id, budget);
+    if (setHeight)
+      districts.setDistrictHeightCap(id, height);
     sessionDirty = true;
     return Json::object();
   }

@@ -1761,6 +1761,16 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           }
           break;
         }
+        case DistrictPanelAction::CycleHeight: {
+          const int next = DistrictSystem::nextHeightCap(district->heightCap);
+          if (districts.setDistrictHeightCap(selectedDistrictId, next)) {
+            sessionDirty = true;
+            notify(next <= 0 ? "DISTRICT HEIGHT UNCAPPED"
+                             : "DISTRICT HEIGHT " + std::to_string(next) + "X",
+                   true);
+          }
+          break;
+        }
         case DistrictPanelAction::None:
         default:
           break;
@@ -2182,7 +2192,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       const bool burning = std::any_of(liveState.disasters.burningTiles.begin(), liveState.disasters.burningTiles.end(),
         [&](const auto& tile) { return tile.position == hoveredTile; });
       const auto diagnostics = BuildingDiagnostics::evaluate(map,roads,store,hoveredTile,liveState.demand,
-        liveState.serviceCache,burning,&liveState.districtGrowthModifiers);
+        liveState.serviceCache,burning,&liveState.districtGrowthModifiers,&districts);
       const auto residents = population.getTotalPopulation();
       const float joblessness = residents ? static_cast<float>(residents-std::min(residents,population.getTotalEmployed()))/residents : 0.f;
       drawTileInspector(renderer, map, roads, store, deliveredFacilities, hoveredTile,
@@ -2426,6 +2436,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
             districts.getDistrictConst(selectedDistrictId)->serviceBudgetCap < 0
                 ? "STARVE: CAP SERVICE BUDGET SO THIS DISTRICT GROWS SLOWER"
                 : "FUND: REMOVE THE SERVICE BUDGET CAP";
+        break;
+      case DistrictPanelAction::CycleHeight:
+        uiHoverText =
+            "HEIGHT: CYCLE UNCAPPED 1X 2X 4X 8X 16X 32X 64X REDEVELOPMENT CAP";
         break;
       case DistrictPanelAction::None:
       default:

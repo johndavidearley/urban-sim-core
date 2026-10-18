@@ -27,6 +27,214 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_district_height_cap_diverges_and_round_trips(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 4, "y1": 16, "x2": 24, "y2": 16})
+        for service, x in (("fire", 12), ("police", 14), ("health", 16), ("education", 18),
+                           ("water", 10), ("power", 8)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
+        await s.request("tool", {"action": "apply", "name": "zone", "zone": "residential", "x1": 6, "y1": 17})
+        await s.request("tool", {"action": "apply", "name": "zone", "zone": "residential", "x1": 22, "y1": 17})
+        await s.request("tool", {"action": "apply", "name": "zone", "zone": "commercial", "x1": 20, "y1": 15})
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("tool", {"action": "apply", "name": "district", "archetype": "general",
+                                 "x1": 4, "y1": 14, "x2": 10, "y2": 18})
+        await s.request("tool", {"action": "apply", "name": "district", "archetype": "general",
+                                 "x1": 18, "y1": 14, "x2": 24, "y2": 18})
+        await s.city("save")
+        session_path = s.artifact("urban_sim_session.json")
+        session = json.loads(session_path.read_text())
+        core_path = Path(session["citySnapshot"])
+        core = json.loads(core_path.read_text())
+        self.assertEqual(core["buildings"], [])
+        next_id = core["nextEntityId"]
+
+        def place(x, y, kind, capacity, occupancy):
+            nonlocal next_id
+            building_id = next_id
+            next_id += 1
+            core["buildings"].append({
+                "id": building_id, "type": kind,
+                "position": {"x": x, "y": y},
+                "capacity": capacity, "occupancy": occupancy,
+                "crimeRate": 0.0, "illnessRate": 0.0,
+            })
+            tile = next(t for t in core["tiles"] if t["x"] == x and t["y"] == y)
+            self.assertEqual(tile["zone"], kind)
+            tile["buildingId"] = building_id
+            tile["landValue"] = 300.0
+
+        place(6, 17, 1, 8, 8)
+        place(22, 17, 1, 8, 8)
+        place(20, 15, 2, 16, 8)
+        for band, size in ((0, 8), (1, 6), (2, 2)):
+            core["populationGroups"].append(
+                {"id": next_id, "band": band, "size": size, "employed": size})
+            next_id += 1
+        core["nextEntityId"] = next_id
+        core_path.write_text(json.dumps(core))
+        session["funds"] = 500000
+        session_path.write_text(json.dumps(session))
+        await s.city("load")
+        self.assertEqual(s.last_state["funds"], 500000)
+
+        await s.request("window", {"action": "resize", "width": 1280, "height": 800})
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 40, "view_x": 2, "view_y": 10})
+        await s.request("tool", {"action": "select", "name": "district"})
+        point = await s.request("coordinates", {"direction": "tile_to_screen", "x": 6, "y": 17})
+        await s.request("input", {"events": [
+            {"type": "down", "button": "left", "x": point["x"], "y": point["y"]},
+            {"type": "up", "button": "left", "x": point["x"], "y": point["y"]},
+        ]})
+        self.assertEqual(s.last_state["toast"], "DISTRICT SELECTED")
+        self.assertEqual(s.last_state["ui"]["selected_district"], 1)
+        controls = (await s.request("inspect", {"section": "ui"}))["controls"]
+        buttons = {c["name"]: c for c in controls}
+        self.assertGreater(buttons["district_3"]["y"], buttons["district_2"]["y"])
+        self.assertGreater(buttons["district_2"]["y"], buttons["district_1"]["y"])
+        self.assertLess(buttons["district_3"]["x"] + buttons["district_3"]["width"], 1280)
+
+        async def click(control):
+            x = control["x"] + control["width"] // 2
+            y = control["y"] + control["height"] // 2
+            await s.request("input", {"events": [
+                {"type": "down", "button": "left", "x": x, "y": y},
+                {"type": "up", "button": "left", "x": x, "y": y},
+            ]})
+
+        await click(buttons["district_3"])
+        self.assertEqual(s.last_state["toast"], "DISTRICT HEIGHT 1X")
+        await click(buttons["district_3"])
+        self.assertEqual(s.last_state["toast"], "DISTRICT HEIGHT 2X")
+        districts = (await s.request("inspect", {"section": "districts"}))["items"]
+        capped = next(d for d in districts if d["x1"] == 4)
+        opened = next(d for d in districts if d["x1"] == 18)
+        self.assertEqual(capped["height_cap"], 2)
+        self.assertEqual(opened["height_cap"], 0)
+        self.assertEqual(capped["archetype"], "GENERAL")
+        self.assertEqual(capped["budget_cap"], -1)
+        with self.assertRaises(PlaytestError):
+            await s.request("tool", {"action": "district_policy", "id": capped["id"], "height_cap": 3})
+        districts = (await s.request("inspect", {"section": "districts"}))["items"]
+        self.assertEqual(next(d["height_cap"] for d in districts if d["x1"] == 4), 2)
+
+        async def capacities():
+            entities = (await s.request("inspect", {"section": "entities", "limit": 64}))["items"]
+            found = {(b["x"], b["y"]): b["capacity"] for b in entities}
+            return found.get((6, 17)), found.get((22, 17))
+
+        await s.request("time", {"action": "step", "ticks": 1})
+        gate = await s.request("inspect", {"section": "diagnostics", "x": 6, "y": 17})
+        self.assertGreaterEqual(gate["growth"]["civic_coverage"], 0.75)
+        self.assertGreater(gate["growth"]["location_factor"], 0.2)
+        self.assertGreaterEqual(gate["growth"]["demand"], 0.5)
+        self.assertNotIn("height_cap", gate["growth"]["blockers"])
+        capped_cap, open_cap = await capacities()
+        for _ in range(4):
+            if capped_cap == 16 and open_cap is not None and open_cap > 16:
+                break
+            await s.request("time", {"action": "step", "ticks": 100})
+            capped_cap, open_cap = await capacities()
+            self.assertIsNotNone(capped_cap, s.last_state["demand"])
+            self.assertLessEqual(capped_cap, 16, s.last_state["demand"])
+        self.assertEqual(capped_cap, 16, (capped_cap, open_cap, s.last_state["demand"]))
+        self.assertGreater(open_cap, 16, (capped_cap, open_cap, s.last_state["demand"]))
+
+        # The empty uncapped tower holds demand near zero. Bulldozing it drops housing
+        # below the startup floor, so a newly zoned capped tile can build.
+        await s.request("tool", {"action": "apply", "name": "bulldoze", "x1": 22, "y1": 17})
+        await s.request("tool", {"action": "apply", "name": "zone", "zone": "residential", "x1": 8, "y1": 17})
+        low = None
+        for _ in range(4):
+            entities = (await s.request("inspect", {"section": "entities", "limit": 64}))["items"]
+            low = next((b["capacity"] for b in entities if b["x"] == 8 and b["y"] == 17), None)
+            capped_cap, open_cap = await capacities()
+            self.assertLessEqual(capped_cap, 16)
+            if low is not None:
+                break
+            await s.request("time", {"action": "step", "ticks": 50})
+        self.assertIsNotNone(low, s.last_state["demand"])
+        self.assertLessEqual(low, 16)
+        self.assertGreaterEqual(low, 8)
+        stopped = await s.request("inspect", {"section": "diagnostics", "x": 6, "y": 17})
+        self.assertIn("height_cap", stopped["growth"]["blockers"])
+        self.assertIn("THIS DISTRICT HEIGHT CAP STOPS FURTHER REDEVELOPMENT.", stopped["growth"]["advice"])
+        if low < 16:
+            allowed = await s.request("inspect", {"section": "diagnostics", "x": 8, "y": 17})
+            self.assertNotIn("height_cap", allowed["growth"]["blockers"])
+
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 40, "view_x": 0, "view_y": 8})
+        await s.screenshot("district-height-blocks")
+        await s.request("tool", {"action": "select", "name": "district"})
+        point = await s.request("coordinates", {"direction": "tile_to_screen", "x": 6, "y": 17})
+        await s.request("input", {"events": [
+            {"type": "down", "button": "left", "x": point["x"], "y": point["y"]},
+            {"type": "up", "button": "left", "x": point["x"], "y": point["y"]},
+        ]})
+        panel = await s.screenshot("district-height-panel")
+        with Image.open(panel["png"]) as image:
+            self.assertEqual(image.format, "PNG")
+            self.assertEqual(image.size[0], panel["state"]["dimensions"]["framebuffer_width"])
+        await s.request("view", {"action": "projection", "projection": "isometric"})
+        await s.request("view", {"action": "focus"})
+        await s.screenshot("district-height-isometric")
+
+        await s.city("save")
+        frozen = json.loads(s.artifact("urban_sim_session.json").read_text())
+        self.assertEqual(next(d["heightCap"] for d in frozen["districts"] if d["x1"] == 4), 2)
+        self.assertEqual(next(d["heightCap"] for d in frozen["districts"] if d["x1"] == 18), 0)
+        core_copy = s.artifact("height-cap-checkpoint.city.json")
+        core_copy.write_bytes(Path(frozen["citySnapshot"]).read_bytes())
+        frozen["citySnapshot"] = str(core_copy)
+        checkpoint = s.artifact("height-cap-checkpoint.json")
+        checkpoint.write_text(json.dumps(frozen))
+        await s.request("time", {"action": "step", "ticks": 3})
+        await s.city("save")
+        expected = json.loads(s.artifact("urban_sim_session.json").read_text())
+        expected_core = json.loads(Path(expected["citySnapshot"]).read_text())
+        await s.city("load", import_path=str(checkpoint))
+        await s.request("time", {"action": "step", "ticks": 3})
+        await s.city("save")
+        restored = json.loads(s.artifact("urban_sim_session.json").read_text())
+        self.assertEqual(json.loads(Path(restored["citySnapshot"]).read_text()), expected_core)
+        self.assertEqual({k: v for k, v in restored.items() if k != "citySnapshot"},
+                         {k: v for k, v in expected.items() if k != "citySnapshot"})
+        cli = Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest", "-cli"))
+        output = s.artifact("height-cap-headless.json")
+        process = await asyncio.create_subprocess_exec(
+            str(cli), "--simulate", "3", "--simulate-session", str(checkpoint),
+            "--simulate-session-out", str(output),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        _, stderr = await process.communicate()
+        self.assertEqual(process.returncode, 0, stderr.decode())
+        headless = json.loads(output.read_text())
+        self.assertEqual(json.loads(Path(headless["citySnapshot"]).read_text()), expected_core)
+        self.assertEqual({k: v for k, v in headless.items() if k != "citySnapshot"},
+                         {k: v for k, v in expected.items() if k != "citySnapshot"})
+        self.assertEqual(next(d["heightCap"] for d in headless["districts"] if d["x1"] == 4), 2)
+
+        bad = json.loads(checkpoint.read_text())
+        next(d for d in bad["districts"] if d["x1"] == 4)["heightCap"] = 3
+        bad_path = s.artifact("height-cap-invalid.json")
+        bad_path.write_text(json.dumps(bad))
+        with self.assertRaises(PlaytestError):
+            await s.city("load", import_path=str(bad_path))
+        districts = (await s.request("inspect", {"section": "districts"}))["items"]
+        self.assertEqual(next(d["height_cap"] for d in districts if d["x1"] == 4), 2)
+        legacy = json.loads(checkpoint.read_text())
+        for district in legacy["districts"]:
+            district.pop("heightCap", None)
+        legacy_path = s.artifact("height-cap-legacy.json")
+        legacy_path.write_text(json.dumps(legacy))
+        await s.city("load", import_path=str(legacy_path))
+        districts = (await s.request("inspect", {"section": "districts"}))["items"]
+        self.assertTrue(districts)
+        self.assertTrue(all(d["height_cap"] == 0 for d in districts))
+
     async def test_shore_treatment_replacement_funding_and_checkpoint(self):
         s = self.session
         await s.city("new", 32)

@@ -1031,3 +1031,54 @@ TEST(PlayableCityTickTests, LocalFireStationProtectsNearbyHomeButNotUncoveredHom
   EXPECT_EQ(store.getBuilding(far), nullptr);
   EXPECT_EQ(state.disasters.fire.buildingsDestroyed, 1u);
 }
+
+TEST(PlayableCityTickTests, DistrictHeightCapStopsPlayableRedevelopment) {
+  auto run = [](int heightCap) {
+    PlayableCityTickOptions options;
+    options.requireUtilities = false;
+    options.growthChance = 1.0f;
+    options.enableTransit = false;
+    options.enableFreight = false;
+    options.refreshPollution = false;
+    options.updateLandValues = false;
+    options.treasuryInterestRate = 0.0;
+    CityMap map({16, 12});
+    RoadNetwork roads(map);
+    EntityStore store;
+    PopulationStore population;
+    laySpine(map, roads);
+    const int midY = map.getDimensions().y / 2;
+    const Coord site{8, midY - 1};
+    Zoning::applyZoneRect(map, site, site, ZoneType::Residential);
+    map.getTile(site).buildingId = store.createBuilding(BuildingType::Residential, site, 8);
+    map.landValue(site) = kRedevelopmentLandValueCeiling;
+    std::vector<ServiceFacility> facilities;
+    for (ServiceType type : {ServiceType::Fire, ServiceType::Police,
+                             ServiceType::Health, ServiceType::Education}) {
+      facilities.push_back(ServiceFacility{type, {8, midY}, 12, 1.0f});
+    }
+    DistrictSystem districts;
+    const DistrictId id = districts.createDistrict("Block", {7, midY - 2}, {9, midY});
+    districts.setDistrictHeightCap(id, heightCap);
+    options.districts = &districts;
+    PlayableCityTickState state;
+    state.populationTarget = 0;
+    int64_t funds = 80000;
+    int peak = 8;
+    for (int step = 0; step < 400; ++step) {
+      playableCityTick(map, roads, store, population, facilities, state, funds, options);
+      const Building* building = store.getBuilding(map.getTile(site).buildingId);
+      if (building == nullptr) {
+        continue;
+      }
+      peak = std::max(peak, building->capacity);
+      if (heightCap > 0 && building->capacity > defaultBuildingCapacity(BuildingType::Residential) * heightCap) {
+        return building->capacity;
+      }
+    }
+    return peak;
+  };
+
+  EXPECT_EQ(run(2), 16);
+  EXPECT_GT(run(0), 16);
+}

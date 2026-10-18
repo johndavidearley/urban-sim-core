@@ -6,6 +6,8 @@
 #include "src/systems/FireSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
 
+class DistrictSystem;
+
 struct NeighborhoodDiagnostics {
   int radius = 4;
   uint32_t tiles = 0, buildings = 0;
@@ -29,9 +31,10 @@ struct BuildingDiagnostics {
   static BuildingDiagnostics evaluate(const CityMap& map, const RoadNetwork& roads,
     const EntityStore& store, Coord pos, const ZoneDemand& demand,
     const ServiceCoverageCache& cache, bool burning = false,
-    const std::vector<GrowthChanceModifier>* modifiers = nullptr) {
+    const std::vector<GrowthChanceModifier>* modifiers = nullptr,
+    const DistrictSystem* districts = nullptr) {
     BuildingDiagnostics d;
-    d.growth = GrowthSystem::diagnoseSite(map,roads,store,pos,demand,&cache,true,burning,modifiers);
+    d.growth = GrowthSystem::diagnoseSite(map,roads,store,pos,demand,&cache,true,burning,modifiers,districts);
     if (!map.isValid(pos)) return d;
     d.services = serviceMask(roads,cache,pos);
     d.fireResponse = FireSystem::responseAt(roads,cache,pos);
@@ -68,6 +71,7 @@ struct BuildingDiagnostics {
     if (code == "no_water") return "CHECK WATER REACH, SUPPLY AND FUNDING.";
     if (code == "low_demand" || code == "low_redevelopment_demand") return "CHECK DEMAND, TAXES AND CITY BALANCE.";
     if (code == "density_cap") return "THIS BUILDING HAS REACHED THE DENSITY CAP.";
+    if (code == "height_cap") return "THIS DISTRICT HEIGHT CAP STOPS FURTHER REDEVELOPMENT.";
     if (code == "zero_location_factor") return "CHECK LAND VALUE AND ROAD CONGESTION.";
     if (code == "district_growth_disabled") return "REVIEW THE DISTRICT GROWTH POLICY.";
     if (code == "water_terrain") return "CHOOSE BUILDABLE LAND.";

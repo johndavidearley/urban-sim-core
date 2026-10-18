@@ -167,8 +167,10 @@ public:
   // congestion/service satisfaction elsewhere in this loop): this tick's
   // growth step uses modifiers computed from the *previous* tick's state.
   // Districts themselves are caller-owned and never created/modified here -
-  // this is read-only with respect to district definitions. Default nullptr
-  // matches prior behavior exactly for every existing caller.
+  // this is read-only with respect to district definitions. A district height
+  // cap stops redevelopment past that multiple and does not change this
+  // chance modifier. Default nullptr matches prior behavior exactly for every
+  // existing caller.
   //
   // If options.enableDisasters is set (default false, unlike the additive
   // M12/M13 systems - this one destroys buildings), FireSystem runs each

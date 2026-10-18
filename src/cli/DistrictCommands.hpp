@@ -16,12 +16,14 @@ struct DistrictMutationRequests {
   std::vector<std::tuple<int, float, float, float, float>> setServicePriorities; // district_id, fire, police, health, edu
   std::vector<std::pair<int, float>> setAllocation;                           // district_id, allocation
   std::vector<std::pair<int, int64_t>> setBudgetCap;                          // district_id, cap
+  std::vector<std::pair<int, int>> setHeightCap;                              // district_id, multiple
   std::vector<std::pair<int, int>> assignFacility;                            // district_id, facility_id
   std::vector<std::pair<int, int>> unassignFacility;                          // district_id, facility_id
 
   bool any() const {
     return !create.empty() || !setTax.empty() || !setServicePriorities.empty() ||
            !setAllocation.empty() || !setBudgetCap.empty() ||
+           !setHeightCap.empty() ||
            !assignFacility.empty() || !unassignFacility.empty();
   }
 };

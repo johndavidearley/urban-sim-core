@@ -857,3 +857,50 @@ TEST(GameplaySessionSystemTests, TreatmentRoundTripLegacyDefaultAndInvalidModeAr
   EXPECT_EQ(BudgetPolicy{}.serviceCost(loaded.facilities),8);
   std::filesystem::remove(path);std::filesystem::remove(path.string()+".city.json");
 }
+
+TEST(GameplaySessionSystemTests, DistrictHeightCapRoundTripsAndLegacyLoadsUncapped) {
+  CityMap map({8, 8});
+  RoadNetwork roads(map);
+  EntityStore store;
+  PopulationStore people;
+  GameplaySessionState saved;
+  GameplaySessionState::DistrictRecord district;
+  district.name = "LOW";
+  district.x1 = 1;
+  district.y1 = 1;
+  district.x2 = 3;
+  district.y2 = 3;
+  district.heightCap = 2;
+  saved.districts.push_back(district);
+  const auto path = std::filesystem::temp_directory_path() / "urban_height_cap_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store, people, saved));
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  ASSERT_EQ(loaded.districts.size(), 1u);
+  EXPECT_EQ(loaded.districts.front().heightCap, 2);
+  EXPECT_EQ(loaded.districts.front().serviceBudgetCap, -1);
+
+  nlohmann::json root;
+  {
+    std::ifstream in(path);
+    in >> root;
+  }
+  root["districts"][0]["heightCap"] = 3;
+  {
+    std::ofstream out(path);
+    out << root;
+  }
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  EXPECT_EQ(loaded.districts.front().heightCap, 2);
+  EXPECT_EQ(map.zone({1, 1}), 0);
+
+  root["districts"][0].erase("heightCap");
+  {
+    std::ofstream out(path);
+    out << root;
+  }
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map, roads, store, people, loaded));
+  EXPECT_EQ(loaded.districts.front().heightCap, 0);
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
+}

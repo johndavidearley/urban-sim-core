@@ -640,3 +640,45 @@ TEST_F(DistrictSystemTests, ArchetypeToStringRoundTripsKnownNames) {
     DistrictSystem::archetypeToString(DistrictArchetype::TechHub), parsed));
   EXPECT_EQ(parsed, DistrictArchetype::TechHub);
 }
+
+TEST_F(DistrictSystemTests, HeightCapDefaultsUncappedAndRejectsOtherMultiples) {
+  const DistrictId id = districtSystem.createDistrict("Low Rise", {0, 0}, {4, 4});
+  const District* district = districtSystem.getDistrictConst(id);
+  ASSERT_NE(district, nullptr);
+  EXPECT_EQ(district->heightCap, 0);
+  EXPECT_EQ(districtSystem.heightCapAt({1, 1}), 0);
+  EXPECT_TRUE(district->allowsZone(ZoneType::Residential));
+
+  for (int multiple : {1, 2, 4, 8, 16, 32, 64, 0}) {
+    EXPECT_TRUE(districtSystem.setDistrictHeightCap(id, multiple));
+    EXPECT_EQ(districtSystem.getDistrictConst(id)->heightCap, multiple);
+  }
+  EXPECT_FALSE(districtSystem.setDistrictHeightCap(id, 3));
+  EXPECT_FALSE(districtSystem.setDistrictHeightCap(id, -1));
+  EXPECT_FALSE(districtSystem.setDistrictHeightCap(id, 128));
+  EXPECT_FALSE(districtSystem.setDistrictHeightCap(999, 2));
+  EXPECT_EQ(districtSystem.getDistrictConst(id)->heightCap, 0);
+
+  ASSERT_TRUE(districtSystem.setDistrictHeightCap(id, 4));
+  ASSERT_TRUE(districtSystem.setDistrictArchetype(id, DistrictArchetype::Industrial));
+  EXPECT_EQ(districtSystem.getDistrictConst(id)->heightCap, 4);
+  EXPECT_FALSE(districtSystem.getDistrictConst(id)->allowsZone(ZoneType::Residential));
+
+  EXPECT_EQ(DistrictSystem::nextHeightCap(0), 1);
+  EXPECT_EQ(DistrictSystem::nextHeightCap(1), 2);
+  EXPECT_EQ(DistrictSystem::nextHeightCap(32), 64);
+  EXPECT_EQ(DistrictSystem::nextHeightCap(64), 0);
+  EXPECT_EQ(DistrictSystem::nextHeightCap(3), 0);
+}
+
+TEST_F(DistrictSystemTests, TopMostDistrictSuppliesTheHeightCap) {
+  const DistrictId outer = districtSystem.createDistrict("Outer", {0, 0}, {6, 6});
+  const DistrictId inner = districtSystem.createDistrict("Inner", {2, 2}, {4, 4});
+  ASSERT_TRUE(districtSystem.setDistrictHeightCap(outer, 2));
+  EXPECT_EQ(districtSystem.heightCapAt({1, 1}), 2);
+  EXPECT_EQ(districtSystem.heightCapAt({3, 3}), 0);
+  ASSERT_TRUE(districtSystem.setDistrictHeightCap(inner, 8));
+  EXPECT_EQ(districtSystem.heightCapAt({1, 1}), 2);
+  EXPECT_EQ(districtSystem.heightCapAt({3, 3}), 8);
+  EXPECT_EQ(districtSystem.heightCapAt({9, 9}), 0);
+}

@@ -103,6 +103,22 @@ bool applyDistrictMutations(DistrictSystem& districtSystem, const DistrictMutati
     }
   }
 
+  for (const auto& [districtId, multiple] : requests.setHeightCap) {
+    if (districtSystem.getDistrict(static_cast<DistrictId>(districtId)) == nullptr) {
+      std::cerr << "Error: District " << districtId << " not found\n";
+      return false;
+    }
+    if (!districtSystem.setDistrictHeightCap(static_cast<DistrictId>(districtId), multiple)) {
+      std::cerr << "Error: Height cap must be 0, 1, 2, 4, 8, 16, 32, or 64\n";
+      return false;
+    }
+    if (multiple <= 0) {
+      std::cout << "Cleared height cap for district " << districtId << "\n";
+    } else {
+      std::cout << "Set height cap for district " << districtId << " to " << multiple << "x\n";
+    }
+  }
+
   for (const auto& [districtId, facilityId] : requests.assignFacility) {
     bool success = districtSystem.assignFacilityToDistrict(
       static_cast<DistrictId>(districtId),
@@ -155,6 +171,12 @@ void printDistrictList(const DistrictSystem& districtSystem) {
       std::cout << "none\n";
     } else {
       std::cout << district.serviceBudgetCap << "\n";
+    }
+    std::cout << "    Height Cap: ";
+    if (district.heightCap <= 0) {
+      std::cout << "uncapped\n";
+    } else {
+      std::cout << district.heightCap << "x\n";
     }
     std::cout << "    Service Priorities: Fire=" << district.servicePriorities.fireWeight
               << " Police=" << district.servicePriorities.policeWeight
