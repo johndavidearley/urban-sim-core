@@ -729,7 +729,7 @@ TEST(GrowthDiagnosticsTests, RedevelopmentDoesNotInventNewConstructionGates) {
   ASSERT_TRUE(districts.setDistrictHeightCap(id, 2));
   d = GrowthSystem::diagnoseSite(map,roads,store,pos,demand,nullptr,true,false,nullptr,&districts);
   EXPECT_EQ(d.blockers.front(),"height_cap");
-  EXPECT_EQ(BuildingDiagnostics::advice("height_cap"),
+  EXPECT_STREQ(BuildingDiagnostics::advice("height_cap"),
     "THIS DISTRICT HEIGHT CAP STOPS FURTHER REDEVELOPMENT.");
   store.getBuilding(tile.buildingId)->capacity = 8;
   d = GrowthSystem::diagnoseSite(map,roads,store,pos,demand,nullptr,true,false,nullptr,&districts);

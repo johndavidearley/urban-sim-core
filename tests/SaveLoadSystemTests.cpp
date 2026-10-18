@@ -45,11 +45,11 @@ TEST(SaveLoadSystemTests, SnapshotOrderDoesNotDependOnStoreHistory) {
   ASSERT_EQ(live.populationGroups.size(),reloaded.populationGroups.size());
   for (size_t i = 0; i < live.buildings.size(); ++i) {
     EXPECT_EQ(live.buildings[i].id,reloaded.buildings[i].id);
-    if (i > 0) EXPECT_LT(live.buildings[i-1].id,live.buildings[i].id);
+    if (i > 0) {EXPECT_LT(live.buildings[i-1].id,live.buildings[i].id);}
   }
   for (size_t i = 0; i < live.populationGroups.size(); ++i) {
     EXPECT_EQ(live.populationGroups[i].id,reloaded.populationGroups[i].id);
-    if (i > 0) EXPECT_LT(live.populationGroups[i-1].id,live.populationGroups[i].id);
+    if (i > 0) {EXPECT_LT(live.populationGroups[i-1].id,live.populationGroups[i].id);}
   }
 }
 
