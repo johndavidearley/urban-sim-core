@@ -62,10 +62,22 @@ FireSummary FireSystem::step(
     alreadyBurning.insert(bt.position);
   }
 
-  // Phase 1: spread from existing fires to adjacent occupied, non-burning tiles.
+  // Phase 1: local response may put each fire out before it spreads.
+  std::vector<BurningTile> active;
+  active.reserve(sortedBurning.size());
+  for (const BurningTile& bt : sortedBurning) {
+    const bool standing = map.getTile(bt.position).buildingId != EntityIdUtils::NullEntity;
+    if (standing && rng.chance(std::clamp(response(bt.position) * params.extinguishChance, 0.f, 1.f))) {
+      ++summary.extinguished;
+      continue;
+    }
+    active.push_back(bt);
+  }
+
+  // Phase 2: spread from fires still burning to adjacent occupied, non-burning tiles.
   std::vector<Coord> ignitedThisStep;
   std::unordered_set<Coord, Vec2HashLocal> ignitedSet;
-  for (const BurningTile& bt : sortedBurning) {
+  for (const BurningTile& bt : active) {
     const Coord neighbors[4] = {
       {bt.position.x + 1, bt.position.y}, {bt.position.x - 1, bt.position.y},
       {bt.position.x, bt.position.y + 1}, {bt.position.x, bt.position.y - 1}
@@ -83,7 +95,7 @@ FireSummary FireSystem::step(
     }
   }
 
-  // Phase 2: independent random ignitions, weighted by building type and
+  // Phase 3: independent random ignitions, weighted by building type and
   // local pollution. Buildings iterated in ID order for determinism.
   std::vector<const Building*> buildings;
   buildings.reserve(store.getBuildings().size());
@@ -107,30 +119,23 @@ FireSummary FireSystem::step(
       ignitedSet.insert(b->position);
     }
   }
-
-  // Phase 3: apply ignitions - the structure is destroyed immediately, the
-  // tile keeps burning (posing further spread risk) for a coverage-shortened
-  // duration.
-  for (const Coord& c : ignitedThisStep) {
-    destroyBuildingAt(map, store, c);
-  }
   summary.newIgnitions = static_cast<uint32_t>(ignitedThisStep.size());
-  summary.buildingsDestroyed = summary.newIgnitions;
 
-  // Phase 4: age existing fires by one tick; drop ones that burn out.
+  // Phase 4: unfought fires burn down when their countdown ends. A lot whose
+  // building was already removed (bulldozed, or a pre-M47 save) just clears.
   std::vector<BurningTile> next;
-  next.reserve(sortedBurning.size() + ignitedThisStep.size());
-  for (const BurningTile& bt : sortedBurning) {
+  next.reserve(active.size() + ignitedThisStep.size());
+  for (const BurningTile& bt : active) {
     const int remaining = bt.ticksRemaining - 1;
     if (remaining > 0) {
       next.push_back({bt.position, remaining});
+    } else if (map.getTile(bt.position).buildingId != EntityIdUtils::NullEntity) {
+      destroyBuildingAt(map, store, bt.position);
+      ++summary.buildingsDestroyed;
     }
   }
   for (const Coord& c : ignitedThisStep) {
-    const int duration = std::max(1, static_cast<int>(std::lround(
-      static_cast<double>(params.baseDuration) *
-      (1.0 - static_cast<double>(response(c)) * params.coverageDurationReduction))));
-    next.push_back({c, duration});
+    next.push_back({c, std::max(1, params.baseDuration)});
   }
 
   burning = std::move(next);

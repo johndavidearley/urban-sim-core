@@ -690,7 +690,22 @@ TEST(PlayableCityTickTests, DisastersAreOptInAndFireLossesRefreshTheCity) {
   options.enableDisasters = true;
   playableCityTick(map, roads, store, population, {}, state, funds, options);
   EXPECT_EQ(state.disasters.fire.activeFires, 4u);
+  EXPECT_EQ(state.disasters.buildingsLostToFire, 0u);
+  EXPECT_EQ(store.getBuildingCount(), 4u);  // burning, not yet lost
+  // A growth tick while they burn neither rebuilds nor replaces them.
+  options.fireParams.baseIgnitionChance = 0.f;
+  options.growthChance = 1.f;
+  std::vector<EntityId> standing;
+  for (int x = 5; x <= 8; ++x) standing.push_back(map.getTile({x, 13}).buildingId);
+  playableCityTick(map, roads, store, population, {}, state, funds, options);
+  for (int x = 5; x <= 8; ++x) EXPECT_EQ(map.getTile({x, 13}).buildingId, standing[x - 5]);
+  EXPECT_EQ(map.getTile({5, 13}).zone, static_cast<int>(ZoneType::Residential));
+  options.growthChance = 0.f;
+  // No station: nothing puts them out, so they burn down when the countdown ends.
+  while (state.disasters.buildingsLostToFire == 0 && state.tick < 10)
+    playableCityTick(map, roads, store, population, {}, state, funds, options);
   EXPECT_EQ(state.disasters.buildingsLostToFire, 4u);
+  EXPECT_EQ(state.disasters.fire.activeFires, 0u);
   EXPECT_EQ(store.getBuildingCount(), 0u);
   EXPECT_EQ(population.getTotalPopulation(), 0u);
   EXPECT_EQ(state.economy.totalRevenue, 0);
@@ -698,11 +713,6 @@ TEST(PlayableCityTickTests, DisastersAreOptInAndFireLossesRefreshTheCity) {
   EXPECT_EQ(state.populationChange.net,
             static_cast<int64_t>(state.populationChange.arrivals) -
                 state.populationChange.departures - state.populationChange.deaths);
-  options.growthChance = 1.f;
-  options.fireParams.baseIgnitionChance = 0.f;
-  playableCityTick(map, roads, store, population, {}, state, funds, options);
-  EXPECT_EQ(store.getBuildingCount(), 0u); // Burning lots cannot rebuild.
-  EXPECT_EQ(map.getTile({5, 13}).zone, static_cast<int>(ZoneType::Residential));
   options.enableDisasters = false;
   options.growthChance = 0.f;
   playableCityTick(map, roads, store, population, {}, state, funds, options);
@@ -1028,10 +1038,11 @@ TEST(PlayableCityTickTests, LocalFireStationProtectsNearbyHomeButNotUncoveredHom
   options.disasterParams.earthquakeChancePerTick = 0.f;
   options.disasterParams.floodChancePerTick = 0.f;
   int64_t funds = 50000;
-  playableCityTick(map, roads, store, population, facilities, state, funds, options);
+  for (int tick = 0; tick <= options.fireParams.baseDuration; ++tick)
+    playableCityTick(map, roads, store, population, facilities, state, funds, options);
   EXPECT_NE(store.getBuilding(near), nullptr);
   EXPECT_EQ(store.getBuilding(far), nullptr);
-  EXPECT_EQ(state.disasters.fire.buildingsDestroyed, 1u);
+  EXPECT_EQ(state.disasters.buildingsLostToFire, 1u);
 }
 
 TEST(PlayableCityTickTests, DistrictHeightCapStopsPlayableRedevelopment) {

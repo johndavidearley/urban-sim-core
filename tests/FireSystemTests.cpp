@@ -38,7 +38,7 @@ TEST(FireSystemTests, ZeroIgnitionChanceNeverBurnsAnything) {
   EXPECT_EQ(store.getBuildingCount(), 2u);
 }
 
-TEST(FireSystemTests, GuaranteedIgnitionDestroysTheBuildingAndStartsBurning) {
+TEST(FireSystemTests, IgnitionBurnsTheBuildingWhichIsLostOnlyWhenTheCountdownEnds) {
   CityMap map({10, 10});
   EntityStore store;
   const EntityId id = placeBuilding(map, store, BuildingType::Industrial, {2, 2}, 20);
@@ -49,13 +49,25 @@ TEST(FireSystemTests, GuaranteedIgnitionDestroysTheBuildingAndStartsBurning) {
   params.spreadChance = 0.0f;
 
   std::vector<BurningTile> burning;
-  const FireSummary summary = FireSystem::step(map, store, burning, /*fireCoverage=*/0.0f, 7, params);
+  FireSummary summary = FireSystem::step(map, store, burning, /*fireCoverage=*/0.0f, 7, params);
 
   EXPECT_EQ(summary.newIgnitions, 1u);
-  EXPECT_EQ(summary.buildingsDestroyed, 1u);
+  EXPECT_EQ(summary.buildingsDestroyed, 0u);
   ASSERT_EQ(burning.size(), 1u);
-  EXPECT_EQ(burning[0].position.x, 2);
-  EXPECT_EQ(burning[0].position.y, 2);
+  EXPECT_EQ(burning[0].position, Coord(2, 2));
+  EXPECT_EQ(burning[0].ticksRemaining, params.baseDuration);
+  EXPECT_NE(store.getBuilding(id), nullptr);
+
+  // With no response, nothing puts it out: it burns down on the last tick.
+  params.baseIgnitionChance = 0.0f;
+  for (int tick = 1; tick < params.baseDuration; ++tick) {
+    summary = FireSystem::step(map, store, burning, 0.0f, 7u + tick, params);
+    EXPECT_EQ(summary.buildingsDestroyed, 0u);
+    EXPECT_NE(store.getBuilding(id), nullptr);
+  }
+  summary = FireSystem::step(map, store, burning, 0.0f, 99, params);
+  EXPECT_EQ(summary.buildingsDestroyed, 1u);
+  EXPECT_TRUE(burning.empty());
   EXPECT_EQ(store.getBuilding(id), nullptr);
   EXPECT_EQ(map.getTile({2, 2}).buildingId, EntityIdUtils::NullEntity);
 }
@@ -72,8 +84,9 @@ TEST(FireSystemTests, BurningTileSpreadsToOccupiedNeighborWithGuaranteedSpreadCh
   const FireSummary summary = FireSystem::step(map, store, burning, /*fireCoverage=*/0.0f, 3, params);
 
   EXPECT_EQ(summary.newIgnitions, 1u);
-  EXPECT_EQ(map.getTile({3, 2}).buildingId, EntityIdUtils::NullEntity);
-  EXPECT_EQ(store.getBuildingCount(), 0u);
+  EXPECT_EQ(summary.buildingsDestroyed, 0u);
+  EXPECT_NE(map.getTile({3, 2}).buildingId, EntityIdUtils::NullEntity);
+  EXPECT_EQ(store.getBuildingCount(), 1u);
 
   // Both the original and the newly-spread tile should still be burning.
   bool hasOriginal = false, hasSpread = false;
@@ -202,9 +215,9 @@ TEST(FireSystemTests, SameSeedProtectedBlockLosesFewerBuildings) {
       LocalFireCity city;
       placeBuilding(city.map, city.store, BuildingType::Residential, {near ? 2 : 12, 3}, 20);
       std::vector<BurningTile> burning;
-      const auto loss = FireSystem::step(city.map, city.store, burning, 1.f, seed, params,
-        &city.roads, &city.cache).buildingsDestroyed;
-      (near ? nearLoss : farLoss) += loss;
+      for (int tick = 0; tick <= params.baseDuration; ++tick)
+        (near ? nearLoss : farLoss) += FireSystem::step(city.map, city.store, burning, 1.f,
+          seed * 31u + static_cast<uint32_t>(tick), params, &city.roads, &city.cache).buildingsDestroyed;
     }
   }
   EXPECT_GT(farLoss, nearLoss);
@@ -221,22 +234,30 @@ TEST(FireSystemTests, SpreadUsesReceivingBuildingsLocalResponse) {
     params.coverageSpreadReduction = 1.f;
     const auto result = FireSystem::step(city.map, city.store, burning, 1.f, 7, params,
       &city.roads, &city.cache);
-    EXPECT_EQ(result.buildingsDestroyed, near ? 0u : 1u);
+    EXPECT_EQ(result.newIgnitions, near ? 0u : 1u);
   }
 }
 
-TEST(FireSystemTests, BurnDurationUsesEachIgnitedTilesDistance) {
+TEST(FireSystemTests, LocalResponsePutsOutFiresBeforeTheyBurnDown) {
   LocalFireCity city;
-  for (int x : {2, 6, 12}) placeBuilding(city.map, city.store, BuildingType::Residential, {x, 3}, 20);
+  const EntityId nearId = placeBuilding(city.map, city.store, BuildingType::Residential, {2, 3}, 20);
+  const EntityId farId = placeBuilding(city.map, city.store, BuildingType::Residential, {12, 3}, 20);
   auto params = zeroRiskParams();
-  params.baseIgnitionChance = 1.f;
-  params.coverageIgnitionReduction = 0.f;
-  params.baseDuration = 8;
-  std::vector<BurningTile> burning;
-  FireSystem::step(city.map, city.store, burning, 1.f, 7, params, &city.roads, &city.cache);
-  ASSERT_EQ(burning.size(), 3u);
-  for (const auto& tile : burning)
-    EXPECT_EQ(tile.ticksRemaining, tile.position.x == 2 ? 2 : (tile.position.x == 6 ? 7 : 8));
+  params.extinguishChance = 1.f;
+  std::vector<BurningTile> burning{{{2, 3}, params.baseDuration}, {{12, 3}, params.baseDuration}};
+  uint32_t extinguished = 0, destroyed = 0;
+  for (int tick = 0; tick < params.baseDuration; ++tick) {
+    const auto result = FireSystem::step(city.map, city.store, burning, 1.f, 7u + tick, params,
+      &city.roads, &city.cache);
+    extinguished += result.extinguished;
+    destroyed += result.buildingsDestroyed;
+  }
+  // Full response next to the station puts it out at once; no station reaches x = 12.
+  EXPECT_EQ(extinguished, 1u);
+  EXPECT_EQ(destroyed, 1u);
+  EXPECT_NE(city.store.getBuilding(nearId), nullptr);
+  EXPECT_EQ(city.store.getBuilding(farId), nullptr);
+  EXPECT_TRUE(burning.empty());
 }
 
 TEST(FireSystemTests, NoStationsPreservesScalarFallbackExactly) {

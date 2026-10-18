@@ -15,6 +15,7 @@
 #include "src/systems/PlayableCityTick.hpp"
 #include "src/systems/TransitSystem.hpp"
 #include "src/world/CityMap.hpp"
+#include "src/world/Zoning.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
@@ -990,6 +991,39 @@ TEST(GameplaySessionSystemTests, BondRoundTripsLegacyHasNoneAndMalformedRejectsA
   EXPECT_FALSE(plain["treasuryLedger"].contains("bond"));
   ASSERT_TRUE(writeAndLoad(plain));
   EXPECT_FALSE(loaded.bond.active());
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string() + ".city.json");
+}
+
+TEST(GameplaySessionSystemTests, SaveDuringFireContinuesIdentically) {
+  CityMap map({16, 16}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  for (int x = 2; x < 13; ++x) roads.buildRoad({x, 6}, {x + 1, 6});
+  for (int x = 4; x <= 7; ++x) {
+    auto& tile = map.getTile({x, 7});
+    tile.zone = static_cast<int>(ZoneType::Residential);
+    tile.buildingId = store.createBuilding(BuildingType::Residential, {x, 7}, 16);
+  }
+  GameplaySessionState session;
+  session.enableDisasters = true;
+  session.facilities.push_back({ServiceType::Fire, {6, 5}, 6, 1.f});
+  // Two fires mid-countdown: one near the station, one at the edge of its reach.
+  session.disasters.burningTiles = {{{4, 7}, 3}, {{7, 7}, 2}};
+  const auto path = std::filesystem::temp_directory_path() / "urban_fire_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store, people, session));
+  for (int i = 0; i < 5; ++i) GameplaySessionSystem::advance(map, roads, store, people, session);
+
+  CityMap map2({16, 16}); RoadNetwork roads2(map2); EntityStore store2; PopulationStore people2;
+  GameplaySessionState resumed;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(), map2, roads2, store2, people2, resumed));
+  ASSERT_EQ(resumed.disasters.burningTiles.size(), 2u);
+  EXPECT_EQ(store2.getBuildingCount(), 4u);  // both burning buildings are still standing
+  for (int i = 0; i < 5; ++i) GameplaySessionSystem::advance(map2, roads2, store2, people2, resumed);
+  EXPECT_EQ(store2.getBuildingCount(), store.getBuildingCount());
+  EXPECT_EQ(resumed.disasters.buildingsLostToFire, session.disasters.buildingsLostToFire);
+  EXPECT_EQ(resumed.disasters.burningTiles.size(), session.disasters.burningTiles.size());
+  EXPECT_EQ(resumed.funds, session.funds);
+  for (int x = 4; x <= 7; ++x)
+    EXPECT_EQ(map2.getTile({x, 7}).buildingId != 0, map.getTile({x, 7}).buildingId != 0) << x;
   std::filesystem::remove(path);
   std::filesystem::remove(path.string() + ".city.json");
 }

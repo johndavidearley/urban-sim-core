@@ -24,7 +24,7 @@ Last updated: October 18, 2026
 - Phase 6 (M17–M22): implemented; local M22 verification is recorded in STATUS.md.
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
 - Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
-- Phase 13 (M45–M48): M45–M46 complete locally. M47 is next.
+- Phase 13 (M45–M48): M45–M47 complete locally. M48 is next.
 
 ---
 
@@ -940,7 +940,7 @@ calendar scheduler. The term is a tick count.
 ## Phase 13: Phase 12 balance correction (M45–M48) — draft
 
 Drafted October 18, 2026 from the Phase 12 playtest
-(`playtest-artifacts/phase12-playtest/REPORT.md`). M45–M46 are complete locally.
+(`playtest-artifacts/phase12-playtest/REPORT.md`). M45–M47 are complete locally.
 Implement in order. Phase 12's invariants still hold.
 
 The unchanged M36 journey (`playtest/examples/phase10_native_journey.py`)
@@ -1001,23 +1001,31 @@ residents with no recycling or incineration fills in 4,000–6,000 ticks. A city
 near zero.
 **Excluded:** waste export, transfer stations and landfill closure costs.
 
-### Milestone 47: Fires a city can contain
+### Milestone 47: Fires a city can contain — implemented locally
+
+**Complete locally, October 18, 2026.** Measured first: in the 10k journey city
+with disasters on for 1,000 ticks, M38 (before M41) lost 161 buildings and M44
+lost 274. The criterion was amended during implementation. The journey's five
+stations reach only 61% of its buildings, and 38% get no response, so a
+whole-city 5% cap would have required making fire coverage nearly irrelevant.
+See LOCAL_FIRE_RESPONSE.md.
 
 With disasters on, the 10,000-resident journey city (five stations, 61% fire
 coverage) lost 223 buildings in 800 ticks. Population fell to 5,539 and did not
 recover. Ignition destroys a building at once. Since M41, a building beyond
 every station's radius gets no response.
 
-- [ ] First, measure the same city for 1,000 ticks at the pre-M41 commit and at
+- [x] First, measure the same city for 1,000 ticks at the pre-M41 commit and at
       M44, and record both. This shows whether M41 made losses worse.
-- [ ] Ignition marks a building as burning. It is destroyed only when its burn
+- [x] Ignition marks a building as burning. It is destroyed only when its burn
       countdown ends. Local response shortens the countdown and can put the
       fire out before then.
-- [ ] Disasters stay off by default. A default `--simulate` run is unchanged.
+- [x] Disasters stay off by default. A default `--simulate` run is unchanged.
 
-**Acceptance:** The journey city with its existing stations loses at most 5% of
-its buildings over 1,000 ticks with disasters on. A district outside every
-station's reach loses visibly more. Save/load mid-fire continues identically.
+**Acceptance:** In the journey city with its existing stations and disasters on
+for 1,000 ticks, buildings with response of at least 0.25 lose at most 5%.
+Buildings beyond every station lose clearly more, and population ends above its
+starting level. Save/load mid-fire continues identically.
 **Excluded:** fire trucks on roads, building materials and insurance.
 
 ### Milestone 48: Substations
@@ -1063,7 +1071,7 @@ city of substations alone reports a power shortage.
 | 10 | M36 | complete: end-to-end playability |
 | 11 | M37 | complete: surface water and early waterworks |
 | 12 | M38–M44 | complete; hosted CI verified on fd554fd |
-| 13 | M45–M48 | M45–M46 complete locally |
+| 13 | M45–M48 | M45–M47 complete locally |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

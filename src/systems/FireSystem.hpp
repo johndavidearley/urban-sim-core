@@ -7,31 +7,30 @@
 #include "src/world/CityMap.hpp"
 #include "src/systems/ServiceSystem.hpp"
 
-// A tile currently on fire: ignited buildings are destroyed immediately (the
-// structure is gone), but the tile keeps burning for a few ticks, posing an
-// ongoing spread risk to adjacent occupied tiles - representing the blaze
-// itself, not the original structure. ticksRemaining counts down to 0, at
-// which point the fire is extinguished/burns out.
+// A building on fire (M47). It stays standing while it burns and can spread
+// fire to occupied neighbors. Each tick, local fire response may put it out.
+// If ticksRemaining reaches 0 first, the building burns down.
 struct BurningTile {
   Coord position;
   int ticksRemaining;
 };
 
 struct FireParams {
-  float baseIgnitionChance = 0.0004f;       // per building per tick, before modifiers
+  float baseIgnitionChance = 0.00005f;       // per building per tick, before modifiers
   float industrialRiskMultiplier = 3.0f;    // industrial buildings are far more fire-prone
   float pollutionRiskMultiplier = 2.0f;     // scales risk with local pollution (0-1)
   float spreadChance = 0.20f;               // chance a burning tile ignites each occupied neighbor per tick
-  int baseDuration = 4;                     // ticks a fire burns before extinguishing, at 0 fire coverage
+  int baseDuration = 4;                     // ticks an unfought fire burns before the building is lost
   float coverageIgnitionReduction = 0.7f;   // fire coverage cuts ignition chance by up to this fraction
   float coverageSpreadReduction = 0.6f;     // fire coverage cuts spread chance by up to this fraction
-  float coverageDurationReduction = 0.75f;  // fire coverage cuts burn duration by up to this fraction (faster response)
+  float extinguishChance = 0.8f;            // per-tick chance to put a fire out at full response
 };
 
 struct FireSummary {
-  uint32_t activeFires = 0;         // burning tiles after this step
-  uint32_t newIgnitions = 0;        // buildings newly destroyed by fire this tick (spread + random ignition combined)
-  uint32_t buildingsDestroyed = 0;  // same as newIgnitions - kept as a separate, clearer name for callers
+  uint32_t activeFires = 0;         // burning buildings after this step
+  uint32_t newIgnitions = 0;        // buildings that caught fire this tick (spread + random ignition)
+  uint32_t buildingsDestroyed = 0;  // buildings that burned down this tick
+  uint32_t extinguished = 0;        // fires put out this tick, building saved
 };
 
 // Models fire as a per-tick stochastic process over the tile grid rather

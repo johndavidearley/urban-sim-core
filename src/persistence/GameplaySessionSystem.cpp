@@ -289,6 +289,7 @@ bool GameplaySessionSystem::save(
                         {"buildingsLostToDisaster", events.buildingsLostToDisaster},
                         {"newIgnitions", events.fire.newIgnitions},
                         {"fireBuildingsDestroyed", events.fire.buildingsDestroyed},
+                        {"fireExtinguished", events.fire.extinguished},
                         {"earthquakeOccurred", events.disaster.earthquakeOccurred},
                         {"floodOccurred", events.disaster.floodOccurred},
                         {"disasterBuildingsDestroyed", events.disaster.buildingsDestroyed}};
@@ -425,6 +426,7 @@ bool GameplaySessionSystem::load(
       events.buildingsLostToDisaster = count("buildingsLostToDisaster");
       events.fire.newIgnitions = count("newIgnitions");
       events.fire.buildingsDestroyed = count("fireBuildingsDestroyed");
+      events.fire.extinguished = item.contains("fireExtinguished") ? count("fireExtinguished") : 0;
       events.disaster.buildingsDestroyed = count("disasterBuildingsDestroyed");
       events.disaster.earthquakeOccurred = item.value("earthquakeOccurred", false);
       events.disaster.floodOccurred = item.value("floodOccurred", false);
@@ -440,7 +442,6 @@ bool GameplaySessionSystem::load(
       events.fire.activeFires = static_cast<uint32_t>(events.burningTiles.size());
       if (events.fire.buildingsDestroyed > events.buildingsLostToFire ||
           events.disaster.buildingsDestroyed > events.buildingsLostToDisaster ||
-          events.fire.newIgnitions != events.fire.buildingsDestroyed ||
           (!loaded.enableDisasters && !events.burningTiles.empty()))
         return fail(errorMessage, "gameplay session has inconsistent disasters");
     }

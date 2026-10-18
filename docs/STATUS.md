@@ -2,6 +2,21 @@
 
 Last verified: October 18, 2026
 
+M47 fires a city can contain is implemented locally (October 18, 2026). A
+building that catches fire stays standing and burns for 4 ticks. Each tick,
+local response × 0.8 is the chance it is put out. It burns down only when the
+countdown ends. Base ignition is 0.00005 per building per tick, down from
+0.0004. Measured on the 10,000-resident journey city with disasters on for
+1,000 ticks: M38 (before M41) lost 161 buildings, M44 lost 274 and halved
+the population. M47 loses 14–23 across three seeds, and population ends at
+10,479–11,233. Buildings with response of at least 0.25 lose about 2%; those
+beyond every station lose about 16%. That city's stations reach 61% of its
+buildings, so the whole-city 5% criterion was amended to apply to covered
+buildings. Saves record `fireExtinguished`, and MCP reports `fires_put_out`. A
+save made mid-fire continues identically. Disasters stay off by default; the
+default 400-tick `--simulate` CSV is byte-identical to M46. Strict `ctest` in
+`build-strict` passed 635 tests. Next is M48, substations.
+
 M46 landfills that last are implemented locally (October 18, 2026). A landfill
 holds 2,000,000 units, so a site at full 400-unit intake lasts about 5,000
 ticks. Saves record `landfillCapacity`. A site from an earlier save keeps its
@@ -372,7 +387,7 @@ Quick performance smoke (headless):
 
 Phase 12 is complete. Phase 13 (M45–M48) in `ROADMAP.md` is a balance
 correction from the Phase 12 playtest: hospital demand, landfill lifetime,
-fire containment and substations. M45–M46 are implemented locally; M47 is next. The Phase 12
+fire containment and substations. M45–M47 are implemented locally; M48 is next. The Phase 12
 list below is kept for reference.
 
 1. **M39 Landfills that fill.** Implemented locally. Garbage sites start

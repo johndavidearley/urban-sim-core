@@ -963,6 +963,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
          {"disasters", {{"enabled", liveState.enableDisasters},
                          {"active_fires", liveState.disasters.fire.activeFires},
                          {"lost_fire", liveState.disasters.buildingsLostToFire},
+                         {"fires_put_out", liveState.disasters.fire.extinguished},
                          {"lost_disaster", liveState.disasters.buildingsLostToDisaster},
                          {"earthquake", liveState.disasters.disaster.earthquakeOccurred},
                          {"flood", liveState.disasters.disaster.floodOccurred}}},
