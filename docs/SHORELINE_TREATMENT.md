@@ -8,11 +8,11 @@ existing water-tool V toggle still selects inland water or shoreline intake.
 |---|---:|---:|---|
 | Inland sanitation | $7,000 | $26/tick | None |
 | Raw shoreline outlet | $2,000 | $8/tick | Existing M37 water-body exposure |
-| Shore treatment | $9,000 | $34/tick | None |
+| Shore treatment | $600,000 | $34/tick | None |
 
 Treatment uses the existing sanitation radius and shoreline/road placement
 checks. Building treatment directly over a raw outlet replaces that outlet for
-the full $9,000 construction price, without a refund or duplicate facility.
+the full $600,000 construction price, without a refund or duplicate facility.
 Other occupied service sites remain unavailable. Placement is revalidated at
 purchase time.
 
@@ -41,3 +41,6 @@ Validation is recorded in STATUS.md. Native acceptance uses two disconnected
 water bodies and checks replacement, cleanliness, cost, funding, minimum-window
 UI, exact persisted save continuation and gameplay/headless parity. There are
 no currents, pollutant advection, pipes or additional treatment levels.
+
+M49 reprices new treatment construction; existing outlets and treatment sites keep
+their saved state and upkeep. See [population milestones](POPULATION_MILESTONES.md).

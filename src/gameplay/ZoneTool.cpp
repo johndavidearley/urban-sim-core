@@ -1,8 +1,14 @@
 #include "src/gameplay/ZoneTool.hpp"
+#include "src/gameplay/CatalogPrices.hpp"
 
 #include <algorithm>
 #include "src/systems/ParkSystem.hpp"
 #include "src/systems/ServiceSystem.hpp"
+
+int64_t ZoneTool::costPerTile(ZoneType zone) {
+  return zone == ZoneType::Park ? ParkSystem::kPlacementCost :
+    zone == ZoneType::Office ? catalog::officeTileCost : kCostPerTile;
+}
 
 ZonePlan ZoneTool::plan(
   const CityMap& map,
@@ -58,7 +64,7 @@ ZonePlan ZoneTool::plan(
     }
   }
 
-  result.cost = static_cast<int64_t>(result.changedTiles) * (zone == ZoneType::Park ? ParkSystem::kPlacementCost : kCostPerTile);
+  result.cost = static_cast<int64_t>(result.changedTiles) * costPerTile(zone);
   if (result.changedTiles == 0) {
     result.error = "area already has this zone";
     return result;

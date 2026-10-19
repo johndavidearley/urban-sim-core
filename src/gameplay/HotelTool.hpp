@@ -1,4 +1,5 @@
 #pragma once
+#include "src/gameplay/CatalogPrices.hpp"
 
 #include <cstdint>
 #include <string>
@@ -21,7 +22,7 @@ class HotelTool {
 public:
   static constexpr uint32_t kBeds = 32;
   static constexpr int kJobs = 12;
-  static constexpr int64_t kConstructionCost = 10000;
+  static constexpr int64_t kConstructionCost = catalog::hotelCost;
   static bool setOpen(EntityStore& store, uint32_t id, bool open);
   // A hotel is one unzoned commercial entity. Existing commercial maintenance,
   // taxes and employment apply once; beds never become worker occupancy.

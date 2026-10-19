@@ -137,7 +137,7 @@ INSPECTION_REFERENCE = {
         ],
         "capacity": "local=10, arterial=40 vehicles/tick",
         "load": "commuters plus freight; freight_load is trucks only",
-        "upgrade": "tool(action=apply,name=road,road_class=arterial); $300 per existing local segment",
+        "upgrade": "tool(action=apply,name=road,road_class=arterial); $1400 per existing local segment",
     },
     "freight": {
         "path": "state.metrics",
@@ -313,7 +313,7 @@ def create_server(session: Session) -> FastMCP:
         port_action: Literal["cargo", "passenger", "remove", "toggle", "capacity", "airport"] | None = None,
         capacity: Annotated[int, Field(ge=0, le=200)] | None = None,
     ) -> dict[str, Any]:
-        """Use gameplay tools with normal plans, costs and validation. Endpoints are tile coordinates; services use x1/y1; surface_water selects shoreline intake/raw outlet variants. sewage_treatment=true with shoreline sanitation builds clean treatment ($9000, $34/tick), replacing raw outlets in place. power_source on service power selects generic, coal, gas, nuclear, solar, wind, hydro, or substation (0 MW, $1500, $4/tick; extends power reach only). Road class local/arterial supports build or upgrade. Policies support archetype, budget cap, and height_cap (0 uncapped, or 1, 2, 4, 8, 16, 32, 64). Hotel uses x1/y1 on empty unzoned land with road/power/water; $10000, 32 beds, 12 commercial jobs; building enables tourism; visitors require reachable parks. Terminal tools use x1/y1; name airport defaults to 4x2 airport placement, while port_action selects cargo/passenger/airport/remove/toggle/capacity. Capacity sets 0..200 goods, 0..60 sea passengers or 0..120 air passengers; omission cycles presets."""
+        """Use gameplay tools with normal plans, costs and validation. Player placements require their permanent population milestone; locked actions return the required resident threshold. budget inspect reports catalog_milestones, construction_prices and current/next progression. Endpoints are tile coordinates; services use x1/y1; surface_water selects shoreline intake/raw outlet variants. sewage_treatment=true with shoreline sanitation builds clean treatment ($600000, $34/tick), replacing raw outlets in place. power_source on service power selects generic, coal, gas, nuclear, solar, wind, hydro, or substation (0 MW, $150000, $4/tick; extends power reach only). Road class local/arterial supports build or upgrade. Policies support archetype, budget cap, and height_cap (0 uncapped, or 1, 2, 4, 8, 16, 32, 64). Hotel uses x1/y1 on empty unzoned land with road/power/water; $1500000, 32 beds, 12 commercial jobs; building enables tourism; visitors require reachable parks. Terminal tools use x1/y1; name airport defaults to 4x2 airport placement, while port_action selects cargo/passenger/airport/remove/toggle/capacity. Capacity sets 0..200 goods, 0..60 sea passengers or 0..120 air passengers; omission cycles presets."""
         return await session.request(
             "tool",
             compact(
@@ -573,7 +573,7 @@ def create_server(session: Session) -> FastMCP:
                     "shore_water": "V toggles inland/shore mode while Water or Sanitation is selected; natural new maps default to shore",
                     "district": "P",
                     "airport": "J or Airport button builds a 4x2 passenger airport; V manages terminals",
-                    "hotel": "K or Hotel button places a $10000 hotel with 32 beds and 12 commercial jobs; B removes it",
+                    "hotel": "K or Hotel button places a $1500000 hotel with 32 beds and 12 commercial jobs; B removes it",
                     "connections": "U or Connections button; terminal/hotel tabs, operation and map location; Tab/Enter controls, arrows select, Space pauses, N steps",
                     "ports": "V cycles cargo/passenger/remove/on-off/capacity; click a site; Escape cancels",
                     "pause": "Space",

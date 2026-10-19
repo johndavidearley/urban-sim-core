@@ -49,7 +49,7 @@ TEST(RoadToolTests,
      ArterialUpgradeChargesOnlyLocalSegmentsAndPreservesTopology) {
   CityMap map({16, 16});
   RoadNetwork roads(map);
-  int64_t funds = 5000;
+  int64_t funds = 10000;
   auto local = RoadTool::plan(map, roads, {2, 8}, {6, 8}, funds);
   ASSERT_TRUE(RoadTool::build(map, roads, local, funds));
   const auto topology = roads.getTopologyVersion();
@@ -59,9 +59,9 @@ TEST(RoadToolTests,
   ASSERT_TRUE(upgrade.valid);
   EXPECT_EQ(upgrade.newSegments, 0);
   EXPECT_EQ(upgrade.upgradedSegments, 4);
-  EXPECT_EQ(upgrade.cost, 1200);
+  EXPECT_EQ(upgrade.cost, 5600);
   ASSERT_TRUE(RoadTool::build(map, roads, upgrade, funds));
-  EXPECT_EQ(funds, 3400);
+  EXPECT_EQ(funds, 4000);
   EXPECT_EQ(roads.getTopologyVersion(), topology);
   EXPECT_EQ(roads.getRoadClass({2, 8}, {3, 8}), RoadClass::Arterial);
   EXPECT_FLOAT_EQ(roads.getEdgeCapacity({2, 8}, {3, 8}), kArterialRoadCapacity);
@@ -81,16 +81,16 @@ TEST(RoadToolTests,
   RoadNetwork roads(map);
   roads.buildRoad({2, 8}, {3, 8});
   const auto mixed =
-      RoadTool::plan(map, roads, {2, 8}, {4, 8}, 1000, RoadClass::Arterial);
+      RoadTool::plan(map, roads, {2, 8}, {4, 8}, 5000, RoadClass::Arterial);
   ASSERT_TRUE(mixed.valid);
-  EXPECT_EQ(mixed.cost, 700);
-  int64_t funds = 699;
+  EXPECT_EQ(mixed.cost, 2900);
+  int64_t funds = 2899;
   EXPECT_FALSE(RoadTool::build(map, roads, mixed, funds));
-  EXPECT_EQ(funds, 699);
+  EXPECT_EQ(funds, 2899);
   EXPECT_EQ(roads.getRoadClass({2, 8}, {3, 8}), RoadClass::Local);
   EXPECT_FALSE(roads.hasRoad({3, 8}, {4, 8}));
-  funds = 1000;
+  funds = 5000;
   ASSERT_TRUE(RoadTool::build(map, roads, mixed, funds));
-  EXPECT_EQ(funds, 300);
+  EXPECT_EQ(funds, 2100);
   EXPECT_EQ(roads.getRoadClass({3, 8}, {4, 8}), RoadClass::Arterial);
 }

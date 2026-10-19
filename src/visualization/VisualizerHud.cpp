@@ -1,3 +1,4 @@
+#include "src/gameplay/CatalogUnlocks.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -103,6 +104,7 @@ bool budgetControlVisible(int action, bool services, bool trends, bool alerts, c
 }
 bool budgetControlEnabled(int action,const BudgetPolicy& policy,bool services,bool trends,bool alerts,const BudgetBondView* bonds) {
   if (action<0 || action>=kBudgetControlCount || !budgetControlVisible(action,services,trends,alerts,bonds)) return false;
+  if (action == 52 && !bonds->unlocked) return false;
   if (action>=46 && action<=52) return !bonds->bond.active();
   if (action==53) return bonds->bond.active() && bonds->funds>=TreasurySystem::bondRemaining(bonds->bond);
   if (action>=2 && action<12) {const int v=policy.taxPercent[(action-2)/2];return action%2 ? v<20 : v>0;}
@@ -357,7 +359,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     drawText(renderer, x + 24, y + 192, "TERM", {135, 215, 240}, 1);
     drawText(renderer, x + 24, y + 316, "ONE BOND AT A TIME. EQUAL PRINCIPAL PARTS.", {165, 185, 205}, 1);
     drawText(renderer, x + 24, y + 334, "INTEREST $15 PER $10000 REMAINING PER TICK", {165, 185, 205}, 1);
-    drawText(renderer, x + 360, y + 128, bond.active() ? "OPEN BOND" : "NO OPEN BOND", {135, 215, 240}, 1);
+    drawText(renderer, x + 360, y + 128, !bonds->unlocked ? "UNLOCKS AT 1200 RESIDENTS" : bond.active() ? "OPEN BOND" : "NO OPEN BOND", {135, 215, 240}, 1);
     if (bond.active()) {
       drawText(renderer, x + 360, y + 150, "PRINCIPAL $" + std::to_string(bond.principal), {215, 230, 240}, 1);
       drawText(renderer, x + 360, y + 168, "TICK " + std::to_string(bond.ticksElapsed) + " OF " + std::to_string(bond.term), {215, 230, 240}, 1);
@@ -770,7 +772,19 @@ void drawUiTooltip(
   drawText(renderer, x + 8, y + 9, message, {220, 232, 248}, 1);
 }
 
-void drawOnboarding(DrawList* renderer, int windowHeight, int step) {
+void drawOnboarding(DrawList* renderer, int windowHeight, int step, const PopulationMilestones* milestones) {
+  if (step == 6 && milestones) {
+    const int x = 14, y = windowHeight - 154;
+    drawFilledRect(renderer, x, y, 650, 92, {16, 20, 26}, 235);
+    drawRectOutline(renderer, x, y, 650, 92, {120, 205, 255}, 255);
+    drawText(renderer, x + 12, y + 10, "CITY MILESTONE " + std::to_string(milestones->highestReached), {120, 205, 255}, 2);
+    drawText(renderer, x + 550, y + 12, "F1 HIDE", {155, 165, 180}, 1);
+    drawText(renderer, x + 12, y + 42, catalog::unlockedSummary(milestones->highestReached), {235, 238, 242}, 1);
+    const auto next = milestones->nextThreshold();
+    drawText(renderer, x + 12, y + 66, next ? "NEXT AT " + std::to_string(next) + " RESIDENTS - UNLOCKS ARE PERMANENT" :
+      "ALL POPULATION MILESTONES REACHED - UNLOCKS ARE PERMANENT", {175, 185, 200}, 1);
+    return;
+  }
   if (step < 0 || step > 5) {
     return;
   }

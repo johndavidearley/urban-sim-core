@@ -57,6 +57,7 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   tickState.budgetPolicy = liveState.budgetPolicy;
   tickState.treasuryLedger = liveState.treasuryLedger;
   tickState.history = liveState.history;
+  tickState.milestones = liveState.milestones;
   tickState.alerts = liveState.alerts;
   tickState.regionalConnections = liveState.regionalConnections;
   tickState.regionalSettlement = liveState.regionalSettlement;
@@ -103,6 +104,7 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
   liveState.budgetPolicy = tickState.budgetPolicy;
   liveState.treasuryLedger = tickState.treasuryLedger;
   liveState.history = tickState.history;
+  liveState.milestones = tickState.milestones;
   liveState.alerts = tickState.alerts;
   liveState.regionalConnections = tickState.regionalConnections;
   liveState.regionalSettlement = tickState.regionalSettlement;

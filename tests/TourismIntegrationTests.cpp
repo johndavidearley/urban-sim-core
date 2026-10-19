@@ -14,7 +14,7 @@ struct VisitorCity {
   CityMap map{{16,16}}; RoadNetwork roads{map}; EntityStore buildings; PopulationStore people;
   std::vector<ServiceFacility> facilities{{ServiceType::Power,{6,7},22,1.0f},
     {ServiceType::Water,{7,7},20,1.0f}};
-  PlayableCityTickState state; int64_t cash=100000;
+  PlayableCityTickState state; int64_t cash=1590000;
   VisitorCity() {
     for (int x=0;x<13;++x) roads.buildRoad({x,8},{x+1,8});
     map.setZone({4,9},static_cast<int>(ZoneType::Park));

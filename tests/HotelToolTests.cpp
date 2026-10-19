@@ -34,7 +34,7 @@ struct HotelCity {
   RoadNetwork roads{map};
   EntityStore buildings;
   PopulationStore population;
-  int64_t funds = 50000;
+  int64_t funds = 1540000;
   void roadLine(Coord start, Coord end) {
     while (start != end) {
       const Coord next{start.x + (end.x > start.x ? 1 : end.x < start.x ? -1 : 0),
@@ -73,29 +73,29 @@ TEST(HotelToolTests, RevalidatesStalePlansWithoutSpendingOrCreatingEntities) {
   ASSERT_TRUE(plan.valid);
   city.map.getTile({4,7}).connectedToWater = false;
   EXPECT_FALSE(HotelTool::build(city.map,city.roads,city.buildings,{},plan,city.funds));
-  EXPECT_EQ(city.funds,50000); EXPECT_EQ(city.buildings.getBuildingCount(),0u);
+  EXPECT_EQ(city.funds,1540000); EXPECT_EQ(city.buildings.getBuildingCount(),0u);
   city.map.getTile({4,7}).connectedToWater = true;
-  city.funds = 9999;
+  city.funds = 1499999;
   EXPECT_FALSE(HotelTool::build(city.map,city.roads,city.buildings,{},plan,city.funds));
-  EXPECT_EQ(city.funds,9999);
-  auto forged = plan; forged.cost = 0; city.funds = 50000;
+  EXPECT_EQ(city.funds,1499999);
+  auto forged = plan; forged.cost = 0; city.funds = 1540000;
   EXPECT_FALSE(HotelTool::build(city.map,city.roads,city.buildings,{},forged,city.funds));
 }
 
 TEST(HotelToolTests, RejectsWaterRoadZonesReservationsCivicAndDisconnectedLand) {
   HotelCity city;
-  EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {-1,7},50000).valid);
-  EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {4,8},50000).valid);
-  EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {4,3},50000).valid);
+  EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {-1,7},1540000).valid);
+  EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {4,8},1540000).valid);
+  EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {4,3},1540000).valid);
   auto& tile = city.map.getTile({4,7});
-  tile.type = 2; EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {4,7},50000).valid);
+  tile.type = 2; EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {4,7},1540000).valid);
   tile.type = 0; tile.zone = 2;
-  EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {4,7},50000).valid);
+  EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {4,7},1540000).valid);
   tile.zone = 0; tile.regionalConnectionId = 5;
-  EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {4,7},50000).valid);
+  EXPECT_FALSE(HotelTool::plan(city.map,city.roads,{}, {4,7},1540000).valid);
   tile.regionalConnectionId = 0;
   EXPECT_FALSE(HotelTool::plan(city.map,city.roads,
-    {{ServiceType::Fire,{4,7},10,1.0f}}, {4,7},50000).valid);
+    {{ServiceType::Fire,{4,7},10,1.0f}}, {4,7},1540000).valid);
 }
 
 TEST(HotelToolTests, ExistingEmploymentAllocatesHotelJobsOnceWithoutVisitorPopulation) {

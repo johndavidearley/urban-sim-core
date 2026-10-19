@@ -19,6 +19,7 @@ struct ZonePlan {
 class ZoneTool {
 public:
   static constexpr int64_t kCostPerTile = 25;
+  static int64_t costPerTile(ZoneType zone);
 
   static ZonePlan plan(
     const CityMap& map,

@@ -78,7 +78,7 @@ TEST(TourismTravelTests, WalkingBrokenPathsAndMissingOriginsConsumeNoTransitOrPh
 
 TEST(TourismTravelTests, AggregateDayHotelAndDepartureLegsReconcileWithCohorts) {
   CityMap map({16,16});RoadNetwork roads(map);roadLine(roads,8,14);
-  EntityStore buildings;int64_t funds=50000;
+  EntityStore buildings;int64_t funds=1540000;
   ASSERT_TRUE(HotelTool::build(map,roads,buildings,{},HotelTool::plan(map,roads,{}, {4,7},funds),funds));
   map.setZone({8,9},static_cast<int>(ZoneType::Park));
   const auto access=tourism::planAccess(map,roads,buildings,{},100);
@@ -163,7 +163,7 @@ TEST(TourismTravelTests, SnapshotSeparatesVisitorFreightAndOtherLoadsAndRejectsC
 
 TEST(TourismTravelTests, SharedTickKeepsResidentPriorityAndPausedRefreshDoesNotDuplicateVisitorLoads) {
   CityMap map({16,16});RoadNetwork roads(map);roadLine(roads,8,14);
-  EntityStore buildings;PopulationStore people;int64_t cash=100000;
+  EntityStore buildings;PopulationStore people;int64_t cash=1590000;
   std::vector<ServiceFacility> facilities{{ServiceType::Power,{6,7},22,1.0f},{ServiceType::Water,{7,7},20,1.0f}};
   ASSERT_TRUE(HotelTool::build(map,roads,buildings,facilities,HotelTool::plan(map,roads,facilities,{4,7},cash),cash));
   const auto home=buildings.createBuilding(BuildingType::Residential,{2,7},80);

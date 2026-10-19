@@ -2,6 +2,34 @@
 
 Last verified: October 19, 2026
 
+M49 population milestones is complete locally (October 19, 2026). Player cities
+permanently earn the 500/1,200/2,500/5,000/10,000 catalog tiers. Native and MCP
+placements refuse locked tools before spending; previews, HUD, toasts and the F1
+guide explain progression. Sessions retain earned tiers and initialize older
+cities from resident population without granting tiers from existing facilities.
+Legacy facilities, routes, districts and bonds retain their operating controls.
+
+New construction prices are fixed against the retained Phase 13 journey's
+median surplus at each tier. Major new facilities cost about 400–750 ticks of
+reference surplus: gas $400K, treatment $600K, incinerators $900K, hotels $1.5M,
+and nuclear/airports $1.8M. Substations are a cheaper $150K reach extension.
+Arterials and park/office tiles are repriced too. Starting tools, upkeep,
+demolition, taxes and bond terms are unchanged. Native quotes, affordability
+checks and MCP `construction_prices` share these prices; legacy sites are never
+charged a difference. M54 retains integrated balance and the revised journey.
+
+Strict Clang build and 643 CTest cases passed, including exact-price, one-dollar
+short, forged-plan and no-double-charge checks for every repriced service. Seven
+Python unit tests passed. All 41 rendered cases are covered: 39 passed in the
+full run; after correcting two old price/message assertions, the airport and
+park cases passed separately, including replay. Hotel, treatment and airport
+price text was inspected at 800×640. The default 400-tick CSV is byte-identical
+to M46; two pre-pricing early-city continuations match their entire saved city
+and session exactly. Hosted CI, sanitizers and release packaging were not
+repeated. Evidence: `playtest-artifacts/m49-prices/REPORT.md`. See
+[POPULATION_MILESTONES.md](POPULATION_MILESTONES.md). Next is M50, bounded fire,
+police and sanitation capacity.
+
 Phase 13 is complete (October 19, 2026). Hosted CI run 39158120162 passed on
 `6ac65ef` (strict Windows/macOS/Linux, ASan/UBSan, TSan). Locally, strict
 Clang passed 637 tests, strict GCC 16 635, ASan/UBSan 635 and TSan 637, with

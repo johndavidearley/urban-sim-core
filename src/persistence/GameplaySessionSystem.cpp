@@ -234,6 +234,8 @@ bool GameplaySessionSystem::save(
   std::string* errorMessage
 ) {
   try {
+    if (!PopulationMilestones::validThreshold(session.milestones.highestReached))
+      throw std::runtime_error("invalid population milestone");
     if (!session.nextRegionalConnectionId || session.nextRegionalConnectionId>static_cast<uint64_t>(UINT32_MAX)+1)
       throw std::runtime_error("Invalid next regional connection ID");
     parseRegionalConnections(regionalConnectionsJson(session.regionalConnections),map);
@@ -310,6 +312,8 @@ bool GameplaySessionSystem::save(
       {"interest", ledger.bond.interest}, {"paid", ledger.bond.paid},
       {"missed", ledger.bond.missed}, {"remainingBefore", ledger.bond.remainingBefore},
       {"remainingAfter", ledger.bond.remainingAfter}};
+  auto milestones = session.milestones;
+  milestones.observe(population.getTotalPopulation());
   json root = {{"version", kGameplaySessionVersion},
                {"budgetTaxPercent", session.budgetPolicy.taxPercent},
                {"budgetServicePercent", session.budgetPolicy.servicePercent},
@@ -322,6 +326,7 @@ bool GameplaySessionSystem::save(
                {"citySnapshot", std::filesystem::absolute(cityPathFor(sessionPath)).string()},
                {"funds", session.funds},
                {"tick", session.tick},
+               {"populationMilestone", milestones.highestReached},
                {"paused", session.paused},
                {"tickIntervalMs", session.tickIntervalMs},
                {"treasuryRevenue", session.treasuryRevenue},
@@ -446,6 +451,14 @@ bool GameplaySessionSystem::load(
         return fail(errorMessage, "gameplay session has inconsistent disasters");
     }
     loaded.funds = root.at("funds").get<int64_t>();
+    if (root.contains("populationMilestone")) {
+      const auto& value = root.at("populationMilestone");
+      if (!value.is_number_integer() || value.get<int64_t>() < 0 ||
+          value.get<uint64_t>() > 10000 ||
+          !PopulationMilestones::validThreshold(value.get<uint32_t>()))
+        return fail(errorMessage, "invalid population milestone");
+      loaded.milestones.highestReached = value.get<uint32_t>();
+    }
     loaded.tick = root.at("tick").get<uint32_t>();
     if (root.contains("transitReport")) loaded.transitReport = parseTransitReport(root.at("transitReport"),loaded.tick);
     if (root.contains("cityAlerts")) loaded.alerts = parseCityAlerts(root.at("cityAlerts"), loaded.tick);
@@ -750,6 +763,7 @@ bool GameplaySessionSystem::load(
     if (!validateHotelCivicSites(snapshot,civicSites,errorMessage) ||
         !validateRegionalReservations(snapshot,loaded.regionalConnections,civicSites,errorMessage)) return false;
     if (!SaveLoadSystem::applySnapshot(snapshot,map,roads,store,population,errorMessage)) return false;
+    loaded.milestones.observe(population.getTotalPopulation());
     rebuildRegionalReservations(map,loaded.regionalConnections);
     session = std::move(loaded);
     return true;
@@ -767,6 +781,7 @@ PlayableCityTickState GameplaySessionSystem::advance(
   state.budgetPolicy = session.budgetPolicy;
   state.treasuryLedger = session.treasuryLedger;
   state.history = session.history;
+  state.milestones = session.milestones;
   state.alerts = session.alerts;
   state.regionalConnections = session.regionalConnections;
   state.regionalSettlement = session.regionalSettlement;
@@ -829,6 +844,7 @@ PlayableCityTickState GameplaySessionSystem::advance(
   session.budgetPolicy = state.budgetPolicy;
   session.treasuryLedger = state.treasuryLedger;
   session.history = state.history;
+  session.milestones = state.milestones;
   session.alerts = state.alerts;
   session.regionalConnections = state.regionalConnections;
   session.regionalSettlement = state.regionalSettlement;

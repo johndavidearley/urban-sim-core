@@ -568,12 +568,17 @@ TEST(VisualizerGeometry, BondTabControlsFitAndFollowBondState) {
   const auto tab = budgetControlRect(45, 800, 640);
   const auto alerts = budgetControlRect(37, 800, 640);
   EXPECT_GE(tab.x, alerts.x + alerts.w);
+  bonds.unlocked = false;
+  EXPECT_FALSE(budgetControlEnabled(52, policy, false, false, false, &bonds));
+  bonds.unlocked = true;
   EXPECT_TRUE(budgetControlEnabled(52, policy, false, false, false, &bonds));
   EXPECT_FALSE(budgetControlEnabled(53, policy, false, false, false, &bonds));
   ASSERT_TRUE(TreasurySystem::issueBond(bonds.bond, bonds.funds, 10000, 100));
   EXPECT_FALSE(budgetControlEnabled(52, policy, false, false, false, &bonds));
   EXPECT_FALSE(budgetControlEnabled(46, policy, false, false, false, &bonds));
+  bonds.unlocked = false; // A legacy bond can still be paid below the unlock tier.
   EXPECT_TRUE(budgetControlEnabled(53, policy, false, false, false, &bonds));
+  bonds.unlocked = true;
   bonds.funds = 9999;
   EXPECT_FALSE(budgetControlEnabled(53, policy, false, false, false, &bonds));
   bonds.nextDue = TreasurySystem::bondDue(bonds.bond);

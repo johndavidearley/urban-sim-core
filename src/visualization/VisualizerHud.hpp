@@ -46,6 +46,7 @@ Rect budgetPanelRect(int windowWidth, int windowHeight);
 constexpr int kBudgetControlCount = 54;
 struct BudgetBondView {
   bool open = false;
+  bool unlocked = true;
   int principalChoice = 0;
   int termChoice = 0;
   MunicipalBond bond;
@@ -122,7 +123,7 @@ void drawUiTooltip(
   const std::string& message
 );
 
-void drawOnboarding(DrawList* renderer, int windowHeight, int step);
+void drawOnboarding(DrawList* renderer, int windowHeight, int step, const PopulationMilestones* milestones = nullptr);
 
 Rect districtPanelRect();
 Rect districtPanelButtonRect(DistrictPanelAction action);

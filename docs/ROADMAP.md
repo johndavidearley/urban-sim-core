@@ -25,7 +25,7 @@ Last updated: October 19, 2026
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
 - Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
 - Phase 13 (M45–M48): complete; hosted CI verified on 6ac65ef.
-- Phase 14 (M49–M54): draft from the Phase 13 journey rerun; not started.
+- Phase 14 (M49–M54): M49 complete locally; M50 service capacity is next.
 
 ---
 
@@ -1055,10 +1055,10 @@ city of substations alone reports a power shortage.
 The open question this phase left, money that stops being scarce after about
 tick 4,000, is Phase 14.
 
-## Phase 14: Things worth buying (M49–M54) — draft
+## Phase 14: Things worth buying (M49–M54) — in progress
 
 Drafted October 19, 2026 from the Phase 13 journey rerun
-(`playtest-artifacts/phase13-playtest/REPORT.md`). Not started. Implement in
+(`playtest-artifacts/phase13-playtest/REPORT.md`). M49 complete locally October 19. Implement in
 order. Phase 12's invariants still hold.
 
 The unchanged journey nets $10–20 per tick for its first 2,400 ticks, under
@@ -1092,12 +1092,20 @@ These hold through the phase:
 - Legacy saves load and continue. A save that already has a locked facility
   keeps it. Bonds, taxes and their limits are unchanged.
 
-### Milestone 49: Population milestones
+### Milestone 49: Population milestones — complete locally
 
-- [ ] A city reaches a milestone the first time its population passes the
+Shared permanent threshold state (0/500/1,200/2,500/5,000/10,000), playable tick
+tracking, strict session persistence, legacy initialization, native/MCP catalog
+locks, invalid previews, milestone guide and toasts are implemented. Fixed
+construction prices are calibrated against median surplus at each tier in the
+retained Phase 13 journey. Major new facilities cost about 400–750 ticks of
+reference surplus. Starting construction and all upkeep are unchanged. See
+[POPULATION_MILESTONES.md](POPULATION_MILESTONES.md).
+
+- [x] A city reaches a milestone the first time its population passes the
       threshold. Milestones are never lost, and saves record the highest one
       reached.
-- [ ] Each milestone unlocks part of the existing catalog. Proposed tiers,
+- [x] Each milestone unlocks part of the existing catalog. Proposed tiers,
       tuned in M54:
 
       | Residents | Unlocks |
@@ -1109,10 +1117,10 @@ These hold through the phase:
       | 5,000 | Cargo and passenger terminals; hotels |
       | 10,000 | Nuclear power; airport |
 
-- [ ] Each tier's build costs are set against the net income of a city at
+- [x] Each tier's build costs are set against the net income of a city at
       that tier, so a later building costs a similar number of ticks of surplus
       as an early one.
-- [ ] Locked tools show the milestone that unlocks them. A toast and the city
+- [x] Locked tools show the milestone that unlocks them. A toast and the city
       guide announce each milestone. MCP reports the milestone and refuses
       locked placements with a reason.
 
@@ -1220,7 +1228,7 @@ budget.
 | 11 | M37 | complete: surface water and early waterworks |
 | 12 | M38–M44 | complete; hosted CI verified on fd554fd |
 | 13 | M45–M48 | complete; hosted CI verified on 6ac65ef |
-| 14 | M49–M54 | draft: things worth buying |
+| 14 | M49–M54 | M49 complete locally; M50 next |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

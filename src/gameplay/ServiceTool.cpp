@@ -1,4 +1,5 @@
 #include "src/gameplay/ServiceTool.hpp"
+#include "src/gameplay/CatalogPrices.hpp"
 #include "src/world/Zoning.hpp"
 
 #include "src/networks/RoadNetwork.hpp"
@@ -7,12 +8,12 @@
 PowerPlantSpec ServiceTool::powerPlant(PowerSourceType source) {
   switch (source) {
     case PowerSourceType::Coal: return {10000, 40, 80.0f, 1000.0f, false};
-    case PowerSourceType::NaturalGas: return {14000, 36, 60.0f, 450.0f, false};
-    case PowerSourceType::Nuclear: return {80000, 90, 200.0f, 12.0f, false};
-    case PowerSourceType::Solar: return {8000, 8, 15.0f, 45.0f, false};
+    case PowerSourceType::NaturalGas: return {catalog::gasCost, 36, 60.0f, 450.0f, false};
+    case PowerSourceType::Nuclear: return {catalog::nuclearCost, 90, 200.0f, 12.0f, false};
+    case PowerSourceType::Solar: return {catalog::solarCost, 8, 15.0f, 45.0f, false};
     case PowerSourceType::Wind: return {6000, 6, 10.0f, 11.0f, false};
-    case PowerSourceType::Hydro: return {18000, 18, 40.0f, 24.0f, true};
-    case PowerSourceType::Substation: return {1500, 4, 0.0f, 0.0f, false};
+    case PowerSourceType::Hydro: return {catalog::hydroCost, 18, 40.0f, 24.0f, true};
+    case PowerSourceType::Substation: return {catalog::substationCost, 4, 0.0f, 0.0f, false};
     case PowerSourceType::Generic:
     default: return {12000, 45, 100.0f, 400.0f, false};
   }
@@ -21,7 +22,7 @@ PowerPlantSpec ServiceTool::powerPlant(PowerSourceType source) {
 int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater, PowerSourceType source, bool sewageTreatment) {
   if (type == ServiceType::Power) return powerPlant(source).constructionCost;
   if (surfaceWater && type == ServiceType::Water) return 3000;
-  if (surfaceWater && type == ServiceType::Sanitation) return sewageTreatment ? 9000 : 2000;
+  if (surfaceWater && type == ServiceType::Sanitation) return sewageTreatment ? catalog::treatmentCost : 2000;
   switch (type) {
     case ServiceType::Fire: return 5000;
     case ServiceType::Police: return 4500;
@@ -31,10 +32,10 @@ int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater, Power
     case ServiceType::Water: return 8000;
     case ServiceType::Sanitation: return 7000;
     case ServiceType::Garbage: return 9000;
-    case ServiceType::Recycling: return 11000;
-    case ServiceType::Cemetery: return 10000;
-    case ServiceType::Crematorium: return 14000;
-    case ServiceType::Incinerator: return 18000;
+    case ServiceType::Recycling: return catalog::recyclingCost;
+    case ServiceType::Cemetery: return catalog::cemeteryCost;
+    case ServiceType::Crematorium: return catalog::crematoriumCost;
+    case ServiceType::Incinerator: return catalog::incineratorCost;
     default: return 5000;
   }
 }

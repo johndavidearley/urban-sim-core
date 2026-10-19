@@ -251,6 +251,7 @@ void playableCityTick(
     regional::hasConstructedCargoPort(state.regionalConnections);
   const auto facilities = state.budgetPolicy.fundedFacilities(baseFacilities);
   const uint32_t populationBefore = population.getTotalPopulation();
+  state.milestones.observe(populationBefore);
   const uint32_t tickSeed = options.baseSeed + (state.tick * 31u);
   const float educationNow = state.laggedEducationCoverage;
   int ax0 = 0, ay0 = 0, ax1 = 0, ay1 = 0;
@@ -304,6 +305,7 @@ void playableCityTick(
   PopulationSystem::allocate(store, population, migration.requestedPopulation,
                              tickSeed + 2u, educationNow);
   const uint32_t afterMigration = population.getTotalPopulation();
+  state.milestones.observe(afterMigration);
   state.populationChange = {};
   state.populationChange.desirability = migration.desirability;
   state.populationChange.arrivals =

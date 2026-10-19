@@ -19,7 +19,7 @@ struct City {
     c.origin={18,7}; c.width=2; c.height=1; c.entrance={18,8}; return c;
   }
   void build() {
-    int64_t cash=50000;
+    int64_t cash=1850000;
     ASSERT_TRUE(PortTool::build(map,roads,ports,candidate(),{25,8},{},cash));
   }
   void add(BuildingType type,Coord p,int occupancy) {
@@ -122,7 +122,7 @@ TEST(RegionalLogisticsTests, ReadOnlyRefreshNeverActivatesOrBillsAndCompletedTic
 
 TEST(RegionalLogisticsTests, PassengerTerminalAloneNeverActivatesCargoAndDisabledPortsHaveNoUpkeep) {
   City city; auto c=city.candidate(); c.kind=regional::Kind::PassengerTerminal;
-  int64_t funds=50000;
+  int64_t funds=1540000;
   ASSERT_TRUE(PortTool::build(city.map,city.roads,city.ports,c,{25,8},{},funds));
   PlayableCityTickState state; state.regionalConnections=city.ports;
   PlayableCityTickOptions options; options.enableTransit=false; options.growthChance=0;

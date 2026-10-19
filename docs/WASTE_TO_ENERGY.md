@@ -1,7 +1,7 @@
 # Waste-to-energy incinerator
 
 Select **Incinerator** by cycling the service tool with **S** (after Crematorium).
-Place it on an empty land tile beside a road. Construction costs $18,000;
+Place it on an empty land tile beside a road. Construction costs $900,000;
 full funding costs $60 per tick. F6 → Services controls its department funding.
 
 Recycling runs first. Incinerators then burn reachable residual waste, before
@@ -24,3 +24,6 @@ MCP `service: "incinerator"` places the facility; `set_funding` accepts twelve
 entries, appending Incinerator after Crematorium. Eleven-entry legacy requests
 preserve the current incinerator funding. Facility inspection exposes
 `city_waste_incinerated`, `city_waste_power_mw` and `emissions_kg_per_mwh`.
+
+M49 reprices new incinerator construction; existing plants keep their upkeep and
+saved state. See [population milestones](POPULATION_MILESTONES.md).

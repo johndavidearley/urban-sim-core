@@ -27,9 +27,116 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def unlock_catalog_fixture(self, threshold=10000, funds=None):
+        """Grant progression to isolate older feature tests from M49 gates."""
+        s = self.session
+        await s.city("save")
+        fixture = json.loads(s.artifact("urban_sim_session.json").read_text())
+        if funds is not None:
+            fixture["funds"] = funds
+        fixture["populationMilestone"] = threshold
+        fixture["citySnapshot"] = str(s.artifact("urban_sim_session.json.city.json"))
+        path = s.artifact("unlocked-catalog-fixture.json")
+        path.write_text(json.dumps(fixture))
+        await s.city("load", import_path=str(path))
+
+    async def test_population_milestone_locks_legacy_airport_and_permanent_unlocks(self):
+        s = self.session
+        await s.city("new", 32)
+        prices = s.last_state["budget"]["construction_prices"]
+        self.assertEqual(prices, {
+            "local_segment": 100, "arterial_segment": 1500, "arterial_upgrade": 1400,
+            "rci_tile": 25, "park_tile": 1500, "office_tile": 1500,
+            "cemetery": 80000, "recycling": 100000, "gas": 400000, "solar": 300000,
+            "substation": 150000, "hydro": 750000, "treatment": 600000,
+            "crematorium": 650000, "incinerator": 900000, "hotel": 1500000,
+            "cargo_port": 1800000, "passenger_terminal": 1500000,
+            "nuclear": 1800000, "airport": 1800000})
+        locked = [
+            {"name": "service", "service": "power", "power_source": "nuclear"},
+            {"name": "airport"},
+            {"name": "hotel"},
+            {"name": "road", "road_class": "arterial"},
+            {"name": "zone", "zone": "park"},
+            {"name": "zone", "zone": "office"},
+            {"name": "district"},
+            {"name": "service", "service": "recycling"},
+            {"name": "service", "service": "power", "power_source": "substation"},
+            {"name": "service", "service": "sanitation", "surface_water": True, "sewage_treatment": True},
+        ]
+        before = s.last_state["funds"]
+        for options in locked:
+            with self.assertRaisesRegex(PlaytestError, "LOCKED - REACH"):
+                await s.request("tool", dict(action="apply", x1=18, y1=11, **options))
+            self.assertEqual(s.last_state["funds"], before)
+        with self.assertRaisesRegex(PlaytestError, "1200 RESIDENTS"):
+            await s.request("budget", {"action": "issue_bond", "bond_principal": 10000, "bond_term": 100})
+        await s.request("tool", {"action": "select", "name": "airport"})
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 40, "view_x": 10, "view_y": 5})
+        point = await s.request("coordinates", {"direction": "tile_to_screen", "x": 18, "y": 11})
+        await s.request("input", {"events": [dict(type="move", **point),
+            dict(type="down", button="left", **point), dict(type="up", button="left", **point)]})
+        self.assertIn("LOCKED - REACH 10000 RESIDENTS", s.last_state["toast"])
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        await s.screenshot("m49-locked-airport-minimum")
+
+        # A controlled high-population snapshot earns all tiers on load. There
+        # are no homes: the next tick removes its population, exercising the latch.
+        await s.city("save")
+        fixture = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        core["populationGroups"] = [{"id": 100, "band": 0, "size": 10000, "employed": 0}]
+        core["nextEntityId"] = 101
+        core_path = s.artifact("m49-population.city.json")
+        core_path.write_text(json.dumps(core))
+        fixture["citySnapshot"] = str(core_path)
+        fixture["funds"] = 10000000
+        path = s.artifact("m49-population.json")
+        path.write_text(json.dumps(fixture))
+        await s.city("load", import_path=str(path))
+        self.assertEqual(s.last_state["budget"]["population_milestone"], 10000)
+        await s.request("time", {"action": "step", "ticks": 1})
+        self.assertEqual(s.last_state["budget"]["population_milestone"], 10000)
+        self.assertEqual(s.last_state["population"], 0)
+        for x1, y1, x2, y2 in ((0,10,26,10),(17,13,26,13),(17,10,17,13)):
+            await s.request("tool", dict(action="apply", name="road", x1=x1, y1=y1, x2=x2, y2=y2))
+        for service, x in (("power",15),("water",17)):
+            await s.request("tool", dict(action="apply", name="service", service=service, x1=x, y1=9,
+                **({"power_source": "generic"} if service == "power" else {})))
+        cash = s.last_state["funds"]
+        await s.request("tool", dict(action="apply", name="service", service="power", power_source="nuclear", x1=16, y1=9))
+        self.assertEqual(s.last_state["funds"], cash - prices["nuclear"])
+        cash = s.last_state["funds"]
+        await s.request("tool", dict(action="apply", name="airport", x1=18, y1=11))
+        self.assertEqual(s.last_state["funds"], cash - prices["airport"])
+        await s.city("save")
+        await s.city("load")
+        self.assertEqual(s.last_state["budget"]["population_milestone"], 10000)
+        self.assertEqual(len((await s.request("inspect", {"section": "regional_connections"}))["items"]), 1)
+        await s.request("tool", dict(action="select", name="none"))
+        await s.request("view", dict(action="toggle", name="onboarding", enabled=True))
+        await s.screenshot("m49-permanent-guide-minimum")
+
+        # Legacy facilities survive without granting progression of their own.
+        await s.city("save")
+        legacy = json.loads(s.artifact("urban_sim_session.json").read_text())
+        legacy.pop("populationMilestone")
+        legacy["citySnapshot"] = str(s.artifact("urban_sim_session.json.city.json"))
+        legacy_path = s.artifact("m49-legacy-airport.json")
+        legacy_path.write_text(json.dumps(legacy))
+        await s.city("load", import_path=str(legacy_path))
+        self.assertEqual(s.last_state["budget"]["population_milestone"], 0)
+        self.assertEqual(len((await s.request("inspect", {"section": "regional_connections"}))["items"]), 1)
+        with self.assertRaisesRegex(PlaytestError, "10000 RESIDENTS"):
+            await s.request("tool", dict(action="apply", name="airport", x1=22, y1=11))
+        await s.request("tool", dict(action="apply", name="airport", port_action="toggle", x1=18, y1=11))
+        self.assertFalse((await s.request("inspect", {"section": "regional_connections"}))["items"][0]["enabled"])
+
     async def test_municipal_bond_issue_service_overdraft_payoff_and_replay(self):
         s = self.session
         await s.city("new", 32)
+        await self.unlock_catalog_fixture()
         await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
         await s.request("tool", {"action": "apply", "name": "service", "service": "power", "x1": 15, "y1": 15})
         await s.request("time", {"action": "step", "ticks": 1})
@@ -168,6 +275,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_district_height_cap_diverges_and_round_trips(self):
         s = self.session
         await s.city("new", 32)
+        await self.unlock_catalog_fixture()
         await s.request("tool", {"action": "apply", "name": "road", "x1": 4, "y1": 16, "x2": 24, "y2": 16})
         for service, x in (("fire", 12), ("police", 14), ("health", 16), ("education", 18),
                            ("water", 10), ("power", 8)):
@@ -376,6 +484,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_shore_treatment_replacement_funding_and_checkpoint(self):
         s = self.session
         await s.city("new", 32)
+        await self.unlock_catalog_fixture(2500, funds=1000000)
         for x in (10, 16):
             await s.request("tool", {"action":"apply", "name":"road", "x1":x, "y1":5, "x2":x, "y2":12})
         await s.city("save")
@@ -407,13 +516,13 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.request("view", {"action":"camera", "tile_pixels":40, "view_x":3, "view_y":2})
         point = await s.request("coordinates", {"direction":"tile_to_screen", "x":11, "y":10})
         await s.request("input", {"events":[{"type":"move", "x":point["x"], "y":point["y"]}]})
-        self.assertEqual(s.last_state["preview"]["service"]["cost"], 9000)
+        self.assertEqual(s.last_state["preview"]["service"]["cost"], 600000)
         self.assertTrue(s.last_state["preview"]["service"]["valid"])
         await s.screenshot("shore-treatment-preview")
         funds = s.last_state["funds"]
         await s.request("input", {"events":[{"type":"down", "button":"left", "x":point["x"], "y":point["y"]},
                                                            {"type":"up", "button":"left", "x":point["x"], "y":point["y"]}]})
-        self.assertEqual(s.last_state["funds"], funds - 9000)
+        self.assertEqual(s.last_state["funds"], funds - 600000)
         await s.request("time", {"action":"step", "ticks":1})
         facilities = (await s.request("inspect", {"section":"facilities"}))["items"]
         self.assertEqual(len(facilities), 4)
@@ -570,6 +679,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_landfill_full_alert_storage_and_incinerator_recovery(self):
         s = self.session
         await s.city("new", 32)
+        await self.unlock_catalog_fixture()
         await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
         for service, x in (("power", 18), ("water", 20)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
@@ -579,7 +689,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("save")
         fixture = json.loads(s.artifact("urban_sim_session.json").read_text())
         fixture["citySnapshot"] = str(s.artifact("urban_sim_session.json.city.json"))
-        fixture["funds"] = 100000
+        fixture["funds"] = 1000000
         fixture["facilities"].append({"type": 7, "x": 16, "y": 15,
             "maxTravelDistance": 30, "quality": 1, "landfillCapacity": 2000000, "landfillRemaining": 1})
         path = s.artifact("landfill-fixture.json")
@@ -619,18 +729,19 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s = self.session
         await record(s, "start")
         await s.city("new", 32)
+        await self.unlock_catalog_fixture(funds=1000000)
         await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
         for service, x in (("power", 18), ("water", 20)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
         for zone, y in (("residential", 15), ("commercial", 17)):
             await s.request("tool", {"action": "apply", "name": "zone", "zone": zone, "x1": 6, "y1": y, "x2": 13, "y2": y})
         await s.request("time", {"action": "step", "ticks": 20})
-        # Generate treasury through ordinary simulation, then buy through native input.
+        # The fixture supplies purchase liquidity; use native input to buy at the current price.
         for _ in range(20):
-            if s.last_state["funds"] >= 18000:
+            if s.last_state["funds"] >= 900000:
                 break
             await s.request("time", {"action": "step", "ticks": 50})
-        self.assertGreaterEqual(s.last_state["funds"], 18000)
+        self.assertGreaterEqual(s.last_state["funds"], 900000)
         await s.request("tool", {"action": "select", "name": "service", "service": "crematorium"})
         await s.request("input", {"events": [{"type": "key", "key": "S"}]})
         await s.request("view", {"action": "projection", "projection": "top_down"})
@@ -638,7 +749,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         before = s.last_state["funds"]
         await s.request("input", {"events": [{"type": "down", "x": point["x"], "y": point["y"]},
                                                {"type": "up", "x": point["x"], "y": point["y"]}]})
-        self.assertEqual(s.last_state["funds"], before - 18000)
+        self.assertEqual(s.last_state["funds"], before - 900000)
         plants = (await s.request("inspect", {"section": "facilities"}))["items"]
         plant = next(f for f in plants if f["type"] == "Incinerator")
         self.assertGreater(plant["city_waste_power_mw"], 0)
@@ -824,6 +935,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_regional_management_policy_measurements_and_minimum_layout(self):
         s=self.session
         await s.city("new",32)
+        await self.unlock_catalog_fixture(funds=3000000)
         async def key(name):
             await s.request("input",{"events":[{"type":"key","key":name}]})
         async def control(name):
@@ -888,6 +1000,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s=self.session
         await record(s,"start")
         await s.city("new",32)
+        await self.unlock_catalog_fixture(funds=5000000)
         async def key(name):
             await s.request("input",{"events":[{"type":"key","key":name}]})
         async def control(name):
@@ -967,6 +1080,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_regional_mixed_access_alerts_closure_recovery_and_host_parity(self):
         s=self.session
         await s.city("new",32)
+        await self.unlock_catalog_fixture()
         for x1,y1,x2,y2 in ((0,10,26,10),(0,13,26,13),(17,10,17,13),(0,10,0,16)):
             await s.request("tool",{"action":"apply","name":"road","x1":x1,"y1":y1,"x2":x2,"y2":y2})
         for service,x in (("power",15),("water",17)):
@@ -981,7 +1095,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         for tile in core["tiles"]:
             if tile["y"]==8 and tile["x"]<=26: tile["type"]=2
         coast=s.artifact("mixed-base.city.json");coast.write_text(json.dumps(core))
-        fixture["citySnapshot"]=str(coast);fixture["funds"]=1000000
+        fixture["citySnapshot"]=str(coast);fixture["funds"]=10000000
         fixture["transitRoutes"]=[{"id":9001,"mode":0,"vehicleCount":1,
             "capacityPerVehicle":30,"stopCoverageRadius":32,
             "stops":[{"x":0,"y":10},{"x":26,"y":13}]}]
@@ -1067,6 +1181,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_tourism_fees_services_ledger_shutdown_and_invalid_import(self):
         s=self.session
         await record(s,"start");await s.city("new",32)
+        await self.unlock_catalog_fixture(funds=5000000)
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
@@ -1117,6 +1232,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_hotel_open_policy_departures_persistence_and_continuation(self):
         s=self.session
         await record(s,"start");await s.city("new",32)
+        await self.unlock_catalog_fixture(funds=5000000)
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
@@ -1175,6 +1291,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_visitor_travel_resident_priority_fleet_changes_and_continuation(self):
         s=self.session
         await s.city("new",32)
+        await self.unlock_catalog_fixture(funds=5000000)
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
@@ -1266,6 +1383,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_live_tourism_cohorts_policy_demolition_and_host_parity(self):
         s=self.session
         await record(s,"start");await s.city("new",32)
+        await self.unlock_catalog_fixture(funds=5000000)
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
@@ -1351,6 +1469,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s=self.session
         await record(s,"start")
         await s.city("new",32)
+        await self.unlock_catalog_fixture(funds=5000000)
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
@@ -1371,7 +1490,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.request("input",{"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
         await s.screenshot("hotel-site-preview")
         await site()
-        self.assertEqual(s.last_state["funds"],cash-10000)
+        self.assertEqual(s.last_state["funds"],cash-1500000)
         hotels=(await s.request("inspect",{"section":"entities"}))["items"]
         self.assertEqual(len(hotels),1)
         hotel=hotels[0]
@@ -1381,15 +1500,15 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await site() # Existing hotel toggles visitor operation without spending.
         self.assertFalse((await s.request("inspect",{"section":"entities"}))["items"][0]["hotel_open"])
         await site()
-        self.assertEqual(s.last_state["funds"],cash-10000)
+        self.assertEqual(s.last_state["funds"],cash-1500000)
         await site(8,16) # Road tile is rejected too.
-        self.assertEqual(s.last_state["funds"],cash-10000)
+        self.assertEqual(s.last_state["funds"],cash-1500000)
         await s.request("input",{"events":[{"type":"key","key":"Escape"},{"type":"key","key":"K"}]})
         self.assertTrue(s.last_state["tools"]["hotel"])
         await s.request("tool",{"action":"apply","name":"hotel","x1":8,"y1":15})
         self.assertFalse((await s.request("inspect",{"section":"entities"}))["items"][0]["hotel_open"])
         await s.request("tool",{"action":"apply","name":"hotel","x1":8,"y1":15})
-        self.assertEqual(s.last_state["funds"],cash-10000)
+        self.assertEqual(s.last_state["funds"],cash-1500000)
         with self.assertRaises(PlaytestError):
             await s.request("tool",{"action":"select","name":"hotel","capacity":1})
         for projection in ("top_down","isometric"):
@@ -1401,14 +1520,14 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("save");await s.city("load")
         restored=(await s.request("inspect",{"section":"entities"}))["items"]
         self.assertEqual(restored,hotels)
-        self.assertEqual(s.last_state["funds"],cash-10000)
+        self.assertEqual(s.last_state["funds"],cash-1500000)
         await s.request("tool",{"action":"apply","name":"bulldoze","x1":8,"y1":15})
-        self.assertEqual(s.last_state["funds"],cash-10200)
+        self.assertEqual(s.last_state["funds"],cash-1500200)
         self.assertEqual((await s.request("inspect",{"section":"entities"}))["items"],[])
         await s.request("tool",{"action":"apply","name":"hotel","x1":8,"y1":15})
         newer=(await s.request("inspect",{"section":"entities"}))["items"][0]
         self.assertGreater(newer["id"],hotel["id"])
-        self.assertEqual(s.last_state["funds"],cash-20200)
+        self.assertEqual(s.last_state["funds"],cash-3000200)
         self.assertEqual(newer["hotel_beds"],32)
         await s.request("window",{"action":"resize","width":800,"height":640})
         await s.screenshot("hotel-native-minimum-window")
@@ -1464,6 +1583,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_native_airport_controls_readiness_without_tourism_and_host_parity(self):
         s=self.session
         await s.city("new",32)
+        await self.unlock_catalog_fixture()
         for x1,y1,x2,y2 in ((0,10,26,10),(17,13,26,13),(17,10,17,13)):
             await s.request("tool",{"action":"apply","name":"road","x1":x1,"y1":y1,"x2":x2,"y2":y2})
         for service,x in (("power",15),("water",17)):
@@ -1471,7 +1591,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("save")
         fixture=json.loads(s.artifact("urban_sim_session.json").read_text())
         core=s.artifact("airport-base.city.json");core.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
-        fixture["citySnapshot"]=str(core);fixture["funds"]=100000 # Isolated acceptance liquidity.
+        fixture["citySnapshot"]=str(core);fixture["funds"]=1875000 # Isolated acceptance liquidity.
         path=s.artifact("airport-base.json");path.write_text(json.dumps(fixture))
         await s.stop();await s.launch();await record(s,"start")
         await s.city("load",import_path=str(path))
@@ -1549,6 +1669,13 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s.last_state["funds"],cash-1000)
         self.assertFalse(s.last_state["metrics"]["regional_logistics_enabled"])
         await key("J");await site()
+        self.assertIn("INSUFFICIENT CONSTRUCTION FUNDS", s.last_state["toast"].upper())
+        self.assertEqual(s.last_state["funds"],cash-1000)
+        self.assertEqual((await s.request("inspect",{"section":"regional_connections"}))["items"],[])
+        await self.unlock_catalog_fixture(funds=2000000)
+        await s.request("view",{"action":"focus"})
+        await key("J");await site()
+        self.assertEqual(s.last_state["funds"],200000)
         rows=(await s.request("inspect",{"section":"regional_connections"}))["items"]
         self.assertEqual(rows[0]["id"],2)
         await s.request("window",{"action":"resize","width":800,"height":640})
@@ -1558,6 +1685,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_native_port_tools_prices_controls_persistence_and_replay(self):
         s=self.session
         await s.city("new",32)
+        await self.unlock_catalog_fixture()
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":10,"x2":25,"y2":10})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":9})
@@ -1568,7 +1696,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             if tile["y"]==8 and tile["x"]<=25:tile["type"]=2
         coast=s.artifact("native-ports.city.json");coast.write_text(json.dumps(core))
         fixture["citySnapshot"]=str(coast)
-        fixture["funds"]=100000 # Liquidity for this isolated acceptance fixture only.
+        fixture["funds"]=5160000 # Liquidity for this isolated acceptance fixture only.
         path=s.artifact("native-ports.json");path.write_text(json.dumps(fixture))
         await s.stop();await s.launch();await record(s,"start")
         await s.city("load",import_path=str(path))
@@ -1587,7 +1715,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await click(button["x"]+button["width"]//2,button["y"]+button["height"]//2)
         self.assertTrue(s.last_state["tools"]["port"])
         await site(18,9)
-        self.assertEqual(s.last_state["funds"],85000)
+        self.assertEqual(s.last_state["funds"],3360000)
         self.assertTrue(s.last_state["metrics"]["regional_logistics_enabled"])
         self.assertEqual(s.last_state["tick"],0)
         toast=s.last_state["toast"]
@@ -1596,14 +1724,14 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("save")
         self.assertTrue(json.loads(s.artifact("urban_sim_session.json").read_text())["regionalLogisticsEnabled"])
         await key("V");await site(22,9)
-        self.assertEqual(s.last_state["funds"],75000)
+        self.assertEqual(s.last_state["funds"],1860000)
         await s.screenshot("native-ports-top_down")
         await key("F3");await s.request("view",{"action":"focus"})
         point=await s.request("coordinates",{"direction":"tile_to_screen","x":22,"y":9})
         await s.request("input",{"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
         await s.screenshot("native-ports-isometric")
         await key("V");await site(18,9) # Whole cargo port, before any tick.
-        self.assertEqual(s.last_state["funds"],74500)
+        self.assertEqual(s.last_state["funds"],1859500)
         self.assertTrue(s.last_state["metrics"]["regional_logistics_enabled"])
         await key("V");await site(22,9) # Disable passenger upkeep.
         await key("V");await site(22,9) # Cycle passenger capacity to 15.
@@ -1736,6 +1864,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_regional_configuration_inspection_persistence_and_host_parity(self):
         s=self.session
         await s.city("new",32)
+        await self.unlock_catalog_fixture()
         await s.city("save")
         legacy=json.loads(s.artifact("urban_sim_session.json").read_text())
         legacy.pop("regionalConnections",None)
@@ -2238,6 +2367,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s = self.session
         await record(s, "start")
         await s.city("new", 32)
+        await self.unlock_catalog_fixture()
         await s.request("tool", {"action": "apply", "name": "zone", "zone": "park", "x1": 8, "y1": 12})
         await s.request("budget", {"action": "open"})
         await s.request("budget", {"action": "set_taxes", "tax_percent": [12, 8, 6, 9, 10]})
@@ -2432,9 +2562,10 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s = self.session
         await record(s, "start")
         await s.city("new", 32)
+        await self.unlock_catalog_fixture()
         await s.request("tool", {"action": "apply", "name": "zone", "zone": "park",
                                  "x1": 8, "y1": 12, "x2": 9, "y2": 13})
-        self.assertEqual(s.last_state["funds"], 49600)
+        self.assertEqual(s.last_state["funds"], 44000)
         self.assertEqual(s.last_state["park_tiles"], 4)
         self.assertEqual(s.last_state["park_upkeep"], 8)
         await s.request("tool", {"action": "apply", "name": "zone", "zone": "residential",
@@ -2442,7 +2573,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         tiles = await s.request("inspect", {"section": "tiles", "x": 10, "y": 12})
         self.assertGreater(tiles["items"][0]["land_value"], 120)
         await s.request("time", {"action": "step", "ticks": 3})
-        self.assertEqual(s.last_state["funds"], 49551)
+        self.assertEqual(s.last_state["funds"], 43951)
         self.assertEqual(s.last_state["buildings"], 0)
         for projection in ("top_down", "isometric"):
             await s.request("view", {"action": "projection", "projection": projection})
@@ -2451,14 +2582,14 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("save")
         await s.city("load")
         self.assertEqual(s.last_state["park_tiles"], 4)
-        self.assertEqual(s.last_state["funds"], 49551)
+        self.assertEqual(s.last_state["funds"], 43951)
         await s.request("tool", {"action": "apply", "name": "bulldoze",
                                  "x1": 8, "y1": 12, "x2": 9, "y2": 13})
         self.assertEqual(s.last_state["park_tiles"], 0)
-        self.assertEqual(s.last_state["funds"], 49531)
+        self.assertEqual(s.last_state["funds"], 43931)
         await s.request("time", {"action": "step", "ticks": 1})
         self.assertEqual(s.last_state["expenses"], 0)
-        self.assertEqual(s.last_state["funds"], 49531)
+        self.assertEqual(s.last_state["funds"], 43931)
         scenario = await record(s, "stop", "parks")
         self.assertTrue((await replay(s, scenario["scenario"], 2))["identical"])
 
@@ -2466,6 +2597,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s = self.session
         await record(s, "start")
         await s.city("new", 32)
+        await self.unlock_catalog_fixture()
         await s.request("view", {"action": "projection", "projection": "top_down"})
         await s.request(
             "view", {"action": "toggle", "name": "compact_ui", "enabled": True}
@@ -2710,6 +2842,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_playable_migration_unlocks_transit_and_survives_load(self):
         s = self.session
         await s.city("new", 64)
+        await self.unlock_catalog_fixture(500)
         await s.request(
             "tool",
             {"action": "apply", "name": "road", "x1": 8, "y1": 32, "x2": 40, "y2": 32},
@@ -2733,7 +2866,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             ("residential", 8, 22, 31),
             ("commercial", 8, 22, 33),
             ("industrial", 28, 40, 31),
-            ("office", 28, 40, 33),
+            ("commercial", 28, 40, 33),
         ):
             await s.request(
                 "tool",
@@ -2752,11 +2885,11 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         # balanced-economy tests cover normal starting cash separately.
         await s.city("save")
         funded = json.loads(s.artifact("urban_sim_session.json").read_text())
-        funded["funds"] = 250000
+        funded["funds"] = 500000
         fixture = s.artifact("migration-funded.json")
         fixture.write_text(json.dumps(funded))
         await s.city("load", import_path=str(fixture))
-        self.assertEqual(s.last_state["funds"], 250000)
+        self.assertEqual(s.last_state["funds"], 500000)
         for service, x, y in (
             ("health", 26, 31),
             ("sanitation", 26, 33),
@@ -2892,8 +3025,11 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(s.last_state["population"], 0)
             if s.last_state["population"] > 1200 and s.last_state["routes"] > 0:
                 break
+        self.assertGreaterEqual(s.last_state["budget"]["population_milestone"], 1200)
         self.assertGreater(s.last_state["population"], 1200)
         self.assertGreater(s.last_state["routes"], 0)
+        self.assertTrue(s.last_state["ui"]["onboarding"])
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 6)
         entities = await s.request("inspect", {"section": "entities", "limit": 512})
         homes = [b for b in entities["items"] if b["type"] == 1 and b["occupancy"] > 0]
         self.assertGreater(len(homes), 1)
@@ -2971,6 +3107,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_freight_gate_arterial_upgrade_and_checkpoint(self):
         s = self.session
         await s.city("new", 32)
+        await self.unlock_catalog_fixture()
         await s.request(
             "tool",
             {"action": "apply", "name": "road", "x1": 0, "y1": 16, "x2": 24, "y2": 16},
@@ -3043,7 +3180,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             },
         )
         after = gate_edge(await s.request("inspect", {"section": "roads"}))
-        self.assertEqual(s.last_state["funds"], cash - 600)
+        self.assertEqual(s.last_state["funds"], cash - 2800)
         self.assertEqual(after["road_class"], "arterial")
         self.assertEqual(after["capacity"], 400)
         self.assertEqual(after["freight_load"], before["freight_load"])
@@ -3215,13 +3352,14 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                         "y2": 12,
                     },
                 )
-                self.assertFalse(upgraded.isError)
+                self.assertTrue(upgraded.isError)
+                self.assertIn("500 RESIDENTS", str(upgraded.content))
                 edges = await client.call_tool("inspect", {"section": "roads"})
                 self.assertFalse(edges.isError)
                 self.assertTrue(edges.structuredContent["items"])
                 self.assertTrue(
                     all(
-                        e["road_class"] == "arterial" and e["capacity"] == 400
+                        e["road_class"] == "local" and e["capacity"] == 100
                         for e in edges.structuredContent["items"]
                     )
                 )

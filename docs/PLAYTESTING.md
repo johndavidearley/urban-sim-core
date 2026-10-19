@@ -289,7 +289,7 @@ The bridge advertises `features.parks=true`. Apply parks through
 Summary state exposes `park_tiles` and `park_upkeep` (playable dollars/tick).
 Tile inspection uses existing zone and land-value fields. Save/load and
 record/replay retain parks as ordinary zone-4 tiles; no snapshot migration is
-needed. Placement costs $100/tile, upkeep $2/tile/tick. Benefits taper over
+needed. Placement costs $1,500/tile, upkeep $2/tile/tick. Benefits taper over
 four Manhattan tiles and use the nearest park rather than stacking.
 
 Transit overlay (`view` overlay 8, keyboard 9): cyan bus lines, gold rail
@@ -666,8 +666,8 @@ roads, utilities, reservations and funds. Clicking the informational panel does
 not place anything behind it. Both projections render distinct cargo containers
 and passenger sheds in tile depth order; reserved yards suppress vegetation.
 
-Cargo placement pays $15,000, creates 200 goods/tick and immediately persists the
-logistics transition. Passenger placement pays $10,000 and creates 60 passengers/
+Cargo placement pays $1,800,000, creates 200 goods/tick and immediately persists the
+logistics transition. Passenger placement pays $1,500,000 and creates 60 passengers/
 tick without activating cargo or inventing visitor demand. The panel explains
 prices/upkeep, the delivered-trade transition and persistent 100-goods road limit
 before cargo purchase. Removal releases the whole owned footprint for $500, with
@@ -702,7 +702,7 @@ recorded native replay retain IDs, settings, mode, money and reports.
 a fixed 4x2 land footprint, a reachable civic road entrance, and delivered power
 and water on every tile. The middle tiles need roads along both long sides for
 utility delivery. No shore or boundary-connected water is required. Construction
-costs $25,000 and starts at 120 passengers/tick, with no cargo capacity. The shared
+costs $1,800,000 and starts at 120 passengers/tick, with no cargo capacity. The shared
 terminal plan/build/remove implementation retains maritime-only PortTool wrappers
 and revalidates execution. Reservations, growth/edit guards and derived ownership
 rebuilding apply to all eight tiles.
@@ -745,7 +745,7 @@ tourism demand and local attraction access are deferred to M34.
 ## M34 hotel placement controls
 
 Use K or the inspectable `hotel` button to select placement. A hotel costs
-$10,000 and needs empty unzoned land beside a road with both power and water.
+$1,500,000 and needs empty unzoned land beside a road with both power and water.
 The preview and panel explain invalid sites before a click. Each hotel is one
 commercial entity with 12 worker slots and 32 visitor beds; standard commercial
 upkeep applies once. H badges identify hotels in top-down and isometric views.
@@ -900,3 +900,13 @@ The optional `UrbanSimCore-regional-benchmark` target profiles the shared tick
 path without file/render time, with retained/warm and reconstructed/cold host
 caches and per-tick invariants. See `tools/REGIONAL_BENCHMARK.md` for commands,
 measurement boundaries and cache-count interpretation.
+
+
+## M49 population milestones and prices
+
+Native and MCP purchases share permanent population locks and fixed catalog
+construction prices. `budget` inspection reports `catalog_milestones` and
+`construction_prices`; prices do not vary with current income or cash. See
+[POPULATION_MILESTONES.md](POPULATION_MILESTONES.md) for tiers and calibration.
+Earlier M32–M48 fixture descriptions retain historical purchase prices; loading
+such a city never charges the difference. New purchases use current prices.

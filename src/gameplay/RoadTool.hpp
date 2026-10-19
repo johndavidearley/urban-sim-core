@@ -1,4 +1,5 @@
 #pragma once
+#include "src/gameplay/CatalogPrices.hpp"
 
 #include <cstdint>
 #include <string>
@@ -24,8 +25,8 @@ struct RoadPlan {
 class RoadTool {
 public:
   static constexpr int64_t kCostPerSegment = 100;
-  static constexpr int64_t kArterialCostPerSegment = 400;
-  static constexpr int64_t kUpgradeCostPerSegment = 300;
+  static constexpr int64_t kArterialCostPerSegment = catalog::arterialSegmentCost;
+  static constexpr int64_t kUpgradeCostPerSegment = catalog::arterialUpgradeCost;
 
   static RoadPlan plan(const CityMap &map, const RoadNetwork &roads,
                        Coord start, Coord end, int64_t availableFunds,

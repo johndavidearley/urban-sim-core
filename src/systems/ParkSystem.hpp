@@ -1,4 +1,5 @@
 #pragma once
+#include "src/gameplay/CatalogPrices.hpp"
 #include <algorithm>
 #include <cmath>
 #include "src/world/Zoning.hpp"
@@ -8,7 +9,7 @@
 class ParkSystem {
 public:
   static constexpr int kRadius = 4;
-  static constexpr int64_t kPlacementCost = 100;
+  static constexpr int64_t kPlacementCost = catalog::parkTileCost;
   static constexpr int64_t kUpkeepPerTick = 2;
   static bool isPark(const CityMap& map, Coord coord) {
     if (!map.isValid(coord)) return false;

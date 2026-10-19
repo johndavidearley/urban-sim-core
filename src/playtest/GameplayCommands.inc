@@ -497,6 +497,8 @@ if (command == "tool") {
     const int64_t budget = setBudget ? args.at("budget_cap").get<int64_t>() : 0;
     const bool setHeight = args.contains("height_cap");
     const int height = setHeight ? args.at("height_cap").get<int>() : 0;
+    if (setHeight && !liveState.milestones.unlocks(catalog::heightCaps))
+      throw std::runtime_error(catalog::lockedReason(liveState.milestones, catalog::heightCaps));
     if (setHeight && !DistrictSystem::isHeightCap(height))
       throw std::runtime_error(
           "Height cap must be 0, 1, 2, 4, 8, 16, 32, or 64");

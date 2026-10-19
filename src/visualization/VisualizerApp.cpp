@@ -1,3 +1,4 @@
+#include "src/gameplay/CatalogUnlocks.hpp"
 #include <algorithm>
 #include <cctype>
 #include "src/visualization/RegionalManagement.hpp"
@@ -119,6 +120,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       liveState.budgetPolicy = session.budgetPolicy;
       liveState.treasuryLedger = session.treasuryLedger;
       liveState.history = session.history;
+      liveState.milestones = session.milestones;
       liveState.alerts = session.alerts;
       liveState.transitReport = session.transitReport;
       liveState.regionalConnections = session.regionalConnections;
@@ -370,13 +372,17 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   auto executeSimulationTick = [&]() {
     if (bridge)
       ++bridge->revision;
+    const auto previousMilestone = liveState.milestones.highestReached;
     const bool wasLow = liveState.lowFunds;
     const bool wasBankrupt = liveState.bankrupt;
     const bool wasInDebt = liveState.treasuryDebt > 0;
     runSimulationTick(map, roads, store, population, facilities, districts,
                       liveState, funds);
     sessionDirty = true;
-    if (liveState.treasuryDebt > 0 && !wasInDebt) {
+    if (liveState.milestones.highestReached > previousMilestone) {
+      showOnboarding = true;
+      notify("POPULATION MILESTONE " + std::to_string(liveState.milestones.highestReached) + " RESIDENTS", true);
+    } else if (liveState.treasuryDebt > 0 && !wasInDebt) {
       notify("CITY TOOK ON DEBT $" + std::to_string(liveState.treasuryDebt),
              false);
     } else if (liveState.treasuryDebt == 0 && wasInDebt) {
@@ -400,6 +406,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     session.budgetPolicy = liveState.budgetPolicy;
     session.treasuryLedger = liveState.treasuryLedger;
     session.history = liveState.history;
+    session.milestones = liveState.milestones;
     session.alerts = liveState.alerts;
     session.transitReport = liveState.transitReport;
     session.regionalConnections = liveState.regionalConnections;
@@ -457,6 +464,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.budgetPolicy = session.budgetPolicy;
     liveState.treasuryLedger = session.treasuryLedger;
     liveState.history = session.history;
+    liveState.milestones = session.milestones;
     liveState.alerts = session.alerts;
     liveState.transitReport = session.transitReport;
     liveState.regionalConnections = session.regionalConnections;
@@ -574,6 +582,21 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     activatePaletteTool(PaletteTool::Port); portAction=next;
     notify(std::string("PORT ")+portActions[portAction]+" - V CYCLES, ESC CANCELS",true);
   };
+  auto toolUnlockThreshold = [&]() -> uint32_t {
+    if (roadToolActive) return selectedRoadClass == RoadClass::Arterial ? catalog::arterials : 0;
+    if (zoneToolActive) return catalog::zone(selectedZone);
+    if (serviceToolActive) return catalog::service(selectedService, selectedPowerSource, treatmentMode());
+    if (districtToolActive) return catalog::districts;
+    if (portToolActive) return portAction == 5 ? catalog::airports : portAction == 6 ? catalog::hotels :
+      (portAction == 0 || portAction == 1) ? catalog::terminals : 0;
+    return 0;
+  };
+  auto rejectLocked = [&](uint32_t threshold) {
+    const auto reason = catalog::lockedReason(liveState.milestones, threshold);
+    if (reason.empty()) return false;
+    notify(reason, false);
+    return true;
+  };
   auto applyPort=[&](Coord tile,int capacity=-1) {
     if (!map.isValid(tile)) {notify("TERMINAL OUTSIDE MAP",false);return;}
     std::string error, message;
@@ -583,21 +606,24 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         setHotelOpen(existing->id,!existing->hotelOpen);
         return;
       }
+      if (rejectLocked(catalog::hotels)) return;
       const auto plan=HotelTool::plan(map,roads,facilities,tile,funds);
       if (!plan.valid) {notify(plan.error,false);return;}
       if (!HotelTool::build(map,roads,store,facilities,plan,funds)) {notify("HOTEL SITE CHANGED",false);return;}
       liveState.tourism.enabled=true;
-      message="HOTEL BUILT $10000 - 32 BEDS / 12 JOBS; TOURISM ON";
+      message="HOTEL BUILT $" + std::to_string(plan.cost) + " - 32 BEDS / 12 JOBS; TOURISM ON";
     } else if (terminalPlacement()) {
+      if (rejectLocked(toolUnlockThreshold())) return;
       const auto plan=planTerminalAt(tile);
       if (!plan.valid) {notify(plan.error,false);return;}
       if (!TerminalTool::build(map,roads,liveState.regionalConnections,plan.connection,
             plan.destination,portCivicSites(),funds,&error)) {notify(error,false);return;}
       liveState.nextRegionalConnectionId=static_cast<uint64_t>(plan.connection.id)+1;
       if (portAction==0) liveState.regionalLogisticsEnabled=true;
-      message=portAction==0 ? "CARGO PORT BUILT $15000 - FINITE LOGISTICS ON; ROAD 100/TICK"
-                            : (portAction==5 ? "AIRPORT BUILT $25000 - $30/TICK; VISITORS REQUIRE TOURISM ON AND PARK ACCESS"
-                            : "PASSENGER TERMINAL BUILT $10000 - $10/TICK; VISITORS REQUIRE TOURISM ON AND PARK ACCESS");
+      message=std::string(portAction==0 ? "CARGO PORT" : portAction==5 ? "AIRPORT" : "PASSENGER TERMINAL") +
+        " BUILT $" + std::to_string(plan.cost) + (portAction==0 ? " - FINITE LOGISTICS ON; ROAD 100/TICK" :
+          portAction==5 ? " - $30/TICK; VISITORS REQUIRE TOURISM ON AND PARK ACCESS" :
+          " - $10/TICK; VISITORS REQUIRE TOURISM ON AND PARK ACCESS");
     } else {
       const auto id=map.getTile(tile).regionalConnectionId;
       const auto found=std::find_if(liveState.regionalConnections.begin(),liveState.regionalConnections.end(),
@@ -632,6 +658,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     notify(message,true);
   };
   auto applyService = [&](Coord tile) {
+    if (rejectLocked(toolUnlockThreshold())) return;
     servicePlan =
         ServiceTool::plan(map, roads, facilities, selectedService, tile, funds, serviceOptions());
     const int64_t cost = servicePlan.cost;
@@ -654,6 +681,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         ServiceTool::plan(map, roads, facilities, selectedService, tile, funds, serviceOptions());
   };
   auto applyPlacement = [&](Coord tile) {
+    // Existing districts may still be inspected or removed in legacy cities.
+    const bool existingDistrict = districtToolActive &&
+      ((toolDragStart == tile && DistrictTool::districtAt(districts, tile) != 0) ||
+       DistrictTool::plan(map, districts, toolDragStart, tile, selectedArchetype).removeId != 0);
+    if (!existingDistrict && rejectLocked(toolUnlockThreshold())) return;
     if (roadToolActive) {
       roadPlan = RoadTool::plan(map, roads, toolDragStart, tile, funds,
                                 selectedRoadClass, &facilities);
@@ -837,6 +869,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     view.open = budgetBonds;
     view.principalChoice = bondPrincipalChoice;
     view.termChoice = bondTermChoice;
+    view.unlocked = liveState.milestones.unlocks(catalog::bonds);
     view.bond = liveState.bond;
     view.funds = funds;
     view.nextDue = TreasurySystem::bondDue(liveState.bond);
@@ -848,6 +881,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     sessionDirty = true;
   };
   auto issueBond = [&](int64_t principal, uint32_t term) {
+    const auto reason = catalog::lockedReason(liveState.milestones, catalog::bonds);
+    if (!reason.empty()) throw std::runtime_error(reason);
     if (liveState.bond.active()) throw std::runtime_error("A bond is already open");
     if (!TreasurySystem::issueBond(liveState.bond, funds, principal, term))
       throw std::runtime_error("Bond principal must be 10000, 50000 or 200000 and term 100, 200 or 400 ticks");
@@ -869,10 +904,30 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   auto budgetStatus = [&]() -> Json {
     const auto preview = budgetPreview();
     const auto& ledger = liveState.treasuryLedger;
-    return {{"tax_percent", liveState.budgetPolicy.taxPercent},
+    Json milestoneCatalog = Json::array();
+    for (auto threshold : PopulationMilestones::thresholds)
+      milestoneCatalog.push_back({{"residents", threshold},
+        {"unlocked", liveState.milestones.unlocks(threshold)},
+        {"catalog", catalog::unlockedSummary(threshold)}});
+    const Json constructionPrices = {
+      {"local_segment", RoadTool::kCostPerSegment}, {"arterial_segment", RoadTool::kArterialCostPerSegment},
+      {"arterial_upgrade", RoadTool::kUpgradeCostPerSegment},
+      {"rci_tile", ZoneTool::kCostPerTile}, {"park_tile", ZoneTool::costPerTile(ZoneType::Park)},
+      {"office_tile", ZoneTool::costPerTile(ZoneType::Office)},
+      {"cemetery", catalog::cemeteryCost}, {"recycling", catalog::recyclingCost},
+      {"gas", catalog::gasCost}, {"solar", catalog::solarCost},
+      {"substation", catalog::substationCost}, {"hydro", catalog::hydroCost},
+      {"treatment", catalog::treatmentCost}, {"crematorium", catalog::crematoriumCost},
+      {"incinerator", catalog::incineratorCost}, {"hotel", HotelTool::kConstructionCost},
+      {"cargo_port", catalog::cargoPortCost}, {"passenger_terminal", catalog::passengerTerminalCost},
+      {"nuclear", catalog::nuclearCost}, {"airport", catalog::airportCost}};
+    return {{"construction_prices", constructionPrices}, {"catalog_milestones", milestoneCatalog}, {"tax_percent", liveState.budgetPolicy.taxPercent},
       {"transit_cost",TransitSystem::operatingCost(liveState.transitRoutes)},
       {"transit_report",transitReportJson(liveState.transitReport)},
       {"history", cityHistoryJson(liveState.history)},
+      {"population_milestone", liveState.milestones.highestReached},
+      {"next_population_milestone", liveState.milestones.nextThreshold()},
+      {"milestone_unlocks", catalog::unlockedSummary(liveState.milestones.highestReached)},
       {"alerts", cityAlertsJson(liveState.alerts)},
       {"tax_attraction", liveState.budgetPolicy.taxAttraction()},
       {"service_percent", liveState.budgetPolicy.servicePercent},
@@ -1381,11 +1436,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         switch (event.key.sym) {
         case Key::K:
           activatePaletteTool(PaletteTool::Port); portAction=6;
-          notify("HOTEL $10000 - 32 BEDS / 12 JOBS; EMPTY LAND, ROAD AND UTILITIES",true);
+          notify("HOTEL $" + std::to_string(HotelTool::kConstructionCost) + " - 32 BEDS / 12 JOBS; EMPTY LAND, ROAD AND UTILITIES",true);
           break;
         case Key::J:
           activatePaletteTool(PaletteTool::Port); portAction=5;
-          notify("AIRPORT $25000 + $30/TICK - 4X2 LAND; UTILITIES ON EVERY TILE",true);
+          notify("AIRPORT $" + std::to_string(regional::terminalSpec(regional::Kind::Airport)->constructionCost) + " + $30/TICK - 4X2 LAND; UTILITIES ON EVERY TILE",true);
           break;
         case Key::V:
           if (serviceToolActive && selectedService == ServiceType::Power) {
@@ -1406,7 +1461,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
               sewageTreatmentTool = false;
             }
             servicePlan = {};
-            notify(treatmentMode() ? "SHORE TREATMENT $9000 + $34/TICK - NO RAW DISCHARGE" :
+            notify(treatmentMode() ? "SHORE TREATMENT $" + std::to_string(catalog::treatmentCost) + " + $34/TICK - NO RAW DISCHARGE" :
               (surfaceMode() ? "SHORE MODE - WATER INTAKE / RAW SEWAGE OUTLET" : "INLAND WATER / SANITATION"), true);
           } else selectPortAction();
           break;
@@ -1499,8 +1554,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         case Key::Period:
         case Key::N:
           if (liveState.paused) {
+            const auto milestoneBeforeStep = liveState.milestones.highestReached;
             executeSimulationTick();
-            notify("STEPPED TO TICK " + std::to_string(liveState.tick) +
+            if (liveState.milestones.highestReached == milestoneBeforeStep)
+              notify("STEPPED TO TICK " + std::to_string(liveState.tick) +
                        " - AUTO RUN PAUSED", true);
           }
           break;
@@ -1508,7 +1565,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           showLegend = !showLegend;
           break;
         case Key::F1:
-          if (onboardingStep == 6) guideBudgetReviewed = false;
+          if (onboardingStep == 6 && liveState.milestones.highestReached == 0) guideBudgetReviewed = false;
           showOnboarding = !showOnboarding;
           break;
         case Key::F3:
@@ -1830,6 +1887,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         }
         case DistrictPanelAction::CycleHeight: {
+          if (rejectLocked(catalog::heightCaps)) break;
           const int next = DistrictSystem::nextHeightCap(district->heightCap);
           if (districts.setDistrictHeightCap(selectedDistrictId, next)) {
             sessionDirty = true;
@@ -1942,6 +2000,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     if (showBudgetPanel && !budgetAlerts && !budgetTrends)
       guideBudgetReviewed = true;
     if (showOnboarding) {
+      const int previousGuideStep = onboardingStep;
       bool homes = false, jobs = false;
       for (int y = 0; y < mapSize && !(homes && jobs); ++y)
         for (int x = 0; x < mapSize; ++x) {
@@ -1954,14 +2013,15 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         return std::any_of(facilities.begin(), facilities.end(),
                            [&](const auto& facility) { return facility.type == type; });
       };
-      if (roads.getRoadCount() == 0) onboardingStep = 0;
+      if (liveState.milestones.highestReached > 0) onboardingStep = 6;
+      else if (roads.getRoadCount() == 0) onboardingStep = 0;
       else if (!(homes && jobs)) onboardingStep = 1;
       else if (liveState.tick == 0) onboardingStep = 2;
       else if (!hasService(ServiceType::Power)) onboardingStep = 3;
       else if (!hasService(ServiceType::Water)) onboardingStep = 4;
       else if (!guideBudgetReviewed) onboardingStep = 5;
       else onboardingStep = 6;
-      if (onboardingStep == 6) {
+      if (onboardingStep == 6 && liveState.milestones.highestReached == 0 && previousGuideStep != 6) {
         showOnboarding = false;
         notify("CITY GUIDE COMPLETE - F1 TO REVIEW", true);
       }
@@ -2017,6 +2077,15 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     PortPlan hoveredPortPlan;
     if (portToolActive && terminalPlacement() && !showBudgetPanel && !showTransportPanel)
       hoveredPortPlan=planTerminalAt(tileAtScreen(mouseX,mouseY));
+    const auto previewLock = catalog::lockedReason(liveState.milestones, toolUnlockThreshold());
+    if (!previewLock.empty()) {
+      if (serviceToolActive) { servicePlan.valid = false; servicePlan.error = previewLock; }
+      if (roadToolActive) { roadPlan.valid = false; roadPlan.error = previewLock; }
+      if (zoneToolActive) { zonePlan.valid = false; zonePlan.error = previewLock; }
+      if (districtToolActive) { districtPlan.valid = false; districtPlan.error = previewLock; }
+      if (portToolActive && portAction == 6) { hoveredHotelPlan.valid = false; hoveredHotelPlan.error = previewLock; }
+      if (portToolActive && terminalPlacement()) { hoveredPortPlan.valid = false; hoveredPortPlan.error = previewLock; }
+    }
     std::unordered_map<uint32_t,const regional::Connection*> portById;
     for (const auto& c:liveState.regionalConnections) if (c.constructed) portById.emplace(c.id,&c);
     const auto& transitMarks = transitOverlayCache.update(roads, liveState.transitRoutes);
@@ -2139,7 +2208,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         districts.getDistrictConst(selectedDistrictId) != nullptr &&
         pointInDistrictPanel(mouseX, mouseY);
     const bool mouseOverGuide =
-        !cleanUiMode && showOnboarding && mouseX >= 14 && mouseX < 364 &&
+        !cleanUiMode && showOnboarding && mouseX >= 14 && mouseX < (onboardingStep == 6 ? 664 : 364) &&
         mouseY >= windowHeight - 154 && mouseY < windowHeight - 62;
     const Coord hoveredTile = map.isValid(pinnedInspector) ? pinnedInspector : tileAtScreen(mouseX, mouseY);
     const bool inspectMap = !showRegionalPanel && !showTransportPanel && !showBudgetPanel &&
@@ -2289,6 +2358,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     } else if (districtToolActive) {
       activeToolLabel = DistrictSystem::archetypeToString(selectedArchetype);
     }
+    const auto toolLockReason = catalog::lockedReason(liveState.milestones, toolUnlockThreshold());
+    if (!toolLockReason.empty()) activeToolLabel += " LOCKED " + std::to_string(toolUnlockThreshold());
     if (cleanUiMode) {
       drawCompactGameplayHud(renderer, windowWidth, liveState.paused,
                              population.getTotalPopulation(), funds,
@@ -2328,7 +2399,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         const int x=14, y=windowHeight-166;
         drawFilledRect(renderer,x,y,windowWidth-x-140,100,{14,24,32},245);
         drawText(renderer,x+8,y+7,"HOTEL - K SELECTS - CLICK HOTEL TO OPEN/CLOSE",{150,225,235},1);
-        drawText(renderer,x+8,y+24,"$10000; 32 BEDS/12 JOBS; FEES $2 DAY/$4 STAY; SERVICE $1",{230,215,165},1);
+        drawText(renderer,x+8,y+24,"$" + std::to_string(HotelTool::kConstructionCost) + "; 32 BEDS/12 JOBS; FEES $2 DAY/$4 STAY; SERVICE $1",{230,215,165},1);
         const auto& travel=liveState.tourism.travel;
         const auto travelInfo=travel.measured ? "LAST TRIPS ROAD "+std::to_string(travel.road)+
           " TRANSIT "+std::to_string(travel.transit)+" WALK "+std::to_string(travel.walking)+
@@ -2358,9 +2429,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         const int x=14, y=windowHeight-166;
         drawFilledRect(renderer,x,y,windowWidth-x-140,100,{14,24,32},245);
         drawText(renderer,x+8,y+7,std::string("TERMINAL ")+portActions[portAction]+" - V MANAGES - ESC CANCELS",{150,225,235},1);
-        std::string info=portAction==5 ? "$25000 + $30/TICK; 4X2 LAND; 120 PASSENGERS/TICK"
-          : portAction==0 ? "$15000 + $20/TICK; DESIGN CAPACITY 200 GOODS/TICK"
-          : (portAction==1 ? "$10000 + $10/TICK; 60 PASSENGERS; TOURISM CONTROLS ARRIVALS"
+        std::string info=portAction==5 ? "$" + std::to_string(catalog::airportCost) + " + $30/TICK; 4X2 LAND; 120 PASSENGERS/TICK"
+          : portAction==0 ? "$" + std::to_string(catalog::cargoPortCost) + " + $20/TICK; DESIGN CAPACITY 200 GOODS/TICK"
+          : (portAction==1 ? "$" + std::to_string(catalog::passengerTerminalCost) + " + $10/TICK; 60 PASSENGERS; TOURISM CONTROLS ARRIVALS"
           : (portAction==2 ? "REMOVE WHOLE TERMINAL: PORT $500 / AIRPORT $1000; NO REFUND"
           : (portAction==3 ? "CLICK PORT TO ENABLE/DISABLE; DISABLED PORTS HAVE NO UPKEEP"
           : "CLICK TO CYCLE CAPACITY; PORT 200 GOODS/60 PASS; AIRPORT 120 PASS")));
@@ -2409,7 +2480,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       }
     }
     if (!cleanUiMode && showOnboarding && !portToolActive) {
-      drawOnboarding(renderer, windowHeight, onboardingStep);
+      drawOnboarding(renderer, windowHeight, onboardingStep, &liveState.milestones);
     }
 
     std::string uiHoverText;
@@ -2418,14 +2489,15 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     switch (hoveredTool) {
     case PaletteTool::Road:
       uiHoverText =
-          "ROAD: A TOGGLE LOCAL/ARTERIAL - $100/$400 NEW - $300 UPGRADE";
+          "ROAD: A LOCAL/ARTERIAL - $" + std::to_string(RoadTool::kCostPerSegment) + "/$" +
+          std::to_string(RoadTool::kArterialCostPerSegment) + " NEW - $" +
+          std::to_string(RoadTool::kUpgradeCostPerSegment) + " UPGRADE";
       break;
     case PaletteTool::Zone:
       uiHoverText = std::string("ZONE ") +
                     Zoning::zoneToString(static_cast<int>(selectedZone)) +
-                    (selectedZone == ZoneType::Park
-                         ? ": $100 PER TILE - $2 UPKEEP PER TICK - DRAG TO PLACE"
-                         : ": DRAG AN AREA - $25 PER TILE - CLICK AGAIN TO CYCLE");
+                    ": $" + std::to_string(ZoneTool::costPerTile(selectedZone)) + " PER TILE" +
+                    (selectedZone == ZoneType::Park ? " - $2 UPKEEP PER TICK" : " - DRAG TO ZONE EMPTY LAND");
       break;
     case PaletteTool::Bulldoze:
       uiHoverText =
@@ -2506,8 +2578,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                 : "FUND: REMOVE THE SERVICE BUDGET CAP";
         break;
       case DistrictPanelAction::CycleHeight:
-        uiHoverText =
-            "HEIGHT: CYCLE UNCAPPED 1X 2X 4X 8X 16X 32X 64X REDEVELOPMENT CAP";
+        uiHoverText = liveState.milestones.unlocks(catalog::heightCaps) ?
+            "HEIGHT: CYCLE UNCAPPED 1X 2X 4X 8X 16X 32X 64X REDEVELOPMENT CAP" :
+            catalog::lockedReason(liveState.milestones, catalog::heightCaps);
         break;
       case DistrictPanelAction::None:
       default:

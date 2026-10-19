@@ -13,7 +13,7 @@
 namespace {
 struct AirportCity {
   CityMap map{{24,24}};RoadNetwork roads{map};EntityStore store;PopulationStore people;
-  std::vector<regional::Connection> connections;int64_t funds=50000;
+  std::vector<regional::Connection> connections;int64_t funds=1825000;
   AirportCity() {
     for (int x=0;x<20;++x) {roads.buildRoad({x,9},{x+1,9});roads.buildRoad({x,12},{x+1,12});}
     for (int y=9;y<12;++y) roads.buildRoad({9,y},{9,y+1});
@@ -29,7 +29,7 @@ struct AirportCity {
 }
 TEST(AirportTests, PaidInlandConstructionReservesAllEightTilesAndAddsNoCargoGateway) {
   AirportCity city;const auto p=city.plan();ASSERT_TRUE(p.valid)<<p.error;
-  EXPECT_EQ(p.cost,25000);EXPECT_EQ(p.tiles.size(),8u);EXPECT_TRUE(city.connections.empty());
+  EXPECT_EQ(p.cost,1800000);EXPECT_EQ(p.tiles.size(),8u);EXPECT_TRUE(city.connections.empty());
   ASSERT_TRUE(city.build());EXPECT_EQ(city.funds,25000);
   ASSERT_EQ(city.connections.size(),1u);const auto& c=city.connections[0];
   EXPECT_EQ(c.kind,regional::Kind::Airport);EXPECT_EQ(c.passengersPerTick,120u);EXPECT_EQ(c.goodsPerTick,0u);
@@ -47,11 +47,11 @@ TEST(AirportTests, PlansAndExecutionRejectWaterMissingUtilitiesAndOccupiedLandWi
   AirportCity city;const auto p=city.plan();ASSERT_TRUE(p.valid);
   city.map.getTile({13,11}).connectedToWater=false;
   EXPECT_FALSE(TerminalTool::build(city.map,city.roads,city.connections,p.connection,p.destination,{{2,8}},city.funds));
-  EXPECT_FALSE(city.plan().valid);EXPECT_EQ(city.funds,50000);EXPECT_TRUE(city.connections.empty());
+  EXPECT_FALSE(city.plan().valid);EXPECT_EQ(city.funds,1825000);EXPECT_TRUE(city.connections.empty());
   city.map.getTile({13,11}).connectedToWater=true;city.map.getTile({13,11}).type=2;
   EXPECT_FALSE(city.plan().valid);city.map.getTile({13,11}).type=0;
   city.map.getTile({12,10}).zone=1;EXPECT_FALSE(city.plan().valid);
-  city.map.getTile({12,10}).zone=0;city.funds=24999;EXPECT_FALSE(city.plan().valid);
+  city.map.getTile({12,10}).zone=0;city.funds=1799999;EXPECT_FALSE(city.plan().valid);
 }
 TEST(AirportTests, FootprintEditingGuardsAndWholeRemovalAreAtomicEvenWhenDisconnected) {
   AirportCity city;ASSERT_TRUE(city.build());

@@ -1,3 +1,4 @@
+#include "src/gameplay/CatalogUnlocks.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -1051,4 +1052,104 @@ TEST(GameplaySessionSystemTests, SubstationRoundTripsAndUnknownPowerSourceReject
   EXPECT_EQ(loaded.facilities[0].powerSource, PowerSourceType::Substation);
   std::filesystem::remove(path);
   std::filesystem::remove(path.string() + ".city.json");
+}
+
+TEST(PopulationMilestonesTests, ThresholdsArePermanentAndSkippedTiersAreEarned) {
+  PopulationMilestones milestones;
+  EXPECT_EQ(milestones.nextThreshold(), 500u);
+  EXPECT_FALSE(milestones.observe(499));
+  EXPECT_TRUE(milestones.observe(500));
+  EXPECT_TRUE(milestones.unlocks(500));
+  EXPECT_FALSE(milestones.unlocks(1200));
+  EXPECT_FALSE(milestones.observe(0));
+  EXPECT_EQ(milestones.highestReached, 500u);
+  EXPECT_TRUE(milestones.observe(10001));
+  for (auto threshold : PopulationMilestones::thresholds) EXPECT_TRUE(milestones.unlocks(threshold));
+  EXPECT_EQ(milestones.nextThreshold(), 0u);
+  EXPECT_FALSE(milestones.unlocks(501));
+}
+
+TEST(GameplaySessionSystemTests, PopulationMilestoneRoundTripsAndRejectsInvalidBeforeMutation) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  GameplaySessionState session;
+  session.milestones.observe(10000);
+  const auto path = std::filesystem::temp_directory_path()/"urban_milestone_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(),map,roads,store,people,session));
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_EQ(loaded.milestones.highestReached,10000u);
+  GameplaySessionSystem::advance(map,roads,store,people,loaded);
+  EXPECT_EQ(loaded.milestones.highestReached,10000u);
+  nlohmann::json valid; { std::ifstream input(path); input>>valid; }
+  for (const auto& value : std::vector<nlohmann::json>{-1,501,10001,1.5,"500",nullptr}) {
+    auto invalid=valid; invalid["populationMilestone"]=value;
+    { std::ofstream output(path); output<<invalid; }
+    loaded.funds=123;
+    EXPECT_FALSE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+    EXPECT_EQ(loaded.funds,123);
+    EXPECT_EQ(loaded.milestones.highestReached,10000u);
+  }
+  valid.erase("populationMilestone");
+  { std::ofstream output(path); output<<valid; }
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_EQ(loaded.milestones.highestReached,0u);
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string()+".city.json");
+}
+
+TEST(PopulationMilestonesTests, EveryThresholdUnlocksAtItsBoundary) {
+  for (auto threshold : PopulationMilestones::thresholds) {
+    PopulationMilestones milestones;
+    if (threshold) {
+      milestones.observe(threshold-1);
+      EXPECT_FALSE(milestones.unlocks(threshold));
+    }
+    milestones.observe(threshold);
+    EXPECT_TRUE(milestones.unlocks(threshold));
+    EXPECT_EQ(milestones.highestReached,threshold);
+  }
+}
+
+TEST(GameplaySessionSystemTests, SaveAndLegacyLoadRecognizeCurrentPopulation) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  people.createGroup(2500,0);
+  GameplaySessionState session;
+  const auto path=std::filesystem::temp_directory_path()/"urban_legacy_milestone_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(),map,roads,store,people,session));
+  nlohmann::json root; { std::ifstream input(path); input>>root; }
+  EXPECT_EQ(root.at("populationMilestone"),2500);
+  root.erase("populationMilestone");
+  { std::ofstream output(path); output<<root; }
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_EQ(loaded.milestones.highestReached,2500u);
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string()+".city.json");
+}
+
+TEST(CatalogUnlocksTests, TierPolicyIncludesEveryCatalogVariant) {
+  EXPECT_EQ(catalog::zone(ZoneType::Residential),0u);
+  EXPECT_EQ(catalog::zone(ZoneType::Commercial),0u);
+  EXPECT_EQ(catalog::zone(ZoneType::Industrial),0u);
+  EXPECT_EQ(catalog::zone(ZoneType::Park),500u);
+  EXPECT_EQ(catalog::zone(ZoneType::Office),1200u);
+  for (auto source : {PowerSourceType::Generic,PowerSourceType::Coal,PowerSourceType::Wind})
+    EXPECT_EQ(catalog::service(ServiceType::Power,source,false),0u);
+  for (auto source : {PowerSourceType::NaturalGas,PowerSourceType::Solar})
+    EXPECT_EQ(catalog::service(ServiceType::Power,source,false),1200u);
+  for (auto source : {PowerSourceType::Hydro,PowerSourceType::Substation})
+    EXPECT_EQ(catalog::service(ServiceType::Power,source,false),2500u);
+  EXPECT_EQ(catalog::service(ServiceType::Power,PowerSourceType::Nuclear,false),10000u);
+  for (auto service : {ServiceType::Fire,ServiceType::Police,ServiceType::Health,ServiceType::Education,
+                       ServiceType::Water,ServiceType::Sanitation,ServiceType::Garbage})
+    EXPECT_EQ(catalog::service(service,PowerSourceType::Generic,false),0u);
+  for (auto service : {ServiceType::Recycling,ServiceType::Cemetery})
+    EXPECT_EQ(catalog::service(service,PowerSourceType::Generic,false),500u);
+  for (auto service : {ServiceType::Crematorium,ServiceType::Incinerator})
+    EXPECT_EQ(catalog::service(service,PowerSourceType::Generic,false),2500u);
+  EXPECT_EQ(catalog::service(ServiceType::Sanitation,PowerSourceType::Generic,true),2500u);
+  PopulationMilestones milestones;
+  EXPECT_EQ(catalog::lockedReason(milestones,catalog::airports),"LOCKED - REACH 10000 RESIDENTS");
+  milestones.observe(10000);
+  EXPECT_TRUE(catalog::lockedReason(milestones,catalog::airports).empty());
 }

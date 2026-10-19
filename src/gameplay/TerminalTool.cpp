@@ -1,4 +1,5 @@
 #include "TerminalTool.hpp"
+#include "src/gameplay/CatalogPrices.hpp"
 #include <algorithm>
 #include "src/networks/RoadNetwork.hpp"
 #include "src/networks/Pathfinding.hpp"
@@ -8,9 +9,9 @@ bool fail(std::string* error,const char* message) {if (error) *error=message; re
 }
 namespace regional {
 const TerminalSpec* terminalSpec(Kind kind) {
-  static constexpr TerminalSpec cargo{2,1,15000,500,20,0,200};
-  static constexpr TerminalSpec passenger{2,1,10000,500,10,60,0};
-  static constexpr TerminalSpec airport{4,2,25000,1000,30,120,0};
+  static constexpr TerminalSpec cargo{2,1,catalog::cargoPortCost,500,20,0,200};
+  static constexpr TerminalSpec passenger{2,1,catalog::passengerTerminalCost,500,10,60,0};
+  static constexpr TerminalSpec airport{4,2,catalog::airportCost,1000,30,120,0};
   switch (kind) {
     case Kind::CargoPort:return &cargo;
     case Kind::PassengerTerminal:return &passenger;

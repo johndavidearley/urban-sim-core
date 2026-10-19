@@ -116,19 +116,19 @@ Controls:
   the tile inspector shows the district name.
 - `V` or **V PORTS**: cycle Cargo, Passenger, Remove, On/Off, and Capacity.
   Click a valid 2x1 shore site to build, or an existing port to manage it.
-  Cargo costs $15,000 + $20/tick; passenger terminals $10,000 + $10/tick;
+  Cargo costs $1,800,000 + $20/tick; passenger terminals $1,500,000 + $10/tick;
   whole-port demolition costs $500. Disabled ports have no upkeep or flow.
   The first cargo port enables fulfilled-trade rules and a 100-goods road-gateway
   limit; removing it retains those rules. Passenger arrivals require tourism
   enabled and a reachable park.
   The port panel shows access, capacity, costs and the last completed cargo flow.
-- `J` or **J AIRPORT**: place a 4×2 inland passenger airport for $25,000 plus
+- `J` or **J AIRPORT**: place a 4×2 inland passenger airport for $1,800,000 plus
   $30/tick, with capacity 120 passengers/tick. Every footprint tile needs power
   and water; connect roads along both long sides. `V` operating modes manage
   airports too: enable/disable, 30/60/120 capacity, or $1,000 whole-airport removal.
   Airports do not activate cargo rules. Passenger capacity/readiness is measured;
   visitor arrivals require tourism enabled and a reachable park.
-- `K` or **K HOTEL**: place a hotel for $10,000 on empty unzoned land with
+- `K` or **K HOTEL**: place a hotel for $1,500,000 on empty unzoned land with
   road, power and water. Each hotel has 32 visitor beds and 12 commercial jobs;
   existing commercial maintenance applies once. `B` demolishes it for $200.
   Hotel signs appear in both views. Building a hotel enables tourism; reachable
@@ -179,7 +179,10 @@ previews cross blocked terrain/buildings or exceed available funds. Existing
 segments included in a dragged route are not charged again.
 
 Zoning costs $25 per changed tile and uses rectangular drag selection.
-Park zoning costs $100 per changed tile and $2 per tile per playable tick.
+Park zoning costs $1,500 per changed tile and $2 per tile per playable tick.
+Office zoning costs $1,500 per changed tile; R/C/I zoning stays $25.
+Player construction unlocks permanently at population milestones. See
+[population milestones and current catalog prices](docs/POPULATION_MILESTONES.md).
 Cycle `Z` past Office to select Park. Parks need empty land, cannot cover civic
 facilities, and never grow buildings. Nearby zoned land gains up to 30 land
 value and the happiness overlay gains up to 0.08, tapering to zero at four
@@ -201,7 +204,7 @@ The placement preview and map marker use a distinct color for each service,
 and coverage refreshes immediately.
 
 Garbage facilities cost $9,000 and provide 400 units of collection capacity;
-Recycling facilities cost $11,000 and divert up to 35% of generated waste with
+Recycling facilities cost $100,000 and divert up to 35% of generated waste with
 200 units of processing capacity. Uncollected waste raises pollution on zoned
 land and lowers the Happiness overlay. The HUD reports the current waste
 collection percentage, while both facility types add operating costs and can
@@ -209,8 +212,8 @@ be removed with the bulldozer.
 
 Population mortality accumulates deterministically from a baseline rate plus
 illness and pollution risk. Deaths reduce population and create a deceased
-backlog. Cemeteries cost $10,000 and process 50 per tick; crematoriums cost
-$14,000 and process 100 per tick, subject to road coverage. An unprocessed
+backlog. Cemeteries cost $80,000 and process 50 per tick; crematoriums cost
+$650,000 and process 100 per tick, subject to road coverage. An unprocessed
 backlog reduces happiness and raises health pressure. Mortality remainder,
 population target, and backlog persist in saved sessions.
 
@@ -658,7 +661,7 @@ Goods now add batched freight to commuter congestion. CLI
 `(0, map height/2)`; disconnected cargo appears as unrouted goods in the HUD,
 CSV and MCP inspection. While the road tool is active, **A** switches local
 (capacity 100) and arterial (400) roads. Drag to build or upgrade: $100 per new
-local segment, $400 per new arterial, $300 per local segment upgraded.
+local segment, $1,500 per new arterial, $1,400 per local segment upgraded.
 Road classes survive save/load. See [MCP playtesting](docs/PLAYTESTING.md) for
 freight metrics and road inspection.
 
