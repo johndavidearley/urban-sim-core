@@ -65,7 +65,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   const std::array<float, kServiceTypeCount>& serviceCoverage = {},
   bool trends = false, const CityHistory& history = {},
   bool alerts = false, const CityAlerts& diagnostics = {}, int focus = -1, uint32_t inspectedTick = 0, const std::vector<ServiceFacility>* facilities = nullptr,
-  const BudgetBondView* bonds = nullptr);
+  const BudgetBondView* bonds = nullptr, const ServiceCoverageSummary* departments = nullptr);
 
 bool transportControlEnabled(int action,const std::vector<TransitRoute>& routes,size_t selected);
 Rect transportControlRect(int action,int width,int height);

@@ -1,3 +1,4 @@
+#include <tuple>
 #include "ServiceSystem.hpp"
 #include "src/systems/WasteSystem.hpp"
 
@@ -302,8 +303,13 @@ float ServiceSystem::intakeCleanFraction(
 void ServiceSystem::buildCache(
   const RoadNetwork& roads,
   const std::vector<ServiceFacility>& facilities,
-  ServiceCoverageCache& cache
+  ServiceCoverageCache& cache,
+  bool boundedDepartments
 ) {
+  cache.boundedDepartments = boundedDepartments;
+  cache.departmentSites.clear();
+  cache.departmentFactors.clear();
+  cache.departments = {};
   cache.entries.clear();
   cache.wasteFacilities.clear();
   cache.powerGenerationCapacityMW = 0.0f;
@@ -353,6 +359,11 @@ void ServiceSystem::buildCache(
     Coord anchor;
     if (!roads.resolveRoadAnchor(facility.position, anchor)) {
       continue;
+    }
+    if (boundedDepartments && departmentIndex(facility.type) >= 0) {
+      cache.departmentSites.push_back({facility.type, facility.position,
+        departmentCapacity(facility.type) * std::clamp(facility.quality, 0.f, 1.f),
+        buildMultiSourceDistanceField(roads, {anchor}, facility.maxTravelDistance)});
     }
     groups[{facility.type, facility.maxTravelDistance}].push_back(anchor);
     if (facility.type == ServiceType::Incinerator) cache.wasteFacilities.push_back(facility);
@@ -455,7 +466,7 @@ bool ServiceSystem::isResultCacheValid(
   // (create/remove/clear/upsert). A full building-position fingerprint was
   // previously rehashed on every validity check and dominated large cities
   // even on pure cache hits.
-  return cache.cachedStoreMutationVersion == store.getMutationVersion()
+  return !cache.boundedDepartments && cache.cachedStoreMutationVersion == store.getMutationVersion()
     && std::none_of(cache.wasteFacilities.begin(), cache.wasteFacilities.end(),
       [](const ServiceFacility& f) { return f.type == ServiceType::Incinerator; });
 }
@@ -486,6 +497,8 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   ThreadPool* pool
 ) {
   ServiceCoverageSummary summary;
+  summary.boundedDepartments = cache.boundedDepartments;
+  summary.departments = cache.departments;
   summary.totalBuildings = static_cast<uint32_t>(store.getBuildingCount());
   summary.schoolSeats = cache.schoolSeats;
   summary.hospitalBeds = cache.hospitalBeds;
@@ -529,7 +542,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
 
   struct Partial {
     uint32_t serviced = 0;
-    std::array<uint32_t, kServiceTypeCount> byType{};
+    std::array<float, kServiceTypeCount> byType{};
     float powerDemandMW = 0.0f;
     float waterDemand = 0.0f;
   };
@@ -549,14 +562,15 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
       const auto maskIt = cache.coverageMask.find(anchor);
       if (maskIt == cache.coverageMask.end()) continue;
       const ServiceCoverageMask bits = maskIt->second;
-      if ((bits & kCivicCoverageMask) != 0) {
-        ++p.serviced;
-      }
+      bool anyCivic = false;
       for (size_t t = 0; t < kServiceTypeCount; ++t) {
         if ((bits & static_cast<ServiceCoverageMask>(1u << t)) != 0) {
-          ++p.byType[t];
+          const float factor = departmentFactorAt(cache, static_cast<ServiceType>(t), building->position);
+          p.byType[t] += factor;
+          if ((static_cast<ServiceCoverageMask>(1u << t) & kCivicCoverageMask) && factor > 0.f) anyCivic = true;
         }
       }
+      if (anyCivic) ++p.serviced;
     }
     return p;
   };
@@ -568,7 +582,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     ? std::min(static_cast<size_t>(pool->threadCount()), (n + 255) / 256)
     : 1;
 
-  std::array<uint32_t, kServiceTypeCount> coveredByType{};
+  std::array<float, kServiceTypeCount> coveredByType{};
 
   if (nChunks <= 1) {
     const Partial p = evalSlice(0, n);
@@ -670,4 +684,77 @@ float ServiceSystem::coverageStrength(const ServiceCoverageCache &cache, Service
     result = std::max(result, std::clamp(strength, 0.0f, 1.0f));
   }
   return result;
+}
+
+
+float ServiceSystem::departmentFactorAt(const ServiceCoverageCache& cache, ServiceType type, Coord position) {
+  const int index = departmentIndex(type);
+  if (!cache.boundedDepartments || index < 0) return 1.f;
+  const auto found = cache.departmentFactors.find(position);
+  // Empty buildings/new zones consume no occupants and keep their reach.
+  return found == cache.departmentFactors.end() ? 1.f : found->second[static_cast<size_t>(index)];
+}
+
+void ServiceSystem::allocateDepartmentCapacity(const EntityStore& store, const RoadNetwork& roads,
+    ServiceCoverageCache& cache) {
+  cache.departmentFactors.clear();
+  cache.departments = {};
+  if (!cache.boundedDepartments) return;
+  std::sort(cache.departmentSites.begin(), cache.departmentSites.end(), [](const auto& a, const auto& b) {
+    return std::tie(a.type,a.position.x,a.position.y,a.capacity) < std::tie(b.type,b.position.x,b.position.y,b.capacity);
+  });
+  struct Occupants { EntityId id; Coord position, anchor; bool anchored; double demand; };
+  std::vector<Occupants> buildings;
+  for (const auto& [id, building] : store.getBuildings()) {
+    if (building.occupancy <= 0) continue;
+    Coord anchor{};
+    buildings.push_back({id,building.position,anchor,false,static_cast<double>(building.occupancy)});
+    auto& b = buildings.back();
+    b.anchored = roads.resolveRoadAnchor(b.position,b.anchor);
+  }
+  std::sort(buildings.begin(),buildings.end(),[](const auto& a,const auto& b){return a.id < b.id;});
+  for (const auto& b : buildings) {
+    cache.departmentFactors.emplace(b.position,std::array<float,3>{});
+    for (auto& summary : cache.departments) summary.demand += b.demand;
+  }
+  struct Candidate { int distance; size_t building, site; };
+  for (size_t type = 0; type < cache.departments.size(); ++type) {
+    auto& summary = cache.departments[type];
+    std::vector<Candidate> candidates;
+    std::vector<double> available(cache.departmentSites.size(),0.0), remaining;
+    remaining.reserve(buildings.size());
+    for (const auto& b : buildings) remaining.push_back(b.demand);
+    std::vector<bool> reachable(buildings.size(),false);
+    for (size_t site = 0; site < cache.departmentSites.size(); ++site) {
+      const auto& facility = cache.departmentSites[site];
+      if (departmentIndex(facility.type) != static_cast<int>(type)) continue;
+      summary.capacity += facility.capacity;
+      available[site] = facility.capacity;
+      for (size_t building = 0; building < buildings.size(); ++building) {
+        const auto& b = buildings[building];
+        if (!b.anchored) continue;
+        const auto found = facility.distances.find(b.anchor);
+        if (found != facility.distances.end()) {
+          candidates.push_back({found->second,building,site});
+          reachable[building] = true;
+        }
+      }
+    }
+    std::sort(candidates.begin(),candidates.end(),[](const auto& a,const auto& b) {
+      return std::tie(a.distance,a.building,a.site) < std::tie(b.distance,b.building,b.site);
+    });
+    for (const auto& candidate : candidates) {
+      auto& demand = remaining[candidate.building];
+      auto& capacity = available[candidate.site];
+      const double served = std::min(demand,capacity);
+      demand -= served; capacity -= served;
+    }
+    for (size_t i = 0; i < buildings.size(); ++i) {
+      if (reachable[i]) summary.reachable += buildings[i].demand;
+      summary.unserved += remaining[i];
+      const double served = buildings[i].demand - remaining[i];
+      summary.served += served;
+      cache.departmentFactors.at(buildings[i].position)[type] = static_cast<float>(served / buildings[i].demand);
+    }
+  }
 }

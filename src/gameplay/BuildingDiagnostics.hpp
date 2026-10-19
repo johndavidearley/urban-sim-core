@@ -19,6 +19,7 @@ struct BuildingDiagnostics {
   GrowthSiteDiagnostics growth;
   ServiceCoverageMask services = 0;
   float fireResponse = 0.f;
+  std::array<double,3> departmentServed{}, departmentUnserved{};
   int capacity = 0, occupancy = 0;
   bool residential = false;
   NeighborhoodDiagnostics neighborhood;
@@ -41,6 +42,11 @@ struct BuildingDiagnostics {
     if (const auto* b = store.getBuilding(map.getTile(pos).buildingId)) {
       d.capacity = b->capacity; d.occupancy = b->occupancy;
       d.residential = b->type == BuildingType::Residential;
+      const ServiceType types[] = {ServiceType::Fire,ServiceType::Police,ServiceType::Sanitation};
+      for (size_t i=0;i<3;++i) {
+        d.departmentServed[i] = std::max(0,b->occupancy) * ServiceSystem::departmentFactorAt(cache,types[i],pos);
+        d.departmentUnserved[i] = std::max(0,b->occupancy) - d.departmentServed[i];
+      }
     }
     auto& n = d.neighborhood;
     double crime = 0, illness = 0;
@@ -58,7 +64,7 @@ struct BuildingDiagnostics {
         } else { n.filledJobs += std::max(0,b->occupancy); n.jobCapacity += std::max(0,b->capacity); }
         const auto mask = serviceMask(roads,cache,{x,y});
         for (size_t i = 0; i < n.serviceCoverage.size(); ++i)
-          if (mask & static_cast<ServiceCoverageMask>(1u << i)) n.serviceCoverage[i] += 1.f;
+          if (mask & static_cast<ServiceCoverageMask>(1u << i)) n.serviceCoverage[i] += ServiceSystem::departmentFactorAt(cache,static_cast<ServiceType>(i),{x,y});
       }
     if (n.buildings) for (auto& coverage : n.serviceCoverage) coverage /= n.buildings;
     if (n.residents) { n.crime = static_cast<float>(crime / n.residents); n.illness = static_cast<float>(illness / n.residents); }

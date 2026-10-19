@@ -30,7 +30,8 @@ float FireSystem::responseAt(const RoadNetwork& roads, const ServiceCoverageCach
   if (!hasStation) return std::clamp(fallbackCoverage, 0.f, 1.f);
   Coord anchor;
   return roads.resolveRoadAnchor(position, anchor)
-    ? ServiceSystem::coverageStrength(cache, ServiceType::Fire, anchor) : 0.f;
+    ? ServiceSystem::coverageStrength(cache, ServiceType::Fire, anchor) *
+      ServiceSystem::departmentFactorAt(cache, ServiceType::Fire, position) : 0.f;
 }
 
 FireSummary FireSystem::step(

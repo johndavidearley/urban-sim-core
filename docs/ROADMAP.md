@@ -25,7 +25,7 @@ Last updated: October 19, 2026
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
 - Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
 - Phase 13 (M45–M48): complete; hosted CI verified on 6ac65ef.
-- Phase 14 (M49–M54): M49 complete locally; M50 service capacity is next.
+- Phase 14 (M49–M54): M49–M50 complete locally; M51 export prices is next.
 
 ---
 
@@ -1058,7 +1058,7 @@ tick 4,000, is Phase 14.
 ## Phase 14: Things worth buying (M49–M54) — in progress
 
 Drafted October 19, 2026 from the Phase 13 journey rerun
-(`playtest-artifacts/phase13-playtest/REPORT.md`). M49 complete locally October 19. Implement in
+(`playtest-artifacts/phase13-playtest/REPORT.md`). M49–M50 complete locally October 19. Implement in
 order. Phase 12's invariants still hold.
 
 The unchanged journey nets $10–20 per tick for its first 2,400 ticks, under
@@ -1129,13 +1129,13 @@ after passing 10,000 residents. A legacy save with an airport below 10,000
 loads, keeps it, and cannot build a second. A save round-trips the milestone.
 **Excluded:** map-specific thresholds and research trees.
 
-### Milestone 50: Capacity for fire, police and sanitation
+### Milestone 50: Capacity for fire, police and sanitation — complete locally
 
-- [ ] Fire and police stations and sanitation sites serve a bounded number of
+- [x] Fire and police stations and sanitation sites serve a bounded number of
       residents and workers. Nearest buildings are served first, as with
       beds. Buildings beyond capacity get reduced coverage, which lowers
       their densification and their fire response.
-- [ ] The Services tab, tile inspector and MCP show each type's served and
+- [x] The Services tab, tile inspector and MCP show each type's served and
       unserved occupants.
 
 **Acceptance:** In the 10k journey city, the existing five fire stations
@@ -1144,6 +1144,12 @@ it. A city with half the stations it needs grows clearly slower than one with
 enough over 2,000 ticks. A city under 500 residents with one of each sees no
 change.
 **Excluded:** vehicles, dispatch and response times on roads.
+
+Local verification (October 19): strict Clang and 649 CTest cases, seven Python
+unit tests, and all 42 rendered cases covered (41 in the full run, corrected
+district fixture separately). The retained journey recovers all occupants; its
+half-station continuation has 15.0% less growth over 2,000 ticks. Default CSV
+remains byte-identical to M46. See [DEPARTMENT_CAPACITY.md](DEPARTMENT_CAPACITY.md).
 
 ### Milestone 51: Export prices that fall with volume
 
@@ -1228,7 +1234,7 @@ budget.
 | 11 | M37 | complete: surface water and early waterworks |
 | 12 | M38–M44 | complete; hosted CI verified on fd554fd |
 | 13 | M45–M48 | complete; hosted CI verified on 6ac65ef |
-| 14 | M49–M54 | M49 complete locally; M50 next |
+| 14 | M49–M54 | M49–M50 complete locally; M51 next |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

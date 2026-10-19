@@ -42,7 +42,8 @@ NeighborhoodSummary NeighborhoodSystem::evaluate(
     Coord anchor;
     const bool anchored = roads.resolveRoadAnchor(building.position, anchor);
     const auto localCoverage = [&](ServiceType type) {
-      return anchored ? ServiceSystem::coverageStrength(cache, type, anchor) : 0.0f;
+      return anchored ? ServiceSystem::coverageStrength(cache, type, anchor) *
+        ServiceSystem::departmentFactorAt(cache, type, building.position) : 0.0f;
     };
     building.crimeRate =
         CrimeSystem::evaluate(unemployment, localCoverage(ServiceType::Police),

@@ -208,6 +208,7 @@ if (command == "inspect") {
         {"scope","local gates; city balance and seeded chance still apply"}}},
       {"building",{{"capacity",d.capacity},{"occupancy",d.occupancy},{"residential",d.residential}}},
       {"services_mask",d.services},{"local_fire_response",d.fireResponse},
+      {"department_served",d.departmentServed},{"department_unserved",d.departmentUnserved},
       {"neighborhood",{{"radius",n.radius},{"tiles",n.tiles},{"buildings",n.buildings},
         {"residents",n.residents},{"housing_capacity",n.housingCapacity},{"filled_jobs",n.filledJobs},
         {"job_capacity",n.jobCapacity},{"crime_rate",n.crime},{"illness_rate",n.illness},
@@ -258,7 +259,13 @@ if (command == "inspect") {
     std::sort(ids.begin(), ids.end());
     for (auto id : ids) {
       const auto &b = *store.getBuilding(id);
-      items.push_back({{"id", id},
+      std::array<double,3> served{}, unserved{};
+      const ServiceType departmentTypes[] = {ServiceType::Fire,ServiceType::Police,ServiceType::Sanitation};
+      for (size_t i=0;i<3;++i) {
+        served[i] = std::max(0,b.occupancy) * ServiceSystem::departmentFactorAt(liveState.serviceCache,departmentTypes[i],b.position);
+        unserved[i] = std::max(0,b.occupancy) - served[i];
+      }
+      items.push_back({{"department_served",served},{"department_unserved",unserved},{"id", id},
                        {"type", static_cast<int>(b.type)},
                        {"x", b.position.x},
                        {"y", b.position.y},
@@ -276,6 +283,10 @@ if (command == "inspect") {
                        {"y", f.position.y},
                        {"quality", f.quality},
                        {"distance", f.maxTravelDistance}});
+      if (ServiceSystem::departmentIndex(f.type) >= 0) {
+        const float funded = std::clamp(liveState.budgetPolicy.servicePercent[static_cast<size_t>(f.type)],0,100) / 100.f;
+        items.back()["occupant_capacity"] = ServiceSystem::departmentCapacity(f.type) * std::clamp(f.quality,0.f,1.f) * funded;
+      }
       if (f.type == ServiceType::Education || f.type == ServiceType::Health) {
         const size_t index = static_cast<size_t>(f.type);
         const float funded = std::clamp(liveState.budgetPolicy.servicePercent[index], 0, 100) / 100.f;

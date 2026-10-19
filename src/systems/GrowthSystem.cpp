@@ -397,13 +397,14 @@ float civicCoverageAt(const RoadNetwork* roads, const ServiceCoverageCache* serv
   if (mask == services->coverageMask.end()) {
     return 0.0f;
   }
-  int covered = 0;
+  float covered = 0.f;
   for (int bit = 0; bit < 4; ++bit) {
     if ((mask->second & static_cast<ServiceCoverageMask>(1u << bit)) != 0) {
-      ++covered;
+      covered += ServiceSystem::departmentFactorAt(*services, static_cast<ServiceType>(bit), pos);
     }
   }
-  return static_cast<float>(covered) / 4.0f;
+  const float sanitation = ServiceSystem::departmentFactorAt(*services, ServiceType::Sanitation, pos);
+  return (covered / 4.0f) * (0.5f + 0.5f * sanitation);
 }
 
 // Peak congestion on the edges that touch the tile's road anchor.

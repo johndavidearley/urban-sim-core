@@ -2,6 +2,26 @@
 
 Last verified: October 19, 2026
 
+M50 department capacity is complete locally (October 19, 2026). Fire, police
+and sanitation allocate bounded occupant capacity by road distance. Shortages
+reduce local coverage, protection and densification. Services, the tile inspector
+and MCP expose served/unserved occupants; legacy saves derive assignments on
+load, with shared playable CLI/visualizer rules.
+
+Strict Clang and all 649 CTest cases passed, along with seven Python unit tests.
+All 42 rendered cases are covered: 41 passed in the full run; the district-height
+fixture now supplies sanitation and passed separately. The extended capacity
+case also passed, including minimum-window inspector and exact six-tick GUI/CLI
+session equality. The retained 10k city's five fire stations leave 11,124
+occupants unserved; added sites restore all 17,684 occupants. Over 2,000 ticks,
+full coverage grows by 4,108 residents versus 3,491 with half the department sites
+(15.0% less growth). A covered sub-500 regression preserves previous rates and
+growth scores exactly. The default 400-tick CSV is byte-identical to M46.
+Hosted CI, sanitizers and release packaging were not repeated. Evidence:
+`playtest-artifacts/m50/REPORT.md`; rules and reproduction:
+[DEPARTMENT_CAPACITY.md](DEPARTMENT_CAPACITY.md). Next is M51, export prices
+that fall with volume.
+
 M49 population milestones is complete locally (October 19, 2026). Player cities
 permanently earn the 500/1,200/2,500/5,000/10,000 catalog tiers. Native and MCP
 placements refuse locked tools before spending; previews, HUD, toasts and the F1
@@ -27,8 +47,7 @@ price text was inspected at 800×640. The default 400-tick CSV is byte-identical
 to M46; two pre-pricing early-city continuations match their entire saved city
 and session exactly. Hosted CI, sanitizers and release packaging were not
 repeated. Evidence: `playtest-artifacts/m49-prices/REPORT.md`. See
-[POPULATION_MILESTONES.md](POPULATION_MILESTONES.md). Next is M50, bounded fire,
-police and sanitation capacity.
+[POPULATION_MILESTONES.md](POPULATION_MILESTONES.md). M50 is complete as recorded above.
 
 Phase 13 is complete (October 19, 2026). Hosted CI run 39158120162 passed on
 `6ac65ef` (strict Windows/macOS/Linux, ASan/UBSan, TSan). Locally, strict

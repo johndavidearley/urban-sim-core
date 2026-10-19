@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <string>
+#include <array>
 #include <unordered_map>
 #include <vector>
 
@@ -86,7 +87,15 @@ inline float utilityDemandFor(const Building& building) {
   return static_cast<float>(std::max(0, building.occupancy)) * perOccupant;
 }
 
+// Occupants means residents plus filled jobs, not capacity or visitor beds.
+struct DepartmentCapacitySummary {
+  double capacity = 0.0, demand = 0.0, reachable = 0.0, served = 0.0, unserved = 0.0;
+};
+
 struct ServiceCoverageSummary {
+  bool boundedDepartments = false;
+  // Fire, Police, Sanitation, in that order.
+  std::array<DepartmentCapacitySummary, 3> departments{};
   uint32_t totalBuildings = 0;
   uint32_t servicedBuildings = 0;
 
@@ -148,6 +157,16 @@ struct ServiceCoverageCache {
     int maxTravelDistance = 10;
   };
   std::vector<Entry> entries;
+  bool boundedDepartments = false;
+  struct DepartmentSite {
+    ServiceType type;
+    Coord position;
+    double capacity;
+    std::unordered_map<Coord, int, Vec2Hash> distances;
+  };
+  std::vector<DepartmentSite> departmentSites;
+  std::unordered_map<Coord, std::array<float, 3>, Vec2Hash> departmentFactors;
+  std::array<DepartmentCapacitySummary, 3> departments{};
   // Funded waste facilities; fuel-dependent generation is evaluated from live occupancy.
   std::vector<ServiceFacility> wasteFacilities;
   size_t builtForFacilityCount = 0;
@@ -191,6 +210,19 @@ struct ServiceCoverageCache {
 
 class ServiceSystem {
 public:
+  static int departmentIndex(ServiceType type) {
+    return type == ServiceType::Fire ? 0 : type == ServiceType::Police ? 1 :
+      type == ServiceType::Sanitation ? 2 : -1;
+  }
+  static double departmentCapacity(ServiceType type) {
+    return type == ServiceType::Fire ? 2000.0 : type == ServiceType::Police ? 2500.0 :
+      type == ServiceType::Sanitation ? 3000.0 : 0.0;
+  }
+  // Derived from live occupancy, with cached per-site BFS (never persisted).
+  static void allocateDepartmentCapacity(const EntityStore& store, const RoadNetwork& roads,
+    ServiceCoverageCache& cache);
+  static float departmentFactorAt(const ServiceCoverageCache& cache, ServiceType type, Coord position);
+
   // Local response at an already-resolved road anchor; reads cached BFS fields.
   static float coverageStrength(const ServiceCoverageCache& cache, ServiceType type, Coord anchor);
 
@@ -214,7 +246,8 @@ public:
   static void buildCache(
     const RoadNetwork& roads,
     const std::vector<ServiceFacility>& facilities,
-    ServiceCoverageCache& cache
+    ServiceCoverageCache& cache,
+    bool boundedDepartments = false
   );
 
   // True when the topology and every coverage-relevant facility property

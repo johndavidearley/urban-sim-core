@@ -275,11 +275,13 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def test_district_height_cap_diverges_and_round_trips(self):
         s = self.session
         await s.city("new", 32)
-        await self.unlock_catalog_fixture()
+        await self.unlock_catalog_fixture(funds=100000)
         await s.request("tool", {"action": "apply", "name": "road", "x1": 4, "y1": 16, "x2": 24, "y2": 16})
         for service, x in (("fire", 12), ("police", 14), ("health", 16), ("education", 18),
                            ("water", 10), ("power", 8)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
+        # M50 makes sanitation part of densification; isolate the height cap.
+        await s.request("tool", {"action":"apply","name":"service","service":"sanitation","x1":14,"y1":17})
         await s.request("tool", {"action": "apply", "name": "zone", "zone": "residential", "x1": 6, "y1": 17})
         await s.request("tool", {"action": "apply", "name": "zone", "zone": "residential", "x1": 22, "y1": 17})
         await s.request("tool", {"action": "apply", "name": "zone", "zone": "commercial", "x1": 20, "y1": 15})
@@ -605,6 +607,85 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         point = await s.request("coordinates", {"direction":"tile_to_screen", "x":10, "y":17})
         await s.request("input", {"events":[{"type":"move", "x":point["x"], "y":point["y"]}]})
         await s.screenshot("local-fire-response-inspector")
+
+    async def test_department_capacity_recovery_funding_and_checkpoint(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action":"apply", "name":"road", "x1":6, "y1":16, "x2":22, "y2":16})
+        for service, x in (("power",18),("water",20)):
+            await s.request("tool", {"action":"apply", "name":"service", "service":service, "x1":x, "y1":15})
+        for zone, y in (("residential",15),("commercial",17)):
+            await s.request("tool", {"action":"apply", "name":"zone", "zone":zone, "x1":6, "y1":y, "x2":13, "y2":y})
+        await s.request("time", {"action":"step", "ticks":20})
+        await s.city("save")
+        fixture = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        home = next(b for b in core["buildings"] if b["type"] == 1)
+        job = next(b for b in core["buildings"] if b["type"] == 2)
+        for b in core["buildings"]:
+            b["occupancy"] = 0
+        home["capacity"] = job["capacity"] = 1000
+        home["occupancy"] = job["occupancy"] = 1000
+        for group, size in zip(core["populationGroups"], (500,350,150)):
+            group["size"] = group["employed"] = size
+        core_path = s.artifact("department-capacity.city.json")
+        core_path.write_text(json.dumps(core))
+        fixture["citySnapshot"] = str(core_path)
+        fixture["funds"] = 1000000
+        for kind,x in ((0,14),(1,16),(6,18)):
+            fixture["facilities"].append({"type":kind,"x":x,"y":17,"maxTravelDistance":30,"quality":0.1})
+        path = s.artifact("department-capacity.json")
+        path.write_text(json.dumps(fixture))
+        await s.city("load", import_path=str(path))
+        stats = s.last_state["metrics"]["department_capacity"]
+        for name, capacity in (("fire",200),("police",250),("sanitation",300)):
+            self.assertAlmostEqual(stats[name]["capacity"],capacity,delta=.001)
+            self.assertAlmostEqual(stats[name]["demand"],2000)
+            self.assertAlmostEqual(stats[name]["served"],capacity,delta=.001)
+            self.assertAlmostEqual(stats[name]["unserved"],2000-capacity,delta=.001)
+        await s.request("window", {"action":"resize","width":800,"height":640})
+        await s.request("budget", {"action":"services"})
+        await s.screenshot("department-shortage-services")
+        await s.request("budget", {"action":"close"})
+        for name,x in (("fire",14),("police",16),("sanitation",17)):
+            await s.request("tool", {"action":"apply","name":"service","service":name,"x1":x,"y1":15})
+        stats = s.last_state["metrics"]["department_capacity"]
+        for row in stats.values():
+            self.assertEqual(row["unserved"],0)
+        funding = [100]*12
+        funding[0] = 0
+        await s.request("budget", {"action":"set_funding","service_percent":funding})
+        self.assertEqual(s.last_state["metrics"]["department_capacity"]["fire"]["unserved"],2000)
+        await s.request("budget", {"action":"reset_funding"})
+        restored = s.last_state["metrics"]["department_capacity"]
+        await s.city("save")
+        await s.city("load")
+        self.assertEqual(s.last_state["metrics"]["department_capacity"],restored)
+        d = await s.request("inspect", {"section":"diagnostics","x":home["position"]["x"],"y":home["position"]["y"]})
+        self.assertEqual(d["department_unserved"],[0,0,0])
+        await s.request("view", {"action":"projection","projection":"top_down"})
+        await s.request("view", {"action":"camera","tile_pixels":40,"view_x":3,"view_y":7})
+        point = await s.request("coordinates", {"direction":"tile_to_screen",**home["position"]})
+        await s.request("input", {"events":[{"type":"move","x":point["x"],"y":point["y"]}]})
+        await s.screenshot("department-capacity-inspector")
+        checkpoint = json.loads(s.artifact("urban_sim_session.json").read_text())
+        checkpoint_core = s.artifact("department-checkpoint.city.json")
+        checkpoint_core.write_bytes(s.artifact("urban_sim_session.json.city.json").read_bytes())
+        checkpoint["citySnapshot"] = str(checkpoint_core)
+        checkpoint_path = s.artifact("department-checkpoint.json")
+        checkpoint_path.write_text(json.dumps(checkpoint))
+        await s.request("time", {"action":"step","ticks":6})
+        await s.city("save")
+        gui = json.loads(s.artifact("urban_sim_session.json").read_text())
+        cli = Path(EXECUTABLE).with_name(Path(EXECUTABLE).name.replace("-playtest","-cli"))
+        output = s.artifact("department-headless.json")
+        process = await asyncio.create_subprocess_exec(str(cli),"--simulate","6","--simulate-session",str(checkpoint_path),
+            "--simulate-session-out",str(output),stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        _,stderr = await process.communicate()
+        self.assertEqual(process.returncode,0,stderr.decode())
+        headless = json.loads(output.read_text())
+        gui.pop("citySnapshot"); headless.pop("citySnapshot")
+        self.assertEqual(gui,headless)
 
     async def test_school_seats_hospital_beds_funding_and_checkpoint(self):
         s = self.session

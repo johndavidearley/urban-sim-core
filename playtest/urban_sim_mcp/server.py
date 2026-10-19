@@ -117,6 +117,13 @@ INSPECTION_REFERENCE = {
                 "water_supply",
                 "water_supply_ratio",
             ],
+            "department_capacity": {
+                "types": ["fire", "police", "sanitation"],
+                "fields": ["capacity", "demand", "reachable", "served", "unserved"],
+                "units": "occupants: residents plus filled jobs; excludes visitors",
+                "allocation": "nearest road-connected buildings first; quality and funding scale site capacity",
+                "tile_fields": "diagnostics and entities department_served/department_unserved arrays use fire, police, sanitation order",
+            },
             "waste_incinerated": "residual waste units burned per tick",
             "waste_power_mw": "fuel-dependent waste-to-energy output in MW",
             "deathcare_backlog": "residents awaiting disposition",

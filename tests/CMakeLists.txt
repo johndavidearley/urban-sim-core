@@ -16,6 +16,7 @@ add_executable(test_core
   EconomySystemTests.cpp
   MetricsSystemTests.cpp
   ServiceSystemTests.cpp
+  DepartmentCapacityTests.cpp
   DistrictSystemTests.cpp
   CitySimulatorTests.cpp
   CitySimSupportTests.cpp

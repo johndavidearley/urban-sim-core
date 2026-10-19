@@ -111,8 +111,8 @@ void refreshDerivedCityState(
   int ax0 = 0, ay0 = 0, ax1 = 0, ay1 = 0;
   activeBounds(map, ax0, ay0, ax1, ay1);
 
-  if (!ServiceSystem::isCacheValid(roads, facilities, state.serviceCache)) {
-    ServiceSystem::buildCache(roads, facilities, state.serviceCache);
+  if (!state.serviceCache.boundedDepartments || !ServiceSystem::isCacheValid(roads, facilities, state.serviceCache)) {
+    ServiceSystem::buildCache(roads, facilities, state.serviceCache, true);
   }
   ServiceSystem::refreshWasteStorage(baseFacilities, state.serviceCache);
   city_sim::updateUtilityConnectivity(
@@ -123,6 +123,8 @@ void refreshDerivedCityState(
       store, population, population.getTotalPopulation(), options.seed,
       state.laggedEducationCoverage);
   }
+
+  ServiceSystem::allocateDepartmentCapacity(store, roads, state.serviceCache);
 
   const auto checkpointLoads =
       options.preserveCheckpoint && options.runTraffic
@@ -271,13 +273,14 @@ void playableCityTick(
     city_sim::applyPowerPlantPollution(map, roads, facilities, ax0, ay0, ax1, ay1);
   }
 
-  if (!ServiceSystem::isCacheValid(roads, facilities, state.serviceCache)) {
-    ServiceSystem::buildCache(roads, facilities, state.serviceCache);
+  if (!state.serviceCache.boundedDepartments || !ServiceSystem::isCacheValid(roads, facilities, state.serviceCache)) {
+    ServiceSystem::buildCache(roads, facilities, state.serviceCache, true);
   }
   ServiceSystem::refreshWasteStorage(baseFacilities, state.serviceCache);
   city_sim::updateUtilityConnectivity(
     map, roads, store, state.serviceCache, ax0, ay0, ax1, ay1, pool);
 
+  ServiceSystem::allocateDepartmentCapacity(store, roads, state.serviceCache);
   const std::vector<GrowthChanceModifier>* growthModifiers =
     state.districtGrowthModifiers.empty() ? nullptr : &state.districtGrowthModifiers;
   if (!options.enableDisasters) state.disasters.stopEvents();
@@ -368,6 +371,8 @@ void playableCityTick(
   refreshDistrictGrowthModifiers(
     options.districts, map, store, population, roads, facilities, state);
 
+  ServiceSystem::allocateDepartmentCapacity(store, roads, state.serviceCache);
+  state.serviceSummary = ServiceSystem::evaluateFromCache(store, roads, state.serviceCache);
   state.populationChange.deaths = state.deathcare.deaths;
   state.populationChange.net =
       static_cast<int64_t>(population.getTotalPopulation()) - populationBefore;

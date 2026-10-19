@@ -146,7 +146,7 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
   const TreasuryLedger& ledger, int64_t funds, int64_t debt, int mouseX, int mouseY,
   bool services, const std::array<int64_t, kServiceTypeCount>& serviceCosts,
   const std::array<float, kServiceTypeCount>& serviceCoverage,
-  bool trends, const CityHistory& history, bool alerts, const CityAlerts& diagnostics,int focus,uint32_t inspectedTick,const std::vector<ServiceFacility>* facilities,const BudgetBondView* bonds) {
+  bool trends, const CityHistory& history, bool alerts, const CityAlerts& diagnostics,int focus,uint32_t inspectedTick,const std::vector<ServiceFacility>* facilities,const BudgetBondView* bonds,const ServiceCoverageSummary* departments) {
   const bool bondTab = bonds && bonds->open && !services && !trends && !alerts;
   const bool taxTab = !services && !trends && !alerts && !bondTab;
   drawFilledRect(renderer, 0, 0, windowWidth, windowHeight, {5, 10, 18}, 195);
@@ -178,13 +178,19 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     drawText(renderer, x + 24, y + 112, "SERVICE", {135, 215, 240}, 1);
     drawText(renderer, x + 156, y + 112, "FUNDING", {135, 215, 240}, 1);
     drawText(renderer, x + 360, y + 112, "COST/TICK", {135, 215, 240}, 1);
-    drawText(renderer, x + 520, y + 112, "COVERAGE", {135, 215, 240}, 1);
+    drawText(renderer, x + 490, y + 112, "COV SERVED/UNSERVED", {135, 215, 240}, 1);
     for (size_t i = 0; i < kServiceTypeCount; ++i) {
       const int row = y + 133 + static_cast<int>(i) * 18;
       drawText(renderer, x + 24, row, ServiceSystem::serviceTypeToString(static_cast<ServiceType>(i)), {205, 220, 235}, 1);
       drawText(renderer, x + 156, row, std::to_string(policy.servicePercent[i]) + "%", {235, 245, 250}, 1);
       drawText(renderer, x + 360, row, "$" + std::to_string(serviceCosts[i]), {255, 195, 135}, 1);
-      drawText(renderer, x + 520, row, std::to_string(static_cast<int>(serviceCoverage[i] * 100.f)) + "%", {135, 225, 175}, 1);
+      std::string coverage = std::to_string(static_cast<int>(serviceCoverage[i] * 100.f)) + "%";
+      const int index = ServiceSystem::departmentIndex(static_cast<ServiceType>(i));
+      if (departments && departments->boundedDepartments && index >= 0) {
+        const auto& capacity = departments->departments[static_cast<size_t>(index)];
+        coverage += " " + std::to_string(std::llround(capacity.served)) + "/" + std::to_string(std::llround(capacity.unserved));
+      }
+      drawText(renderer, x + 490, row, coverage, {135, 225, 175}, 1);
     }
     if (facilities) {
       int raw = 0, treated = 0, inland = 0;
@@ -933,7 +939,8 @@ void drawTileInspector(
   constexpr int x = 14;
   constexpr int y = 170;
   constexpr int width = 360;
-  const int height = diagnostics ? (civic ? 358 : 326) : (civic ? 166 : 132);
+  const int height = (diagnostics ? (civic ? 358 : 326) : (civic ? 166 : 132)) +
+    (diagnostics && civic && civic->boundedDepartments ? 48 : 0);
   drawFilledRect(renderer, x, y, width, height, {14, 17, 22}, 185);
   drawRectOutline(renderer, x, y, width, height, {150, 160, 175}, 240);
 
@@ -1065,6 +1072,13 @@ void drawTileInspector(
     drawText(renderer,x+10,y+264,"RES-WEIGHTED CRIME " + pct(n.crime) + " ILL " + pct(n.illness),{210,190,165},1);
     drawText(renderer,x+10,y+280,"CITY JOBLESS " + pct(cityJoblessness) + " - NOT LOCAL",{165,185,205},1);
     drawText(renderer,x+10,y+302,"LOCAL GATES ONLY. GROWTH IS PROBABILISTIC.",{165,185,205},1);
+  }
+  if (diagnostics && civic && civic->boundedDepartments) {
+    const char* names[] = {"FIRE", "POLICE", "SEWAGE"};
+    for (size_t i=0;i<3;++i)
+      drawText(renderer,x+10,y+350+static_cast<int>(i)*16,std::string("TILE ")+names[i]+" SERVED "+
+        std::to_string(std::llround(diagnostics->departmentServed[i]))+" UNSERVED "+
+        std::to_string(std::llround(diagnostics->departmentUnserved[i])),{185,215,225},1);
   }
   if (civic) {
     drawText(renderer,x+10,y+(diagnostics ? 318 : 132),"CITY " + schoolCapacityLine(*civic),{185,215,225},1);

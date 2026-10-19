@@ -901,6 +901,16 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     return {{"installment", b.installment}, {"interest", b.interest}, {"paid", b.paid},
       {"missed", b.missed}, {"remaining_before", b.remainingBefore}, {"remaining_after", b.remainingAfter}};
   };
+  auto departmentStatus = [&]() -> Json {
+    Json result = Json::object();
+    const char* names[] = {"fire", "police", "sanitation"};
+    for (size_t i=0;i<3;++i) {
+      const auto& d = liveState.serviceSummary.departments[i];
+      result[names[i]] = {{"capacity",d.capacity},{"demand",d.demand},{"reachable",d.reachable},
+        {"served",d.served},{"unserved",d.unserved}};
+    }
+    return result;
+  };
   auto budgetStatus = [&]() -> Json {
     const auto preview = budgetPreview();
     const auto& ledger = liveState.treasuryLedger;
@@ -921,7 +931,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       {"incinerator", catalog::incineratorCost}, {"hotel", HotelTool::kConstructionCost},
       {"cargo_port", catalog::cargoPortCost}, {"passenger_terminal", catalog::passengerTerminalCost},
       {"nuclear", catalog::nuclearCost}, {"airport", catalog::airportCost}};
-    return {{"construction_prices", constructionPrices}, {"catalog_milestones", milestoneCatalog}, {"tax_percent", liveState.budgetPolicy.taxPercent},
+    return {{"department_capacity", departmentStatus()}, {"construction_prices", constructionPrices}, {"catalog_milestones", milestoneCatalog}, {"tax_percent", liveState.budgetPolicy.taxPercent},
       {"transit_cost",TransitSystem::operatingCost(liveState.transitRoutes)},
       {"transit_report",transitReportJson(liveState.transitReport)},
       {"history", cityHistoryJson(liveState.history)},
@@ -1123,6 +1133,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"power_coverage", liveState.serviceSummary.powerCoverage},
            {"water_coverage", liveState.serviceSummary.waterCoverage},
            {"sanitation_coverage", liveState.serviceSummary.sanitationCoverage},
+           {"department_capacity", departmentStatus()},
            {"garbage_coverage", BudgetPolicy::coverage(liveState.serviceSummary, garbageCollected())[7]},
            {"garbage_reach", liveState.serviceSummary.garbageCoverage},
            {"incinerator_coverage", liveState.serviceSummary.incineratorCoverage},
@@ -2669,7 +2680,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       drawBudgetPanel(renderer, windowWidth, windowHeight, liveState.budgetPolicy,
                       budgetPreview(), liveState.treasuryLedger, funds,
                       liveState.treasuryDebt, mouseX, mouseY, budgetServices,
-                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary, garbageCollected()), budgetTrends, liveState.history, budgetAlerts, liveState.alerts,budgetFocus,inspectedTrendTick,&facilities,&bondViewForDraw);
+                      liveState.budgetPolicy.serviceCosts(facilities), BudgetPolicy::coverage(liveState.serviceSummary, garbageCollected()), budgetTrends, liveState.history, budgetAlerts, liveState.alerts,budgetFocus,inspectedTrendTick,&facilities,&bondViewForDraw,&liveState.serviceSummary);
     if (showTransportPanel)
       drawTransportPanel(renderer,windowWidth,windowHeight,liveState.transitRoutes,selectedTransitRoute,
         liveState.transitReport,routePeak(selectedTransitRoute).first,
