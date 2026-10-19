@@ -53,6 +53,7 @@ void drawIsometricTile(
 
 void drawGradientBar(DrawList* renderer, int x, int y, int w, int h, OverlayMode mode);
 void drawGlyph(DrawList* renderer, int x, int y, char raw, RGB color, int scale);
+int textWidth(const std::string& text, int scale = 2);
 void drawText(DrawList* renderer, int x, int y, const std::string& text, RGB color, int scale = 2);
 
 int paletteWidth();

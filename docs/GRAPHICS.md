@@ -63,8 +63,30 @@ export VK_DRIVER_FILES="$(brew --prefix molten-vk)/etc/vulkan/icd.d/MoltenVK_icd
 ```
 
 Smoke mode fails on validation errors. CPU tests cover geometry area, draw order,
-alpha retention, bitmap glyphs, and logical-coordinate hit testing. Existing
+alpha retention, font-atlas bounds, case/punctuation, proportional spacing, and
+logical-coordinate hit testing. Existing
 simulation and persistence tests continue unchanged.
+
+## UI typography
+
+The UI embeds Roboto Condensed Medium (SIL OFL 1.1), replacing the hand-drawn
+3×5 alphabet. Text preserves case and printable ASCII punctuation. Compact
+labels use 11 logical pixels, readable labels 14, and headings 18/24/32; F2
+switches label size. Glyphs are baked at twice the logical resolution and sampled
+with linear filtering for smooth edges on normal and high-density displays.
+
+`tools/generate_font_atlas.py` regenerates `UiFontAtlas.hpp` using Pillow and the
+vendored original font in `assets/fonts/`. Ordinary builds and installed games
+have no font-library or filesystem dependency. The Vulkan backend uploads one
+R8 atlas during initialization; glyphs are textured quads in the same ordered
+batch as solid geometry. The atlas survives swapchain recreation and is released
+with the renderer. The font attribution/license are installed in
+`share/urban-sim/fonts`.
+
+Local font verification (October 19, 2026): strict Clang build, all 650 CTest
+cases, all 42 rendered cases, and all 16 graphics smoke capture checks passed.
+Minimum-window menu, Services, inspector and compact HUD were visually checked.
+Evidence: `playtest-artifacts/fonts/REPORT.md`.
 
 ## Hardware acceptance checklist
 

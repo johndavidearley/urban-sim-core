@@ -1,4 +1,5 @@
 #include "src/visualization/VulkanRenderer.hpp"
+#include "src/visualization/UiFontAtlas.hpp"
 #define GLFW_INCLUDE_VULKAN
 #include "colored_frag.hpp"
 #include "colored_vert.hpp"
@@ -54,6 +55,13 @@ struct VulkanRenderer::Impl {
   VkPipelineLayout layout = VK_NULL_HANDLE;
   VkPipeline pipeline = VK_NULL_HANDLE;
   VkCommandPool pool = VK_NULL_HANDLE;
+  VkImage fontImage = VK_NULL_HANDLE;
+  VkDeviceMemory fontMemory = VK_NULL_HANDLE;
+  VkImageView fontView = VK_NULL_HANDLE;
+  VkSampler fontSampler = VK_NULL_HANDLE;
+  VkDescriptorSetLayout fontLayout = VK_NULL_HANDLE;
+  VkDescriptorPool fontPool = VK_NULL_HANDLE;
+  VkDescriptorSet fontSet = VK_NULL_HANDLE;
   std::vector<VkImage> images;
   std::vector<VkImageView> views;
   std::vector<VkFramebuffer> framebuffers;
@@ -65,6 +73,7 @@ struct VulkanRenderer::Impl {
     VkDeviceSize capacity = 0;
     bool coherent = false;
   };
+  Buffer fontUpload;
   struct Frame {
     VkCommandBuffer command = VK_NULL_HANDLE;
     VkSemaphore available = VK_NULL_HANDLE;
@@ -294,6 +303,7 @@ struct VulkanRenderer::Impl {
       check(vkCreateFence(device, &fence, nullptr, &frame.fence),
             "Create frame fence");
     }
+    makeFontAtlas();
     makeSwapchain();
   }
   void destroyBuffer(Buffer &buffer) {
@@ -346,6 +356,105 @@ struct VulkanRenderer::Impl {
         vkMapMemory(device, buffer.memory, 0, VK_WHOLE_SIZE, 0, &buffer.mapped),
         "Map buffer memory");
     buffer.capacity = capacity;
+  }
+  void makeFontAtlas() {
+    auto image = info<VkImageCreateInfo>(VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
+    image.imageType = VK_IMAGE_TYPE_2D;
+    image.format = VK_FORMAT_R8_UNORM;
+    image.extent = {ui_font::width, ui_font::height, 1};
+    image.mipLevels = image.arrayLayers = 1;
+    image.samples = VK_SAMPLE_COUNT_1_BIT;
+    image.tiling = VK_IMAGE_TILING_OPTIMAL;
+    image.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    check(vkCreateImage(device, &image, nullptr, &fontImage), "Create font atlas");
+    VkMemoryRequirements requirements;
+    vkGetImageMemoryRequirements(device, fontImage, &requirements);
+    VkPhysicalDeviceMemoryProperties memory;
+    vkGetPhysicalDeviceMemoryProperties(physical, &memory);
+    uint32_t index = UINT32_MAX;
+    for (uint32_t i = 0; i < memory.memoryTypeCount; ++i) {
+      if (!(requirements.memoryTypeBits & (1u << i))) continue;
+      index = i;
+      if (memory.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) break;
+    }
+    if (index == UINT32_MAX) throw std::runtime_error("No font atlas memory type");
+    auto allocate = info<VkMemoryAllocateInfo>(VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
+    allocate.allocationSize = requirements.size;
+    allocate.memoryTypeIndex = index;
+    check(vkAllocateMemory(device, &allocate, nullptr, &fontMemory), "Allocate font atlas");
+    check(vkBindImageMemory(device, fontImage, fontMemory, 0), "Bind font atlas");
+    const auto& pixels = ui_font::pixels();
+    allocateBuffer(fontUpload, pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    std::memcpy(fontUpload.mapped, pixels.data(), pixels.size());
+    if (!fontUpload.coherent) {
+      auto range = info<VkMappedMemoryRange>(VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE);
+      range.memory = fontUpload.memory;
+      range.size = VK_WHOLE_SIZE;
+      check(vkFlushMappedMemoryRanges(device, 1, &range), "Flush font atlas");
+    }
+    const auto command = frames[0].command;
+    auto begin = info<VkCommandBufferBeginInfo>(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    check(vkBeginCommandBuffer(command, &begin), "Begin font upload");
+    auto barrier = info<VkImageMemoryBarrier>(VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER);
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = fontImage;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+      0, 0, nullptr, 0, nullptr, 1, &barrier);
+    VkBufferImageCopy copy{};
+    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    copy.imageExtent = image.extent;
+    vkCmdCopyBufferToImage(command, fontUpload.handle, fontImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+      0, 0, nullptr, 0, nullptr, 1, &barrier);
+    check(vkEndCommandBuffer(command), "End font upload");
+    auto submit = info<VkSubmitInfo>(VK_STRUCTURE_TYPE_SUBMIT_INFO);
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &command;
+    check(vkQueueSubmit(graphics, 1, &submit, VK_NULL_HANDLE), "Submit font upload");
+    check(vkQueueWaitIdle(graphics), "Wait for font upload");
+    destroyBuffer(fontUpload);
+    auto view = info<VkImageViewCreateInfo>(VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
+    view.image = fontImage;
+    view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view.format = VK_FORMAT_R8_UNORM;
+    view.subresourceRange = barrier.subresourceRange;
+    check(vkCreateImageView(device, &view, nullptr, &fontView), "Create font view");
+    auto sampler = info<VkSamplerCreateInfo>(VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO);
+    sampler.magFilter = sampler.minFilter = VK_FILTER_LINEAR;
+    sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    check(vkCreateSampler(device, &sampler, nullptr, &fontSampler), "Create font sampler");
+    VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    auto descriptorLayout = info<VkDescriptorSetLayoutCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);
+    descriptorLayout.bindingCount = 1;
+    descriptorLayout.pBindings = &binding;
+    check(vkCreateDescriptorSetLayout(device, &descriptorLayout, nullptr, &fontLayout), "Create font descriptor layout");
+    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+    auto descriptorPool = info<VkDescriptorPoolCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);
+    descriptorPool.maxSets = descriptorPool.poolSizeCount = 1;
+    descriptorPool.pPoolSizes = &poolSize;
+    check(vkCreateDescriptorPool(device, &descriptorPool, nullptr, &fontPool), "Create font descriptor pool");
+    auto set = info<VkDescriptorSetAllocateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
+    set.descriptorPool = fontPool;
+    set.descriptorSetCount = 1;
+    set.pSetLayouts = &fontLayout;
+    check(vkAllocateDescriptorSets(device, &set, &fontSet), "Allocate font descriptor");
+    VkDescriptorImageInfo imageInfo{fontSampler, fontView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    auto write = info<VkWriteDescriptorSet>(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
+    write.dstSet = fontSet;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &imageInfo;
+    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
   }
   void destroySwapchain() {
     for (auto framebuffer : framebuffers)
@@ -558,12 +667,13 @@ struct VulkanRenderer::Impl {
       const VkVertexInputAttributeDescription attributes[] = {
           {0, 0, VK_FORMAT_R32G32_SFLOAT, 0},
           {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
-           static_cast<uint32_t>(offsetof(Vertex, r))}};
+           static_cast<uint32_t>(offsetof(Vertex, r))},
+          {2, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, u))}};
       auto input = info<VkPipelineVertexInputStateCreateInfo>(
           VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO);
       input.vertexBindingDescriptionCount = 1;
       input.pVertexBindingDescriptions = &binding;
-      input.vertexAttributeDescriptionCount = 2;
+      input.vertexAttributeDescriptionCount = 3;
       input.pVertexAttributeDescriptions = attributes;
       auto assembly = info<VkPipelineInputAssemblyStateCreateInfo>(
           VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO);
@@ -605,6 +715,8 @@ struct VulkanRenderer::Impl {
           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 12};
       auto layoutInfo = info<VkPipelineLayoutCreateInfo>(
           VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
+      layoutInfo.setLayoutCount = 1;
+      layoutInfo.pSetLayouts = &fontLayout;
       layoutInfo.pushConstantRangeCount = 1;
       layoutInfo.pPushConstantRanges = &range;
       check(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout),
@@ -724,6 +836,8 @@ struct VulkanRenderer::Impl {
       vkCmdBeginRenderPass(frame.command, &pass, VK_SUBPASS_CONTENTS_INLINE);
       vkCmdBindPipeline(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                         pipeline);
+      vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
+        0, 1, &fontSet, 0, nullptr);
       VkViewport viewport{0,
                           0,
                           static_cast<float>(extent.width),
@@ -857,6 +971,13 @@ struct VulkanRenderer::Impl {
     if (device) {
       vkDeviceWaitIdle(device);
       destroySwapchain();
+      destroyBuffer(fontUpload);
+      if (fontPool) vkDestroyDescriptorPool(device, fontPool, nullptr);
+      if (fontLayout) vkDestroyDescriptorSetLayout(device, fontLayout, nullptr);
+      if (fontSampler) vkDestroySampler(device, fontSampler, nullptr);
+      if (fontView) vkDestroyImageView(device, fontView, nullptr);
+      if (fontImage) vkDestroyImage(device, fontImage, nullptr);
+      if (fontMemory) vkFreeMemory(device, fontMemory, nullptr);
       for (auto &frame : frames) {
         destroyBuffer(frame.vertices);
         if (frame.available)

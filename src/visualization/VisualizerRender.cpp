@@ -1,3 +1,4 @@
+#include "src/visualization/UiFontAtlas.hpp"
 #include "src/visualization/TransitOverlay.hpp"
 #include <algorithm>
 #include <array>
@@ -706,87 +707,46 @@ void drawGradientBar(DrawList* renderer, int x, int y, int w, int h, OverlayMode
   drawRectOutline(renderer, x, y, w, h, {220, 220, 220}, 255);
 }
 
-std::array<uint8_t, 5> glyphRows(char c) {
-  switch (c) {
-    case 'A': return {0b010, 0b101, 0b111, 0b101, 0b101};
-    case 'B': return {0b110, 0b101, 0b110, 0b101, 0b110};
-    case 'C': return {0b011, 0b100, 0b100, 0b100, 0b011};
-    case 'D': return {0b110, 0b101, 0b101, 0b101, 0b110};
-    case 'E': return {0b111, 0b100, 0b110, 0b100, 0b111};
-    case 'F': return {0b111, 0b100, 0b110, 0b100, 0b100};
-    case 'G': return {0b011, 0b100, 0b101, 0b101, 0b011};
-    case 'H': return {0b101, 0b101, 0b111, 0b101, 0b101};
-    case 'I': return {0b111, 0b010, 0b010, 0b010, 0b111};
-    case 'J': return {0b001, 0b001, 0b001, 0b101, 0b010};
-    case 'K': return {0b101, 0b101, 0b110, 0b101, 0b101};
-    case 'L': return {0b100, 0b100, 0b100, 0b100, 0b111};
-    case 'M': return {0b101, 0b111, 0b111, 0b101, 0b101};
-    case 'N': return {0b101, 0b111, 0b111, 0b111, 0b101};
-    case 'O': return {0b010, 0b101, 0b101, 0b101, 0b010};
-    case 'P': return {0b110, 0b101, 0b110, 0b100, 0b100};
-    case 'Q': return {0b010, 0b101, 0b101, 0b111, 0b011};
-    case 'R': return {0b110, 0b101, 0b110, 0b101, 0b101};
-    case 'S': return {0b011, 0b100, 0b010, 0b001, 0b110};
-    case 'T': return {0b111, 0b010, 0b010, 0b010, 0b010};
-    case 'U': return {0b101, 0b101, 0b101, 0b101, 0b111};
-    case 'V': return {0b101, 0b101, 0b101, 0b101, 0b010};
-    case 'W': return {0b101, 0b101, 0b111, 0b111, 0b101};
-    case 'X': return {0b101, 0b101, 0b010, 0b101, 0b101};
-    case 'Y': return {0b101, 0b101, 0b010, 0b010, 0b010};
-    case 'Z': return {0b111, 0b001, 0b010, 0b100, 0b111};
-    case '0': return {0b111, 0b101, 0b101, 0b101, 0b111};
-    case '1': return {0b010, 0b110, 0b010, 0b010, 0b111};
-    case '2': return {0b110, 0b001, 0b111, 0b100, 0b111};
-    case '3': return {0b110, 0b001, 0b111, 0b001, 0b110};
-    case '4': return {0b101, 0b101, 0b111, 0b001, 0b001};
-    case '5': return {0b111, 0b100, 0b111, 0b001, 0b110};
-    case '6': return {0b011, 0b100, 0b111, 0b101, 0b111};
-    case '7': return {0b111, 0b001, 0b001, 0b001, 0b001};
-    case '8': return {0b111, 0b101, 0b111, 0b101, 0b111};
-    case '9': return {0b111, 0b101, 0b111, 0b001, 0b110};
-    case '+': return {0b000, 0b010, 0b111, 0b010, 0b000};
-    case '%': return {0b101, 0b001, 0b010, 0b100, 0b101};
-    case '-': return {0b000, 0b000, 0b111, 0b000, 0b000};
-    case ':': return {0b000, 0b010, 0b000, 0b010, 0b000};
-    case '$': return {0b010, 0b111, 0b110, 0b011, 0b010};
-    case '/': return {0b001, 0b001, 0b010, 0b100, 0b100};
-    default: return {0b000, 0b000, 0b000, 0b000, 0b000};
-  }
+namespace {
+int fontFace(int scale) {
+  if (scale <= 1) return gReadableUiText ? 1 : 0;
+  return std::min(scale, 4);
+}
+void fontGlyph(DrawList* renderer, float x, float y, unsigned char code, RGB color, int face) {
+  if (code < 32 || code > 126) code = '?';
+  const auto& glyph = ui_font::glyphs[face][code - 32];
+  if (!glyph.width || !glyph.height) return;
+  setDrawColor(renderer,color.r,color.g,color.b,255);
+  renderer->texturedQuad(x + glyph.left, y + glyph.top, glyph.width / 2.f, glyph.height / 2.f,
+    static_cast<float>(glyph.x) / ui_font::width, static_cast<float>(glyph.y) / ui_font::height,
+    static_cast<float>(glyph.x + glyph.width) / ui_font::width,
+    static_cast<float>(glyph.y + glyph.height) / ui_font::height);
+}
 }
 
 void drawGlyph(DrawList* renderer, int x, int y, char raw, RGB color, int scale) {
-  char c = raw;
-  if (c >= 'a' && c <= 'z') {
-    c = static_cast<char>(c - 'a' + 'A');
-  }
+  fontGlyph(renderer,static_cast<float>(x),static_cast<float>(y),static_cast<unsigned char>(raw),color,fontFace(scale));
+}
 
-  const std::array<uint8_t, 5> rows = glyphRows(c);
-  for (int ry = 0; ry < 5; ++ry) {
-    for (int rx = 0; rx < 3; ++rx) {
-      const bool on = (rows[ry] & (1 << (2 - rx))) != 0;
-      if (!on) {
-        continue;
-      }
-      drawFilledRect(renderer, x + rx * scale, y + ry * scale, scale, scale, color, 255);
-    }
+int textWidth(const std::string& text, int scale) {
+  const int face = fontFace(scale);
+  float cursor = 0.f, right = 0.f;
+  for (unsigned char code : text) {
+    if (code < 32 || code > 126) code = '?';
+    const auto& glyph = ui_font::glyphs[face][code - 32];
+    right = std::max(right,cursor + glyph.left + glyph.width / 2.f);
+    cursor += glyph.advance;
   }
+  return static_cast<int>(std::ceil(std::max(cursor,right)));
 }
 
 void drawText(DrawList* renderer, int x, int y, const std::string& text, RGB color, int scale) {
-  // The original 1x 3-by-5 glyphs are only five physical pixels tall and are
-  // effectively unreadable on Retina/high-density displays. Promote only
-  // compact labels to 2x by default; headings already passed 2x-4x explicitly
-  // and must retain their layout dimensions. F2 toggles the legacy compact
-  // mode for unusually small windows.
-  const int effectiveScale = (gReadableUiText && scale == 1) ? 2 : scale;
-  int cursorX = x;
-  for (char c : text) {
-    if (c == ' ') {
-      cursorX += effectiveScale * 2;
-      continue;
-    }
-    drawGlyph(renderer, cursorX, y, c, color, effectiveScale);
-    cursorX += (3 * effectiveScale) + effectiveScale;
+  const int face = fontFace(scale);
+  float cursor = static_cast<float>(x);
+  for (unsigned char code : text) {
+    if (code < 32 || code > 126) code = '?';
+    fontGlyph(renderer,cursor,static_cast<float>(y),code,color,face);
+    cursor += ui_font::glyphs[face][code - 32].advance;
   }
 }
 

@@ -475,9 +475,9 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
     if (!host.drawable()) { if(bridge) bridge->complete(bridge->metadata(host,gpu,"start_screen",0)); host.waitEvents(); continue; }
     setDrawColor(renderer, 20, 23, 29, 255);
     clearFrame(renderer);
-    drawText(renderer, windowWidth / 2 - 205, 130, "URBAN SIM CORE", {120, 205, 255}, 4);
-    drawText(renderer, windowWidth / 2 - 155, 185, "CITY BUILDER", {235, 238, 242}, 3);
-    drawText(renderer, windowWidth / 2 - 105, 330, "MAP SIZE", {205, 212, 225}, 2);
+    drawText(renderer, (windowWidth - textWidth("URBAN SIM CORE",4)) / 2, 130, "URBAN SIM CORE", {120, 205, 255}, 4);
+    drawText(renderer, (windowWidth - textWidth("CITY BUILDER",3)) / 2, 185, "CITY BUILDER", {235, 238, 242}, 3);
+    drawText(renderer, (windowWidth - textWidth("MAP SIZE",2)) / 2, 330, "MAP SIZE", {205, 212, 225}, 2);
 
     for (size_t i = 0; i < sizes.size(); ++i) {
       const Rect rect{windowWidth / 2 - 190 + static_cast<int>(i) * 130, 380, 110, 44};
@@ -488,7 +488,7 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
       drawRectOutline(renderer, rect.x, rect.y, rect.w, rect.h,
                       active ? RGB{255, 225, 110}
                              : (hovered ? RGB{185, 205, 235} : RGB{125, 135, 150}), 255);
-      drawText(renderer, rect.x + 34, rect.y + 15, std::to_string(sizes[i]), {235, 238, 242}, 2);
+      drawText(renderer, rect.x + (rect.w - textWidth(std::to_string(sizes[i]),2)) / 2, rect.y + 15, std::to_string(sizes[i]), {235, 238, 242}, 2);
     }
 
     const Rect terrainButton{windowWidth / 2 - 130, 444, 260, 38};
@@ -499,8 +499,9 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
     drawRectOutline(renderer, terrainButton.x, terrainButton.y, terrainButton.w, terrainButton.h,
                     result.generateTerrain ? RGB{255, 225, 110}
                                            : (terrainHovered ? RGB{185, 205, 235} : RGB{125, 135, 150}), 255);
-    drawText(renderer, terrainButton.x + 14, terrainButton.y + 13,
-             result.generateTerrain ? "LAKES / RIVER ON" : "FLAT MAP - NO WATER", {235, 238, 242}, 2);
+    const std::string terrainLabel = result.generateTerrain ? "LAKES / RIVER ON" : "FLAT MAP - NO WATER";
+    drawText(renderer, terrainButton.x + (terrainButton.w - textWidth(terrainLabel,2)) / 2, terrainButton.y + 13,
+             terrainLabel, {235, 238, 242}, 2);
 
     const bool newHovered = pointInRect(mouseX, mouseY, newButton);
     const bool loadHovered = pointInRect(mouseX, mouseY, loadButton);
@@ -508,13 +509,13 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
                    newHovered ? RGB{58, 105, 80} : RGB{45, 82, 62}, 255);
     drawRectOutline(renderer, newButton.x, newButton.y, newButton.w, newButton.h,
                     newHovered ? RGB{210, 245, 220} : RGB{150, 225, 175}, 255);
-    drawText(renderer, newButton.x + 38, newButton.y + 20, "NEW CITY", {235, 245, 238}, 2);
+    drawText(renderer, newButton.x + (newButton.w - textWidth("NEW CITY",2)) / 2, newButton.y + 20, "NEW CITY", {235, 245, 238}, 2);
     drawFilledRect(renderer, loadButton.x, loadButton.y, loadButton.w, loadButton.h,
                    loadHovered ? RGB{58, 80, 112} : RGB{45, 62, 88}, 255);
     drawRectOutline(renderer, loadButton.x, loadButton.y, loadButton.w, loadButton.h,
                     loadHovered ? RGB{205, 225, 255} : RGB{145, 190, 245}, 255);
-    drawText(renderer, loadButton.x + 24, loadButton.y + 20, "LOAD SESSION", {235, 240, 250}, 2);
-    drawText(renderer, windowWidth / 2 - 170, 585, "ENTER NEW   L LOAD   T TERRAIN", {150, 160, 175}, 1);
+    drawText(renderer, loadButton.x + (loadButton.w - textWidth("LOAD SESSION",2)) / 2, loadButton.y + 20, "LOAD SESSION", {235, 240, 250}, 2);
+    drawText(renderer, (windowWidth - textWidth("ENTER NEW   L LOAD   T TERRAIN",1)) / 2, 585, "ENTER NEW   L LOAD   T TERRAIN", {150, 160, 175}, 1);
     const bool presented = gpu.present(*renderer, bridge ? bridge->capturePath : "");
     if (presented && !startFramePresented) {
       host.title("UrbanSimCore Visualizer (Start Screen)");

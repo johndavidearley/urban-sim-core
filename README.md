@@ -246,9 +246,10 @@ Clickable controls brighten on hover, while selected tools, overlays, map
 sizes, terrain mode, and simulation speed retain their stronger active-state
 highlight. This feedback applies to both the start screen and in-game UI.
 
-Compact labels in the built-in bitmap font render at twice their original size
-by default for readability on Retina and other high-density displays. `F2`
-restores the legacy compact size when more panel space is preferred.
+The UI uses bundled Roboto Condensed Medium with smooth edges, proportional
+spacing, lowercase letters and punctuation. Labels default to 14 logical pixels
+for readability on standard and high-density displays. `F2` switches to compact
+11-pixel labels. Fonts are embedded; no system font installation is needed.
 
 The normal map view uses deterministic procedural detail at every zoom level:
 terrain variation, moving water bands, connected road surfaces and lane

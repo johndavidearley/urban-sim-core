@@ -133,6 +133,8 @@ if(URBAN_SIM_BUILD_VISUALIZER)
   add_executable(UrbanSimCore-playtest playtest/PlaytestMain.cpp)
   target_link_libraries(UrbanSimCore-playtest PRIVATE urban_sim_visualizer)
   install(TARGETS UrbanSimCore-playtest RUNTIME DESTINATION bin)
+  install(FILES "${CMAKE_SOURCE_DIR}/assets/fonts/OFL.txt" "${CMAKE_SOURCE_DIR}/assets/fonts/README.md"
+    DESTINATION share/urban-sim/fonts)
   install(DIRECTORY "${CMAKE_SOURCE_DIR}/playtest/" DESTINATION share/urban-sim/playtest
     PATTERN "__pycache__" EXCLUDE PATTERN "*.egg-info" EXCLUDE PATTERN "tests" EXCLUDE)
   get_target_property(URBAN_SIM_GLFW_TYPE glfw TYPE)

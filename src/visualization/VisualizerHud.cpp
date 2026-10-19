@@ -716,6 +716,15 @@ void drawCompactGameplayHud(DrawList *renderer, int windowWidth, bool paused,
   }
 }
 
+namespace {
+std::string fitUiText(const std::string& text, int width, int scale) {
+  if (textWidth(text,scale) <= width) return text;
+  std::string result = text;
+  while (!result.empty() && textWidth(result + "...",scale) > width) result.pop_back();
+  return result + "...";
+}
+}
+
 void drawToast(
   DrawList* renderer,
   int windowWidth,
@@ -725,12 +734,12 @@ void drawToast(
   if (toast.message.empty() || nowMs >= toast.expiresAtMs) {
     return;
   }
-  const int width = std::min(620, std::max(180, 28 + static_cast<int>(toast.message.size()) * 8));
+  const int width = std::min(std::min(620,windowWidth-8), std::max(180,28+textWidth(toast.message,2)));
   const int x = (windowWidth - width) / 2;
   constexpr int y = 18;
   drawFilledRect(renderer, x, y, width, 34, {16, 18, 22}, 235);
   drawRectOutline(renderer, x, y, width, 34, toast.color, 255);
-  drawText(renderer, x + 12, y + 12, toast.message, toast.color, 2);
+  drawText(renderer, x + 12, y + 10, fitUiText(toast.message,width-24,2), toast.color, 2);
 }
 
 void drawPlacementWarning(
@@ -744,12 +753,9 @@ void drawPlacementWarning(
   if (warning.empty()) {
     return;
   }
-  const int glyphWidth = gReadableUiText ? 8 : 4;
   const int width = std::min(std::min(620, windowWidth - 8),
-      std::max(130, 20 + static_cast<int>(warning.size()) * glyphWidth));
-  const size_t maxChars = static_cast<size_t>(std::max(3, (width - 16) / glyphWidth));
-  const std::string label = warning.size() > maxChars
-      ? warning.substr(0, maxChars - 3) + "..." : warning;
+      std::max(130, 20 + textWidth(warning,1)));
+  const std::string label = fitUiText(warning,width-16,1);
   const int x = std::max(4, std::min(windowWidth - width - 4, mouseX + 16));
   const int y = std::max(4, std::min(windowHeight - 28, mouseY + 18));
   drawFilledRect(renderer, x, y, width, 24, {28, 18, 18}, 235);
@@ -768,14 +774,13 @@ void drawUiTooltip(
   if (message.empty()) {
     return;
   }
-  const int glyphWidth = gReadableUiText ? 8 : 4;
-  const int width = std::min(620, std::max(180, 20 + static_cast<int>(message.size()) * glyphWidth));
+  const int width = std::min(std::min(620,windowWidth-8), std::max(180,20+textWidth(message,1)));
   const int x = std::max(4, std::min(windowWidth - width - 4, mouseX + 16));
   const int preferredY = mouseY + 20;
   const int y = preferredY + 30 < windowHeight ? preferredY : mouseY - 36;
   drawFilledRect(renderer, x, y, width, 28, {20, 25, 32}, 245);
   drawRectOutline(renderer, x, y, width, 28, {145, 190, 245}, 255);
-  drawText(renderer, x + 8, y + 9, message, {220, 232, 248}, 1);
+  drawText(renderer, x + 8, y + 9, fitUiText(message,width-16,1), {220, 232, 248}, 1);
 }
 
 void drawOnboarding(DrawList* renderer, int windowHeight, int step, const PopulationMilestones* milestones) {

@@ -1,3 +1,4 @@
+#include "src/visualization/UiFontAtlas.hpp"
 #include "src/visualization/TransitOverlay.hpp"
 #include "src/visualization/VisualizerOverlay.hpp"
 #include "src/visualization/DrawList.hpp"
@@ -64,26 +65,43 @@ TEST(VisualizerGeometry, LinesIncludeEndpointsInBothDirections) {
   list.line(2, 3, 2, 3);
   EXPECT_FLOAT_EQ(area(list), 1.f);
 }
-TEST(VisualizerGeometry, GlyphCaseSpacingAndLargeTextArePreserved) {
-  DrawList upper, lower;
+TEST(VisualizerGeometry, FontPreservesCasePunctuationAndProportionalSpacing) {
+  DrawList upper, lower, punctuation;
   drawGlyph(&upper, 0, 0, 'A', {255, 255, 255}, 2);
   drawGlyph(&lower, 0, 0, 'a', {255, 255, 255}, 2);
-  ASSERT_EQ(upper.vertices.size(), lower.vertices.size());
-  for (size_t i = 0; i < upper.vertices.size(); ++i) {
-    EXPECT_EQ(upper.vertices[i].x, lower.vertices[i].x);
-    EXPECT_EQ(upper.vertices[i].y, lower.vertices[i].y);
+  ASSERT_EQ(upper.vertices.size(), 6u);
+  ASSERT_EQ(lower.vertices.size(), 6u);
+  EXPECT_NE(upper.vertices[0].u, lower.vertices[0].u);
+  drawText(&punctuation, 0, 0, ".,!?()=", {255, 255, 255}, 2);
+  EXPECT_EQ(punctuation.vertices.size(), 7u * 6u);
+  DrawList narrow, wide;
+  drawText(&narrow, 0, 0, "ii", {255, 255, 255}, 2);
+  drawText(&wide, 0, 0, "WW", {255, 255, 255}, 2);
+  EXPECT_LT(narrow.vertices[6].x,wide.vertices[6].x);
+}
+TEST(VisualizerGeometry, FontAtlasHasValidBoundsCoverageAndReadableSizeToggle) {
+  size_t decoded = 0;
+  for (size_t i=0;i<sizeof(ui_font::runs);i+=2) decoded += ui_font::runs[i];
+  ASSERT_EQ(decoded,static_cast<size_t>(ui_font::width * ui_font::height));
+  const auto& pixels = ui_font::pixels();
+  EXPECT_TRUE(std::any_of(pixels.begin(),pixels.end(),[](auto a){return a>0 && a<255;}));
+  for (const auto& face : ui_font::glyphs) for (const auto& glyph : face) {
+    EXPECT_GE(glyph.x,1); EXPECT_GE(glyph.y,1);
+    EXPECT_LT(glyph.x+glyph.width,ui_font::width);
+    EXPECT_LT(glyph.y+glyph.height,ui_font::height);
+    EXPECT_GT(glyph.advance,0.f);
   }
   const bool saved = gReadableUiText;
   gReadableUiText = false;
-  DrawList small;
-  drawText(&small, 0, 0, "A A", {255, 255, 255}, 1);
+  DrawList small; drawText(&small,0,0,"A A",{255,255,255},1);
   gReadableUiText = true;
-  DrawList large;
-  drawText(&large, 0, 0, "A A", {255, 255, 255}, 1);
+  DrawList large; drawText(&large,0,0,"A A",{255,255,255},1);
   gReadableUiText = saved;
-  EXPECT_FLOAT_EQ(area(large), area(small) * 4.f);
-  EXPECT_FLOAT_EQ(large.vertices[upper.vertices.size()].x - large.vertices[0].x,
-                  12.f);
+  EXPECT_GT(area(large),area(small));
+  EXPECT_GT(large.vertices[6].x,small.vertices[6].x);
+  DrawList solid; solid.fill({0,0,5,5});
+  EXPECT_LT(solid.vertices[0].u,0.f);
+  EXPECT_GE(large.vertices[0].u,0.f);
 }
 TEST(VisualizerGeometry, LogicalHitTestsIgnoreFramebufferScale) {
   const auto button = paletteButtonRect(0, 1280, 800);

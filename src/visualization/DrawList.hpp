@@ -16,6 +16,7 @@ struct Color {
 };
 struct Vertex {
   float x, y, r, g, b, a;
+  float u = -1.f, v = -1.f; // Negative UV selects solid geometry.
 };
 
 // Logical-pixel geometry in painter's order. The Vulkan backend scales to the
@@ -45,6 +46,14 @@ public:
                 bottom = y + static_cast<float>(rect.h);
     triangle(x, y, right, y, right, bottom);
     triangle(x, y, right, bottom, x, bottom);
+  }
+  void texturedQuad(float x, float y, float w, float h,
+                    float u0, float v0, float u1, float v1) {
+    const float r = color.r / 255.f, g = color.g / 255.f;
+    const float b = color.b / 255.f, a = color.a / 255.f;
+    vertices.insert(vertices.end(), {
+      {x,y,r,g,b,a,u0,v0}, {x+w,y,r,g,b,a,u1,v0}, {x+w,y+h,r,g,b,a,u1,v1},
+      {x,y,r,g,b,a,u0,v0}, {x+w,y+h,r,g,b,a,u1,v1}, {x,y+h,r,g,b,a,u0,v1}});
   }
   void outline(Rect rect) {
     if (rect.w <= 0 || rect.h <= 0)
