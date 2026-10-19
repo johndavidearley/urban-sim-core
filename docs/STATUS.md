@@ -10,8 +10,8 @@ landfill, fire, bond and height-cap rendered acceptance from an extracted copy
 in a path with spaces, and all 16 launcher graphics probes. The unchanged
 journey now matches M36 (4,716 residents and $17.4M at tick 12,000) and
 reaches 10,324 residents at tick 15,900 with no debt. Money is still not
-scarce after about tick 4,000: revenue runs 2.3–3.6× expenses. That is the
-open question for the next phase.
+scarce after about tick 4,000: revenue runs 2.3–4.7× expenses. Phase 14
+is drafted to correct that.
 
 M48 substations are implemented locally (October 18, 2026). This completes
 Phase 13 locally. A substation is a power source: $1,500, $4/tick, 0 MW and
@@ -411,9 +411,10 @@ Quick performance smoke (headless):
 ## Current Priorities
 
 Phase 13 is complete: hospital demand, landfill lifetime, fire containment
-and substations. Next is planning a phase around the open question in
-`ROADMAP.md`: money is not scarce after about tick 4,000. The Phase 12
-list below is kept for reference.
+and substations. Phase 14 (M49–M54) in `ROADMAP.md` is a draft that keeps money
+scarce by giving it uses the city needs: population milestones, capacity for
+fire, police and sanitation, export prices that fall with volume, unique
+buildings, monuments, and a v2 journey with a balance pass. Not started. The Phase 12 list below is kept for reference.
 
 1. **M39 Landfills that fill.** Implemented locally. Garbage sites start
    with 80,000 units of volume. Full sites stop accepting; spare incinerator

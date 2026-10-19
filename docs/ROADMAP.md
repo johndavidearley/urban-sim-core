@@ -25,6 +25,7 @@ Last updated: October 19, 2026
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
 - Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
 - Phase 13 (M45–M48): complete; hosted CI verified on 6ac65ef.
+- Phase 14 (M49–M54): draft from the Phase 13 journey rerun; not started.
 
 ---
 
@@ -1051,14 +1052,154 @@ supply with one generating plant plus substations, at lower power upkeep. A
 city of substations alone reports a power shortage.
 **Excluded:** a separate power-line graph and transmission losses.
 
-### Open question for the next phase
+The open question this phase left, money that stops being scarce after about
+tick 4,000, is Phase 14.
 
-- Money stops being scarce after about tick 4,000. The journey rerun at
-  `6ac65ef` (`playtest-artifacts/phase13-playtest/REPORT.md`) matches M36:
-  revenue runs 2.3–3.6× expenses from tick 4,000, and the city ends with
-  $25.9M at tick 15,900, about 11,000 ticks of expenses. The largest bond is
-  under 1% of late funds. Decide whether to scale late-game costs, or tie
-  revenue to something players must keep investing in.
+## Phase 14: Things worth buying (M49–M54) — draft
+
+Drafted October 19, 2026 from the Phase 13 journey rerun
+(`playtest-artifacts/phase13-playtest/REPORT.md`). Not started. Implement in
+order. Phase 12's invariants still hold.
+
+The unchanged journey nets $10–20 per tick for its first 2,400 ticks, under
+300 residents. After that money stops mattering. Revenue is 2.7× expenses at
+1,000 residents, 4.7× at 2,000 and 2.3× at 10,000, after the journey cuts
+taxes to 5/8/8/8/5. The city ends with $25.9M, about 11,000 ticks of expenses.
+
+More things to buy fixes this only if the city needs them and they carry
+upkeep. One-off purchases are absorbed and then money piles up again.
+Optional ones get bought with spare cash or ignored. So this phase does four
+things:
+
+- **Gates the catalog by population.** Only bus routes are locked today
+  (1,200 residents). Nuclear plants and airports are available at tick 0, and
+  the largest purchase ($80,000) is 27 ticks of late surplus.
+- **Gives reach-only services capacity.** One fire station serves 4,673
+  residents in the 10k city; fire, police and sanitation serve everyone in
+  reach. M40 did this for beds and seats; this extends it, so growth means
+  more stations and more upkeep.
+- **Adds late goals priced in the millions.** These are unique buildings and
+  monuments unlocked by achievements.
+- **Ties exports to volume.** Exports are 24–34% of revenue from tick 5,000. At
+  0% tax the 10k city's exports alone cover 78% of its expenses. Buying things
+  cannot fix revenue that ignores taxes.
+
+These hold through the phase:
+
+- The changes apply to player-built cities. A default `--simulate` run is
+  unchanged.
+- Below 500 residents the budget is within 5% of today's.
+- Legacy saves load and continue. A save that already has a locked facility
+  keeps it. Bonds, taxes and their limits are unchanged.
+
+### Milestone 49: Population milestones
+
+- [ ] A city reaches a milestone the first time its population passes the
+      threshold. Milestones are never lost, and saves record the highest one
+      reached.
+- [ ] Each milestone unlocks part of the existing catalog. Proposed tiers,
+      tuned in M54:
+
+      | Residents | Unlocks |
+      |-----------|---------|
+      | 0 | Local roads; residential, commercial, industrial; generic, coal and wind power; water; sanitation outlet; landfill; school; hospital; fire; police |
+      | 500 | Arterials; parks; districts; cemetery; recycling |
+      | 1,200 | Bus routes (unchanged); office zoning; gas and solar power; height caps; bonds |
+      | 2,500 | Substations; hydro; shoreline treatment; crematorium; incinerator |
+      | 5,000 | Cargo and passenger terminals; hotels |
+      | 10,000 | Nuclear power; airport |
+
+- [ ] Each tier's build costs are set against the net income of a city at
+      that tier, so a later building costs a similar number of ticks of surplus
+      as an early one.
+- [ ] Locked tools show the milestone that unlocks them. A toast and the city
+      guide announce each milestone. MCP reports the milestone and refuses
+      locked placements with a reason.
+
+**Acceptance:** A new city cannot place a nuclear plant or airport, and can
+after passing 10,000 residents. A legacy save with an airport below 10,000
+loads, keeps it, and cannot build a second. A save round-trips the milestone.
+**Excluded:** map-specific thresholds and research trees.
+
+### Milestone 50: Capacity for fire, police and sanitation
+
+- [ ] Fire and police stations and sanitation sites serve a bounded number of
+      residents and workers. Nearest buildings are served first, as with
+      beds. Buildings beyond capacity get reduced coverage, which lowers
+      their densification and their fire response.
+- [ ] The Services tab, tile inspector and MCP show each type's served and
+      unserved occupants.
+
+**Acceptance:** In the 10k journey city, the existing five fire stations
+leave a measurable share of occupants unserved, and adding stations restores
+it. A city with half the stations it needs grows clearly slower than one with
+enough over 2,000 ticks. A city under 500 residents with one of each sees no
+change.
+**Excluded:** vehicles, dispatch and response times on roads.
+
+### Milestone 51: Export prices that fall with volume
+
+- [ ] The export price per unit falls once exports pass a threshold the early
+      game never reaches. Imports are unchanged.
+- [ ] The budget's export line shows volume and price per unit. MCP reports
+      both.
+
+**Acceptance:** In the journey, export revenue at 10,000 residents is at most
+half of today's $1,814, and is unchanged below 2,000 residents.
+**Excluded:** named trading partners, commodity types and price shocks.
+
+### Milestone 52: Unique buildings
+
+- [ ] Unique buildings unlock from achievements the game already measures:
+      funds held, bus riders, goods exported, visitors, residents educated and
+      population. Each can be built once. Each has upkeep and a local effect
+      on land value, happiness or tourism.
+- [ ] Each costs about 300–600 ticks of surplus for a city that has just
+      earned it. The HUD lists each one's requirement and progress.
+
+**Acceptance:** The journey city earns at least two unique buildings by
+10,000 residents. Each changes land value or happiness measurably around it.
+Unlocks and built uniques round-trip through saves.
+**Excluded:** player-placed decoration and custom assets.
+
+### Milestone 53: Monuments
+
+- [ ] A monument needs a set of built unique buildings. Each one has a
+      citywide effect: health coverage everywhere, education coverage
+      everywhere, a large zero-emission power plant, or pollution cleanup and
+      land value.
+- [ ] A monument costs at least 2,000 ticks of surplus at 10,000 residents,
+      and has upkeep.
+
+**Acceptance:** A city with the required uniques can build a monument, and its
+citywide effect is visible in coverage or pollution. A city without them
+cannot. A save with a monument continues identically.
+**Excluded:** space elevators and other effects that exist only for show.
+
+### Milestone 54: Journey v2 and balance pass
+
+- [ ] Milestone gates break the unchanged journey. At about 350 residents
+      (tick 2,400) it builds arterials, offices, recycling, a cemetery and a
+      crematorium. Write a v2 journey that follows the unlocks, keep the old
+      one for comparison, and record both money curves.
+- [ ] Tune M49–M53 together against v2. If v2 goes into debt, adjust its
+      choices and record why. Do not weaken the gates to keep it solvent.
+
+**Acceptance:** Journey v2 reaches 10,000 residents with no debt and builds at
+least two unique buildings. Revenue is 1.2–1.6× expenses at 10,000
+residents. Funds at tick 12,000 are at most a fifth of today's $17.4M. Below
+500 residents the budget is within 5% of today's.
+**Excluded:** a new journey map, difficulty levels and an AI that plays the
+budget.
+
+### Open questions, not yet milestones
+
+- Unemployment runs 15–34% for the whole journey, and the UNEMPLOYMENT alert
+  is active from tick 5,165. Find out whether jobs lag housing by design.
+- Garbage coverage fell to 22% after the landfills filled at tick 10,400 and
+  the city kept growing. Decide whether uncollected waste should cost growth.
+- Service satisfaction moves migration only between 0.6× and 1.0×. If M50's
+  shortfalls do not cost enough growth, that weight is the next lever.
 
 ---
 
@@ -1079,6 +1220,7 @@ city of substations alone reports a power shortage.
 | 11 | M37 | complete: surface water and early waterworks |
 | 12 | M38–M44 | complete; hosted CI verified on fd554fd |
 | 13 | M45–M48 | complete; hosted CI verified on 6ac65ef |
+| 14 | M49–M54 | draft: things worth buying |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.
