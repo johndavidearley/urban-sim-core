@@ -1,6 +1,17 @@
 # Project Status
 
-Last verified: October 18, 2026
+Last verified: October 19, 2026
+
+Phase 13 is complete (October 19, 2026). Hosted CI run 39158120162 passed on
+`6ac65ef` (strict Windows/macOS/Linux, ASan/UBSan, TSan). Locally, strict
+Clang passed 637 tests, strict GCC 16 635, ASan/UBSan 635 and TSan 637, with
+no sanitizer reports. The `phase13-rc1` macOS package passed the hospital,
+landfill, fire, bond and height-cap rendered acceptance from an extracted copy
+in a path with spaces, and all 16 launcher graphics probes. The unchanged
+journey now matches M36 (4,716 residents and $17.4M at tick 12,000) and
+reaches 10,324 residents at tick 15,900 with no debt. Money is still not
+scarce after about tick 4,000: revenue runs 2.3–3.6× expenses. That is the
+open question for the next phase.
 
 M48 substations are implemented locally (October 18, 2026). This completes
 Phase 13 locally. A substation is a power source: $1,500, $4/tick, 0 MW and
@@ -14,7 +25,7 @@ supply (100 MW for 50.7 MW of demand) and cut power upkeep from $180 to $57 per
 tick. Replacing the last plant left supply at 0 and raised POWER SHORTAGE.
 Autonomous placement and legacy saves are unchanged; the default 400-tick
 `--simulate` CSV is byte-identical to M46. Strict `ctest` in `build-strict`
-passed 637 tests. Hosted CI and sanitizers have not run on M45–M48.
+passed 637 tests.
 
 M47 fires a city can contain is implemented locally (October 18, 2026). A
 building that catches fire stays standing and burns for 4 ticks. Each tick,
@@ -399,11 +410,9 @@ Quick performance smoke (headless):
 
 ## Current Priorities
 
-Phase 12 is complete. Phase 13 (M45–M48) in `ROADMAP.md` is a balance
-correction from the Phase 12 playtest: hospital demand, landfill lifetime,
-fire containment and substations. M45–M48 are implemented locally. The draft's
-open question remains: rerun the Phase 12 playtest to decide whether money
-needs to stay scarce later in the game. The Phase 12
+Phase 13 is complete: hospital demand, landfill lifetime, fire containment
+and substations. Next is planning a phase around the open question in
+`ROADMAP.md`: money is not scarce after about tick 4,000. The Phase 12
 list below is kept for reference.
 
 1. **M39 Landfills that fill.** Implemented locally. Garbage sites start

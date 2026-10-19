@@ -4,7 +4,7 @@ For the authoritative current validation baseline and active priorities, see
 [STATUS.md](STATUS.md). This document retains detailed milestone history and
 future ideas.
 
-Last updated: October 18, 2026
+Last updated: October 19, 2026
 
 ## Current Status Snapshot
 
@@ -24,7 +24,7 @@ Last updated: October 18, 2026
 - Phase 6 (M17–M22): implemented; local M22 verification is recorded in STATUS.md.
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
 - Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
-- Phase 13 (M45–M48): M45–M48 complete locally.
+- Phase 13 (M45–M48): complete; hosted CI verified on 6ac65ef.
 
 ---
 
@@ -937,11 +937,13 @@ calendar scheduler. The term is a tick count.
 
 ---
 
-## Phase 13: Phase 12 balance correction (M45–M48) — draft
+## Phase 13: Phase 12 balance correction (M45–M48)
 
 Drafted October 18, 2026 from the Phase 12 playtest
-(`playtest-artifacts/phase12-playtest/REPORT.md`). M45–M48 are complete locally.
-Implement in order. Phase 12's invariants still hold.
+(`playtest-artifacts/phase12-playtest/REPORT.md`). Complete October 19, 2026:
+hosted CI passed on `6ac65ef` (strict Windows/macOS/Linux, ASan/UBSan, TSan),
+and the packaged macOS candidate passed native acceptance and launcher
+graphics probes. Implement in order. Phase 12's invariants still hold.
 
 The unchanged M36 journey (`playtest/examples/phase10_native_journey.py`)
 still reaches 10,000 residents with no debt, but it stalls. From tick 6,000 to
@@ -1049,14 +1051,14 @@ supply with one generating plant plus substations, at lower power upkeep. A
 city of substations alone reports a power shortage.
 **Excluded:** a separate power-line graph and transmission losses.
 
-### Open questions, not yet milestones
+### Open question for the next phase
 
-- Money stops being scarce after about tick 4,000 ($17.8M at 16,300 in the
-  journey). Bonds matter only early, when even small bonds outweigh revenue.
-  Decide whether to scale late-game costs, or tie revenue to something players
-  must keep investing in.
-- Re-run this playtest after M45. Removing the hospital stall changes the
-  money and growth curve that the other questions depend on.
+- Money stops being scarce after about tick 4,000. The journey rerun at
+  `6ac65ef` (`playtest-artifacts/phase13-playtest/REPORT.md`) matches M36:
+  revenue runs 2.3–3.6× expenses from tick 4,000, and the city ends with
+  $25.9M at tick 15,900, about 11,000 ticks of expenses. The largest bond is
+  under 1% of late funds. Decide whether to scale late-game costs, or tie
+  revenue to something players must keep investing in.
 
 ---
 
@@ -1076,7 +1078,7 @@ city of substations alone reports a power shortage.
 | 10 | M36 | complete: end-to-end playability |
 | 11 | M37 | complete: surface water and early waterworks |
 | 12 | M38–M44 | complete; hosted CI verified on fd554fd |
-| 13 | M45–M48 | M45–M48 complete locally |
+| 13 | M45–M48 | complete; hosted CI verified on 6ac65ef |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.
