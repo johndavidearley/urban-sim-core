@@ -89,6 +89,8 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   saved.treasuryLedger.valid = true;
   saved.treasuryLedger.tick = 77;
   saved.treasuryLedger.breakdown.revenue[0] = 80;
+  saved.treasuryLedger.breakdown.exportVolume = 5000;
+  saved.treasuryLedger.breakdown.exportUnitPrice = 0.16;
   saved.treasuryLedger.breakdown.expenses[0] = 30;
   saved.treasuryLedger.breakdown.totalRevenue = 80;
   saved.treasuryLedger.breakdown.totalExpenses = 30;
@@ -170,6 +172,8 @@ TEST(GameplaySessionSystemTests, RoundTripPreservesCoreAndPlayableState) {
   EXPECT_EQ(loaded.treasuryLedger.tick, 77u);
   EXPECT_EQ(loaded.treasuryLedger.fundsAfter, 150);
   EXPECT_EQ(loaded.treasuryLedger.breakdown.totalRevenue, 80);
+  EXPECT_EQ(loaded.treasuryLedger.breakdown.exportVolume, 5000);
+  EXPECT_DOUBLE_EQ(loaded.treasuryLedger.breakdown.exportUnitPrice, 0.16);
   EXPECT_TRUE(loaded.enableDisasters);
   ASSERT_EQ(loaded.disasters.burningTiles.size(), 1u);
   EXPECT_EQ(loaded.disasters.burningTiles.front().ticksRemaining, 4);
@@ -418,11 +422,13 @@ TEST(GameplaySessionSystemTests, RejectsCorruptTreasuryLedgerWithoutMutatingTheC
   ASSERT_TRUE(GameplaySessionSystem::save(path.string(), map, roads, store, population, saved));
   nlohmann::json original;
   { std::ifstream in(path); in >> original; }
-  for (int invalid = 0; invalid < 3; ++invalid) {
+  for (int invalid = 0; invalid < 5; ++invalid) {
     auto root = original;
     if (invalid == 0) root["treasuryLedger"]["totalRevenue"] = 1;
     if (invalid == 1) root["treasuryLedger"]["fundsAfter"] = 0;
     if (invalid == 2) root["treasuryLedger"]["revenue"].push_back(0);
+    if (invalid == 3) root["treasuryLedger"]["exportVolume"] = -1;
+    if (invalid == 4) root["treasuryLedger"]["exportUnitPrice"] = -0.1;
     { std::ofstream out(path); out << root; }
     GameplaySessionState loaded;
     loaded.funds = 123;

@@ -133,6 +133,8 @@ TreasuryBreakdown TreasurySystem::breakdown(const EconomyState& economy,
   double tickScale, int64_t serviceCosts, int64_t constructionCosts,
   int64_t tourismFees, int64_t tourismServices) {
   TreasuryBreakdown result;
+  result.exportVolume = economy.exportedGoods;
+  result.exportUnitPrice = economy.exportUnitPrice * std::max(0.0, tickScale);
   const double scale = std::max(0.0, tickScale);
   const auto allocate = [scale](const auto& raw, auto& output) {
     int64_t cumulative = 0, previous = 0;

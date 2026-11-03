@@ -40,6 +40,44 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         path.write_text(json.dumps(fixture))
         await s.city("load", import_path=str(path))
 
+    async def test_export_volume_prices_budget_and_checkpoint(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action":"apply", "name":"road", "x1":6, "y1":16, "x2":22, "y2":16})
+        for service, x in (("power",18),("water",20)):
+            await s.request("tool", {"action":"apply", "name":"service", "service":service, "x1":x, "y1":15})
+        for zone, y in (("residential",15),("industrial",17)):
+            await s.request("tool", {"action":"apply", "name":"zone", "zone":zone, "x1":6, "y1":y, "x2":13, "y2":y})
+        await s.request("time", {"action":"step", "ticks":20})
+        await s.city("save")
+        fixture = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        job = next(b for b in core["buildings"] if b["type"] == 3)
+        for b in core["buildings"]:
+            b["occupancy"] = 0
+        job["capacity"] = job["occupancy"] = 5000
+        core_path = s.artifact("export-volume.city.json")
+        core_path.write_text(json.dumps(core))
+        fixture["citySnapshot"] = str(core_path)
+        path = s.artifact("export-volume.json")
+        path.write_text(json.dumps(fixture))
+        await s.city("load", import_path=str(path))
+        preview = s.last_state["budget"]["preview"]
+        self.assertEqual(preview["export_volume"], 10000)
+        self.assertAlmostEqual(preview["export_unit_price"], .08)
+        self.assertEqual(preview["revenue"][5], 800)
+        await s.request("window", {"action":"resize", "width":800, "height":640})
+        await s.request("budget", {"action":"open"})
+        await s.screenshot("m51-export-budget-minimum")
+        await s.request("time", {"action":"step", "ticks":1})
+        measured = s.last_state["budget"]["last_tick"]
+        self.assertGreater(measured["export_volume"], 0)
+        self.assertAlmostEqual(measured["export_volume"] * measured["export_unit_price"],
+                               measured["revenue"][5], delta=1)
+        await s.city("save")
+        await s.city("load")
+        self.assertEqual(s.last_state["budget"]["last_tick"], measured)
+
     async def test_population_milestone_locks_legacy_airport_and_permanent_unlocks(self):
         s = self.session
         await s.city("new", 32)

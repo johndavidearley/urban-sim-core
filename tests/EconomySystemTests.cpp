@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include <algorithm>
 #include "src/entities/EntityStore.hpp"
 #include "src/entities/PopulationStore.hpp"
 #include "src/systems/EconomySystem.hpp"
@@ -16,6 +17,38 @@ protected:
   std::unique_ptr<EntityStore> store;
   std::unique_ptr<PopulationStore> population;
 };
+
+TEST_F(EconomySystemTests, PlayableExportVolumeDiscountPreservesSmallTradesAndCapsRevenue) {
+  const auto id = store->createBuilding(BuildingType::Industrial, {10, 10}, 10000);
+  for (int workers : {0, 1, 999, 1000, 1001, 2268, 5000}) {
+    store->getBuilding(id)->occupancy = workers;
+    const auto flat = EconomySystem::calculateEconomy(*store, *population);
+    const auto playable = EconomySystem::calculateEconomy(
+      *store, *population, {}, nullptr, {}, 1.f, {}, EconomyValuation::playable());
+    const int64_t volume = workers * 2;
+    EXPECT_EQ(playable.exportedGoods, volume);
+    EXPECT_EQ(flat.exportRevenue, volume * 40);
+    EXPECT_EQ(playable.exportRevenue, std::min<int64_t>(volume, 2000) * 40);
+    if (volume <= 2000) EXPECT_EQ(playable.exportRevenue, flat.exportRevenue);
+    if (volume > 2000) EXPECT_LT(playable.exportUnitPrice, 40.0);
+    EXPECT_EQ(playable.totalRevenue, playable.totalTaxRevenue + playable.exportRevenue);
+  }
+}
+
+TEST_F(EconomySystemTests, ExportDiscountKeepsInflationAndImportPrices) {
+  const auto id = store->createBuilding(BuildingType::Commercial, {10, 10}, 10000);
+  store->getBuilding(id)->occupancy = 5000;
+  const auto flat = EconomySystem::calculateEconomy(*store, *population, {}, nullptr, {}, 2.f);
+  const auto playable = EconomySystem::calculateEconomy(
+    *store, *population, {}, nullptr, {}, 2.f, {}, EconomyValuation::playable());
+  EXPECT_EQ(playable.importCost, flat.importCost);
+  EXPECT_EQ(playable.exportedGoods, 0);
+  EXPECT_DOUBLE_EQ(playable.exportUnitPrice, 0.0);
+  auto priced = playable;
+  EconomySystem::priceExports(priced, 4000);
+  EXPECT_EQ(priced.exportRevenue, 160000);
+  EXPECT_DOUBLE_EQ(priced.exportUnitPrice, 40.0);
+}
 
 // Test: Empty economy with no buildings has minimal revenue
 TEST_F(EconomySystemTests, EmptyEconomyHasNoRevenue) {

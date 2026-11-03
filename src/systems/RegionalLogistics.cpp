@@ -88,7 +88,8 @@ LogisticsPlan planLogistics(const CityMap& map, const RoadNetwork& roads,
   return result;
 }
 void applyFulfilledTrade(EconomyState& economy,const FreightSummary& freight,const TradeRates& rates) {
-  economy.exportRevenue=price(freight.exportedGoods,static_cast<double>(rates.exportPricePerUnit)*economy.inflationMultiplier);
+  if (freight.exportedGoods < 0) throw std::overflow_error("negative regional export volume");
+  EconomySystem::priceExports(economy,freight.exportedGoods,rates);
   economy.importCost=price(freight.importedGoods,static_cast<double>(rates.importCostPerUnit)*economy.inflationMultiplier);
   const auto retailDelivery=freight.goodsProduced>0 ? freight.domesticGoods : freight.importedGoods;
   economy.goodsAvailability=freight.goodsConsumed>0 ? static_cast<float>(std::clamp(

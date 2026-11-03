@@ -7,6 +7,7 @@
 #include <limits>
 #include <queue>
 #include <sstream>
+#include <iomanip>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -345,6 +346,10 @@ void drawBudgetPanel(DrawList* renderer, int windowWidth, int windowHeight,
     drawText(renderer, x + 360, row, revenueNames[i], {185, 205, 220}, 1);
     drawText(renderer, x + 580, row, "+$" + std::to_string(preview.revenue[i]), {120, 225, 155}, 1);
   }
+  std::ostringstream exportDetail;
+  exportDetail << preview.exportVolume << " UNITS @ $" << std::fixed << std::setprecision(3)
+               << preview.exportUnitPrice << "/UNIT";
+  drawText(renderer, x + 360, y + 194, exportDetail.str(), {165, 185, 205}, 1);
   const std::array<const char*, 5> costNames{{"BUILDING UPKEEP", "PARK UPKEEP", "IMPORTS", "CIVIC/TRANSPORT", "BUILDING GROWTH"}};
   for (size_t i = 0; i < costNames.size(); ++i) {
     const int row = y + 208 + static_cast<int>(i) * 16;

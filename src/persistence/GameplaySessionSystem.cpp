@@ -299,6 +299,7 @@ bool GameplaySessionSystem::save(
   const auto& flow = ledger.flow;
   json ledgerJson = {{"valid", ledger.valid}, {"tick", ledger.tick},
     {"revenue", ledger.breakdown.revenue}, {"expenses", ledger.breakdown.expenses},
+    {"exportVolume", ledger.breakdown.exportVolume}, {"exportUnitPrice", ledger.breakdown.exportUnitPrice},
     {"tourismFees",ledger.breakdown.tourismFees},{"tourismServices",ledger.breakdown.tourismServices},
     {"totalRevenue", ledger.breakdown.totalRevenue},
     {"totalExpenses", ledger.breakdown.totalExpenses},
@@ -506,6 +507,10 @@ bool GameplaySessionSystem::load(
             if (!value.is_number_integer())
               return fail(errorMessage, "gameplay session has invalid ledger category amount");
         ledger.breakdown.revenue = item.at("revenue").get<std::array<int64_t, 6>>();
+        ledger.breakdown.exportVolume = item.value("exportVolume", int64_t{0});
+        ledger.breakdown.exportUnitPrice = item.value("exportUnitPrice", 0.0);
+        if (ledger.breakdown.exportVolume < 0 || !std::isfinite(ledger.breakdown.exportUnitPrice) ||
+            ledger.breakdown.exportUnitPrice < 0.0) throw std::runtime_error("Invalid treasury ledger export measurement");
         ledger.breakdown.expenses = item.at("expenses").get<std::array<int64_t, 5>>();
         for (const char* name:{"tourismFees","tourismServices"})
           if (item.contains(name) && (!item.at(name).is_number_integer() ||

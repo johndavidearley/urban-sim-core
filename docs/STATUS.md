@@ -1,6 +1,17 @@
 # Project Status
 
-Last verified: October 19, 2026
+Last verified: November 3, 2026
+
+M51 export volume pricing is implemented locally (November 3, 2026). Player export prices fall above 2,000 goods per tick,
+capping normal export income at $800. Budget and MCP expose volume and unit
+price, including persisted completed-tick measurements. The rendered minimum-size
+budget and save/load regression passed. The strict MSVC Release build, all 653
+CTest cases and seven Python tests passed. Evidence is under
+`build/m51-acceptance/20261103-070721-db305efd/`. The retained journey artifacts are absent
+from this checkout, so the below-2,000-resident acceptance remains pending and
+the threshold is provisional. See [EXPORT_PRICES.md](EXPORT_PRICES.md).
+
+Previous milestone verification: October 19, 2026
 
 M50 department capacity is complete locally (October 19, 2026). Fire, police
 and sanitation allocate bounded occupant capacity by road distance. Shortages

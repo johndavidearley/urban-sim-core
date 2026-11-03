@@ -25,7 +25,7 @@ Last updated: October 19, 2026
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
 - Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
 - Phase 13 (M45–M48): complete; hosted CI verified on 6ac65ef.
-- Phase 14 (M49–M54): M49–M50 complete locally; M51 export prices is next.
+- Phase 14 (M49–M54): M49–M50 complete locally; M51 implemented, journey acceptance pending.
 
 ---
 
@@ -1153,9 +1153,12 @@ remains byte-identical to M46. See [DEPARTMENT_CAPACITY.md](DEPARTMENT_CAPACITY.
 
 ### Milestone 51: Export prices that fall with volume
 
-- [ ] The export price per unit falls once exports pass a threshold the early
+Implemented locally November 3, 2026; retained journey acceptance pending.
+See [EXPORT_PRICES.md](EXPORT_PRICES.md) for the rule and verification limits.
+
+- [x] The export price per unit falls once exports pass a threshold the early
       game never reaches. Imports are unchanged.
-- [ ] The budget's export line shows volume and price per unit. MCP reports
+- [x] The budget's export line shows volume and price per unit. MCP reports
       both.
 
 **Acceptance:** In the journey, export revenue at 10,000 residents is at most
@@ -1234,7 +1237,7 @@ budget.
 | 11 | M37 | complete: surface water and early waterworks |
 | 12 | M38–M44 | complete; hosted CI verified on fd554fd |
 | 13 | M45–M48 | complete; hosted CI verified on 6ac65ef |
-| 14 | M49–M54 | M49–M50 complete locally; M51 next |
+| 14 | M49–M54 | M49–M50 complete locally; M51 journey acceptance pending |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

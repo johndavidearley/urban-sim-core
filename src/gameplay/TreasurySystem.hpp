@@ -51,6 +51,8 @@ struct BondPayment {
 
 // Display amounts in treasury dollars, with rounding reconciled to the total.
 struct TreasuryBreakdown {
+  int64_t exportVolume = 0;
+  double exportUnitPrice = 0.0; // Treasury dollars per unit.
   // Residential, commercial, industrial, office, income, exports.
   std::array<int64_t, 6> revenue{};
   // Buildings, parks, imports, service operation, growth construction.

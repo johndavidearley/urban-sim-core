@@ -94,6 +94,31 @@ TEST(RegionalLogisticsTests, UnfulfilledTradeNeverEarnsMoneyAndRetailShortageRed
   EXPECT_EQ(exporter.exportRevenue,800);
   EXPECT_EQ(exporter.totalRevenue,exporter.totalTaxRevenue+800);
 }
+
+TEST(RegionalLogisticsTests, ExportDiscountUsesDeliveredVolumeAndTreasuryUnits) {
+  EconomyState economy;
+  economy.exportFullPriceVolume = EconomyValuation::playable().exportFullPriceVolume;
+  economy.tradeBalance = 10000;
+  FreightSummary freight;
+  freight.goodsProduced = 10000;
+  freight.exportedGoods = 1000;
+  regional::applyFulfilledTrade(economy, freight);
+  EXPECT_EQ(economy.exportRevenue, 40000);
+  EXPECT_DOUBLE_EQ(economy.exportUnitPrice, 40.0);
+  freight.exportedGoods = 5000;
+  regional::applyFulfilledTrade(economy, freight);
+  EXPECT_EQ(economy.exportRevenue, 80000);
+  EXPECT_DOUBLE_EQ(economy.exportUnitPrice, 16.0);
+  const auto display = TreasurySystem::breakdown(economy);
+  EXPECT_EQ(display.exportVolume, 5000);
+  EXPECT_DOUBLE_EQ(display.exportUnitPrice, 0.16);
+  EXPECT_EQ(display.revenue[5], 800);
+  freight.exportedGoods = 0;
+  regional::applyFulfilledTrade(economy, freight);
+  EXPECT_EQ(economy.exportRevenue, 0);
+  EXPECT_EQ(economy.exportedGoods, 0);
+  EXPECT_DOUBLE_EQ(economy.exportUnitPrice, 0.0);
+}
 TEST(RegionalLogisticsTests, ReadOnlyRefreshNeverActivatesOrBillsAndCompletedTickPersistsModeAfterRemoval) {
   City city; city.build();
   PlayableCityTickState state; state.regionalConnections=city.ports;

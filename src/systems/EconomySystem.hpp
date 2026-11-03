@@ -42,6 +42,9 @@ struct EconomyState {
   int64_t tradeBalance = 0;   // goodsProduced - goodsConsumed; positive = exportable surplus
   int64_t exportRevenue = 0;  // > 0 only when tradeBalance > 0
   int64_t importCost = 0;     // > 0 only when tradeBalance < 0
+  int64_t exportedGoods = 0;
+  double exportUnitPrice = 0.0; // Economy dollars, including inflation.
+  int64_t exportFullPriceVolume = 0; // Zero keeps the autonomous flat price.
 
   // Inflation: the multiplier actually applied this call (echoed back for
   // reporting). See calculateEconomy's inflationMultiplier parameter.
@@ -98,14 +101,18 @@ struct EconomyValuation {
   bool taxOccupiedSpace = false;
   bool scaleMaintenanceByCapacity = false;
   float parkMaintenancePerTile = 2.f;
+  int64_t exportFullPriceVolume = 0;
 
   static EconomyValuation playable() {
-    return {200.0f, 200.0f, true, true, 200.f};
+    return {200.0f, 200.0f, true, true, 200.f, 2000};
   }
 };
 
 class EconomySystem {
 public:
+  // Full price through the volume limit, then a falling average price.
+  // Revenue plateaus rather than falling when another unit is exported.
+  static void priceExports(EconomyState& state, int64_t volume, const TradeRates& rates = {});
   // Calculate economic state from city current entities and population.
   // If `map` is provided, averageLandValue is the real mean of Tile::landValue
   // across zoned tiles (see LandValueSystem); otherwise it falls back to a

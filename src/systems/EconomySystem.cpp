@@ -1,6 +1,8 @@
 #include "EconomySystem.hpp"
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <stdexcept>
 
 #include "src/systems/LandValueSystem.hpp"
 #include "src/systems/GrowthSystem.hpp"
@@ -59,6 +61,20 @@ TypeTaxResult accumulateType(
 
 } // namespace
 
+void EconomySystem::priceExports(EconomyState& state, int64_t volume, const TradeRates& rates) {
+  state.exportedGoods = std::max<int64_t>(0, volume);
+  const int64_t paidVolume = state.exportFullPriceVolume > 0
+    ? std::min(state.exportedGoods, state.exportFullPriceVolume) : state.exportedGoods;
+  const double basePrice = static_cast<double>(rates.exportPricePerUnit) * state.inflationMultiplier;
+  const double revenue = static_cast<double>(paidVolume) * basePrice;
+  if (!std::isfinite(revenue) || revenue < 0.0 ||
+      revenue >= static_cast<double>(std::numeric_limits<int64_t>::max()))
+    throw std::overflow_error("export price outside economy range");
+  state.exportUnitPrice = state.exportedGoods > 0
+    ? basePrice * (static_cast<double>(paidVolume) / static_cast<double>(state.exportedGoods)) : 0.0;
+  state.exportRevenue = static_cast<int64_t>(revenue);
+}
+
 EconomyState EconomySystem::calculateEconomy(
   const EntityStore& store,
   const PopulationStore& population,
@@ -71,6 +87,7 @@ EconomyState EconomySystem::calculateEconomy(
 ) {
   EconomyState state;
   state.inflationMultiplier = inflationMultiplier;
+  state.exportFullPriceVolume = valuation.exportFullPriceVolume;
 
   // Per-type ID indices: one pass per type (no hash-map iteration).
   // Currency math runs in double: float's 24-bit mantissa loses integer
@@ -112,10 +129,8 @@ EconomyState EconomySystem::calculateEconomy(
   state.goodsProduced = static_cast<int64_t>(static_cast<double>(industrialOccupancy) * tradeRates.goodsPerIndustrialWorker);
   state.goodsConsumed = static_cast<int64_t>(static_cast<double>(commercialOccupancy) * tradeRates.goodsPerCommercialWorker);
   state.tradeBalance = state.goodsProduced - state.goodsConsumed;
-  if (state.tradeBalance > 0) {
-    state.exportRevenue = static_cast<int64_t>(
-      static_cast<double>(state.tradeBalance) * tradeRates.exportPricePerUnit * inflationMultiplier);
-  } else if (state.tradeBalance < 0) {
+  priceExports(state, state.tradeBalance, tradeRates);
+  if (state.tradeBalance < 0) {
     state.importCost = static_cast<int64_t>(
       static_cast<double>(-state.tradeBalance) * tradeRates.importCostPerUnit * inflationMultiplier);
   }
