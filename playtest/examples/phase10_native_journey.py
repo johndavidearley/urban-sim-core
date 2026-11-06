@@ -8,6 +8,7 @@ replayed with urban-sim-playtest replay. This long acceptance is opt-in.
 import argparse
 import asyncio
 import json
+import shutil
 from urban_sim_mcp.session import Session
 from urban_sim_mcp.scenarios import record
 
@@ -15,6 +16,7 @@ from urban_sim_mcp.scenarios import record
 async def main(args):
     s = Session(args.executable, args.artifacts, timeout=120)
     samples = []
+    segments = []
     await s.launch()
     await record(s, "start")
 
@@ -100,6 +102,24 @@ async def main(args):
         assert s.last_state["funds"] < funds, (kind, a, b, s.last_state["toast"])
 
     async def step(n):
+        if args.retain_checkpoints:
+            await keys("F5")
+            name = f"segment-{len(segments):04d}"
+            core_path = s.artifact(name + ".city.json")
+            shutil.copyfile(s.artifact("urban_sim_session.json.city.json"), core_path)
+            saved = json.loads(s.artifact("urban_sim_session.json").read_text())
+            saved["citySnapshot"] = str(core_path)
+            path = s.artifact(name + ".json")
+            path.write_text(json.dumps(saved, indent=2))
+            segments.append(
+                {
+                    "session": str(path),
+                    "ticks": n,
+                    "tick": s.last_state["tick"],
+                    "population": s.last_state["population"],
+                }
+            )
+            s.artifact("segments.json").write_text(json.dumps(segments, indent=2))
         for _ in range(n // 100):
             await keys(*(["N"] * 100))
         v = s.last_state
@@ -308,4 +328,9 @@ if __name__ == "__main__":
         "--executable", default="build-strict/bin/UrbanSimCore-playtest"
     )
     parser.add_argument("--artifacts", default="playtest-artifacts/m36-native")
+    parser.add_argument(
+        "--retain-checkpoints",
+        action="store_true",
+        help="Save each native tick segment for later balance audits",
+    )
     asyncio.run(main(parser.parse_args()))

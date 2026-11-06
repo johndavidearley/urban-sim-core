@@ -393,13 +393,10 @@ float civicCoverageAt(const RoadNetwork* roads, const ServiceCoverageCache* serv
   if (!roads->resolveRoadAnchor(pos, anchor)) {
     return 0.0f;
   }
-  const auto mask = services->coverageMask.find(anchor);
-  if (mask == services->coverageMask.end()) {
-    return 0.0f;
-  }
+  const auto mask = ServiceSystem::coverageMaskAt(*services,anchor);
   float covered = 0.f;
   for (int bit = 0; bit < 4; ++bit) {
-    if ((mask->second & static_cast<ServiceCoverageMask>(1u << bit)) != 0) {
+    if ((mask & static_cast<ServiceCoverageMask>(1u << bit)) != 0) {
       covered += ServiceSystem::departmentFactorAt(*services, static_cast<ServiceType>(bit), pos);
     }
   }

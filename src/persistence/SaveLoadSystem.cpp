@@ -1,4 +1,6 @@
 #include "SaveLoadSystem.hpp"
+#include "src/gameplay/UniqueBuildings.hpp"
+#include "src/gameplay/Monuments.hpp"
 
 #include <cmath>
 #include <algorithm>
@@ -144,7 +146,10 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
   std::unordered_set<uint32_t> buildingIds;
   buildingIds.reserve(snapshot.buildings.size());
 
+  // Hotels and unique civic entities both own an unzoned, single-tile site.
   std::unordered_map<uint32_t,const Building*> hotels;
+  std::unordered_set<uint32_t> uniqueKinds;
+  std::unordered_set<uint32_t> monumentKinds;
   std::unordered_set<int64_t> hotelPositions;
   std::unordered_set<uint32_t> hotelFootprints;
   for (const Building& building : snapshot.buildings) {
@@ -163,7 +168,15 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
     if (!building.hotelBeds && !building.hotelOpen) return fail("hotel policy requires a hotel");
     if (building.hotelBeds && (building.type != BuildingType::Commercial ||
         building.hotelBeds > 1000)) return fail("invalid hotel specialization");
-    if (building.hotelBeds) {
+    if (building.uniqueKind && (!uniques::spec(building.uniqueKind) ||
+        building.type != BuildingType::Office || building.capacity || building.occupancy ||
+        building.hotelBeds || building.monumentKind || !uniqueKinds.insert(building.uniqueKind).second))
+      return fail("invalid or duplicate unique building");
+    if(building.monumentKind && (!monuments::spec(building.monumentKind) ||
+        building.type!=BuildingType::Office || building.capacity || building.occupancy ||
+        building.hotelBeds || building.uniqueKind || !monumentKinds.insert(building.monumentKind).second))
+      return fail("invalid or duplicate monument");
+    if (building.hotelBeds || building.isCivic()) {
       if (!hotels.emplace(building.id,&building).second ||
           !hotelPositions.insert(tileKey(building.position.x,building.position.y)).second)
         return fail("duplicate hotel entity or footprint");
@@ -175,7 +188,7 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
       return fail("building neighborhood rates are invalid");
     }
     if (!buildingIds.insert(static_cast<uint32_t>(building.id)).second &&
-        (building.hotelBeds || hotels.count(building.id)))
+        (building.hotelBeds || building.isCivic() || hotels.count(building.id)))
       return fail("duplicate hotel entity ID");
   }
 
@@ -273,6 +286,8 @@ json buildingToJson(const Building& building) {
     result["hotelBeds"] = building.hotelBeds;
     result["hotelOpen"] = building.hotelOpen;
   }
+  if (building.uniqueKind) result["uniqueKind"] = building.uniqueKind;
+  if (building.monumentKind) result["monumentKind"] = building.monumentKind;
   return result;
 }
 
@@ -283,6 +298,18 @@ Building buildingFromJson(const json& j) {
   building.position = coordFromJson(j.at("position"));
   building.capacity = j.at("capacity").get<int>();
   building.occupancy = j.at("occupancy").get<int>();
+  if(j.contains("monumentKind")) {
+    const auto& value=j.at("monumentKind");
+    if(!value.is_number_integer() || value.get<int64_t>()<1 || value.get<uint64_t>()>monuments::count)
+      throw std::runtime_error("invalid monument kind");
+    building.monumentKind=value.get<uint32_t>();
+  }
+  if (j.contains("uniqueKind")) {
+    const auto& value = j.at("uniqueKind");
+    if (!value.is_number_integer() || value.get<int64_t>() < 1 || value.get<uint64_t>() > uniques::count)
+      throw std::runtime_error("invalid unique building kind");
+    building.uniqueKind = value.get<uint32_t>();
+  }
   if (j.contains("hotelBeds")) {
     const auto& beds = j.at("hotelBeds");
     if (!beds.is_number_integer() || beds.get<int64_t>() < 0 || beds.get<int64_t>() > 1000)

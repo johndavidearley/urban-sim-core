@@ -124,6 +124,12 @@ void drawUiTooltip(
 );
 
 void drawOnboarding(DrawList* renderer, int windowHeight, int step, const PopulationMilestones* milestones = nullptr);
+Rect uniqueCatalogRow(int index, int width, int height);
+void drawUniqueCatalog(DrawList* renderer, int width, int height,
+  const uniques::Progress& progress, const EntityStore& store, uint32_t selected);
+Rect monumentCatalogRow(int index,int width,int height);
+void drawMonumentCatalog(DrawList* renderer,int width,int height,const EntityStore& store,
+  const RoadNetwork& roads,uint32_t selected);
 
 Rect districtPanelRect();
 Rect districtPanelButtonRect(DistrictPanelAction action);

@@ -58,6 +58,7 @@ PlayableCityTickState captureTickState(LiveSimulationState& liveState) {
   tickState.treasuryLedger = liveState.treasuryLedger;
   tickState.history = liveState.history;
   tickState.milestones = liveState.milestones;
+  tickState.uniqueProgress = liveState.uniqueProgress;
   tickState.alerts = liveState.alerts;
   tickState.regionalConnections = liveState.regionalConnections;
   tickState.regionalSettlement = liveState.regionalSettlement;
@@ -105,6 +106,7 @@ void restoreTickState(LiveSimulationState& liveState, PlayableCityTickState& tic
   liveState.treasuryLedger = tickState.treasuryLedger;
   liveState.history = tickState.history;
   liveState.milestones = tickState.milestones;
+  liveState.uniqueProgress = tickState.uniqueProgress;
   liveState.alerts = tickState.alerts;
   liveState.regionalConnections = tickState.regionalConnections;
   liveState.regionalSettlement = tickState.regionalSettlement;

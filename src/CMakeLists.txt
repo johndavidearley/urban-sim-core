@@ -41,6 +41,8 @@ add_library(urban_sim_core
   gameplay/PortTool.cpp
   gameplay/TerminalTool.cpp
   gameplay/HotelTool.cpp
+  gameplay/UniqueBuildings.cpp
+  gameplay/Monuments.cpp
   gameplay/DistrictTool.cpp
   gameplay/TreasurySystem.cpp
   world/CityMap.cpp
@@ -90,6 +92,12 @@ target_link_libraries(UrbanSimCore-cli PRIVATE urban_sim_core)
 add_executable(UrbanSimCore-regional-benchmark EXCLUDE_FROM_ALL ../tools/RegionalBenchmark.cpp)
 target_link_libraries(UrbanSimCore-regional-benchmark PRIVATE urban_sim_core)
 target_compile_definitions(UrbanSimCore-regional-benchmark PRIVATE URBAN_SIM_PROFILE_CONFIG=\"$<CONFIG>\")
+
+# Opt-in audit of retained native journey segments with current playable rules.
+add_executable(UrbanSimCore-export-journey-audit EXCLUDE_FROM_ALL ../tools/ExportJourneyAudit.cpp)
+target_link_libraries(UrbanSimCore-export-journey-audit PRIVATE urban_sim_core)
+add_executable(UrbanSimCore-unique-journey-audit EXCLUDE_FROM_ALL ../tools/UniqueJourneyAudit.cpp)
+target_link_libraries(UrbanSimCore-unique-journey-audit PRIVATE urban_sim_core)
 
 # CPU-side visualizer geometry remains usable without a window or graphics SDK.
 add_library(urban_sim_visualizer_drawing STATIC

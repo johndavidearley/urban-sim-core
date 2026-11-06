@@ -1,3 +1,4 @@
+#include "src/gameplay/Monuments.hpp"
 #include "src/gameplay/CatalogUnlocks.hpp"
 #include <algorithm>
 #include <array>
@@ -788,6 +789,62 @@ void drawUiTooltip(
   drawText(renderer, x + 8, y + 9, fitUiText(message,width-16,1), {220, 232, 248}, 1);
 }
 
+Rect monumentCatalogRow(int index,int width,int height) {
+  const int panelWidth=std::min(740,width-32);
+  return {(width-panelWidth)/2+12,(height-552)/2+96+index*98,panelWidth-24,92};
+}
+void drawMonumentCatalog(DrawList* renderer,int width,int height,const EntityStore& store,
+    const RoadNetwork& roads,uint32_t selected) {
+  const auto row=monumentCatalogRow(0,width,height);
+  const int x=row.x-12,y=row.y-96;
+  drawFilledRect(renderer,x,y,row.w+24,552,{20,29,38},250);
+  drawRectOutline(renderer,x,y,row.w+24,552,{140,190,210});
+  drawText(renderer,x+18,y+16,"MONUMENTS",{160,220,255},2);
+  drawText(renderer,x+18,y+50,"UP/DOWN OR CLICK: SELECT   ENTER: PLACE   M/ESC: CLOSE",{200,220,230},1);
+  drawText(renderer,x+18,y+70,"BUILD THE REQUIRED UNIQUES FIRST; ONE OF EACH MONUMENT",{180,200,215},1);
+  for(size_t i=0;i<monuments::count;++i) {
+    const auto& item=monuments::catalog[i];const auto r=monumentCatalogRow(static_cast<int>(i),width,height);
+    const bool exists=monuments::built(store,item.id);
+    const std::string status=exists ? (monuments::active(store,roads,item.id) ? "BUILT / ACTIVE" : "BUILT / NO ROAD") :
+      monuments::eligible(store,item.id) ? "AVAILABLE" : "LOCKED";
+    drawFilledRect(renderer,r.x,r.y,r.w,r.h,item.id==selected ? RGB{45,65,78} : RGB{27,39,50});
+    drawText(renderer,r.x+8,r.y+5,std::string(item.name)+" - "+status,{200,230,250},1);
+    drawText(renderer,r.x+8,r.y+26,"NEEDS "+monuments::requirements(store,item.id),{180,210,225},1);
+    drawText(renderer,r.x+8,r.y+47,"$"+std::to_string(item.cost)+" + $"+std::to_string(item.upkeep)+"/TICK",{245,220,160},1);
+    drawText(renderer,r.x+8,r.y+68,item.effect,{185,225,205},1);
+  }
+  drawText(renderer,x+18,y+516,"ROAD ACCESS KEEPS EFFECTS ACTIVE; UPKEEP CONTINUES",{185,205,215},1);
+}
+
+Rect uniqueCatalogRow(int index, int width, int height) {
+  const int panelWidth = std::min(740, width - 32);
+  return {(width - panelWidth) / 2 + 12, (height - 552) / 2 + 92 + index * 68, panelWidth - 24, 64};
+}
+void drawUniqueCatalog(DrawList* renderer, int width, int height,
+    const uniques::Progress& progress, const EntityStore& store, uint32_t selected) {
+  const auto row = uniqueCatalogRow(0, width, height);
+  const int x = row.x - 12, y = row.y - 92;
+  drawFilledRect(renderer, x, y, row.w + 24, 552, {20,29,38}, 250);
+  drawRectOutline(renderer, x, y, row.w + 24, 552, {140,190,210});
+  drawText(renderer, x + 18, y + 16, "UNIQUE BUILDINGS", {245,220,150}, 2);
+  drawText(renderer, x + 18, y + 50, "UP/DOWN OR CLICK: SELECT   ENTER: PLACE   E/ESC: CLOSE", {200,220,230}, 1);
+  drawText(renderer, x + 18, y + 70, "ONE OF EACH; ROAD, POWER AND WATER REQUIRED", {180,200,215}, 1);
+  for (size_t i = 0; i < uniques::count; ++i) {
+    const auto r = uniqueCatalogRow(static_cast<int>(i), width, height);
+    const auto& item = uniques::catalog[i];
+    const bool exists = uniques::built(store, item.id);
+    const std::string status = exists ? "BUILT" : progress.unlocked(item.id) ? "AVAILABLE" : "LOCKED";
+    drawFilledRect(renderer, r.x, r.y, r.w, r.h, item.id == selected ? RGB{45,65,78} : RGB{27,39,50});
+    drawText(renderer, r.x + 8, r.y + 5, std::string(item.name) + " - " + status, {235,230,200}, 1);
+    drawText(renderer, r.x + 8, r.y + 24, std::string(item.requirement) + " " +
+      std::to_string(progress.values[i]) + "/" + std::to_string(item.threshold), {175,215,230}, 1);
+    drawText(renderer, r.x + 8, r.y + 43, "$" + std::to_string(item.cost) + " + $" +
+      std::to_string(item.upkeep) + "/TICK; LAND VALUE +" + std::to_string(static_cast<int>(item.landValue)) +
+      " WITHIN " + std::to_string(item.radius) + " TILES", {195,210,220}, 1);
+  }
+  drawText(renderer, x + 18, y + 518, "BENEFITS TAPER WITH DISTANCE; STRONGEST NEARBY EFFECT APPLIES", {185,205,215}, 1);
+}
+
 void drawOnboarding(DrawList* renderer, int windowHeight, int step, const PopulationMilestones* milestones) {
   if (step == 6 && milestones) {
     const int x = 14, y = windowHeight - 154;
@@ -1008,7 +1065,9 @@ void drawTileInspector(
     const Building* building = store.getBuilding(tile.buildingId);
     if (building != nullptr) {
       drawText(renderer, x + 10, y + 95,
-               std::string("BLDG ") + buildingTypeLabel(building->type) + " "
+               building->monumentKind ? monuments::spec(building->monumentKind)->name :
+               building->uniqueKind ? uniques::spec(building->uniqueKind)->name :
+                 std::string("BLDG ") + buildingTypeLabel(building->type) + " "
                  + std::to_string(building->occupancy) + "/" + std::to_string(building->capacity),
                {210, 225, 210}, 1);
       if (building->hotelBeds) {
@@ -1016,6 +1075,11 @@ void drawTileInspector(
           std::string("HOTEL ")+(building->hotelOpen ? "OPEN" : "CLOSED")+
           " BEDS "+std::to_string(building->hotelBeds)+" / U MANAGES",{150,225,235},1);
       }
+      if (const auto* item = uniques::spec(building->uniqueKind))
+        drawText(renderer,x+10,y+111,"UPKEEP $" + std::to_string(item->upkeep) +
+          "/TICK; LOCAL VALUE +" + std::to_string(static_cast<int>(item->landValue)),{245,220,150},1);
+      if(const auto* item=monuments::spec(building->monumentKind))
+        drawText(renderer,x+10,y+111,"UPKEEP $"+std::to_string(item->upkeep)+"/TICK / M CATALOG",{160,220,250},1);
       if (building->type == BuildingType::Residential) {
         drawText(
             renderer, x + 10, y + 111,

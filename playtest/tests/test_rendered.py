@@ -78,6 +78,153 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("load")
         self.assertEqual(s.last_state["budget"]["last_tick"], measured)
 
+    async def test_unique_achievement_catalog_native_placement_and_persistence(self):
+        s = self.session
+        await s.city("new", 32)
+        funds = s.last_state["funds"]
+        request = {"action": "apply", "name": "unique", "unique": "treasury_hall", "x1": 8, "y1": 15}
+        with self.assertRaisesRegex(PlaytestError, "LOCKED"):
+            await s.request("tool", request)
+        self.assertEqual(s.last_state["funds"], funds)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 4, "y1": 16, "x2": 24, "y2": 16})
+        for service, x in (("power", 18), ("water", 20)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
+        # Legacy migration derives peak funds, without granting throughput history.
+        await s.city("save")
+        fixture = json.loads(s.artifact("urban_sim_session.json").read_text())
+        fixture.pop("uniqueProgress", None)
+        fixture["funds"] = 1000000
+        fixture["citySnapshot"] = str(s.artifact("urban_sim_session.json.city.json"))
+        path = s.artifact("legacy-unique-fixture.json")
+        path.write_text(json.dumps(fixture))
+        await s.city("load", import_path=str(path))
+        catalog = s.last_state["budget"]["unique_buildings"]
+        self.assertTrue(catalog[0]["unlocked"])
+        self.assertTrue(all(not item["unlocked"] for item in catalog[1:]))
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        controls = (await s.request("inspect", {"section": "ui"}))["controls"]
+        button = next(c for c in controls if c["name"] == "uniques")
+        connections = next(c for c in controls if c["name"] == "connections")
+        self.assertLessEqual(button["x"] + button["width"], connections["x"])
+        x, y = button["x"] + 5, button["y"] + 5
+        await s.request("input", {"events": [
+            {"type": "down", "button": "left", "x": x, "y": y},
+            {"type": "up", "button": "left", "x": x, "y": y},
+        ]})
+        controls = (await s.request("inspect", {"section": "ui"}))["controls"]
+        self.assertEqual(sum(c["name"].startswith("unique_") for c in controls), 6)
+        await s.screenshot("m52-unique-catalog-minimum")
+        await s.request("input", {"events": [{"type": "key", "key": "E"}, {"type": "key", "key": "E"}]})
+        await s.request("input", {"events": [{"type": "key", "key": "Enter"}]})
+        self.assertTrue(s.last_state["tools"]["unique"])
+        p = await s.request("coordinates", {"direction": "tile_to_screen", "x": 8, "y": 15})
+        before = s.last_state["funds"]
+        await s.request("input", {"events": [
+            {"type": "move", "x": p["x"], "y": p["y"]},
+            {"type": "down", "button": "left", "x": p["x"], "y": p["y"]},
+            {"type": "up", "button": "left", "x": p["x"], "y": p["y"]},
+        ]})
+        self.assertEqual(s.last_state["funds"], before - catalog[0]["cost"])
+        self.assertTrue(s.last_state["budget"]["unique_buildings"][0]["built"])
+        await s.screenshot("m52-unique-native-placement")
+        with self.assertRaisesRegex(PlaytestError, "already built"):
+            await s.request("tool", {**request, "x1": 9})
+        await s.request("time", {"action": "step", "ticks": 1})
+        progress = [item["progress"] for item in s.last_state["budget"]["unique_buildings"]]
+        await s.city("save")
+        saved = json.loads(s.artifact("urban_sim_session.json").read_text())
+        await s.request("time", {"action": "step", "ticks": 6})
+        future = {key: s.last_state[key] for key in ("funds", "population", "metrics", "budget")}
+        await s.city("load")
+        self.assertEqual([item["progress"] for item in s.last_state["budget"]["unique_buildings"]], progress)
+        await s.city("save")
+        self.assertEqual(json.loads(s.artifact("urban_sim_session.json").read_text()), saved)
+        await s.request("time", {"action": "step", "ticks": 6})
+        self.assertEqual({key: s.last_state[key] for key in future}, future)
+
+    async def test_monument_prerequisites_native_catalog_effects_and_checkpoint(self):
+        s = self.session
+        await s.city("new", 32)
+        request = {"action": "apply", "name": "monument", "monument": "medical_citadel", "x1": 10, "y1": 15}
+        funds = s.last_state["funds"]
+        with self.assertRaisesRegex(PlaytestError, "REQUIRES BUILT"):
+            await s.request("tool", request)
+        self.assertEqual(s.last_state["funds"], funds)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 4, "y1": 16, "x2": 26, "y2": 16})
+        for service, x in (("power", 18), ("water", 20)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
+        for zone, y in (("residential", 15), ("industrial", 17)):
+            await s.request("tool", {"action": "apply", "name": "zone", "zone": zone, "x1": 14, "y1": y, "x2": 16, "y2": y})
+        await s.request("time", {"action": "step", "ticks": 20})
+        await s.city("save")
+        fixture = json.loads(s.artifact("urban_sim_session.json").read_text())
+        fixture["funds"] = 40000000
+        fixture["uniqueProgress"] = [500000, 50000, 1000000, 10000, 2500, 5000]
+        fixture["citySnapshot"] = str(s.artifact("urban_sim_session.json.city.json"))
+        path = s.artifact("monument-fixture.json")
+        path.write_text(json.dumps(fixture))
+        await s.city("load", import_path=str(path))
+        with self.assertRaisesRegex(PlaytestError, "REQUIRES BUILT"):
+            await s.request("tool", request)  # Earned achievements alone never qualify.
+
+        async def site():
+            rows = (await s.request("inspect", {"section": "tiles", "x": 7, "y": 15, "width": 19, "height": 3}))["items"]
+            facilities = (await s.request("inspect", {"section": "facilities", "limit": 512}))["items"]
+            occupied = {(f["x"], f["y"]) for f in facilities}
+            return next(t for t in rows if not t["zone"] and not t["road"] and not t["building_id"] and
+                        t["power"] and t["water"] and (t["x"], t["y"]) not in occupied)
+
+        for item in s.last_state["budget"]["unique_buildings"]:
+            p = await site()
+            await s.request("tool", {"action": "apply", "name": "unique", "unique": item["key"], "x1": p["x"], "y1": p["y"]})
+        self.assertTrue(all(item["unlocked"] for item in s.last_state["budget"]["monuments"]))
+        await s.request("window", {"action": "resize", "width": 800, "height": 640})
+        controls = (await s.request("inspect", {"section": "ui"}))["controls"]
+        button = next(c for c in controls if c["name"] == "monuments")
+        unique = next(c for c in controls if c["name"] == "uniques")
+        self.assertLessEqual(button["x"] + button["width"], unique["x"])
+        x, y = button["x"] + 5, button["y"] + 5
+        await s.request("input", {"events": [{"type": "down", "button": "left", "x": x, "y": y},
+                                                {"type": "up", "button": "left", "x": x, "y": y}]})
+        controls = (await s.request("inspect", {"section": "ui"}))["controls"]
+        self.assertEqual(sum(c["name"].startswith("monument_") for c in controls), 4)
+        await s.screenshot("m53-monument-catalog-minimum")
+        await s.request("input", {"events": [{"type": "key", "key": "M"}, {"type": "key", "key": "M"}, {"type": "key", "key": "Enter"}]})
+        self.assertTrue(s.last_state["tools"]["monument"])
+        p = await site()
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 40, "view_x": max(0, p["x"]-7), "view_y": p["y"]-6})
+        point = await s.request("coordinates", {"direction": "tile_to_screen", "x": p["x"], "y": p["y"]})
+        cash = s.last_state["funds"]
+        await s.request("input", {"events": [{"type": "move", **point},
+            {"type": "down", "button": "left", **point}, {"type": "up", "button": "left", **point}]})
+        self.assertEqual(cash-s.last_state["funds"], 6000000)
+        self.assertEqual(s.last_state["metrics"]["health_coverage"], 1)
+        self.assertEqual(s.last_state["metrics"]["hospital_capacity_factor"], 1)
+        with self.assertRaisesRegex(PlaytestError, "already built"):
+            await s.request("tool", request)
+        for item in s.last_state["budget"]["monuments"][1:]:
+            p = await site()
+            await s.request("tool", {"action": "apply", "name": "monument", "monument": item["key"], "x1": p["x"], "y1": p["y"]})
+        self.assertTrue(all(item["active"] for item in s.last_state["budget"]["monuments"]))
+        self.assertEqual(s.last_state["metrics"]["effective_education_coverage"], 1)
+        self.assertGreaterEqual(s.last_state["metrics"]["power_supply_mw"], 2000)
+        await s.request("time", {"action": "step", "ticks": 1})
+        await s.city("save")
+        saved = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        for _ in range(3):
+            await s.request("budget", {"action": "inspect"})
+        await s.city("save")
+        self.assertEqual(json.loads(s.artifact("urban_sim_session.json.city.json").read_text()), core)
+        await s.request("time", {"action": "step", "ticks": 6})
+        future = {key: s.last_state[key] for key in ("funds", "population", "metrics", "budget")}
+        await s.city("load")
+        await s.city("save")
+        self.assertEqual(json.loads(s.artifact("urban_sim_session.json").read_text()), saved)
+        await s.request("time", {"action": "step", "ticks": 6})
+        self.assertEqual({key: s.last_state[key] for key in future}, future)
+
     async def test_population_milestone_locks_legacy_airport_and_permanent_unlocks(self):
         s = self.session
         await s.city("new", 32)

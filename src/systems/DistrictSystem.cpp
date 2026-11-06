@@ -402,6 +402,7 @@ DistrictMetrics DistrictSystem::evaluateDistrictMetrics(
 
     districtStore.upsertBuilding(building);
     metrics.buildings++;
+    if (building.isCivic()) continue; // Keep its upkeep, without reporting an office.
     switch (building.type) {
       case BuildingType::Residential:
         metrics.residentialBuildings++;

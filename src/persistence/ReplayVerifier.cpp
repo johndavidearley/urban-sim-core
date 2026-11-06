@@ -135,6 +135,8 @@ uint64_t ReplayVerifier::calculateChecksum(
     hashValue(hash, building.occupancy);
     hashValue(hash, building.crimeRate);
     hashValue(hash, building.illnessRate);
+    if (building.uniqueKind) hashValue(hash, building.uniqueKind);
+    if (building.monumentKind) hashValue(hash, building.monumentKind);
   }
 
   std::vector<PopulationGroup> groups = snapshot.populationGroups;

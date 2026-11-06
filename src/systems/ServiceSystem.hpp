@@ -93,6 +93,7 @@ struct DepartmentCapacitySummary {
 };
 
 struct ServiceCoverageSummary {
+  bool citywideHealth = false, citywideEducation = false;
   bool boundedDepartments = false;
   // Fire, Police, Sanitation, in that order.
   std::array<DepartmentCapacitySummary, 3> departments{};
@@ -151,6 +152,7 @@ static_assert(kServiceTypeCount <= 16, "ServiceCoverageMask needs more bits");
 // The result cache avoids re-evaluating building coverage when neither the
 // entity store nor the topology-dependent distance fields have changed.
 struct ServiceCoverageCache {
+  bool citywideHealth = false, citywideEducation = false;
   struct Entry {
     ServiceType type = ServiceType::Fire;
     std::unordered_map<Coord, int, Vec2Hash> distanceField;
@@ -210,6 +212,13 @@ struct ServiceCoverageCache {
 
 class ServiceSystem {
 public:
+  static ServiceCoverageMask coverageMaskAt(const ServiceCoverageCache& cache,Coord anchor) {
+    const auto found=cache.coverageMask.find(anchor);
+    ServiceCoverageMask bits=found==cache.coverageMask.end() ? 0 : found->second;
+    if(cache.citywideHealth) bits|=static_cast<ServiceCoverageMask>(1u<<static_cast<unsigned>(ServiceType::Health));
+    if(cache.citywideEducation) bits|=static_cast<ServiceCoverageMask>(1u<<static_cast<unsigned>(ServiceType::Education));
+    return bits;
+  }
   static int departmentIndex(ServiceType type) {
     return type == ServiceType::Fire ? 0 : type == ServiceType::Police ? 1 :
       type == ServiceType::Sanitation ? 2 : -1;

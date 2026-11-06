@@ -26,7 +26,7 @@ NeighborhoodSummary NeighborhoodSystem::evaluate(
   // Without health/sewage facilities retain the legacy city pollution input.
   // Once local services exist, pollution and coverage distinguish
   // neighborhoods.
-  const bool localHealth = std::any_of(
+  const bool localHealth = cache.citywideHealth || std::any_of(
       cache.entries.begin(), cache.entries.end(), [](const auto &entry) {
         return entry.type == ServiceType::Health ||
                entry.type == ServiceType::Sanitation;
@@ -42,6 +42,7 @@ NeighborhoodSummary NeighborhoodSystem::evaluate(
     Coord anchor;
     const bool anchored = roads.resolveRoadAnchor(building.position, anchor);
     const auto localCoverage = [&](ServiceType type) {
+      if(type==ServiceType::Health && cache.citywideHealth) return 1.f;
       return anchored ? ServiceSystem::coverageStrength(cache, type, anchor) *
         ServiceSystem::departmentFactorAt(cache, type, building.position) : 0.0f;
     };
@@ -49,7 +50,7 @@ NeighborhoodSummary NeighborhoodSystem::evaluate(
         CrimeSystem::evaluate(unemployment, localCoverage(ServiceType::Police),
                               averageLandValue, crimeParams)
             .overallRate;
-    const float hospital = cache.hospitalBeds > 0.f ? localCoverage(ServiceType::Health) : 0.f;
+    const float hospital = (cache.citywideHealth || cache.hospitalBeds > 0.f) ? localCoverage(ServiceType::Health) : 0.f;
     const float sewage = localCoverage(ServiceType::Sanitation);
     const float pollution = localHealth ? map.pollution(building.position) : averagePollution;
     if (cache.hospitalBeds > 0.f) patients.push_back({&building, HealthSystem::unmitigatedRate(housingDensity, pollution, sewage, healthParams),
@@ -65,7 +66,7 @@ NeighborhoodSummary NeighborhoodSystem::evaluate(
   const auto demand = [&](double illness) {
     return illness > 0.0 ? std::max(1.0, population * illness * ServiceSystem::kPatientShare) : 0.0;
   };
-  if (cache.hospitalBeds <= 0.f || cache.hospitalBeds >= demand(fullCare.illnessRate))
+  if (cache.citywideHealth || cache.hospitalBeds <= 0.f || cache.hospitalBeds >= demand(fullCare.illnessRate))
     return fullCare;
   // Solve s = min(1, beds / max(1, population * illness(s))). The
   // sufficient-capacity fast path above preserves the M20 float operations.

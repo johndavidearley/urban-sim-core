@@ -32,6 +32,8 @@ add_executable(test_core
   AirportTests.cpp
   TourismSystemTests.cpp
   HotelToolTests.cpp
+  UniqueBuildingTests.cpp
+  MonumentTests.cpp
   TourismIntegrationTests.cpp
   TourismTravelTests.cpp
   FireSystemTests.cpp

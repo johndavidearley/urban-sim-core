@@ -1,4 +1,5 @@
 #include "src/persistence/GameplaySessionSystem.hpp"
+#include "src/gameplay/Monuments.hpp"
 #include "src/persistence/CityHistoryJson.hpp"
 #include "src/persistence/TransitReportJson.hpp"
 #include "src/persistence/RegionalConnectionsJson.hpp"
@@ -54,11 +55,24 @@ bool fail(std::string* errorMessage, const std::string& message) {
   return false;
 }
 
+void validateUniqueProgress(const uniques::Progress& progress, const CitySnapshot& snapshot) {
+  for (size_t i = 0; i < uniques::count; ++i)
+    if (progress.values[i] > uniques::catalog[i].threshold)
+      throw std::runtime_error("invalid unique building progress");
+  for (const auto& building : snapshot.buildings) {
+    if (building.uniqueKind && !progress.unlocked(building.uniqueKind))
+      throw std::runtime_error("built unique building has not been unlocked");
+    if(const auto* item=monuments::spec(building.monumentKind))
+      for(auto required:item->prerequisites) if(!progress.unlocked(required))
+        throw std::runtime_error("monument prerequisite achievement has not been earned");
+  }
+}
+
 bool validateHotelCivicSites(const CitySnapshot& snapshot,
     const std::vector<Coord>& civicSites, std::string* error) {
   std::set<std::pair<int,int>> positions;
   for (const auto& building : snapshot.buildings)
-    if (building.hotelBeds) positions.emplace(building.position.x,building.position.y);
+    if (building.hotelBeds || building.isCivic()) positions.emplace(building.position.x,building.position.y);
   for (auto site : civicSites)
     if (positions.count({site.x,site.y}))
       return fail(error,"hotel overlaps a civic facility");
@@ -241,8 +255,15 @@ bool GameplaySessionSystem::save(
     parseRegionalConnections(regionalConnectionsJson(session.regionalConnections),map);
     parseRegionalSettlement(regionalSettlementJson(session.regionalSettlement),session.tick);
     std::vector<Coord> civicSites;
-    for (const auto& facility:session.facilities) civicSites.push_back(facility.position);
+    for (const auto& facility:session.facilities)
+      for (int dy=0;dy<facilityFootprintSpan(facility);++dy)
+        for (int dx=0;dx<facilityFootprintSpan(facility);++dx)
+          civicSites.push_back({facility.position.x+dx,facility.position.y+dy});
     const auto snapshot = SaveLoadSystem::captureSnapshot(map,roads,store,population);
+    auto progress = session.uniqueProgress;
+    progress.observeCurrent(session.funds, population.getTotalPopulation(),
+      static_cast<uint32_t>(population.getTotalPopulation() * std::clamp(session.laggedEducationCoverage, 0.f, 1.f)));
+    validateUniqueProgress(progress, snapshot);
     parseTourism(tourismJson(session.tourism,session.tick),session.tick,snapshot,&session.transitReport);
     validateTourismAccounting(session.tourism,session.treasuryLedger);
     if (!validateHotelCivicSites(snapshot,civicSites,errorMessage) ||
@@ -315,6 +336,9 @@ bool GameplaySessionSystem::save(
       {"remainingAfter", ledger.bond.remainingAfter}};
   auto milestones = session.milestones;
   milestones.observe(population.getTotalPopulation());
+  auto progress = session.uniqueProgress;
+  progress.observeCurrent(session.funds, population.getTotalPopulation(),
+    static_cast<uint32_t>(population.getTotalPopulation() * std::clamp(session.laggedEducationCoverage, 0.f, 1.f)));
   json root = {{"version", kGameplaySessionVersion},
                {"budgetTaxPercent", session.budgetPolicy.taxPercent},
                {"budgetServicePercent", session.budgetPolicy.servicePercent},
@@ -328,6 +352,7 @@ bool GameplaySessionSystem::save(
                {"funds", session.funds},
                {"tick", session.tick},
                {"populationMilestone", milestones.highestReached},
+               {"uniqueProgress", progress.values},
                {"paused", session.paused},
                {"tickIntervalMs", session.tickIntervalMs},
                {"treasuryRevenue", session.treasuryRevenue},
@@ -452,6 +477,17 @@ bool GameplaySessionSystem::load(
         return fail(errorMessage, "gameplay session has inconsistent disasters");
     }
     loaded.funds = root.at("funds").get<int64_t>();
+    if (root.contains("uniqueProgress")) {
+      const auto& values = root.at("uniqueProgress");
+      if (!values.is_array() || values.size() != uniques::count)
+        return fail(errorMessage, "invalid unique progress array");
+      for (size_t i = 0; i < uniques::count; ++i) {
+        if (!values[i].is_number_integer() || values[i].get<int64_t>() < 0 ||
+            values[i].get<uint64_t>() > uniques::catalog[i].threshold)
+          return fail(errorMessage, "invalid unique progress value");
+        loaded.uniqueProgress.values[i] = values[i].get<uint64_t>();
+      }
+    }
     if (root.contains("populationMilestone")) {
       const auto& value = root.at("populationMilestone");
       if (!value.is_number_integer() || value.get<int64_t>() < 0 ||
@@ -764,9 +800,17 @@ bool GameplaySessionSystem::load(
     if (root.contains("tourism")) loaded.tourism=parseTourism(root.at("tourism"),loaded.tick,snapshot,&loaded.transitReport);
     validateTourismAccounting(loaded.tourism,loaded.treasuryLedger);
     std::vector<Coord> civicSites;
-    for (const auto& facility:loaded.facilities) civicSites.push_back(facility.position);
+    for (const auto& facility:loaded.facilities)
+      for (int dy=0;dy<facilityFootprintSpan(facility);++dy)
+        for (int dx=0;dx<facilityFootprintSpan(facility);++dx)
+          civicSites.push_back({facility.position.x+dx,facility.position.y+dy});
     if (!validateHotelCivicSites(snapshot,civicSites,errorMessage) ||
         !validateRegionalReservations(snapshot,loaded.regionalConnections,civicSites,errorMessage)) return false;
+    uint32_t residentsForUniques = 0;
+    for (const auto& group : snapshot.populationGroups) residentsForUniques += group.size;
+    loaded.uniqueProgress.observeCurrent(loaded.funds, residentsForUniques,
+      static_cast<uint32_t>(residentsForUniques * std::clamp(loaded.laggedEducationCoverage, 0.f, 1.f)));
+    validateUniqueProgress(loaded.uniqueProgress, snapshot);
     if (!SaveLoadSystem::applySnapshot(snapshot,map,roads,store,population,errorMessage)) return false;
     loaded.milestones.observe(population.getTotalPopulation());
     rebuildRegionalReservations(map,loaded.regionalConnections);
@@ -787,6 +831,7 @@ PlayableCityTickState GameplaySessionSystem::advance(
   state.treasuryLedger = session.treasuryLedger;
   state.history = session.history;
   state.milestones = session.milestones;
+  state.uniqueProgress = session.uniqueProgress;
   state.alerts = session.alerts;
   state.regionalConnections = session.regionalConnections;
   state.regionalSettlement = session.regionalSettlement;
@@ -850,6 +895,7 @@ PlayableCityTickState GameplaySessionSystem::advance(
   session.treasuryLedger = state.treasuryLedger;
   session.history = state.history;
   session.milestones = state.milestones;
+  session.uniqueProgress = state.uniqueProgress;
   session.alerts = state.alerts;
   session.regionalConnections = state.regionalConnections;
   session.regionalSettlement = state.regionalSettlement;

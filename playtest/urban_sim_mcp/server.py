@@ -43,7 +43,7 @@ KEYS = [
     "F8",
     "F9",
     *[f"Num{i}" for i in range(1, 10)],
-    *list("ABCDFGHJKLNOPRSTUVZ"),
+    *list("ABCDEFGHJKLMNOPRSTUVZ"),
 ]
 
 
@@ -301,7 +301,7 @@ def create_server(session: Session) -> FastMCP:
     async def tool(
         action: Literal["select", "apply", "district_policy", "district_delete"],
         name: (
-            Literal["road", "zone", "bulldoze", "service", "district", "port", "airport", "hotel", "none"] | None
+            Literal["road", "zone", "bulldoze", "service", "district", "port", "airport", "hotel", "unique", "monument", "none"] | None
         ) = None,
         x1: Coordinate = 0,
         y1: Coordinate = 0,
@@ -310,6 +310,8 @@ def create_server(session: Session) -> FastMCP:
         zone: str | None = None,
         service: str | None = None,
         power_source: str | None = None,
+        unique: str | None = None,
+        monument: str | None = None,
         surface_water: bool | None = None,
         sewage_treatment: bool | None = None,
         archetype: str | None = None,
@@ -320,7 +322,7 @@ def create_server(session: Session) -> FastMCP:
         port_action: Literal["cargo", "passenger", "remove", "toggle", "capacity", "airport"] | None = None,
         capacity: Annotated[int, Field(ge=0, le=200)] | None = None,
     ) -> dict[str, Any]:
-        """Use gameplay tools with normal plans, costs and validation. Player placements require their permanent population milestone; locked actions return the required resident threshold. budget inspect reports catalog_milestones, construction_prices and current/next progression. Endpoints are tile coordinates; services use x1/y1; surface_water selects shoreline intake/raw outlet variants. sewage_treatment=true with shoreline sanitation builds clean treatment ($600000, $34/tick), replacing raw outlets in place. power_source on service power selects generic, coal, gas, nuclear, solar, wind, hydro, or substation (0 MW, $150000, $4/tick; extends power reach only). Road class local/arterial supports build or upgrade. Policies support archetype, budget cap, and height_cap (0 uncapped, or 1, 2, 4, 8, 16, 32, 64). Hotel uses x1/y1 on empty unzoned land with road/power/water; $1500000, 32 beds, 12 commercial jobs; building enables tourism; visitors require reachable parks. Terminal tools use x1/y1; name airport defaults to 4x2 airport placement, while port_action selects cargo/passenger/airport/remove/toggle/capacity. Capacity sets 0..200 goods, 0..60 sea passengers or 0..120 air passengers; omission cycles presets."""
+        """Use gameplay tools with normal plans, costs and validation. Player placements require their permanent population milestone; locked actions return the required resident threshold. budget inspect reports catalog_milestones, construction_prices and current/next progression. Endpoints are tile coordinates; services use x1/y1; surface_water selects shoreline intake/raw outlet variants. sewage_treatment=true with shoreline sanitation builds clean treatment ($600000, $34/tick), replacing raw outlets in place. power_source on service power selects generic, coal, gas, nuclear, solar, wind, hydro, or substation (0 MW, $150000, $4/tick; extends power reach only). Road class local/arterial supports build or upgrade. Policies support archetype, budget cap, and height_cap (0 uncapped, or 1, 2, 4, 8, 16, 32, 64). Monument uses name=monument and monument=catalog key; budget monuments lists built-unique prerequisites, effects, costs and upkeep; budget action=monuments opens M catalog. Unique uses name=unique and unique=catalog key with x1/y1; budget unique_buildings reports permanent achievement progress, costs, upkeep and local land-value effects; budget action=uniques opens the E catalog. Hotel uses x1/y1 on empty unzoned land with road/power/water; $1500000, 32 beds, 12 commercial jobs; building enables tourism; visitors require reachable parks. Terminal tools use x1/y1; name airport defaults to 4x2 airport placement, while port_action selects cargo/passenger/airport/remove/toggle/capacity. Capacity sets 0..200 goods, 0..60 sea passengers or 0..120 air passengers; omission cycles presets."""
         return await session.request(
             "tool",
             compact(
@@ -333,6 +335,8 @@ def create_server(session: Session) -> FastMCP:
                 zone=zone,
                 service=service,
                 power_source=power_source,
+                unique=unique,
+                monument=monument,
                 surface_water=surface_water,
                 sewage_treatment=sewage_treatment,
                 archetype=archetype,
@@ -347,7 +351,7 @@ def create_server(session: Session) -> FastMCP:
 
     @server.tool(annotations=local)
     async def budget(
-        action: Literal["inspect", "set_taxes", "set_funding", "reset_funding", "reset", "open", "close", "services", "taxes", "trends", "alerts", "view_alert", "transport", "set_route_vehicles", "set_tourism", "set_hotel", "bonds", "issue_bond", "pay_off_bond"] = "inspect",
+        action: Literal["inspect", "set_taxes", "set_funding", "reset_funding", "reset", "open", "close", "services", "taxes", "trends", "alerts", "view_alert", "transport", "set_route_vehicles", "set_tourism", "set_hotel", "bonds", "issue_bond", "pay_off_bond", "uniques", "monuments"] = "inspect",
         alert_index: Annotated[int, Field(ge=0, le=4)] | None = None,
         route_id: Annotated[int, Field(ge=0, le=4294967295)] | None = None,
         vehicles: Annotated[int, Field(ge=0, le=20)] | None = None,
@@ -580,6 +584,8 @@ def create_server(session: Session) -> FastMCP:
                     "shore_water": "V toggles inland/shore mode while Water or Sanitation is selected; natural new maps default to shore",
                     "district": "P",
                     "airport": "J or Airport button builds a 4x2 passenger airport; V manages terminals",
+                    "monument": "M opens monument requirements, effects and costs; arrows select, Enter places; B removes",
+                    "unique": "E opens achievement progress and costs; arrows select, Enter places a unique building; B removes it",
                     "hotel": "K or Hotel button places a $1500000 hotel with 32 beds and 12 commercial jobs; B removes it",
                     "connections": "U or Connections button; terminal/hotel tabs, operation and map location; Tab/Enter controls, arrows select, Space pauses, N steps",
                     "ports": "V cycles cargo/passenger/remove/on-off/capacity; click a site; Escape cancels",

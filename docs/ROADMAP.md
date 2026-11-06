@@ -25,7 +25,7 @@ Last updated: October 19, 2026
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
 - Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
 - Phase 13 (M45–M48): complete; hosted CI verified on 6ac65ef.
-- Phase 14 (M49–M54): M49–M50 complete locally; M51 implemented, journey acceptance pending.
+- Phase 14 (M49–M54): M49–M53 complete locally; next is M54, journey v2 and balance.
 
 ---
 
@@ -1151,9 +1151,9 @@ district fixture separately). The retained journey recovers all occupants; its
 half-station continuation has 15.0% less growth over 2,000 ticks. Default CSV
 remains byte-identical to M46. See [DEPARTMENT_CAPACITY.md](DEPARTMENT_CAPACITY.md).
 
-### Milestone 51: Export prices that fall with volume
+### Milestone 51: Export prices that fall with volume — complete locally
 
-Implemented locally November 3, 2026; retained journey acceptance pending.
+Implemented locally November 3, 2026; journey acceptance passed November 5.
 See [EXPORT_PRICES.md](EXPORT_PRICES.md) for the rule and verification limits.
 
 - [x] The export price per unit falls once exports pass a threshold the early
@@ -1165,13 +1165,20 @@ See [EXPORT_PRICES.md](EXPORT_PRICES.md) for the rule and verification limits.
 half of today's $1,814, and is unchanged below 2,000 residents.
 **Excluded:** named trading partners, commodity types and price shocks.
 
-### Milestone 52: Unique buildings
+The rebuilt Phase 13 native journey matches its recorded population and tick.
+Auditing 160 retained segments with current playable rules preserves flat-price
+income on all 5,001 ticks starting or ending below 2,000 residents (at most
+1,152 exported goods). All 214 ticks at or above 10,000 residents earn $800 in
+exports. Strict AppleClang, 653 CTest cases, seven Python tests and the rendered
+M51 regression passed. M54 retains the new journey and integrated balance.
 
-- [ ] Unique buildings unlock from achievements the game already measures:
+### Milestone 52: Unique buildings — complete locally
+
+- [x] Unique buildings unlock from achievements the game already measures:
       funds held, bus riders, goods exported, visitors, residents educated and
       population. Each can be built once. Each has upkeep and a local effect
       on land value, happiness or tourism.
-- [ ] Each costs about 300–600 ticks of surplus for a city that has just
+- [x] Each costs about 300–600 ticks of surplus for a city that has just
       earned it. The HUD lists each one's requirement and progress.
 
 **Acceptance:** The journey city earns at least two unique buildings by
@@ -1179,19 +1186,38 @@ half of today's $1,814, and is unchanged below 2,000 residents.
 Unlocks and built uniques round-trip through saves.
 **Excluded:** player-placed decoration and custom assets.
 
-### Milestone 53: Monuments
+November 5: six achievement buildings, E catalog, shared native/MCP placement,
+local land-value benefits, upkeep and persistent progress/sites are implemented.
+Five are earned by 10,000 residents in current-rule continuations of historical
+construction checkpoints; a normal-funded visitor branch earns the sixth.
+Prices cost 400–478 reference surplus ticks. Two native journey placements
+raise nearby land value by 13.24 and 35.00, with exact six-tick GUI/CLI
+continuation. Strict AppleClang, 660 CTest cases, seven Python tests and the M52
+rendered regression passed. All 44 rendered cases passed; the final catalog
+pointer check passed separately. See [UNIQUE_BUILDINGS.md](UNIQUE_BUILDINGS.md).
+M54 retains the revised construction schedule and integrated balance.
 
-- [ ] A monument needs a set of built unique buildings. Each one has a
+### Milestone 53: Monuments — complete locally
+
+- [x] A monument needs a set of built unique buildings. Each one has a
       citywide effect: health coverage everywhere, education coverage
       everywhere, a large zero-emission power plant, or pollution cleanup and
       land value.
-- [ ] A monument costs at least 2,000 ticks of surplus at 10,000 residents,
+- [x] A monument costs at least 2,000 ticks of surplus at 10,000 residents,
       and has upkeep.
 
 **Acceptance:** A city with the required uniques can build a monument, and its
 citywide effect is visible in coverage or pollution. A city without them
 cannot. A save with a monument continues identically.
 **Excluded:** space elevators and other effects that exist only for show.
+
+November 6: four monuments, M catalog, shared native/MCP purchase rules,
+citywide effects and persistent sites are implemented. Prices cost 3,243–3,784
+reference surplus ticks. A normal-funded native Medical Citadel raises health
+coverage from 79.05% to 100% and lowers illness from 57.53% to 14.65%; six-tick
+GUI/CLI continuation agrees exactly. Strict AppleClang, 668 CTest cases, seven
+Python tests and all 45 rendered cases passed. See
+[MONUMENTS.md](MONUMENTS.md). M54 retains the revised journey and balance pass.
 
 ### Milestone 54: Journey v2 and balance pass
 
@@ -1237,7 +1263,7 @@ budget.
 | 11 | M37 | complete: surface water and early waterworks |
 | 12 | M38–M44 | complete; hosted CI verified on fd554fd |
 | 13 | M45–M48 | complete; hosted CI verified on 6ac65ef |
-| 14 | M49–M54 | M49–M50 complete locally; M51 journey acceptance pending |
+| 14 | M49–M54 | M49–M53 complete locally; next is M54 |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

@@ -21,6 +21,7 @@ bool EntityStore::eraseId(std::vector<EntityId>& ids, EntityId id) {
 }
 
 void EntityStore::indexInsert(const Building& building) {
+  if (building.isCivic()) return; // Civic sites are not zoned housing/jobs.
   const int slot = buildingTypeSlot(building.type);
   if (slot < 0) {
     return;
@@ -35,6 +36,7 @@ void EntityStore::indexInsert(const Building& building) {
 }
 
 void EntityStore::indexErase(const Building& building) {
+  if (building.isCivic()) return;
   const int slot = buildingTypeSlot(building.type);
   if (slot < 0) {
     return;

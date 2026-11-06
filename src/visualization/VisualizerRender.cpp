@@ -192,7 +192,7 @@ void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
       const int lift = size >= 18 ? 3 : 1;
       const int width = std::max(3, size - margin * 2);
       const int height = std::max(3, size - margin * 2 - lift);
-      const RGB facade = buildingFacade(building->type);
+      const RGB facade = building->monumentKind ? RGB{90,150,175} : building->uniqueKind ? RGB{155,118,65} : buildingFacade(building->type);
       drawFilledRect(renderer, x + margin + 2, y + margin + lift + 2, width, height, {48, 51, 54}, 110);
       drawFilledRect(renderer, x + margin, y + margin + lift, width, height, facade);
       drawFilledRect(renderer, x + margin, y + margin, width, lift + 2, {
@@ -217,6 +217,14 @@ void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
       if (building->hotelBeds && size >= 24) {
         drawFilledRect(renderer,x+size/2-5,y+size/2-5,11,11,{32,64,90});
         drawText(renderer,x+size/2-3,y+size/2-3,"H",{245,230,170},1);
+      }
+      if (building->monumentKind && size >= 20) {
+        drawFilledRect(renderer,x+size/2-6,y+size/2-5,14,11,{25,55,75});
+        drawText(renderer,x+size/2-5,y+size/2-3,"M"+std::to_string(building->monumentKind),{190,235,255},1);
+      }
+      if (building->uniqueKind && size >= 20) {
+        drawFilledRect(renderer,x+size/2-5,y+size/2-5,11,11,{55,43,25});
+        drawText(renderer,x+size/2-3,y+size/2-3,std::to_string(building->uniqueKind),{255,224,145},1);
       }
       if (size >= 16) {
         const RGB window{205, 229, 225};
@@ -591,7 +599,7 @@ void drawIsometricTile(
       const int typeFloors = building->type == BuildingType::Office
         ? 2 : (building->type == BuildingType::Commercial ? 1 : 0);
       const int objectHeight = std::max(10, height + (typeFloors + tier + 1) * height / 2);
-      RGB facade = buildingFacade(building->type);
+      RGB facade = building->monumentKind ? RGB{90,150,175} : building->uniqueKind ? RGB{155,118,65} : buildingFacade(building->type);
       const int tone = static_cast<int>(visualHash(coord) % 19u) - 9;
       facade.r = static_cast<uint8_t>(std::clamp(facade.r + tone, 0, 255));
       facade.g = static_cast<uint8_t>(std::clamp(facade.g + tone, 0, 255));
@@ -652,7 +660,15 @@ void drawIsometricTile(
         drawFilledRect(renderer,center.x-5,roofY-5,11,11,{32,64,90});
         drawText(renderer,center.x-3,roofY-3,"H",{245,230,170},1);
       }
-      if (occupancy < 0.15f) {
+      if (building->monumentKind && width >= 20) {
+        drawFilledRect(renderer,center.x-6,roofY-5,14,11,{25,55,75});
+        drawText(renderer,center.x-5,roofY-3,"M"+std::to_string(building->monumentKind),{190,235,255},1);
+      }
+      if (building->uniqueKind && width >= 20) {
+        drawFilledRect(renderer,center.x-5,roofY-5,11,11,{55,43,25});
+        drawText(renderer,center.x-3,roofY-3,std::to_string(building->uniqueKind),{255,224,145},1);
+      }
+      if (occupancy < 0.15f && !building->isCivic()) {
         setDrawColor(renderer, 232, 172, 65, 230);
         drawLine(renderer, center.x - width / 3, baseY - 2,
                           center.x - width / 3, baseY - height);

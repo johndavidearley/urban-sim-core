@@ -51,6 +51,16 @@ UtilityPlan planUtilityService(
       loads.push_back({id, it->second, utilityDemandFor(*building)});
     }
   }
+  // Deliberate civic sites have no occupants and are absent from job indices,
+  // but still need a utility assignment for their local benefit to operate.
+  for (const auto& entry : store.getBuildings()) {
+    const auto& building = entry.second;
+    if (!building.isCivic()) continue;
+    Coord anchor;
+    if (!roads.resolveRoadAnchor(building.position, anchor)) continue;
+    const auto found = nearest.find(anchor);
+    if (found != nearest.end()) loads.push_back({building.id, found->second, 0.f});
+  }
   std::sort(loads.begin(), loads.end(), [](const Candidate& a, const Candidate& b) {
     if (a.distance != b.distance) return a.distance > b.distance;
     return a.id > b.id;

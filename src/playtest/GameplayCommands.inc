@@ -13,6 +13,7 @@ if (command == "stop") {
 }
 if (command == "budget") {
   const auto action = args.value("action", "inspect");
+  if (action!="inspect" && action!="uniques" && action!="monuments") showUniquePanel=false;
   if (action=="set_hotel") {
     if (!args.at("hotel_id").is_number_integer() || !args.at("hotel_open").is_boolean())
       throw std::runtime_error("Hotel ID must be integer and hotel_open boolean");
@@ -22,7 +23,8 @@ if (command == "budget") {
   } else if (action=="set_tourism") {
     if (!args.at("tourism_enabled").is_boolean()) throw std::runtime_error("Tourism policy must be boolean");
     setTourism(args.at("tourism_enabled").get<bool>());
-  } else if (action=="transport") {showRegionalPanel=false;showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;}
+  } else if (action=="uniques" || action=="monuments") {monumentCatalog=action=="monuments";showUniquePanel=true;showRegionalPanel=showTransportPanel=showBudgetPanel=false;toolDragging=cameraPanning=false;}
+  else if (action=="transport") {showUniquePanel=false;showRegionalPanel=false;showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;}
   else if (action=="set_route_vehicles") {
     if (!args.at("route_id").is_number_integer() || !args.at("vehicles").is_number_integer())
       throw std::runtime_error("Route ID and vehicles must be integers");
@@ -85,7 +87,7 @@ if (command == "budget") {
     showBudgetPanel = true; toolDragging = false; cameraPanning = false;
   } else if (action == "reset") setBudgetPolicy(BudgetPolicy{});
   else if (action == "open") { showRegionalPanel=false;showTransportPanel=false; showBudgetPanel = true; toolDragging = false; cameraPanning = false; }
-  else if (action == "close") {showBudgetPanel=false;showRegionalPanel=false;showTransportPanel=false;}
+  else if (action == "close") {showUniquePanel=false;showBudgetPanel=false;showRegionalPanel=false;showTransportPanel=false;}
   else if (action != "inspect") throw std::runtime_error("Unknown budget action");
   return budgetStatus();
 }
@@ -108,6 +110,13 @@ if (command == "inspect") {
                                         "cancel"}[static_cast<size_t>(i - 1)],
              quitButtonRect(static_cast<QuitAction>(i), windowWidth,
                             windowHeight));
+    else if (showUniquePanel) {
+      if(monumentCatalog) {
+        for(size_t i=0;i<monuments::count;++i)
+          rect(std::string("monument_")+monuments::catalog[i].key,monumentCatalogRow(static_cast<int>(i),windowWidth,windowHeight));
+      } else for (size_t i=0;i<uniques::count;++i)
+          rect(std::string("unique_")+uniques::catalog[i].key,uniqueCatalogRow(static_cast<int>(i),windowWidth,windowHeight));
+    }
     else if (showRegionalPanel) {
       const char* names[]={"regional_close","regional_prev","regional_next","regional_operation","regional_capacity","regional_tourism","regional_tab","regional_locate","regional_alert_next","regional_alert_manage"};
       const size_t count=regionalHotelTab ? managedHotels(store,liveState.tourism.state).size() :
@@ -150,7 +159,7 @@ if (command == "inspect") {
                                           "speed_3", "save",
                                           "load", "disasters", "budget", "alerts", "transport"}[static_cast<size_t>(i - 1)],
                hudControlRect(static_cast<HudAction>(i), windowWidth));
-      if (!cleanUiMode) {rect("connections",regionalButtonRect());rect("ports",portButtonRect());rect("airport",airportButtonRect());rect("hotel",hotelButtonRect());rect("tourism",tourismButtonRect());}
+      if (!cleanUiMode) {rect("monuments",monumentButtonRect());rect("uniques",uniqueButtonRect());rect("connections",regionalButtonRect());rect("ports",portButtonRect());rect("airport",airportButtonRect());rect("hotel",hotelButtonRect());rect("tourism",tourismButtonRect());}
       for (int i = 0; i < 5; ++i)
         rect(std::array<std::string, 5>{"road", "zone", "bulldoze", "service",
                                         "district"}[static_cast<size_t>(i)],
@@ -271,6 +280,8 @@ if (command == "inspect") {
                        {"y", b.position.y},
                        {"capacity", b.capacity},
                        {"hotel_beds", b.hotelBeds},
+                       {"unique_kind", b.uniqueKind},
+                       {"monument_kind", b.monumentKind},
                        {"hotel_open", b.hotelOpen},
                        {"occupancy", b.occupancy},
                        {"crime_rate", b.crimeRate},
@@ -541,7 +552,7 @@ if (command == "tool") {
     type = PaletteTool::Service;
   else if (name == "district")
     type = PaletteTool::District;
-  else if (name == "port" || name == "airport" || name == "hotel")
+  else if (name == "port" || name == "airport" || name == "hotel" || name == "unique" || name=="monument")
     type = PaletteTool::Port;
   else if (name == "none")
     type = PaletteTool::None;
@@ -549,7 +560,25 @@ if (command == "tool") {
     throw std::runtime_error("Unknown tool");
   int selectedPortAction=portAction;
   int portCapacity=-1;
-  if (name=="hotel") {
+  uint32_t requestedUnique=selectedUnique;
+  uint32_t requestedMonument=selectedMonument;
+  if(args.contains("monument") && name!="monument") throw std::runtime_error("Monument kind requires the monument tool");
+  if (name=="monument") {
+    const auto* item=monuments::spec(args.at("monument").get<std::string>());
+    if(!item) throw std::runtime_error("Unknown monument");
+    if(args.contains("port_action") || args.contains("capacity") || args.contains("unique"))
+      throw std::runtime_error("Monument placement does not accept other catalog options");
+    requestedMonument=item->id;selectedPortAction=8;
+  } else if (name=="unique") {
+    const auto* item=uniques::spec(args.at("unique").get<std::string>());
+    if (!item) throw std::runtime_error("Unknown unique building");
+    if (args.contains("port_action") || args.contains("capacity"))
+      throw std::runtime_error("Unique placement does not accept terminal options");
+    requestedUnique=item->id;
+    selectedPortAction=7;
+  } else if (args.contains("unique")) {
+    throw std::runtime_error("Unique kind requires the unique tool");
+  } else if (name=="hotel") {
     if (args.contains("port_action") || args.contains("capacity"))
       throw std::runtime_error("Hotel placement does not accept terminal options");
     selectedPortAction=6;
@@ -610,6 +639,9 @@ if (command == "tool") {
     throw std::runtime_error("Treatment requires shoreline Sanitation");
   activatePaletteTool(type);
   portAction=selectedPortAction;
+  selectedUnique=requestedUnique;
+  selectedMonument=requestedMonument;
+  showUniquePanel=false;
   selectedRoadClass = roadClass;
   selectedZone = zone;
   selectedService = service;

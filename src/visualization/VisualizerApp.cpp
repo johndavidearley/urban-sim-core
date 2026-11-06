@@ -29,6 +29,7 @@
 #include "src/gameplay/RoadTool.hpp"
 #include "src/gameplay/PortTool.hpp"
 #include "src/gameplay/HotelTool.hpp"
+#include "src/gameplay/Monuments.hpp"
 #include "src/gameplay/ServiceTool.hpp"
 #include "src/gameplay/ZoneTool.hpp"
 #include "src/networks/RoadNetwork.hpp"
@@ -121,6 +122,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       liveState.treasuryLedger = session.treasuryLedger;
       liveState.history = session.history;
       liveState.milestones = session.milestones;
+      liveState.uniqueProgress = session.uniqueProgress;
       liveState.alerts = session.alerts;
       liveState.transitReport = session.transitReport;
       liveState.regionalConnections = session.regionalConnections;
@@ -186,6 +188,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   bool showBudgetPanel = false;
   bool showTransportPanel = false;
   bool showRegionalPanel = false;
+  bool showUniquePanel = false;
+  uint32_t selectedUnique = 1;
+  bool monumentCatalog=false;
+  uint32_t selectedMonument=1;
   size_t selectedRegionalTerminal = 0;
   size_t selectedRegionalHotel = 0;
   size_t selectedRegionalAlert = 0;
@@ -214,7 +220,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   bool districtToolActive = false;
   bool portToolActive = false;
   int portAction = 0; // Cargo, passenger, remove, enable/disable, capacity.
-  const std::array<const char*,7> portActions{{"CARGO","PASSENGER","REMOVE","ON/OFF","CAPACITY","AIRPORT","HOTEL"}};
+  const std::array<const char*,9> portActions{{"CARGO","PASSENGER","REMOVE","ON/OFF","CAPACITY","AIRPORT","HOTEL","UNIQUE","MONUMENT"}};
+  auto monumentButtonRect=[&]() {return visualizer::Rect{windowWidth-366,windowHeight-268,112,32};};
+  auto overMonumentButton=[&](int x,int y) {return pointInRect(x,y,monumentButtonRect());};
+  auto uniqueButtonRect=[&]() {return visualizer::Rect{windowWidth-246,windowHeight-268,112,32};};
+  auto overUniqueButton=[&](int x,int y) {return pointInRect(x,y,uniqueButtonRect());};
   auto portButtonRect=[&]() {return visualizer::Rect{windowWidth-126,windowHeight-108,112,32};};
   auto overPortButton=[&](int x,int y) {
     const auto r=portButtonRect();return x>=r.x && y>=r.y && x<r.x+r.w && y<r.y+r.h;
@@ -285,6 +295,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   DistrictId selectedDistrictId = 0;
   constexpr int64_t kStarvedDistrictBudgetCap = 1;
   int64_t funds = initialFunds;
+  liveState.uniqueProgress.observeCurrent(funds,population.getTotalPopulation(),
+    static_cast<uint32_t>(population.getTotalPopulation()*std::clamp(liveState.laggedEducationCoverage,0.f,1.f)));
   liveState.lowFunds = funds > 0 && funds < 5000;
   liveState.bankrupt = funds == 0 && liveState.treasuryDebt > 0;
   uint32_t lastHudRefreshMs = 0;
@@ -373,6 +385,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     if (bridge)
       ++bridge->revision;
     const auto previousMilestone = liveState.milestones.highestReached;
+    const auto previousUniqueProgress = liveState.uniqueProgress;
     const bool wasLow = liveState.lowFunds;
     const bool wasBankrupt = liveState.bankrupt;
     const bool wasInDebt = liveState.treasuryDebt > 0;
@@ -382,6 +395,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     if (liveState.milestones.highestReached > previousMilestone) {
       showOnboarding = true;
       notify("POPULATION MILESTONE " + std::to_string(liveState.milestones.highestReached) + " RESIDENTS", true);
+    } else if (std::any_of(uniques::catalog.begin(),uniques::catalog.end(),[&](const auto& item) {
+        return !previousUniqueProgress.unlocked(item.id) && liveState.uniqueProgress.unlocked(item.id); })) {
+      notify("UNIQUE BUILDING UNLOCKED - E TO VIEW",true);
     } else if (liveState.treasuryDebt > 0 && !wasInDebt) {
       notify("CITY TOOK ON DEBT $" + std::to_string(liveState.treasuryDebt),
              false);
@@ -407,6 +423,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     session.treasuryLedger = liveState.treasuryLedger;
     session.history = liveState.history;
     session.milestones = liveState.milestones;
+    session.uniqueProgress = liveState.uniqueProgress;
     session.alerts = liveState.alerts;
     session.transitReport = liveState.transitReport;
     session.regionalConnections = liveState.regionalConnections;
@@ -465,6 +482,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.treasuryLedger = session.treasuryLedger;
     liveState.history = session.history;
     liveState.milestones = session.milestones;
+    liveState.uniqueProgress = session.uniqueProgress;
     liveState.alerts = session.alerts;
     liveState.transitReport = session.transitReport;
     liveState.regionalConnections = session.regionalConnections;
@@ -506,7 +524,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.transitCache = TransitCoverageCache{};
     liveState.transitSummary = TransitSummary{};
     pinnedInspector={-1,-1};inspectedTrendTick=0;budgetFocus=transportFocus=-1;selectedTransitRoute=0;
-    selectedRegionalTerminal=selectedRegionalHotel=selectedRegionalAlert=0;regionalHotelTab=false;regionalFocus=0;showRegionalPanel=false;
+    showUniquePanel=false;monumentCatalog=false;selectedMonument=1;selectedUnique=1;selectedRegionalTerminal=selectedRegionalHotel=selectedRegionalAlert=0;regionalHotelTab=false;regionalFocus=0;showRegionalPanel=false;
     liveState.serviceCache = ServiceCoverageCache{};
     facilities = std::move(session.facilities);
     applySessionDistricts(districts, session);
@@ -600,7 +618,21 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   auto applyPort=[&](Coord tile,int capacity=-1) {
     if (!map.isValid(tile)) {notify("TERMINAL OUTSIDE MAP",false);return;}
     std::string error, message;
-    if (portAction==6) {
+    if (portAction==8) {
+      const auto plan=MonumentTool::plan(map,roads,store,facilities,selectedMonument,tile,funds);
+      if(!plan.valid) {notify(plan.error,false);return;}
+      if(!MonumentTool::build(map,roads,store,facilities,plan,funds)) {notify("MONUMENT SITE CHANGED",false);return;}
+      message=std::string(monuments::spec(selectedMonument)->name)+" BUILT $"+std::to_string(plan.cost);
+    } else if (portAction==7) {
+      liveState.uniqueProgress.observeCurrent(funds, population.getTotalPopulation(),
+        static_cast<uint32_t>(population.getTotalPopulation() * std::clamp(liveState.laggedEducationCoverage, 0.f, 1.f)));
+      const auto plan=UniqueBuildingTool::plan(map,roads,store,facilities,liveState.uniqueProgress,selectedUnique,tile,funds);
+      if (!plan.valid) {notify(plan.error,false);return;}
+      if (!UniqueBuildingTool::build(map,roads,store,facilities,liveState.uniqueProgress,plan,funds)) {
+        notify("UNIQUE SITE CHANGED",false);return;
+      }
+      message=std::string(uniques::spec(selectedUnique)->name)+" BUILT $"+std::to_string(plan.cost);
+    } else if (portAction==6) {
       const auto* existing=store.getBuilding(map.getTile(tile).buildingId);
       if (existing && existing->hotelBeds) {
         setHotelOpen(existing->id,!existing->hotelOpen);
@@ -876,6 +908,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     return view;
   };
   auto afterBondCash = [&]() {
+    liveState.uniqueProgress.observeCurrent(funds,population.getTotalPopulation(),
+      static_cast<uint32_t>(population.getTotalPopulation()*std::clamp(liveState.laggedEducationCoverage,0.f,1.f)));
     liveState.lowFunds = funds > 0 && funds < 5000;
     liveState.bankrupt = funds == 0 && liveState.treasuryDebt > 0;
     sessionDirty = true;
@@ -931,7 +965,21 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       {"incinerator", catalog::incineratorCost}, {"hotel", HotelTool::kConstructionCost},
       {"cargo_port", catalog::cargoPortCost}, {"passenger_terminal", catalog::passengerTerminalCost},
       {"nuclear", catalog::nuclearCost}, {"airport", catalog::airportCost}};
-    return {{"department_capacity", departmentStatus()}, {"construction_prices", constructionPrices}, {"catalog_milestones", milestoneCatalog}, {"tax_percent", liveState.budgetPolicy.taxPercent},
+    Json uniqueCatalog=Json::array();
+    for (const auto& item:uniques::catalog) uniqueCatalog.push_back({
+      {"id",item.id},{"key",item.key},{"name",item.name},{"requirement",item.requirement},
+      {"progress",liveState.uniqueProgress.values[item.id-1]},{"threshold",item.threshold},
+      {"unlocked",liveState.uniqueProgress.unlocked(item.id)},{"built",uniques::built(store,item.id)},
+      {"cost",item.cost},{"upkeep",item.upkeep},{"radius",item.radius},{"land_value_bonus",item.landValue}});
+    Json monumentItems=Json::array();
+    for(const auto& item:monuments::catalog) {
+      Json requirements=Json::array();
+      for(auto required:item.prerequisites) requirements.push_back({{"key",uniques::spec(required)->key},{"built",uniques::built(store,required)}});
+      monumentItems.push_back({{"id",item.id},{"key",item.key},{"name",item.name},{"requirements",requirements},
+        {"unlocked",monuments::eligible(store,item.id)},{"built",monuments::built(store,item.id)},
+        {"active",monuments::active(store,roads,item.id)},{"cost",item.cost},{"upkeep",item.upkeep},{"effect",item.effect}});
+    }
+    return {{"monuments",monumentItems},{"unique_buildings",uniqueCatalog},{"department_capacity", departmentStatus()}, {"construction_prices", constructionPrices}, {"catalog_milestones", milestoneCatalog}, {"tax_percent", liveState.budgetPolicy.taxPercent},
       {"transit_cost",TransitSystem::operatingCost(liveState.transitRoutes)},
       {"transit_report",transitReportJson(liveState.transitReport)},
       {"history", cityHistoryJson(liveState.history)},
@@ -1073,6 +1121,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"district", districtToolActive},
            {"port",portToolActive && portAction!=6},{"port_action",portAction},
            {"hotel",portToolActive && portAction==6},
+           {"unique",portToolActive && portAction==7},{"unique_kind",selectedUnique},
+           {"monument",portToolActive && portAction==8},{"monument_kind",selectedMonument},
            {"dragging", toolDragging},
            {"zone_type", static_cast<int>(selectedZone)},
            {"service_type", static_cast<int>(selectedService)},
@@ -1285,6 +1335,37 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
             break;
           }
         }
+        continue;
+      }
+      if (event.type==EventType::KeyDown && (event.key.sym==Key::E || event.key.sym==Key::M)) {
+        const bool requestedMonuments=event.key.sym==Key::M;
+        showUniquePanel=!(showUniquePanel && monumentCatalog==requestedMonuments);
+        monumentCatalog=requestedMonuments;
+        showBudgetPanel=showTransportPanel=showRegionalPanel=false;
+        toolDragging=cameraPanning=false;
+        continue;
+      }
+      if (showUniquePanel) {
+        const size_t entryCount=monumentCatalog ? monuments::count : uniques::count;
+        auto& selectedEntry=monumentCatalog ? selectedMonument : selectedUnique;
+        if (event.type==EventType::Quit) showQuitDialog=true;
+        if (event.type==EventType::KeyDown) {
+          if (event.key.sym==Key::Escape) showUniquePanel=false;
+          if (event.key.sym==Key::Down || event.key.sym==Key::Tab) selectedEntry=static_cast<uint32_t>(selectedEntry%entryCount+1);
+          if (event.key.sym==Key::Up) selectedEntry=static_cast<uint32_t>((selectedEntry+entryCount-2)%entryCount+1);
+          if (event.key.sym==Key::Enter) {
+            activatePaletteTool(PaletteTool::Port);portAction=monumentCatalog ? 8 : 7;showUniquePanel=false;
+            notify(std::string(monumentCatalog ? monuments::spec(selectedMonument)->name : uniques::spec(selectedUnique)->name)+
+              " - CLICK AN EMPTY SERVICED SITE",true);
+          }
+          if (event.key.sym==Key::F5) saveSession();
+          if (event.key.sym==Key::Space) {liveState.paused=!liveState.paused;sessionDirty=true;}
+          if (liveState.paused && (event.key.sym==Key::N || event.key.sym==Key::Period)) executeSimulationTick();
+        }
+        if (event.type==EventType::MouseDown && event.button.button==MouseButton::Left)
+          for (size_t i=0;i<entryCount;++i)
+            if (pointInRect(event.button.x,event.button.y,monumentCatalog ? monumentCatalogRow(static_cast<int>(i),windowWidth,windowHeight) :
+                uniqueCatalogRow(static_cast<int>(i),windowWidth,windowHeight))) selectedEntry=static_cast<uint32_t>(i+1);
         continue;
       }
       const auto regionalButton=regionalButtonRect();
@@ -1921,6 +2002,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         activatePaletteTool(paletteHitTest(event.button.x, event.button.y,
                                            windowWidth, windowHeight));
       } else if (event.type == EventType::MouseDown && !cleanUiMode &&
+                 event.button.button==MouseButton::Left && overMonumentButton(event.button.x,event.button.y)) {
+        showUniquePanel=true;monumentCatalog=true;toolDragging=cameraPanning=false;
+      } else if (event.type == EventType::MouseDown && !cleanUiMode &&
+                 event.button.button==MouseButton::Left && overUniqueButton(event.button.x,event.button.y)) {
+        showUniquePanel=true;monumentCatalog=false;toolDragging=cameraPanning=false;
+      } else if (event.type == EventType::MouseDown && !cleanUiMode &&
                  event.button.button == MouseButton::Left && overPortButton(event.button.x,event.button.y)) {
         selectPortAction();
       } else if (event.type == EventType::MouseDown && !cleanUiMode &&
@@ -2085,6 +2172,15 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     std::unordered_set<Coord, Vec2Hash> burningCoords;
     for (const auto& tile : liveState.disasters.burningTiles) burningCoords.insert(tile.position);
     HotelPlan hoveredHotelPlan;
+    liveState.uniqueProgress.observeCurrent(funds, population.getTotalPopulation(),
+      static_cast<uint32_t>(population.getTotalPopulation() * std::clamp(liveState.laggedEducationCoverage, 0.f, 1.f)));
+    UniqueBuildingPlan hoveredUniquePlan;
+    MonumentPlan hoveredMonumentPlan;
+    if(portToolActive && portAction==8)
+      hoveredMonumentPlan=MonumentTool::plan(map,roads,store,facilities,selectedMonument,tileAtScreen(mouseX,mouseY),funds);
+    if (portToolActive && portAction==7)
+      hoveredUniquePlan=UniqueBuildingTool::plan(map,roads,store,facilities,liveState.uniqueProgress,
+        selectedUnique,tileAtScreen(mouseX,mouseY),funds);
     if (portToolActive && portAction==6 && !showBudgetPanel && !showTransportPanel)
       hoveredHotelPlan=HotelTool::plan(map,roads,facilities,tileAtScreen(mouseX,mouseY),funds);
     PortPlan hoveredPortPlan;
@@ -2226,7 +2322,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     const Coord hoveredTile = map.isValid(pinnedInspector) ? pinnedInspector : tileAtScreen(mouseX, mouseY);
     const bool inspectMap = !showRegionalPanel && !showTransportPanel && !showBudgetPanel &&
       (map.isValid(pinnedInspector) || (!mouseOverHud && !mouseOverLegend && !mouseOverPalette && !mouseOverDistrictPanel && !mouseOverGuide &&
-        (cleanUiMode || (!overPortButton(mouseX,mouseY) && !overAirportButton(mouseX,mouseY) && !overHotelButton(mouseX,mouseY) && !overTourismButton(mouseX,mouseY))) && !overPortBanner(mouseX,mouseY))) && map.isValid(hoveredTile);
+        (cleanUiMode || (!overMonumentButton(mouseX,mouseY) && !overUniqueButton(mouseX,mouseY) && !overPortButton(mouseX,mouseY) && !overAirportButton(mouseX,mouseY) && !overHotelButton(mouseX,mouseY) && !overTourismButton(mouseX,mouseY))) && !overPortBanner(mouseX,mouseY))) && map.isValid(hoveredTile);
     if (inspectMap && !portToolActive) {
       if (isometricMode) {
         const IsometricProjection projection = isometricProjection();
@@ -2304,12 +2400,16 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
 
     if (portToolActive && !showBudgetPanel && !showTransportPanel &&
-        (cleanUiMode || (!overPortButton(mouseX,mouseY) && !overAirportButton(mouseX,mouseY) && !overHotelButton(mouseX,mouseY) && !overTourismButton(mouseX,mouseY))) && !overPortBanner(mouseX,mouseY)) {
+        (cleanUiMode || (!overMonumentButton(mouseX,mouseY) && !overUniqueButton(mouseX,mouseY) && !overPortButton(mouseX,mouseY) && !overAirportButton(mouseX,mouseY) && !overHotelButton(mouseX,mouseY) && !overTourismButton(mouseX,mouseY))) && !overPortBanner(mouseX,mouseY)) {
       const Coord hover=tileAtScreen(mouseX,mouseY);
       if (map.isValid(hover)) {
         std::vector<Coord> tiles;
         bool valid=false;
-        if (portAction==6) {
+        if (portAction==8) {
+          tiles.push_back(hover);valid=hoveredMonumentPlan.valid;
+        } else if (portAction==7) {
+          tiles.push_back(hover);valid=hoveredUniquePlan.valid;
+        } else if (portAction==6) {
           tiles.push_back(hover);valid=hoveredHotelPlan.valid;
           const auto* hotel=store.getBuilding(map.getTile(hover).buildingId);
           if (hotel && hotel->hotelBeds) valid=true;
@@ -2356,7 +2456,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
 
     std::string activeToolLabel = "NONE";
-    if (portToolActive) activeToolLabel=portAction==6 ? "HOTEL" : std::string("TERMINAL ")+portActions[portAction];
+    if (portToolActive) activeToolLabel=portAction==8 ? monuments::spec(selectedMonument)->name :
+      portAction==7 ? uniques::spec(selectedUnique)->name :
+      portAction==6 ? "HOTEL" : std::string("TERMINAL ")+portActions[portAction];
     else if (roadToolActive) {
       activeToolLabel =
           selectedRoadClass == RoadClass::Arterial ? "ARTERIAL" : "LOCAL ROAD";
@@ -2388,6 +2490,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                     zoneToolActive, bulldozeToolActive, serviceToolActive,
                     districtToolActive, mouseX, mouseY);
     if (!cleanUiMode && !showRegionalPanel && !showBudgetPanel && !showTransportPanel) {
+      const auto uniqueButton=uniqueButtonRect();
+      const auto monumentButton=monumentButtonRect();
+      drawFilledRect(renderer,monumentButton.x,monumentButton.y,monumentButton.w,monumentButton.h,{35,55,75});
+      drawText(renderer,monumentButton.x+4,monumentButton.y+8,"M MONUMENTS",{170,220,255},1);
+      drawFilledRect(renderer,uniqueButton.x,uniqueButton.y,uniqueButton.w,uniqueButton.h,{44,56,70});
+      drawText(renderer,uniqueButton.x+6,uniqueButton.y+8,"E UNIQUES",{245,220,160},1);
       const auto management=regionalButtonRect();
       const bool bottleneck=!regional::diagnose(liveState.regionalSettlement,liveState.tourism).empty();
       drawFilledRect(renderer,management.x,management.y,management.w,management.h,bottleneck ? RGB{105,66,25} : RGB{28,43,53});
@@ -2408,7 +2516,25 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       drawFilledRect(renderer,t.x,t.y,t.w,t.h,liveState.tourism.enabled ? RGB{40,100,110} : RGB{28,43,53});
       drawRectOutline(renderer,t.x,t.y,t.w,t.h,{135,170,190});
       drawText(renderer,t.x+4,t.y+8,liveState.tourism.enabled ? "TOURISM ON" : "TOURISM OFF",{225,240,245},1);
-      if (portToolActive && portAction==6) {
+      if (portToolActive && portAction==8) {
+        const auto* item=monuments::spec(selectedMonument);
+        const int x=14,y=windowHeight-166;
+        drawFilledRect(renderer,x,y,windowWidth-x-140,100,{22,29,36},245);
+        drawText(renderer,x+8,y+8,std::string(item->name)+" - M CATALOG / ESC CANCEL",{160,220,255},1);
+        drawText(renderer,x+8,y+29,"$"+std::to_string(item->cost)+" + $"+std::to_string(item->upkeep)+"/TICK",{245,220,160},1);
+        drawText(renderer,x+8,y+50,item->effect,{185,225,205},1);
+        drawText(renderer,x+8,y+73,(hoveredMonumentPlan.valid ? std::string("VALID SITE - CLICK TO BUILD") : hoveredMonumentPlan.error).substr(0,static_cast<size_t>((windowWidth-x-156)/8)),{195,220,235},1);
+      } else if (portToolActive && portAction==7) {
+        const auto* item=uniques::spec(selectedUnique);
+        const int x=14,y=windowHeight-166;
+        drawFilledRect(renderer,x,y,windowWidth-x-140,100,{22,29,36},245);
+        drawText(renderer,x+8,y+8,std::string(item->name)+" - E CATALOG / ESC CANCEL",{245,220,150},1);
+        drawText(renderer,x+8,y+29,"$"+std::to_string(item->cost)+" + $"+std::to_string(item->upkeep)+
+          "/TICK; LAND VALUE +"+std::to_string(static_cast<int>(item->landValue))+" / RADIUS "+std::to_string(item->radius),{220,225,215},1);
+        drawText(renderer,x+8,y+50,hoveredUniquePlan.valid ? "VALID SITE - CLICK TO BUILD" : hoveredUniquePlan.error,
+          {195,220,235},1);
+        drawText(renderer,x+8,y+73,"ONE OF EACH; BENEFIT NEEDS ROAD, POWER AND WATER",{185,205,215},1);
+      } else if (portToolActive && portAction==6) {
         const int x=14, y=windowHeight-166;
         drawFilledRect(renderer,x,y,windowWidth-x-140,100,{14,24,32},245);
         drawText(renderer,x+8,y+7,"HOTEL - K SELECTS - CLICK HOTEL TO OPEN/CLOSE",{150,225,235},1);
@@ -2698,6 +2824,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         selectedRegionalTerminal,liveState.regionalSettlement,liveState.tourism,beds,
         regional::regionalOperatingCost(liveState.regionalConnections),liveState.regionalLogisticsEnabled,regionalFocus,
         managedHotels(store,liveState.tourism.state),regionalHotelTab,selectedRegionalHotel,selectedRegionalAlert);
+    }
+    if (showUniquePanel) {
+      if(monumentCatalog) drawMonumentCatalog(renderer,windowWidth,windowHeight,store,roads,selectedMonument);
+      else drawUniqueCatalog(renderer,windowWidth,windowHeight,liveState.uniqueProgress,store,selectedUnique);
     }
     if (showQuitDialog) {
       drawQuitDialog(renderer, windowWidth, windowHeight, mouseX, mouseY,

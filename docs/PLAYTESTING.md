@@ -74,6 +74,30 @@ autonomous growth, successful purchases, utility supply and save continuation.
 Paused means automatic ticking is stopped. N (or period) still advances one
 complete tick; its toast reports that tick while automatic running remains paused.
 
+## Achievement buildings
+
+E, or Uniques beside Connections, opens the six unique buildings. The catalog
+shows each requirement, permanent progress, price, upkeep and local land-value
+benefit. Use Up/Down/Tab or click a row, then Enter to select placement; click an
+empty unzoned site with road access and power/water. One of each can exist;
+bulldozing allows rebuilding without losing the unlock.
+
+MCP `budget.unique_buildings` exposes the same catalog.
+`tool(action="apply", name="unique", unique="treasury_hall", x1=47, y1=46)` uses
+normal unlock/site/funds checks; `budget(action="uniques")` opens the panel.
+See [UNIQUE_BUILDINGS.md](UNIQUE_BUILDINGS.md) for counters, effects, prices,
+persistence and the native journey acceptance runners.
+
+## Monuments
+
+M opens the monument catalog. Each monument requires three currently built
+unique buildings; earned achievements alone do not qualify. Select with arrows
+or a row click, press Enter, then click empty road-connected land with power and
+water. `budget.monuments` exposes requirements and active effects;
+`tool(action="apply",name="monument",monument="medical_citadel",x1=48,y1=51)`
+uses the same rules. See [MONUMENTS.md](MONUMENTS.md) for effects, fixed prices,
+upkeep, persistence and the native acceptance runner.
+
 ## Surface-water controls
 
 New City defaults to lakes/river terrain; T selects an explicit flat map. Old

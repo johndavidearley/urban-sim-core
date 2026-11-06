@@ -8,6 +8,8 @@
 
 #include "src/world/Zoning.hpp"
 #include "src/systems/ParkSystem.hpp"
+#include "src/gameplay/UniqueBuildings.hpp"
+#include "src/gameplay/Monuments.hpp"
 
 namespace {
 
@@ -139,7 +141,7 @@ void LandValueSystem::updateLandValues(
   jobSources.reserve(store.jobIds().size());
   for (EntityId id : store.jobIds()) {
     const Building* building = store.getBuilding(id);
-    if (building == nullptr) continue;
+    if (building == nullptr || building->isCivic()) continue;
     Coord anchor;
     if (roads.resolveRoadAnchor(building->position, anchor)) {
       jobSources.push_back(anchor);
@@ -156,6 +158,8 @@ void LandValueSystem::updateLandValues(
     jobField.begin();  // empty generation: all lookups return -1
   }
 
+  const auto uniqueEffects = uniques::activeEffects(map, roads, store);
+  const float monumentBonus=monuments::active(store,roads,4) ? monuments::landValueBonus : 0.f;
   const int cx0 = std::max(0, x0);
   const int cy0 = std::max(0, y0);
   const int cx1 = std::min(dims.x - 1, x1);
@@ -197,7 +201,8 @@ void LandValueSystem::updateLandValues(
                     params.maxIllnessPenalty * building->illnessRate
               : 0.0f;
       map.landValue({x, y}) =
-          std::clamp(base + jobBonus + serviceBonus + 30.f * ParkSystem::proximity(map, {x, y}) - pollutionPenalty -
+          std::clamp(base + jobBonus + serviceBonus + 30.f * ParkSystem::proximity(map, {x, y}) +
+                         uniques::landValueBonus(uniqueEffects, {x, y}) + monumentBonus - pollutionPenalty -
                          neighborhoodPenalty,
                      params.minLandValue, params.maxLandValue);
     }

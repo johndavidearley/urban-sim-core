@@ -307,6 +307,7 @@ void ServiceSystem::buildCache(
   bool boundedDepartments
 ) {
   cache.boundedDepartments = boundedDepartments;
+  cache.citywideHealth=cache.citywideEducation=false;
   cache.departmentSites.clear();
   cache.departmentFactors.clear();
   cache.departments = {};
@@ -497,9 +498,15 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   ThreadPool* pool
 ) {
   ServiceCoverageSummary summary;
+  summary.citywideHealth=cache.citywideHealth;
+  summary.citywideEducation=cache.citywideEducation;
+  if(cache.citywideHealth) summary.healthCoverage=1.f;
+  if(cache.citywideEducation) summary.educationCoverage=1.f;
   summary.boundedDepartments = cache.boundedDepartments;
   summary.departments = cache.departments;
-  summary.totalBuildings = static_cast<uint32_t>(store.getBuildingCount());
+  summary.totalBuildings = store.countOfType(BuildingType::Residential) +
+    store.countOfType(BuildingType::Commercial) + store.countOfType(BuildingType::Industrial) +
+    store.countOfType(BuildingType::Office);
   summary.schoolSeats = cache.schoolSeats;
   summary.hospitalBeds = cache.hospitalBeds;
   summary.powerGenerationMW = cache.powerGenerationCapacityMW;
@@ -557,11 +564,10 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
       p.powerDemandMW += demand;
       p.waterDemand += demand;
 
-      Coord anchor;
-      if (!roads.resolveRoadAnchor(building->position, anchor)) continue;
-      const auto maskIt = cache.coverageMask.find(anchor);
-      if (maskIt == cache.coverageMask.end()) continue;
-      const ServiceCoverageMask bits = maskIt->second;
+      Coord anchor{-1,-1};
+      (void)roads.resolveRoadAnchor(building->position, anchor);
+      const ServiceCoverageMask bits = coverageMaskAt(cache,anchor);
+      if(!bits) continue;
       bool anyCivic = false;
       for (size_t t = 0; t < kServiceTypeCount; ++t) {
         if ((bits & static_cast<ServiceCoverageMask>(1u << t)) != 0) {
@@ -614,6 +620,9 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   summary.policeCoverage    = coveredByType[typeIndex(ServiceType::Police)]    / denom;
   summary.healthCoverage    = coveredByType[typeIndex(ServiceType::Health)]    / denom;
   summary.educationCoverage = coveredByType[typeIndex(ServiceType::Education)] / denom;
+  if(cache.citywideHealth) summary.healthCoverage=1.f;
+  if(cache.citywideEducation) summary.educationCoverage=1.f;
+  if(cache.citywideHealth || cache.citywideEducation) summary.servicedBuildings=summary.totalBuildings;
   summary.powerCoverage     = coveredByType[typeIndex(ServiceType::Power)]     / denom;
   summary.waterCoverage     = coveredByType[typeIndex(ServiceType::Water)]     / denom;
   summary.sanitationCoverage = coveredByType[typeIndex(ServiceType::Sanitation)] / denom;
@@ -656,13 +665,16 @@ void ServiceSystem::applyToMetrics(const ServiceCoverageSummary& summary, CityMe
 void ServiceSystem::applyCivicCapacity(ServiceCoverageSummary& summary,
   uint32_t housedPopulation, float illnessRate) {
   summary.schoolDemand = static_cast<float>(housedPopulation) * 0.2f;
+  if(summary.citywideEducation) summary.schoolSeats=std::max(summary.schoolSeats,summary.schoolDemand);
   const float seatRatio = summary.schoolDemand > 0.f
     ? summary.schoolSeats / summary.schoolDemand : 1.f;
   summary.effectiveEducationCoverage = summary.schoolSeats > 0.f
     ? std::min(summary.educationCoverage, seatRatio) : 0.f;
+  if(summary.citywideEducation) summary.effectiveEducationCoverage=1.f;
   summary.schoolSeatsUsed = summary.schoolDemand * summary.effectiveEducationCoverage;
   summary.patientDemand = illnessRate > 0.f
     ? std::max(1.f, static_cast<float>(housedPopulation) * illnessRate * kPatientShare) : 0.f;
+  if(summary.citywideHealth) summary.hospitalBeds=std::max(summary.hospitalBeds,summary.patientDemand);
   summary.hospitalCapacityFactor = summary.patientDemand > 0.f
     ? std::min(1.f, summary.hospitalBeds / summary.patientDemand) : 1.f;
   summary.hospitalBedsUsed = std::min(summary.hospitalBeds, summary.patientDemand);
@@ -670,6 +682,8 @@ void ServiceSystem::applyCivicCapacity(ServiceCoverageSummary& summary,
 
 float ServiceSystem::coverageStrength(const ServiceCoverageCache &cache, ServiceType type,
                Coord anchor) {
+  if((type==ServiceType::Health && cache.citywideHealth) ||
+     (type==ServiceType::Education && cache.citywideEducation)) return 1.f;
   float result = 0.0f;
   for (const auto &entry : cache.entries) {
     if (entry.type != type)

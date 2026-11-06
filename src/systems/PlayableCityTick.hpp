@@ -1,4 +1,5 @@
 #pragma once
+#include "src/gameplay/UniqueBuildings.hpp"
 #include "src/gameplay/PopulationMilestones.hpp"
 #include "src/systems/TourismSystem.hpp"
 #include "src/gameplay/CityAlerts.hpp"
@@ -37,6 +38,7 @@ struct PlayableCityTickState {
   TreasuryLedger treasuryLedger;
   CityHistory history;
   PopulationMilestones milestones;
+  uniques::Progress uniqueProgress;
   CityAlerts alerts;
   TransitReport transitReport;
   std::vector<regional::Connection> regionalConnections;

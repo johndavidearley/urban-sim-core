@@ -24,10 +24,9 @@ struct BuildingDiagnostics {
   bool residential = false;
   NeighborhoodDiagnostics neighborhood;
   static ServiceCoverageMask serviceMask(const RoadNetwork& roads, const ServiceCoverageCache& cache, Coord pos) {
-    Coord anchor;
-    if (!roads.resolveRoadAnchor(pos,anchor)) return 0;
-    const auto found = cache.coverageMask.find(anchor);
-    return found == cache.coverageMask.end() ? 0 : found->second;
+    Coord anchor{-1,-1};
+    (void)roads.resolveRoadAnchor(pos,anchor);
+    return ServiceSystem::coverageMaskAt(cache,anchor);
   }
   static BuildingDiagnostics evaluate(const CityMap& map, const RoadNetwork& roads,
     const EntityStore& store, Coord pos, const ZoneDemand& demand,

@@ -111,6 +111,8 @@ Key translateGLFWKey(int code, int mods) {
     return Key::T;
   case GLFW_KEY_J: return Key::J;
   case GLFW_KEY_K: return Key::K;
+  case GLFW_KEY_E: return Key::E;
+  case GLFW_KEY_M: return Key::M;
   case GLFW_KEY_U: return Key::U;
   case GLFW_KEY_V: return Key::V;
   case GLFW_KEY_Z:

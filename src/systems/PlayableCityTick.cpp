@@ -1,6 +1,7 @@
 #include "src/systems/TourismAccess.hpp"
 #include "src/systems/TourismTravel.hpp"
 #include "src/systems/PlayableCityTick.hpp"
+#include "src/gameplay/Monuments.hpp"
 
 #include <algorithm>
 #include <thread>
@@ -89,7 +90,9 @@ void updateUtilityConnectivityFromFacilities(
   const std::vector<ServiceFacility>& facilities
 ) {
   ServiceCoverageCache cache;
-  ServiceSystem::buildCache(roads, facilities, cache);
+  auto suppliedFacilities=facilities;
+  monuments::appendPower(suppliedFacilities,store,roads);
+  ServiceSystem::buildCache(roads, suppliedFacilities, cache);
   int ax0 = 0, ay0 = 0, ax1 = 0, ay1 = 0;
   activeBounds(map, ax0, ay0, ax1, ay1);
   city_sim::updateUtilityConnectivity(
@@ -106,7 +109,8 @@ void refreshDerivedCityState(
   const DerivedCityRefreshOptions& options
 ) {
   tourism::reconcileRemovedHotels(state.tourism.state,store);
-  const auto facilities = state.budgetPolicy.fundedFacilities(baseFacilities);
+  auto facilities = state.budgetPolicy.fundedFacilities(baseFacilities);
+  monuments::appendPower(facilities,store,roads);
   ThreadPool& pool = playablePool();
   int ax0 = 0, ay0 = 0, ax1 = 0, ay1 = 0;
   activeBounds(map, ax0, ay0, ax1, ay1);
@@ -114,6 +118,7 @@ void refreshDerivedCityState(
   if (!state.serviceCache.boundedDepartments || !ServiceSystem::isCacheValid(roads, facilities, state.serviceCache)) {
     ServiceSystem::buildCache(roads, facilities, state.serviceCache, true);
   }
+  monuments::configureCoverage(state.serviceCache,store,roads);
   ServiceSystem::refreshWasteStorage(baseFacilities, state.serviceCache);
   city_sim::updateUtilityConnectivity(
     map, roads, store, state.serviceCache, ax0, ay0, ax1, ay1, pool);
@@ -251,7 +256,8 @@ void playableCityTick(
   // and read-only refresh never activate the irreversible logistics transition.
   state.regionalLogisticsEnabled = state.regionalLogisticsEnabled ||
     regional::hasConstructedCargoPort(state.regionalConnections);
-  const auto facilities = state.budgetPolicy.fundedFacilities(baseFacilities);
+  auto facilities = state.budgetPolicy.fundedFacilities(baseFacilities);
+  monuments::appendPower(facilities,store,roads);
   const uint32_t populationBefore = population.getTotalPopulation();
   state.milestones.observe(populationBefore);
   const uint32_t tickSeed = options.baseSeed + (state.tick * 31u);
@@ -276,6 +282,7 @@ void playableCityTick(
   if (!state.serviceCache.boundedDepartments || !ServiceSystem::isCacheValid(roads, facilities, state.serviceCache)) {
     ServiceSystem::buildCache(roads, facilities, state.serviceCache, true);
   }
+  monuments::configureCoverage(state.serviceCache,store,roads);
   ServiceSystem::refreshWasteStorage(baseFacilities, state.serviceCache);
   city_sim::updateUtilityConnectivity(
     map, roads, store, state.serviceCache, ax0, ay0, ax1, ay1, pool);
@@ -353,6 +360,16 @@ void playableCityTick(
   if (state.waste.pollutionPenalty > 0.0f) {
     city_sim::applyWastePollution(map, state.waste.pollutionPenalty, ax0, ay0, ax1, ay1);
     tickResPollution = city_sim::averageResidentialPollution(map, store);
+  }
+  // Cleanup runs once per completed tick, after every emitter (including waste).
+  // A paused projection must never repeatedly attenuate the saved pollution.
+  if(monuments::cleanPollution(map,store,roads)) {
+    tickResPollution=city_sim::averageResidentialPollution(map,store);
+    evaluateHealthAndCrime(map,roads,store,population,state);
+    if(options.updateLandValues) {
+      LandValueSystem::updateLandValues(map,roads,store,&state.serviceCache,ax0,ay0,ax1,ay1);
+      state.economy.averageLandValue=LandValueSystem::averageLandValue(map,ax0,ay0,ax1,ay1);
+    }
   }
 
   state.deathcare = DeathcareSystem::step(
@@ -463,6 +480,15 @@ void playableCityTick(
   ++state.tick;
   state.transitReport = {true,state.tick,state.trafficSummary.commutingPopulation,state.transitSummary.routeUsage};
   const uint32_t residents = population.getTotalPopulation();
+  state.uniqueProgress.observeCurrent(std::max(funds, state.treasuryLedger.fundsBefore), residents,
+    static_cast<uint32_t>(residents * std::clamp(state.serviceSummary.effectiveEducationCoverage, 0.f, 1.f)));
+  uint64_t busRiders = 0;
+  for (const auto& usage : state.transitSummary.routeUsage)
+    for (const auto& route : state.transitRoutes)
+      if (route.id == usage.id && route.mode == TransitMode::Bus) busRiders += usage.ridership;
+  state.uniqueProgress.add(1, busRiders);
+  state.uniqueProgress.add(2, static_cast<uint64_t>(std::max<int64_t>(0, state.economy.exportedGoods)));
+  state.uniqueProgress.add(3, static_cast<uint64_t>(state.tourism.report.dayArrivals) + state.tourism.report.overnightArrivals);
   state.alerts.update(state.tick, {store.getBuildingCount() > 0, residents > 0, options.requireUtilities,
     state.serviceSummary.powerCoverage, state.serviceSummary.powerSupplyRatio,
     state.serviceSummary.waterCoverage, state.serviceSummary.waterSupplyRatio,

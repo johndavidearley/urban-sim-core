@@ -1,15 +1,74 @@
 # Project Status
 
-Last verified: November 3, 2026
+Last verified: November 6, 2026
+
+M53 monuments is complete locally (November 6, 2026). Four monuments require
+three currently built unique buildings and provide citywide health, citywide
+education, a 2,000 MW zero-emission power source, or 75% pollution cleanup with
+a citywide land-value bonus. M opens their catalog. Native and MCP enforce the
+same prerequisites, site rules, affordability and one-of-each limit. Fixed
+$6M–$7M prices cost 3,243–3,784 ticks of 10k reference surplus; upkeep is billed
+with building maintenance. Effects, civic sites and exact continuation survive
+save/load. Prerequisite achievements must remain earned; prerequisite sites may
+be demolished after construction.
+
+Strict AppleClang Release, 668 CTest cases, seven Python tests and the targeted
+rendered monument regression passed. A normal-funded native journey buys City
+Academy and Medical Citadel, raises health coverage from 79.05% to 100% and
+reduces illness from 57.53% to 14.65%, without debt. Six-tick native/CLI sessions
+and core cities match exactly. Minimum-size catalog and Services captures were
+inspected; default 400-tick CSV remains identical to Phase 13. All 45 rendered
+cases passed. Evidence: `playtest-artifacts/m53/` and `playtest-artifacts/m53-full/`; rules and commands:
+[MONUMENTS.md](MONUMENTS.md). Next is M54, journey v2 and integrated balance.
+
+M52 unique buildings is complete locally (November 5, 2026). Six permanent
+achievements track funds held, delivered resident bus rides, delivered exports,
+admitted visitors, educated residents and population. E opens the catalog with
+requirements, progress, prices and upkeep. Native and MCP placements enforce
+one of each, serviced road access and affordability. Each building raises nearby
+land value, pays upkeep and survives save/load; demolition permits rebuilding
+without losing the unlock.
+
+Five achievements are earned by 10,000 residents across current-rule
+continuations of the retained historical journey. The optional visitor branch
+earns its unlock without debt. All six prices cost 400–478 ticks of reference
+surplus. Native Treasury Hall and Civic Square purchases raise nearby land value
+by 13.24 and 35.00, and six-tick GUI/CLI continuation matches exactly. Strict
+AppleClang Release, 660 CTest cases, seven Python tests and the native M52
+catalog/placement regression passed. The default 400-tick CSV matches Phase 13.
+All 44 rendered cases passed; the final catalog pointer check passed separately
+after moving its button beside Connections. Evidence: `playtest-artifacts/m52/`,
+`playtest-artifacts/m52-full/` and `playtest-artifacts/m52-pointer-final/`;
+rules and reproduction: [UNIQUE_BUILDINGS.md](UNIQUE_BUILDINGS.md).
+Next is M53, monuments. M54 retains the new journey and integrated balance.
+
+M51 is complete locally (November 5, 2026). Rebuilt the Phase 13 native
+journey from `6ac65ef`: it reproduces 10,324 residents at tick 15,900 with
+no debt. Retained 160 native-input checkpoints and audited 16,000 continuation
+ticks with current playable rules. All 5,001 ticks starting or ending below
+2,000 residents preserve flat-price export income; exports peak at 1,152 goods,
+below the 2,000-good threshold. All 214 ticks starting and ending at or above
+10,000 residents earn $800 in exports, below the $907 acceptance limit.
+These are current-rule continuations of historical checkpoints, not a Phase 14
+journey; M54 still owns the revised construction schedule and integrated balance.
+
+Strict AppleClang Release build, all 653 CTest cases, seven Python unit tests
+and the rendered M51 budget/save-load regression passed. The minimum-window
+budget capture was visually inspected. Evidence:
+`playtest-artifacts/m51-journey/20261105-161754-21c13cef/` and
+`playtest-artifacts/m51-rendered/20261105-162025-31208d73/`.
+See [EXPORT_PRICES.md](EXPORT_PRICES.md) for reproduction. Next is M52,
+unique buildings.
 
 M51 export volume pricing is implemented locally (November 3, 2026). Player export prices fall above 2,000 goods per tick,
 capping normal export income at $800. Budget and MCP expose volume and unit
 price, including persisted completed-tick measurements. The rendered minimum-size
 budget and save/load regression passed. The strict MSVC Release build, all 653
 CTest cases and seven Python tests passed. Evidence is under
-`build/m51-acceptance/20261103-070721-db305efd/`. The retained journey artifacts are absent
-from this checkout, so the below-2,000-resident acceptance remains pending and
-the threshold is provisional. See [EXPORT_PRICES.md](EXPORT_PRICES.md).
+`build/m51-acceptance/20261103-070721-db305efd/`. At that time, the retained journey artifacts were absent
+from this checkout, so the below-2,000-resident acceptance remained pending and
+the threshold was provisional at that verification. The November 5 journey
+audit above closes that remaining acceptance. See [EXPORT_PRICES.md](EXPORT_PRICES.md).
 
 Previous milestone verification: October 19, 2026
 
@@ -469,10 +528,12 @@ Quick performance smoke (headless):
 ## Current Priorities
 
 Phase 13 is complete: hospital demand, landfill lifetime, fire containment
-and substations. Phase 14 (M49–M54) in `ROADMAP.md` is a draft that keeps money
+and substations. Phase 14 (M49–M54) in `ROADMAP.md` is in progress and keeps money
 scarce by giving it uses the city needs: population milestones, capacity for
 fire, police and sanitation, export prices that fall with volume, unique
-buildings, monuments, and a v2 journey with a balance pass. Not started. The Phase 12 list below is kept for reference.
+buildings, monuments, and a v2 journey with a balance pass. M49–M53 are complete
+locally. Next is M54's new journey and integrated balance pass.
+The Phase 12 list below is kept for reference.
 
 1. **M39 Landfills that fill.** Implemented locally. Garbage sites start
    with 80,000 units of volume. Full sites stop accepting; spare incinerator

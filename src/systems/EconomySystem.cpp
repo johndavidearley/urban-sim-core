@@ -7,6 +7,8 @@
 #include "src/systems/LandValueSystem.hpp"
 #include "src/systems/GrowthSystem.hpp"
 #include "src/systems/ParkSystem.hpp"
+#include "src/gameplay/UniqueBuildings.hpp"
+#include "src/gameplay/Monuments.hpp"
 
 namespace {
 
@@ -41,6 +43,7 @@ TypeTaxResult accumulateType(
   for (EntityId id : ids) {
     const Building* building = store.getBuilding(id);
     if (building == nullptr) continue;
+    if (building->isCivic()) continue;
     const int taxableUnits = valuation.taxOccupiedSpace
       ? std::clamp(building->occupancy, 0, std::max(0, building->capacity))
       : building->capacity;
@@ -149,6 +152,8 @@ EconomyState EconomySystem::calculateEconomy(
       static_cast<double>(valuation.parkMaintenancePerTile) * inflationMultiplier);
   state.totalMaintenance = state.parkMaintenance + state.residentialMaintenance + state.commercialMaintenance +
                            state.industrialMaintenance + state.officeMaintenance;
+  state.totalMaintenance += static_cast<int64_t>(uniques::upkeep(store) * 100.0 * inflationMultiplier);
+  state.totalMaintenance += static_cast<int64_t>(monuments::upkeep(store) * 100.0 * inflationMultiplier);
 
   // Calculate balance (trade revenue/cost flow through here too, so a strong
   // exporter or an import-dependent city shows up directly in the budget).
