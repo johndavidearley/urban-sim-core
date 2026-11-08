@@ -400,7 +400,10 @@ float civicCoverageAt(const RoadNetwork* roads, const ServiceCoverageCache* serv
       covered += ServiceSystem::departmentFactorAt(*services, static_cast<ServiceType>(bit), pos);
     }
   }
-  const float sanitation = ServiceSystem::departmentFactorAt(*services, ServiceType::Sanitation, pos);
+  // Sanitation capacity pressure starts at the first catalog milestone. Before
+  // it, an ordinary school/hospital opening must retain its pre-M50 growth score.
+  const float sanitation = services->residentOccupants<500 ? 1.f :
+    ServiceSystem::departmentFactorAt(*services, ServiceType::Sanitation, pos);
   return (covered / 4.0f) * (0.5f + 0.5f * sanitation);
 }
 

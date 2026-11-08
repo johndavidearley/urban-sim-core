@@ -17,7 +17,12 @@ changes; occupant assignments refresh when population changes.
 A building's served fraction scales fire coverage and local fire response,
 police coverage and local crime protection, and sanitation coverage and local
 illness protection. Growth's civic score uses the reduced fire/police coverage
-and a sanitation multiplier from 0.5 to 1. Health and education keep their own
+and a sanitation multiplier from 0.5 to 1 once the city has 500 resident
+occupants. Below 500, growth retains the previous reach-only sanitation factor;
+capacity allocation, coverage, illness and billing still apply. M54's fresh-city
+comparison found that applying this growth penalty to a school/hospital opening
+before its first sanitation purchase changed the starting budget beyond the 5%
+allowance. A boundary regression checks 499 and 500 residents. Health and education keep their own
 capacity rules. Empty sites consume no capacity. A covered city of 399 residents
 and 300 workers with one of each department has exactly the prior coverage,
 response, neighborhood rates and growth score in the regression test.

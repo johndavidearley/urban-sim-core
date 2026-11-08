@@ -1,6 +1,25 @@
 # Project Status
 
-Last verified: November 6, 2026
+Last verified: November 8, 2026
+
+M54 and Phase 14 are complete locally (November 8, 2026). A fresh native
+journey follows the milestone gates and reaches 10,052 residents at tick 15,300
+with four unique buildings and no debt. Revenue/expenses is 1.440 at that
+checkpoint and 1.390 over the preceding 100 ticks. Tick-12,000 funds are
+$2,227,631, below the $3.48M limit and the original $17,447,667. The first 2,400
+ticks match the original population, funds, revenue and expenses exactly.
+
+The starting sanitation growth factor now retains its previous behavior below
+500 resident occupants, with capacity pressure beginning at 500. Gates and
+prices retain their rules. The fixed itinerary defers purchases until unlocked
+and affordable, and reduces residential/income taxes after its final serviced
+neighborhood. The original journey is unchanged; both money curves, decisions
+and stable checkpoints are retained. Exact 100-tick native save/load and CLI
+continuations pass. Strict AppleClang Release, all 669 CTest cases, seven Python
+tests and all 45 rendered cases pass; the default 400-tick CSV is unchanged.
+Evidence: `playtest-artifacts/m54-v2/20261108-095702-1d15586e/` and
+`playtest-artifacts/m54-full/`. Rules and reproduction:
+[JOURNEY_V2.md](JOURNEY_V2.md). Hosted CI remains pending for M54.
 
 M53 monuments is complete locally (November 6, 2026). Four monuments require
 three currently built unique buildings and provide citywide health, citywide

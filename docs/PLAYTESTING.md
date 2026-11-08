@@ -5,6 +5,10 @@ application through private process pipes. The Python `urban-sim-mcp` server
 owns one game at a time and speaks MCP over stdio. Windows, Linux, and macOS use
 the same game-side handlers. Normal GUI launches have no control endpoint.
 
+For the fresh M54 native journey, both historical and revised money curves,
+balance acceptance and exact 100-tick continuation checks, see
+[JOURNEY_V2.md](JOURNEY_V2.md). The original native journey is retained unchanged.
+
 ## Build and connect
 
 Install the graphics prerequisites described in `GRAPHICS.md`, then build:

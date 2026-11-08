@@ -153,6 +153,8 @@ static_assert(kServiceTypeCount <= 16, "ServiceCoverageMask needs more bits");
 // entity store nor the topology-dependent distance fields have changed.
 struct ServiceCoverageCache {
   bool citywideHealth = false, citywideEducation = false;
+  // M54 keeps the starting city's reach-only growth score below 500 residents.
+  uint64_t residentOccupants = 0;
   struct Entry {
     ServiceType type = ServiceType::Fire;
     std::unordered_map<Coord, int, Vec2Hash> distanceField;

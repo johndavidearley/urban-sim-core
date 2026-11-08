@@ -145,3 +145,19 @@ TEST(DepartmentCapacityTests, SmallCoveredCityMatchesUnboundedCoverageResponseAn
   EXPECT_FLOAT_EQ(x.illnessRate,y.illnessRate);EXPECT_FLOAT_EQ(x.crimeRate,y.crimeRate);
   EXPECT_TRUE(unlimited.departmentSites.empty());
 }
+
+TEST(DepartmentCapacityTests, StartingCityWithoutSanitationRetainsReachOnlyGrowthBelow500) {
+  DepartmentCity city;
+  city.facilities={{ServiceType::Education,{3,7},30,1.f},{ServiceType::Health,{3,7},30,1.f}};
+  const auto id=city.add({3,9},499);
+  const auto limited=city.cache(),unlimited=city.cache(false);
+  const auto before=BuildingDiagnostics::evaluate(city.map,city.roads,city.store,{3,9},{1,1,1,1},limited);
+  const auto baseline=BuildingDiagnostics::evaluate(city.map,city.roads,city.store,{3,9},{1,1,1,1},unlimited);
+  EXPECT_FLOAT_EQ(before.growth.civicCoverage,baseline.growth.civicCoverage);
+  EXPECT_EQ(limited.residentOccupants,499u);
+  auto building=*city.store.getBuilding(id);building.capacity=building.occupancy=500;city.store.upsertBuilding(building);
+  const auto later=city.cache();
+  const auto pressure=BuildingDiagnostics::evaluate(city.map,city.roads,city.store,{3,9},{1,1,1,1},later);
+  EXPECT_EQ(later.residentOccupants,500u);
+  EXPECT_LT(pressure.growth.civicCoverage,before.growth.civicCoverage);
+}

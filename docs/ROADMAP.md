@@ -25,7 +25,7 @@ Last updated: October 19, 2026
 - Phases 7–11 (M23–M37) and waste-to-energy incinerators: complete. See STATUS.md.
 - Phase 12 (M38–M44): complete; hosted CI verified on fd554fd.
 - Phase 13 (M45–M48): complete; hosted CI verified on 6ac65ef.
-- Phase 14 (M49–M54): M49–M53 complete locally; next is M54, journey v2 and balance.
+- Phase 14 (M49–M54): complete locally; journey v2 and integrated balance accepted.
 
 ---
 
@@ -1055,7 +1055,7 @@ city of substations alone reports a power shortage.
 The open question this phase left, money that stops being scarce after about
 tick 4,000, is Phase 14.
 
-## Phase 14: Things worth buying (M49–M54) — in progress
+## Phase 14: Things worth buying (M49–M54) — complete locally
 
 Drafted October 19, 2026 from the Phase 13 journey rerun
 (`playtest-artifacts/phase13-playtest/REPORT.md`). M49–M50 complete locally October 19. Implement in
@@ -1219,13 +1219,13 @@ GUI/CLI continuation agrees exactly. Strict AppleClang, 668 CTest cases, seven
 Python tests and all 45 rendered cases passed. See
 [MONUMENTS.md](MONUMENTS.md). M54 retains the revised journey and balance pass.
 
-### Milestone 54: Journey v2 and balance pass
+### Milestone 54: Journey v2 and balance pass — complete locally
 
-- [ ] Milestone gates break the unchanged journey. At about 350 residents
+- [x] Milestone gates break the unchanged journey. At about 350 residents
       (tick 2,400) it builds arterials, offices, recycling, a cemetery and a
       crematorium. Write a v2 journey that follows the unlocks, keep the old
       one for comparison, and record both money curves.
-- [ ] Tune M49–M53 together against v2. If v2 goes into debt, adjust its
+- [x] Tune M49–M53 together against v2. If v2 goes into debt, adjust its
       choices and record why. Do not weaken the gates to keep it solvent.
 
 **Acceptance:** Journey v2 reaches 10,000 residents with no debt and builds at
@@ -1234,6 +1234,17 @@ residents. Funds at tick 12,000 are at most a fifth of today's $17.4M. Below
 500 residents the budget is within 5% of today's.
 **Excluded:** a new journey map, difficulty levels and an AI that plays the
 budget.
+
+Verified November 8, 2026: fresh native v2 reaches 10,052 residents at tick
+15,300 with no debt and four built uniques. Revenue/expenses is 1.440 at that
+checkpoint and 1.390 over the preceding 100 ticks. Tick-12,000 funds are
+$2,227,631 versus the original $17,447,667; all 2,400 opening ticks match the
+original population, funds, revenue and expenses exactly. The below-500
+sanitation growth correction has a 499/500 boundary regression. Both money
+curves, native decisions, checkpoints and exact 100-tick native/CLI continuation
+are retained. Strict Release, 669 CTest cases, seven Python tests and all 45
+rendered cases pass; default 400-tick CSV is unchanged. See
+[JOURNEY_V2.md](JOURNEY_V2.md). Hosted CI has not been rerun for M54.
 
 ### Open questions, not yet milestones
 
@@ -1263,7 +1274,7 @@ budget.
 | 11 | M37 | complete: surface water and early waterworks |
 | 12 | M38–M44 | complete; hosted CI verified on fd554fd |
 | 13 | M45–M48 | complete; hosted CI verified on 6ac65ef |
-| 14 | M49–M54 | M49–M53 complete locally; next is M54 |
+| 14 | M49–M54 | complete locally; hosted CI pending |
 
 **MVP Baseline (headless through save/load scaffold):** complete.
 **Phase 7 (M23–M26):** implemented and locally verified.

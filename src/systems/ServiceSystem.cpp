@@ -714,6 +714,7 @@ void ServiceSystem::allocateDepartmentCapacity(const EntityStore& store, const R
   cache.departmentFactors.clear();
   cache.departments = {};
   if (!cache.boundedDepartments) return;
+  cache.residentOccupants=0;
   std::sort(cache.departmentSites.begin(), cache.departmentSites.end(), [](const auto& a, const auto& b) {
     return std::tie(a.type,a.position.x,a.position.y,a.capacity) < std::tie(b.type,b.position.x,b.position.y,b.capacity);
   });
@@ -721,6 +722,8 @@ void ServiceSystem::allocateDepartmentCapacity(const EntityStore& store, const R
   std::vector<Occupants> buildings;
   for (const auto& [id, building] : store.getBuildings()) {
     if (building.occupancy <= 0) continue;
+    if(building.type==BuildingType::Residential)
+      cache.residentOccupants+=static_cast<uint64_t>(building.occupancy);
     Coord anchor{};
     buildings.push_back({id,building.position,anchor,false,static_cast<double>(building.occupancy)});
     auto& b = buildings.back();
