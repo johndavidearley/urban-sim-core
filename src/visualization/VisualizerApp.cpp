@@ -1,3 +1,4 @@
+#include "src/visualization/Scene3D.hpp"
 #include "src/gameplay/CatalogUnlocks.hpp"
 #include <algorithm>
 #include <cctype>
@@ -184,7 +185,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   int tilePixels = std::max(28, minimumTilePixels);
   int viewX = 0;
   int viewY = 0;
-  bool isometricMode = true;
+  bool threeDimensionalView = true;
+  float cameraYaw = 45.f, cameraPitch = 35.f;
   bool showBudgetPanel = false;
   bool showTransportPanel = false;
   bool showRegionalPanel = false;
@@ -207,8 +209,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   bool budgetBonds = false;
   int bondPrincipalChoice = 0, bondTermChoice = 0;
   bool cleanUiMode = false;
-  int isometricCameraX = 0;
-  int isometricCameraY = 0;
+  int cameraOffsetX = 0;
+  int cameraOffsetY = 0;
   TransitOverlayCache transitOverlayCache;
   OverlayMode overlayMode = OverlayMode::Zone;
   bool showLegend = true;
@@ -320,12 +322,32 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     return IsometricProjection(
         tilePixels, height,
         {windowWidth / 2 - (viewX - viewY) * (tilePixels / 2) +
-             isometricCameraX,
-         centeredY - (viewX + viewY) * (height / 2) + isometricCameraY});
+             cameraOffsetX,
+         centeredY - (viewX + viewY) * (height / 2) + cameraOffsetY});
+  };
+  auto camera3D = [&]() {
+    Camera3D camera;
+    camera.yaw = cameraYaw; camera.pitch = cameraPitch;
+    camera.scale = tilePixels / 1.41421356f;
+    camera.originX = windowWidth*.5f + cameraOffsetX;
+    camera.originY = std::max(18.f, (windowHeight-mapSize*tilePixels*.5f)*.5f) + cameraOffsetY;
+    camera.depthRange = std::max(512.f, mapSize*8.f);
+    const auto offset=camera.project({float(viewX),0.f,float(viewY)});
+    camera.originX -= offset.x-camera.originX;
+    camera.originY -= offset.y-camera.originY;
+    return camera;
+  };
+  auto orbitCamera = [&](float turn, float tilt) {
+    const Coord anchor = camera3D().screenToTile({windowWidth/2,windowHeight/2});
+    auto camera=camera3D(); camera.orbit(turn,tilt);
+    cameraYaw=camera.yaw; cameraPitch=camera.pitch;
+    const auto p=camera3D().tileCenter(anchor);
+    cameraOffsetX += windowWidth/2-p.x;
+    cameraOffsetY += windowHeight/2-p.y;
   };
   auto tileAtScreen = [&](int screenX, int screenY) {
-    if (isometricMode) {
-      return isometricProjection().screenToTile({screenX, screenY});
+    if (threeDimensionalView) {
+      return camera3D().screenToTile({screenX, screenY});
     }
     return Coord{viewX + screenX / tilePixels, viewY + screenY / tilePixels};
   };
@@ -354,17 +376,17 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
     const Coord center = maxX >= 0 ? Coord{(minX + maxX) / 2, (minY + maxY) / 2}
                                    : Coord{mapSize / 2, mapSize / 2};
-    if (!isometricMode) {
+    if (!threeDimensionalView) {
       const int visibleX = std::max(1, windowWidth / tilePixels);
       const int visibleY = std::max(1, windowHeight / tilePixels);
       viewX = std::clamp(center.x - visibleX / 2, 0, std::max(0, mapSize - visibleX));
       viewY = std::clamp(center.y - visibleY / 2, 0, std::max(0, mapSize - visibleY));
     }
-    isometricCameraX = 0;
-    isometricCameraY = 0;
-    const ScreenPoint projected = isometricProjection().tileCenter(center);
-    isometricCameraX += windowWidth / 2 - projected.x;
-    isometricCameraY += windowHeight / 2 - projected.y;
+    cameraOffsetX = 0;
+    cameraOffsetY = 0;
+    const ScreenPoint projected = camera3D().tileCenter(center);
+    cameraOffsetX += windowWidth / 2 - projected.x;
+    cameraOffsetY += windowHeight / 2 - projected.y;
   };
   focusDevelopedArea();
 
@@ -785,7 +807,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
             }
             notify("DISTRICT REMOVED", true);
           } else {
-            if (!isometricMode && !districts.getDistricts().empty()) {
+            if (!threeDimensionalView && !districts.getDistricts().empty()) {
               selectedDistrictId = districts.getDistricts().back().id;
             }
             notify(std::string("DISTRICT ") +
@@ -842,7 +864,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         if (score>best) {best=score;target=b;}
       }
       pinnedInspector=target ? target->position : Coord{-1,-1};
-      if (target) {isometricMode=false;viewX=std::max(0,target->position.x-5);viewY=std::max(0,target->position.y-8);}
+      if (target) {threeDimensionalView=false;viewX=std::max(0,target->position.x-5);viewY=std::max(0,target->position.y-8);}
     }
   };
   auto budgetPreview = [&]() {
@@ -889,7 +911,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       const Coord target=action==6 ? routePeak(selectedTransitRoute).second : route.stops.front();
       showTransportPanel=false; showBudgetPanel=false;
       overlayMode=action==6 ? OverlayMode::TrafficCongestion : OverlayMode::Transit;
-      isometricMode=false; viewX=std::max(0,target.x-5); viewY=std::max(0,target.y-8);
+      threeDimensionalView=false; viewX=std::max(0,target.x-5); viewY=std::max(0,target.y-8);
       activatePaletteTool(PaletteTool::None);
     }
   };
@@ -1104,13 +1126,13 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
          {"expenses", liveState.treasuryExpenses},
          {"autonomous_growth", liveState.autonomousGrowth},
          {"overlay", static_cast<int>(overlayMode)},
-         {"projection", isometricMode ? "isometric" : "top_down"},
+         {"projection", threeDimensionalView ? "3d" : "top_down"},
          {"tile_pixels", tilePixels},
          {"camera",
           {{"view_x", viewX},
            {"view_y", viewY},
-           {"offset_x", isometricCameraX},
-           {"offset_y", isometricCameraY}}},
+           {"offset_x", cameraOffsetX},
+           {"offset_y", cameraOffsetY}, {"yaw", cameraYaw}, {"pitch", cameraPitch}}},
          {"tools",
           {{"road", roadToolActive},
            {"road_class",
@@ -1420,10 +1442,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
             activatePaletteTool(PaletteTool::None);
             pinnedInspector=target;
             overlayMode=OverlayMode::ServiceCoverage;
-            isometricMode=true;
-            const auto projected=isometricProjection().tileCenter(target);
-            isometricCameraX+=windowWidth/2-projected.x;
-            isometricCameraY+=windowHeight*2/3-projected.y;
+            threeDimensionalView=true;
+            const auto projected=camera3D().tileCenter(target);
+            cameraOffsetX+=windowWidth/2-projected.x;
+            cameraOffsetY+=windowHeight*2/3-projected.y;
           }
           if (action==3 && regionalHotelTab) {
             const auto& building=hotels[selected].building;
@@ -1528,6 +1550,18 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         showQuitDialog = true;
       } else if (event.type == EventType::KeyDown) {
         switch (event.key.sym) {
+        case Key::Home:
+          if (threeDimensionalView) orbitCamera(-15.f,0.f);
+          break;
+        case Key::End:
+          if (threeDimensionalView) orbitCamera(15.f,0.f);
+          break;
+        case Key::PageUp:
+          if (threeDimensionalView) orbitCamera(0.f,5.f);
+          break;
+        case Key::PageDown:
+          if (threeDimensionalView) orbitCamera(0.f,-5.f);
+          break;
         case Key::K:
           activatePaletteTool(PaletteTool::Port); portAction=6;
           notify("HOTEL $" + std::to_string(HotelTool::kConstructionCost) + " - 32 BEDS / 12 JOBS; EMPTY LAND, ROAD AND UTILITIES",true);
@@ -1591,26 +1625,26 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           tilePixels = std::max(minimumTilePixels, tilePixels - 1);
           break;
         case Key::Left:
-          if (isometricMode)
-            isometricCameraX += 18;
+          if (threeDimensionalView)
+            cameraOffsetX += 18;
           else
             viewX = std::max(0, viewX - 1);
           break;
         case Key::Right:
-          if (isometricMode)
-            isometricCameraX -= 18;
+          if (threeDimensionalView)
+            cameraOffsetX -= 18;
           else
             viewX = std::min(mapSize - 1, viewX + 1);
           break;
         case Key::Up:
-          if (isometricMode)
-            isometricCameraY += 18;
+          if (threeDimensionalView)
+            cameraOffsetY += 18;
           else
             viewY = std::max(0, viewY - 1);
           break;
         case Key::Down:
-          if (isometricMode)
-            isometricCameraY -= 18;
+          if (threeDimensionalView)
+            cameraOffsetY -= 18;
           else
             viewY = std::min(mapSize - 1, viewY + 1);
           break;
@@ -1663,19 +1697,19 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           showOnboarding = !showOnboarding;
           break;
         case Key::F3:
-          isometricMode = !isometricMode;
+          threeDimensionalView = !threeDimensionalView;
           toolDragging = false;
           roadPlan = {};
           zonePlan = {};
           bulldozePlan = {};
-          notify(isometricMode ? "ISOMETRIC VIEW" : "TOP DOWN VIEW", true);
+          notify(threeDimensionalView ? "3D VIEW - HOME/END ROTATE, PAGE UP/DOWN TILT" : "TOP DOWN VIEW", true);
           break;
         case Key::F4:
           cleanUiMode = !cleanUiMode;
           notify(cleanUiMode ? "CLEAN UI" : "DETAIL UI", true);
           break;
         case Key::F:
-          if (isometricMode) {
+          if (threeDimensionalView) {
             focusDevelopedArea();
             notify("CAMERA FOCUSED", true);
           }
@@ -1855,20 +1889,20 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           const int direction = event.wheel.y > 0 ? 1 : -1;
           tilePixels = std::max(minimumTilePixels,
                                 std::min(48, tilePixels + direction * 2));
-          if (isometricMode) {
+          if (threeDimensionalView) {
             const ScreenPoint projected =
-                isometricProjection().tileCenter(anchor);
-            isometricCameraX += mouseX - projected.x;
-            isometricCameraY += mouseY - projected.y;
+                camera3D().tileCenter(anchor);
+            cameraOffsetX += mouseX - projected.x;
+            cameraOffsetY += mouseY - projected.y;
           } else {
             viewX = anchor.x - mouseX / tilePixels;
             viewY = anchor.y - mouseY / tilePixels;
           }
         }
       } else if (event.type == EventType::MouseMotion && cameraPanning) {
-        if (isometricMode) {
-          isometricCameraX += event.motion.x - cameraLastX;
-          isometricCameraY += event.motion.y - cameraLastY;
+        if (threeDimensionalView) {
+          cameraOffsetX += event.motion.x - cameraLastX;
+          cameraOffsetY += event.motion.y - cameraLastY;
           cameraLastX = event.motion.x;
           cameraLastY = event.motion.y;
           continue;
@@ -2198,48 +2232,14 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     std::unordered_map<uint32_t,const regional::Connection*> portById;
     for (const auto& c:liveState.regionalConnections) if (c.constructed) portById.emplace(c.id,&c);
     const auto& transitMarks = transitOverlayCache.update(roads, liveState.transitRoutes);
-    if (isometricMode) {
-      const IsometricProjection projection = isometricProjection();
-      for (int depth = 0; depth <= (mapSize - 1) * 2; ++depth) {
-        for (int x = 0; x < mapSize; ++x) {
-          const int y = depth - x;
-          if (y < 0 || y >= mapSize)
-            continue;
-          drawIsometricTile(renderer, map, roads, store, overlayFacilities,
-                            liveState.routeHeatByTile,
-                            liveState.waste.happinessPenalty +
-                                liveState.deathcare.happinessPenalty,
-                            overlayMode == OverlayMode::Transit ? OverlayMode::Zone : overlayMode, projection, {x, y}, &districts, selectedDistrictId,
-                            overlayMode == OverlayMode::Transit ? &transitMarks : nullptr);
-          const auto port=portById.find(map.getTile({x,y}).regionalConnectionId);
-          if (port!=portById.end() && port->second->kind==regional::Kind::Airport)
-            drawAirportTile(renderer,projection.tileTop({x,y}),projection.tileWidth(),projection.tileHeight(),true,
-              port->second->enabled,x-port->second->origin.x,y-port->second->origin.y);
-          else if (port!=portById.end()) drawPortTile(renderer,projection.tileTop({x,y}),
-            projection.tileWidth(),projection.tileHeight(),true,port->second->kind,port->second->enabled,
-            x==port->second->origin.x);
-          if (burningCoords.count({x, y}) != 0) {
-            const auto top = projection.tileTop({x, y});
-            drawFireMarker(renderer, {top.x, top.y + projection.tileHeight() / 2}, projection.tileWidth());
-          }
-          if (x == mapSize - 1 || y == mapSize - 1) {
-            const ScreenPoint top = projection.tileTop({x, y});
-            const RGB wall{67, 79, 68};
-            const int halfWidth = projection.tileWidth() / 2;
-            const int bottomY = top.y + projection.tileHeight();
-            for (int drop = 1; drop <= 5; ++drop) {
-              setDrawColor(renderer, wall.r, wall.g, wall.b, 220);
-              if (x == mapSize - 1) {
-                drawLine(renderer, top.x, bottomY + drop, top.x - halfWidth,
-                         top.y + projection.tileHeight() / 2 + drop);
-              }
-              if (y == mapSize - 1) {
-                drawLine(renderer, top.x, bottomY + drop, top.x + halfWidth,
-                         top.y + projection.tileHeight() / 2 + drop);
-              }
-            }
-          }
-        }
+    renderer->viewportWidth=windowWidth; renderer->viewportHeight=windowHeight;
+    if (threeDimensionalView) {
+      drawCity3D(renderer,camera3D(),map,roads,store,overlayFacilities,overlayMode,
+                 liveState.routeHeatByTile,liveState.waste.happinessPenalty+liveState.deathcare.happinessPenalty,
+                 districts,selectedDistrictId,overlayMode==OverlayMode::Transit ? &transitMarks : nullptr);
+      for(const auto coord:burningCoords) {
+        const auto p=camera3D().tileCenter(coord);
+        drawFireMarker(renderer,{p.x,p.y},tilePixels);
       }
     } else {
       for (int ty = 0; ty < visibleTilesY; ++ty) {
@@ -2283,8 +2283,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         districts.getDistrictConst(selectedDistrictId) == nullptr) {
       selectedDistrictId = 0;
     }
-    if (!isometricMode && !districts.getDistricts().empty()) {
-      drawDistrictOutlines(renderer, districts, isometricMode,
+    if (!threeDimensionalView && !districts.getDistricts().empty()) {
+      drawDistrictOutlines(renderer, districts, threeDimensionalView,
                            isometricProjection(), viewX, viewY, tilePixels,
                            selectedDistrictId);
     }
@@ -2324,11 +2324,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       (map.isValid(pinnedInspector) || (!mouseOverHud && !mouseOverLegend && !mouseOverPalette && !mouseOverDistrictPanel && !mouseOverGuide &&
         (cleanUiMode || (!overMonumentButton(mouseX,mouseY) && !overUniqueButton(mouseX,mouseY) && !overPortButton(mouseX,mouseY) && !overAirportButton(mouseX,mouseY) && !overHotelButton(mouseX,mouseY) && !overTourismButton(mouseX,mouseY))) && !overPortBanner(mouseX,mouseY))) && map.isValid(hoveredTile);
     if (inspectMap && !portToolActive) {
-      if (isometricMode) {
-        const IsometricProjection projection = isometricProjection();
-        drawDiamond(renderer, projection.tileTop(hoveredTile),
-                    projection.tileWidth(), projection.tileHeight(),
-                    {255, 245, 150}, 90);
+      if (threeDimensionalView) {
+        drawGroundHighlight(renderer,camera3D(),hoveredTile,{255,245,150},90);
       } else {
         const int screenX = (hoveredTile.x - viewX) * tilePixels;
         const int screenY = (hoveredTile.y - viewY) * tilePixels;
@@ -2363,11 +2360,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                                      : RGB{255, 155, 45})))
                 : RGB{235, 75, 75};
       for (const Coord tile : previewTiles) {
-        if (isometricMode) {
-          const IsometricProjection projection = isometricProjection();
-          drawDiamond(renderer, projection.tileTop(tile),
-                      projection.tileWidth(), projection.tileHeight(),
-                      previewColor, 165);
+        if (threeDimensionalView) {
+          drawGroundHighlight(renderer,camera3D(),tile,previewColor,165);
         } else {
           const int screenX = (tile.x - viewX) * tilePixels;
           const int screenY = (tile.y - viewY) * tilePixels;
@@ -2385,10 +2379,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       const RGB previewColor = servicePlan.valid
                                    ? serviceFacilityColor(selectedService)
                                    : RGB{235, 75, 75};
-      if (isometricMode) {
-        const IsometricProjection projection = isometricProjection();
-        drawDiamond(renderer, projection.tileTop(tile), projection.tileWidth(),
-                    projection.tileHeight(), previewColor, 190);
+      if (threeDimensionalView) {
+        drawGroundHighlight(renderer,camera3D(),tile,previewColor,190);
       } else {
         const int screenX = (tile.x - viewX) * tilePixels;
         const int screenY = (tile.y - viewY) * tilePixels;
@@ -2427,9 +2419,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         }
         for (const auto tile:tiles) if (map.isValid(tile)) {
           const RGB color=valid ? RGB{80,220,170} : RGB{235,75,75};
-          if (isometricMode) {
-            const auto projection=isometricProjection();
-            drawDiamond(renderer,projection.tileTop(tile),projection.tileWidth(),projection.tileHeight(),color,110);
+          if (threeDimensionalView) {
+            drawGroundHighlight(renderer,camera3D(),tile,color,110);
           } else drawRectOutline(renderer,(tile.x-viewX)*tilePixels,(tile.y-viewY)*tilePixels,tilePixels,tilePixels,color);
         }
       }

@@ -1,3 +1,4 @@
+#include "src/visualization/Scene3D.hpp"
 #include "src/visualization/GraphicsSmoke.hpp"
 #include "src/visualization/VisualizerHud.hpp"
 #include "src/visualization/VisualizerOverlay.hpp"
@@ -84,7 +85,17 @@ int runGraphicsSmoke(WindowHost &host, VulkanRenderer &gpu,
     const bool iso = benchmark || (scene >= 8 && scene < 16);
     const auto mode = static_cast<OverlayMode>(scene % 8);
     IsometricProjection projection(32, 16, {width / 2 - 110, 180});
-    for (int y = 0; y < 16; ++y)
+    if(benchmark || scene>=16) {
+      Camera3D camera; camera.yaw=45.f+(scene-16)*90.f;
+      camera.scale=32.f; camera.originX=width*.5f;
+      camera.originY=height*.5f;
+      const auto center=camera.project({8,0,8});
+      camera.originX+=width*.5f-center.x;
+      camera.originY+=height*.5f-center.y;
+      list.viewportWidth=width;list.viewportHeight=height;
+      DistrictSystem districts;
+      drawCity3D(&list,camera,map,roads,store,facilities,mode,heat,0.f,districts,0,nullptr);
+    } else for (int y = 0; y < 16; ++y)
       for (int x = 0; x < 16; ++x) {
         if (iso)
           drawIsometricTile(&list, map, roads, store, facilities, heat, 0.f,
@@ -111,8 +122,17 @@ int runGraphicsSmoke(WindowHost &host, VulkanRenderer &gpu,
     drawRectOutline(&list, 50, height - 40, 20, 20, {0, 255, 0}, 128);
     setDrawColor(&list, 255, 255, 255, 255);
     list.line(74, height - 40, 94, height - 20);
+    if(scene>=16) {
+      const auto start=list.vertices.size();
+      drawFilledRect(&list,110,height-40,20,20,{255,0,0});
+      for(size_t i=start;i<list.vertices.size();++i) list.vertices[i].z=.2f;
+      const auto back=list.vertices.size();
+      drawFilledRect(&list,110,height-40,20,20,{0,0,255});
+      for(size_t i=back;i<list.vertices.size();++i) list.vertices[i].z=.8f;
+      drawFilledRect(&list,116,height-34,6,6,{0,255,0});
+    }
     const auto generated = std::chrono::steady_clock::now();
-    const auto capture = !benchmark && scene < 16
+    const auto capture = !benchmark
                              ? (std::filesystem::path(outputDirectory) /
                                 ("scene-" + std::to_string(scene) + ".ppm"))
                                    .string()

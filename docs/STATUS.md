@@ -1,6 +1,20 @@
 # Project Status
 
-Last verified: November 8, 2026
+Last verified: November 9, 2026
+
+The first 3D rendering pass is complete locally (November 9, 2026). The default
+city view uses an orthographic orbit camera, procedural world geometry and
+Vulkan depth testing. Home/End rotate, Page Up/Page Down tilt, and F3 retains
+the top-down view. Native ground picking and construction previews follow the
+camera; overlays, transit marks and district borders remain aligned. Terrain
+remains flat; detailed assets, perspective and dynamic shadows remain future
+rendering work. Simulation rules and save formats retain their behavior.
+
+Strict Release, 672 CTest cases, seven Python unit tests, all 46 rendered cases
+and 20 graphics captures pass. The graphics probes verify near/far occlusion
+and UI ordering after resize. Evidence: `playtest-artifacts/3d-full/` and
+`playtest-artifacts/3d-graphics/`. See [RENDERING_3D.md](RENDERING_3D.md).
+Hosted CI has not been rerun for this change.
 
 M54 and Phase 14 are complete locally (November 8, 2026). A fresh native
 journey follows the milestone gates and reaches 10,052 residents at tick 15,300

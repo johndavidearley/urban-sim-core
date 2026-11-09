@@ -17,6 +17,7 @@ struct Color {
 struct Vertex {
   float x, y, r, g, b, a;
   float u = -1.f, v = -1.f; // Negative UV selects solid geometry.
+  float z = 0.f; // UI stays at zero; world vertices carry Vulkan depth.
 };
 
 // Logical-pixel geometry in painter's order. The Vulkan backend scales to the
@@ -24,6 +25,7 @@ struct Vertex {
 class DrawList {
 public:
   std::vector<Vertex> vertices;
+  int viewportWidth = 1280, viewportHeight = 800;
   Color color;
   Color background;
   uint32_t frameTimeMs = 0;

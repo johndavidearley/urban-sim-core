@@ -90,9 +90,11 @@ Controls:
   start a new city, or load the existing session
 - `F1`: show or hide the new-city guide
 - `F2`: toggle large or compact UI text (large is the default)
-- `F3`: toggle the isometric and top-down map views
+- `F3`: toggle the 3D and top-down map views
+- `Home` / `End`: orbit the 3D camera left / right
+- `Page Up` / `Page Down`: raise / lower the 3D viewing angle
 - `F4`: toggle detailed panels and the compact clean-gameplay HUD
-- `F`: center the isometric camera on the developed area
+- `F`: center the 3D camera on the developed area
 - Click the bottom tool palette to select Roads, Zoning, Bulldoze, Services,
   or Districts; clicking an active Zoning, Service, or District button cycles
   its subtype
@@ -260,25 +262,20 @@ Unzoned land also gains sparse procedural trees and shoreline transitions,
 roads sit within visible sidewalk tiles, and zoom is constrained to keep the
 map filling the window instead of exposing an empty edge.
 
-The renderer now also has a tested isometric projection boundary with forward
-tile projection and inverse mouse picking. This is the foundation for moving
-the live terrain, depth-sorted buildings, and construction tools into an
-optional isometric view without coupling projection math to simulation state.
-The live isometric view centers the city vertically and adds wider road
-surfaces, scaled building height, vegetation, shoreline accents, and shaded
-map edges while retaining `F3` as a top-down fallback. Buildings use projected
-wall and roof faces, directional facade shading, sloped window rows, grounded
-shadows, pitched residential roofs, and height-aligned rooftop details. Seeded
-facade variation distinguishes neighboring buildings, and water has animated
-ripples. Isometric streets use parcel-bound road surfaces, single or double
-lane markings, and junction crosswalks following the actual road network.
-Softer terrain grids, seeded ground variation, edge-following sandy shorelines,
-and shaded tree canopies give undeveloped land more depth. Diamond surfaces
-use two triangles regardless of zoom level. Civic facilities have distinct
-isometric landmarks: fire-station bays, a police flag mast, a hospital cross,
-a school tower, a raised water reservoir, utility stacks and treatment tanks,
-waste bins, and cemetery headstones. Buildings also gain entrance paths and
-projected doors, while shops have awnings following their facade perspective.
+The main view uses an orthographic 3D orbit camera and real world-space
+geometry. Vulkan depth testing resolves buildings, roads, trees, and facilities
+at every camera angle. Building height follows capacity, with shaded facades,
+window bands, and rooftop volumes. Terrain remains the simulation's flat grid;
+water sits slightly below land and a solid map edge gives the city thickness.
+`F3` keeps the top-down view available. The existing isometric drawing helpers
+remain available for historical graphics tests.
+
+Mouse selection intersects the camera ray with the ground grid. Construction
+previews use that same projection, and overlays, transit markings, and selected
+district borders follow the city as the camera turns. The HUD remains in screen
+coordinates. This first 3D pass uses procedural geometry; elevation, imported
+models, perspective projection, and shadow maps remain future work. See
+[the 3D renderer notes](docs/RENDERING_3D.md) for architecture and validation.
 
 Hovering over tool-palette, overlay, playback, speed, save, and load buttons
 also displays a descriptive tooltip. Tooltips explain interactions, current

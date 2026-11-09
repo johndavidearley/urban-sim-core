@@ -64,6 +64,13 @@ struct VulkanRenderer::Impl {
   VkDescriptorSet fontSet = VK_NULL_HANDLE;
   std::vector<VkImage> images;
   std::vector<VkImageView> views;
+  struct DepthTarget {
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+  };
+  std::vector<DepthTarget> depths;
+  VkFormat depthFormat = VK_FORMAT_UNDEFINED;
   std::vector<VkFramebuffer> framebuffers;
   std::vector<VkSemaphore> finished;
   struct Buffer {
@@ -460,6 +467,12 @@ struct VulkanRenderer::Impl {
     for (auto framebuffer : framebuffers)
       vkDestroyFramebuffer(device, framebuffer, nullptr);
     framebuffers.clear();
+    for (auto& depth : depths) {
+      if(depth.view) vkDestroyImageView(device,depth.view,nullptr);
+      if(depth.image) vkDestroyImage(device,depth.image,nullptr);
+      if(depth.memory) vkFreeMemory(device,depth.memory,nullptr);
+    }
+    depths.clear();
     if (pipeline)
       vkDestroyPipeline(device, pipeline, nullptr);
     pipeline = VK_NULL_HANDLE;
@@ -574,6 +587,15 @@ struct VulkanRenderer::Impl {
     images.resize(count);
     check(vkGetSwapchainImagesKHR(device, swapchain, &count, images.data()),
           "Get swapchain images");
+    depthFormat = VK_FORMAT_UNDEFINED;
+    for(auto candidate : {VK_FORMAT_D32_SFLOAT,VK_FORMAT_D16_UNORM}) {
+      VkFormatProperties properties;
+      vkGetPhysicalDeviceFormatProperties(physical,candidate,&properties);
+      if(properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+        depthFormat=candidate; break;
+      }
+    }
+    if(depthFormat==VK_FORMAT_UNDEFINED) throw std::runtime_error("No depth attachment format");
     VkAttachmentDescription attachment{};
     attachment.format = format;
     attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -585,20 +607,32 @@ struct VulkanRenderer::Impl {
     attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     VkAttachmentReference reference{0,
                                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format=depthFormat;
+    depthAttachment.samples=VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp=VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp=VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp=VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout=VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    const VkAttachmentDescription attachments[]={attachment,depthAttachment};
+    VkAttachmentReference depthReference{1,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &reference;
+    subpass.pDepthStencilAttachment=&depthReference;
     VkSubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
     dependency.srcStageMask = dependency.dstStageMask =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     auto pass =
         info<VkRenderPassCreateInfo>(VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO);
-    pass.attachmentCount = 1;
-    pass.pAttachments = &attachment;
+    pass.attachmentCount = 2;
+    pass.pAttachments = attachments;
     pass.subpassCount = 1;
     pass.pSubpasses = &subpass;
     pass.dependencyCount = 1;
@@ -617,11 +651,46 @@ struct VulkanRenderer::Impl {
       check(vkCreateImageView(device, &viewInfo, nullptr, &view),
             "Create image view");
       views.push_back(view);
+      depths.emplace_back();
+      auto& depth=depths.back();
+      auto depthImage=info<VkImageCreateInfo>(VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
+      depthImage.imageType=VK_IMAGE_TYPE_2D;
+      depthImage.format=depthFormat;
+      depthImage.extent={extent.width,extent.height,1};
+      depthImage.mipLevels=depthImage.arrayLayers=1;
+      depthImage.samples=VK_SAMPLE_COUNT_1_BIT;
+      depthImage.tiling=VK_IMAGE_TILING_OPTIMAL;
+      depthImage.usage=VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+      depthImage.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
+      check(vkCreateImage(device,&depthImage,nullptr,&depth.image),"Create depth image");
+      VkMemoryRequirements requirements;
+      vkGetImageMemoryRequirements(device,depth.image,&requirements);
+      VkPhysicalDeviceMemoryProperties memory;
+      vkGetPhysicalDeviceMemoryProperties(physical,&memory);
+      uint32_t memoryIndex=UINT32_MAX;
+      for(uint32_t i=0;i<memory.memoryTypeCount;++i) {
+        if(!(requirements.memoryTypeBits & (1u<<i))) continue;
+        memoryIndex=i;
+        if(memory.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) break;
+      }
+      if(memoryIndex==UINT32_MAX) throw std::runtime_error("No depth memory type");
+      auto allocate=info<VkMemoryAllocateInfo>(VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
+      allocate.allocationSize=requirements.size;
+      allocate.memoryTypeIndex=memoryIndex;
+      check(vkAllocateMemory(device,&allocate,nullptr,&depth.memory),"Allocate depth memory");
+      check(vkBindImageMemory(device,depth.image,depth.memory,0),"Bind depth memory");
+      auto depthView=info<VkImageViewCreateInfo>(VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
+      depthView.image=depth.image;
+      depthView.viewType=VK_IMAGE_VIEW_TYPE_2D;
+      depthView.format=depthFormat;
+      depthView.subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT,0,1,0,1};
+      check(vkCreateImageView(device,&depthView,nullptr,&depth.view),"Create depth view");
+      const VkImageView framebufferViews[]={views.back(),depth.view};
       auto framebuffer = info<VkFramebufferCreateInfo>(
           VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO);
       framebuffer.renderPass = renderPass;
-      framebuffer.attachmentCount = 1;
-      framebuffer.pAttachments = &views.back();
+      framebuffer.attachmentCount = 2;
+      framebuffer.pAttachments = framebufferViews;
       framebuffer.width = extent.width;
       framebuffer.height = extent.height;
       framebuffer.layers = 1;
@@ -668,12 +737,13 @@ struct VulkanRenderer::Impl {
           {0, 0, VK_FORMAT_R32G32_SFLOAT, 0},
           {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
            static_cast<uint32_t>(offsetof(Vertex, r))},
-          {2, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, u))}};
+          {2, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, u))},
+          {3, 0, VK_FORMAT_R32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, z))}};
       auto input = info<VkPipelineVertexInputStateCreateInfo>(
           VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO);
       input.vertexBindingDescriptionCount = 1;
       input.pVertexBindingDescriptions = &binding;
-      input.vertexAttributeDescriptionCount = 3;
+      input.vertexAttributeDescriptionCount = 4;
       input.pVertexAttributeDescriptions = attributes;
       auto assembly = info<VkPipelineInputAssemblyStateCreateInfo>(
           VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO);
@@ -721,6 +791,10 @@ struct VulkanRenderer::Impl {
       layoutInfo.pPushConstantRanges = &range;
       check(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout),
             "Create pipeline layout");
+      auto depthState=info<VkPipelineDepthStencilStateCreateInfo>(VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO);
+      depthState.depthTestEnable=VK_TRUE;
+      depthState.depthWriteEnable=VK_TRUE;
+      depthState.depthCompareOp=VK_COMPARE_OP_LESS_OR_EQUAL;
       auto create = info<VkGraphicsPipelineCreateInfo>(
           VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO);
       create.stageCount = 2;
@@ -731,6 +805,7 @@ struct VulkanRenderer::Impl {
       create.pRasterizationState = &raster;
       create.pMultisampleState = &samples;
       create.pColorBlendState = &blending;
+      create.pDepthStencilState = &depthState;
       create.pDynamicState = &dynamic;
       create.layout = layout;
       create.renderPass = renderPass;
@@ -831,8 +906,10 @@ struct VulkanRenderer::Impl {
       pass.renderPass = renderPass;
       pass.framebuffer = framebuffers[imageIndex];
       pass.renderArea.extent = extent;
-      pass.clearValueCount = 1;
-      pass.pClearValues = &clear;
+      VkClearValue clears[2]={clear,{}};
+      clears[1].depthStencil={1.f,0};
+      pass.clearValueCount = 2;
+      pass.pClearValues = clears;
       vkCmdBeginRenderPass(frame.command, &pass, VK_SUBPASS_CONTENTS_INLINE);
       vkCmdBindPipeline(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                         pipeline);
@@ -907,7 +984,7 @@ struct VulkanRenderer::Impl {
       check(vkEndCommandBuffer(frame.command), "End frame commands");
       check(vkResetFences(device, 1, &frame.fence), "Reset frame fence");
       const VkPipelineStageFlags wait =
-          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
       auto submit = info<VkSubmitInfo>(VK_STRUCTURE_TYPE_SUBMIT_INFO);
       submit.waitSemaphoreCount = 1;
       submit.pWaitSemaphores = &frame.available;

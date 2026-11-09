@@ -938,3 +938,19 @@ construction prices. `budget` inspection reports `catalog_milestones` and
 [POPULATION_MILESTONES.md](POPULATION_MILESTONES.md) for tiers and calibration.
 Earlier M32–M48 fixture descriptions retain historical purchase prices; loading
 such a city never charges the difference. New purchases use current prices.
+
+
+## 3D camera
+
+The main view now reports `projection: "3d"`. `view` accepts projection `3d`
+and `top_down`; `isometric` remains an alias for `3d` for retained scenarios.
+Camera actions accept `yaw` (0 inclusive to 360 exclusive) and `pitch` (20–80
+degrees), alongside the existing scale, view and pixel offsets. Native keys
+`Home`/`End` orbit by 15 degrees; `PageUp`/`PageDown` tilt by 5 degrees.
+`coordinates` uses the same 3D ground projection as native construction.
+
+`--graphics-smoke` now also captures scenes 16–19 with 3D geometry at four
+yaws, exercises depth attachments after window resize, and retains the earlier
+2D/isometric probes. Scene 16–19 include red-over-blue depth probes near the
+bottom edge: the nearer red rectangle is submitted first and must remain
+visible, with a green UI square over both.

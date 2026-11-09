@@ -24,10 +24,12 @@ def main():
     parser.add_argument('--tolerance', type=int, default=3)
     parser.add_argument('--max-different-fraction', type=float, default=0.01)
     args = parser.parse_args()
-    for scene in range(16):
+    for scene in range(20):
         path = args.captures / f'scene-{scene}.ppm'
         width, height, pixels = read_ppm(path)
         logical_width, logical_height = (1100, 720) if 8 <= scene < 16 else (1280, 800)
+        # Window managers may reserve titlebar space from requested dimensions.
+        logical_height = height / (width / logical_width)
         def sample(x, y):
             sx, sy = int(x * width / logical_width), int(y * height / logical_height)
             offset = (sy * width + sx) * 3
@@ -36,7 +38,13 @@ def main():
             actual = sample(x, logical_height - 30)
             if any(abs(a - b) > args.tolerance for a, b in zip(actual, expected)):
                 raise AssertionError(f'{path}: color/order probe {x}: {actual}, expected {expected}')
-        if args.reference:
+        if scene >= 16:
+            for x, y, expected in [(112, logical_height - 32, (255, 0, 0)),
+                                   (118, logical_height - 32, (0, 255, 0))]:
+                actual = sample(x, y)
+                if any(abs(a - b) > args.tolerance for a, b in zip(actual, expected)):
+                    raise AssertionError(f'{path}: depth/UI probe: {actual}, expected {expected}')
+        if args.reference and (scene < 16 or (args.reference / path.name).exists()):
             rw, rh, reference = read_ppm(args.reference / path.name)
             if (rw, rh) != (width, height):
                 raise AssertionError(f'{path}: reference dimensions differ')
@@ -49,7 +57,7 @@ def main():
             fraction = different / (width * height)
             if fraction > args.max_different_fraction:
                 raise AssertionError(f'{path}: {fraction:.2%} pixels differ beyond tolerance')
-    print('16 graphics captures passed geometry/color checks' + (' and reference comparison' if args.reference else ''))
+    print('20 graphics captures passed geometry/color/depth checks' + (' and reference comparison' if args.reference else ''))
 
 
 if __name__ == '__main__':

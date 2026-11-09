@@ -390,7 +390,7 @@ if (command == "coordinates") {
     if (!map.isValid({x, y}))
       throw std::runtime_error("Tile outside map");
     const auto point =
-        isometricMode ? isometricProjection().tileCenter({x, y})
+        threeDimensionalView ? camera3D().tileCenter({x, y})
                       : ScreenPoint{(x - viewX) * tilePixels + tilePixels / 2,
                                     (y - viewY) * tilePixels + tilePixels / 2};
     return {{"x", point.x}, {"y", point.y}};
@@ -454,9 +454,9 @@ if (command == "view") {
     overlayMode = static_cast<OverlayMode>(value);
   } else if (action == "projection") {
     const auto value = args.at("projection").get<std::string>();
-    if (value != "isometric" && value != "top_down")
+    if (value != "3d" && value != "isometric" && value != "top_down")
       throw std::runtime_error("Unknown projection");
-    isometricMode = value == "isometric";
+    threeDimensionalView = value != "top_down";
     toolDragging = false;
     roadPlan = {};
     zonePlan = {};
@@ -467,17 +467,21 @@ if (command == "view") {
       throw std::runtime_error("Tile scale outside supported range");
     const int vx = args.value("view_x", viewX),
               vy = args.value("view_y", viewY),
-              ox = args.value("offset_x", isometricCameraX),
-              oy = args.value("offset_y", isometricCameraY);
+              ox = args.value("offset_x", cameraOffsetX),
+              oy = args.value("offset_y", cameraOffsetY);
     if (vx < 0 || vy < 0 || vx >= mapSize || vy >= mapSize ||
         std::abs(static_cast<int64_t>(ox)) > 100000 ||
         std::abs(static_cast<int64_t>(oy)) > 100000)
       throw std::runtime_error("Camera outside supported range");
+    const float yaw=args.value("yaw",cameraYaw), pitch=args.value("pitch",cameraPitch);
+    if (!std::isfinite(yaw) || !std::isfinite(pitch) || yaw<0 || yaw>=360 || pitch<20 || pitch>80)
+      throw std::runtime_error("Camera yaw must be 0..<360 and pitch 20..80");
+    cameraYaw=yaw; cameraPitch=pitch;
     tilePixels = scale;
     viewX = vx;
     viewY = vy;
-    isometricCameraX = ox;
-    isometricCameraY = oy;
+    cameraOffsetX = ox;
+    cameraOffsetY = oy;
   } else if (action == "focus")
     focusDevelopedArea();
   else if (action == "toggle") {

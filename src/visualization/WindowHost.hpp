@@ -20,6 +20,8 @@ enum class Key {
   Enter,
   Tab,
   Home,
+  PageUp,
+  PageDown,
   End,
   I,
   J,

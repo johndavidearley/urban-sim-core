@@ -1,5 +1,6 @@
 # Test executable with all test sources
 add_executable(test_core
+  Camera3DTests.cpp
   VisualizerGeometryTests.cpp
   CoreTests.cpp
   EntityStoreTests.cpp

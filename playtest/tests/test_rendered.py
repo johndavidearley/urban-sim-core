@@ -27,6 +27,35 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_3d_orbit_ground_picking_and_native_road_placement(self):
+        s = self.session
+        for yaw, pitch in ((0, 20), (90, 35), (180, 60), (270, 80)):
+            await s.city("new", 32)
+            await s.request("view", {"action": "projection", "projection": "3d"})
+            await s.request("view", {"action": "camera", "yaw": yaw, "pitch": pitch})
+            await s.request("view", {"action": "focus"})
+            await s.request("view", {"action": "toggle", "name": "compact_ui", "enabled": True})
+            points = []
+            for x in (14, 18):
+                p = await s.request("coordinates", {"direction": "tile_to_screen", "x": x, "y": 16})
+                tile = await s.request("coordinates", {"direction": "screen_to_tile", **p})
+                self.assertEqual((tile["x"], tile["y"]), (x, 16))
+                points.append(p)
+            await s.request("input", {"events": [
+                {"type": "key", "key": "R"},
+                {"type": "move", **points[0]},
+                {"type": "down", "button": "left", **points[0]},
+                {"type": "move", **points[1]},
+            ]})
+            await s.screenshot(f"3d-road-preview-{yaw}")
+            await s.request("input", {"events": [{"type": "up", "button": "left", **points[1]}]})
+            tiles = await s.request("inspect", {"section": "tiles", "x": 16, "y": 16})
+            self.assertTrue(tiles["items"][0]["road"])
+            self.assertEqual(s.last_state["projection"], "3d")
+            await s.request("input", {"events": [{"type": "key", "key": "PageUp"}]})
+            self.assertLessEqual(s.last_state["camera"]["pitch"], 80)
+            await s.screenshot(f"3d-orbit-{yaw}")
+
     async def unlock_catalog_fixture(self, threshold=10000, funds=None):
         """Grant progression to isolate older feature tests from M49 gates."""
         s = self.session
