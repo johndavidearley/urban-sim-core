@@ -2,6 +2,76 @@
 
 Last verified: November 9, 2026
 
+Visible 3D surface inspection is complete locally (November 9, 2026). Hover and
+the I inspector key now trace rendered world triangles, selecting roofs, walls,
+canopies and infrastructure parts rather than the ground parcel behind them.
+Parcel bounding boxes narrow candidate searches; exact triangle intersections
+preserve holes and nearest-surface occlusion. Facilities and terminals resolve
+to their anchor. Construction and demolition retain ground-grid picking.
+
+The CPU collector shares geometry with rendering, excludes HUD/previews and
+respects camera clipping. Current-frame hover avoids stale screen data; explicit
+pin/query actions rebuild after camera or city changes in an input batch.
+Playtesting adds `screen_to_visible_tile` and an optional 3D projection height.
+
+Strict Release, all 689 CTest cases, seven Python unit tests, all 49 rendered
+cases and all 40 graphics checks pass. Native roof pinning and ground road
+placement are verified at four angles in both projections. Evidence:
+`playtest-artifacts/visible-picking-full/`, `playtest-artifacts/visible-picking-native/`
+and `playtest-artifacts/visible-picking-graphics/`. Hosted CI remains pending.
+
+The building architecture pass is complete locally (November 9, 2026). Low-density
+homes have pitched roofs; higher-density housing has balconies. Shops have
+storefronts and awnings, industry has shed roofs and stacks, and offices have
+podiums and setback towers. Hotels have entrance canopies and rooftop H signs.
+All six unique buildings and four monuments now have dedicated procedural models,
+including colonnades, station canopies, clock towers, fountains, clinical towers,
+an observatory, an energy spire and an ecology dome.
+
+Architecture derives from persistent metadata, capacity and parcel position;
+entity IDs, occupancy and animation time do not change its generated appearance.
+All models stay inside their simulation parcels, and ordinary capacity growth
+raises the skyline. Shared world-space primitives preserve depth and perspective
+clipping. Geometry tests cover these invariants and diagnostic overlays.
+
+Strict Release, all 684 CTest cases, seven Python unit tests, all 48 rendered
+cases and all 40 graphics color/depth checks pass. Eight gallery captures cover
+all building types, six capacity tiers, hotels and all civic landmarks at four
+angles in both camera projections. Evidence: `playtest-artifacts/architecture-full/`
+and `playtest-artifacts/architecture-graphics/`. See [RENDERING_3D.md](RENDERING_3D.md).
+Hosted CI remains pending.
+
+The perspective camera pass is complete locally (November 9, 2026). T toggles
+orthographic/perspective; F3 retains the last 3D projection when returning from
+top-down. Perspective uses homogeneous Vulkan clipping, with separate near-plane
+clipping for construction previews. Camera rays above the horizon return an
+invalid tile. Ground picking, focus, native construction, orbit and anchored
+zoom work in both projections; orthographic remains the startup default.
+
+Strict Release, all 679 CTest cases, seven Python unit tests, all 48 rendered
+cases and all 32 graphics color/depth probes pass. Four perspective views and
+four close-camera clipping captures extend the retained graphics suite. Native
+road placement, projection toggles and sky rejection are tested at four camera
+angles. Evidence: `playtest-artifacts/perspective-full/` and
+`playtest-artifacts/perspective-graphics/`. See [RENDERING_3D.md](RENDERING_3D.md).
+Hosted CI remains pending.
+
+The 3D infrastructure and camera pass is complete locally (November 9, 2026).
+Facilities now have type-specific procedural geometry, including full 2×2 solar
+arrays, animated wind turbines, water towers, civic landmarks and waste sites.
+Airports, cargo ports and passenger terminals use their recorded footprints;
+waterfront structures render across water parcels. The map base now sits below
+the water surface, with a regression checking its visible depth.
+
+Right-drag orbits and tilts when no tool is selected. Orbit and wheel zoom keep
+the exact ground pivot fixed using fractional camera offsets. Right-click keeps
+its construction cancellation behavior; view changes, tool selection and focus
+loss end orbit gestures. Strict Release, 675 CTest cases, seven Python unit
+tests, all 47 rendered cases and all 24 graphics color/depth probes pass. Final
+native gesture checks also cover tool shortcuts during an active drag. Evidence:
+`playtest-artifacts/3d-sites-verified/`, `playtest-artifacts/3d-sites-gesture/` and
+`playtest-artifacts/3d-sites-graphics/`. Hosted CI remains pending.
+
 The first 3D rendering pass is complete locally (November 9, 2026). The default
 city view uses an orthographic orbit camera, procedural world geometry and
 Vulkan depth testing. Home/End rotate, Page Up/Page Down tilt, and F3 retains

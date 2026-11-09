@@ -5,6 +5,7 @@
 #include <vector>
 
 namespace visualizer {
+class ScenePicking3D;
 struct Point {
   int x = 0, y = 0;
 };
@@ -18,13 +19,17 @@ struct Vertex {
   float x, y, r, g, b, a;
   float u = -1.f, v = -1.f; // Negative UV selects solid geometry.
   float z = 0.f; // UI stays at zero; world vertices carry Vulkan depth.
+  float clipW = 1.f; // Homogeneous W preserves perspective clipping/interpolation.
 };
 
-// Logical-pixel geometry in painter's order. The Vulkan backend scales to the
-// framebuffer.
+// Screen geometry with optional world depth and homogeneous W. UI retains
+// painter order; the Vulkan backend scales logical pixels to the framebuffer.
 class DrawList {
 public:
   std::vector<Vertex> vertices;
+  // Optional CPU triangle collector; never part of the GPU vertex format.
+  ScenePicking3D* scenePicking = nullptr;
+  int pickTileX = -1, pickTileY = -1;
   int viewportWidth = 1280, viewportHeight = 800;
   Color color;
   Color background;

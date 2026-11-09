@@ -91,6 +91,8 @@ Controls:
 - `F1`: show or hide the new-city guide
 - `F2`: toggle large or compact UI text (large is the default)
 - `F3`: toggle the 3D and top-down map views
+- `T`: switch the 3D camera between orthographic and perspective
+- Right mouse drag with no construction tool selected: orbit and tilt the 3D camera
 - `Home` / `End`: orbit the 3D camera left / right
 - `Page Up` / `Page Down`: raise / lower the 3D viewing angle
 - `F4`: toggle detailed panels and the compact clean-gameplay HUD
@@ -262,19 +264,25 @@ Unzoned land also gains sparse procedural trees and shoreline transitions,
 roads sit within visible sidewalk tiles, and zoom is constrained to keep the
 map filling the window instead of exposing an empty edge.
 
-The main view uses an orthographic 3D orbit camera and real world-space
-geometry. Vulkan depth testing resolves buildings, roads, trees, and facilities
-at every camera angle. Building height follows capacity, with shaded facades,
-window bands, and rooftop volumes. Terrain remains the simulation's flat grid;
+The main view uses a 3D orbit camera and real world-space geometry.
+Orthographic is the default; `T` enables perspective with a vanishing point and
+smaller distant objects. Vulkan depth testing resolves buildings, roads, trees,
+and facilities at every camera angle. Building height follows capacity, with shaded facades,
+window bands, and rooftop volumes. Residential parcels show pitched-roof houses
+or balcony apartments; shops have glazed storefronts and awnings, factories
+have shed roofs and stacks, and offices have setback towers. Hotels and all six
+unique buildings and four monuments have dedicated procedural models. Terrain remains the simulation's flat grid;
 water sits slightly below land and a solid map edge gives the city thickness.
 `F3` keeps the top-down view available. The existing isometric drawing helpers
 remain available for historical graphics tests.
 
-Mouse selection intersects the camera ray with the ground grid. Construction
-previews use that same projection, and overlays, transit markings, and selected
+Construction selection intersects the camera ray with the ground grid. Hover
+and the `I` inspector key select the visible 3D surface, including roofs and
+canopies, and resolve it to its owning parcel. Construction previews use the
+ground projection, and overlays, transit markings, and selected
 district borders follow the city as the camera turns. The HUD remains in screen
-coordinates. This first 3D pass uses procedural geometry; elevation, imported
-models, perspective projection, and shadow maps remain future work. See
+coordinates. The renderer uses procedural geometry; terrain elevation, imported
+models, and shadow maps remain future work. See
 [the 3D renderer notes](docs/RENDERING_3D.md) for architecture and validation.
 
 Hovering over tool-palette, overlay, playback, speed, save, and load buttons

@@ -23,8 +23,8 @@ if (command == "budget") {
   } else if (action=="set_tourism") {
     if (!args.at("tourism_enabled").is_boolean()) throw std::runtime_error("Tourism policy must be boolean");
     setTourism(args.at("tourism_enabled").get<bool>());
-  } else if (action=="uniques" || action=="monuments") {monumentCatalog=action=="monuments";showUniquePanel=true;showRegionalPanel=showTransportPanel=showBudgetPanel=false;toolDragging=cameraPanning=false;}
-  else if (action=="transport") {showUniquePanel=false;showRegionalPanel=false;showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;}
+  } else if (action=="uniques" || action=="monuments") {monumentCatalog=action=="monuments";showUniquePanel=true;showRegionalPanel=showTransportPanel=showBudgetPanel=false;toolDragging=cameraPanning=cameraOrbiting=false;}
+  else if (action=="transport") {showUniquePanel=false;showRegionalPanel=false;showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=cameraOrbiting=false;}
   else if (action=="set_route_vehicles") {
     if (!args.at("route_id").is_number_integer() || !args.at("vehicles").is_number_integer())
       throw std::runtime_error("Route ID and vehicles must be integers");
@@ -84,9 +84,9 @@ if (command == "budget") {
     budgetTrends = action == "trends";
     budgetAlerts = action == "alerts";
     budgetBonds = action == "bonds";
-    showBudgetPanel = true; toolDragging = false; cameraPanning = false;
+    showBudgetPanel = true; toolDragging = false; cameraPanning = cameraOrbiting = false;
   } else if (action == "reset") setBudgetPolicy(BudgetPolicy{});
-  else if (action == "open") { showRegionalPanel=false;showTransportPanel=false; showBudgetPanel = true; toolDragging = false; cameraPanning = false; }
+  else if (action == "open") { showRegionalPanel=false;showTransportPanel=false; showBudgetPanel = true; toolDragging = false; cameraPanning = cameraOrbiting = false; }
   else if (action == "close") {showUniquePanel=false;showBudgetPanel=false;showRegionalPanel=false;showTransportPanel=false;}
   else if (action != "inspect") throw std::runtime_error("Unknown budget action");
   return budgetStatus();
@@ -389,17 +389,21 @@ if (command == "coordinates") {
   if (args.at("direction") == "tile_to_screen") {
     if (!map.isValid({x, y}))
       throw std::runtime_error("Tile outside map");
+    const float height=args.value("height",0.f);
+    if(!std::isfinite(height) || height<0 || height>16 || (!threeDimensionalView && height!=0))
+      throw std::runtime_error("Height must be 0..16 and requires a 3D view");
     const auto point =
-        threeDimensionalView ? camera3D().tileCenter({x, y})
+        threeDimensionalView ? camera3D().worldToScreen({x+.5f,height,y+.5f})
                       : ScreenPoint{(x - viewX) * tilePixels + tilePixels / 2,
                                     (y - viewY) * tilePixels + tilePixels / 2};
     return {{"x", point.x}, {"y", point.y}};
   }
-  if (args.at("direction") != "screen_to_tile")
+  const bool visible=args.at("direction")=="screen_to_visible_tile";
+  if (!visible && args.at("direction") != "screen_to_tile")
     throw std::runtime_error("Unknown coordinate direction");
   if (x < 0 || y < 0 || x >= windowWidth || y >= windowHeight)
     throw std::runtime_error("Screen point outside window");
-  const auto tile = tileAtScreen(x, y);
+  const auto tile = visible ? inspectorTileAtScreen(x,y) : tileAtScreen(x, y);
   return {{"x", tile.x}, {"y", tile.y}, {"valid", map.isValid(tile)}};
 }
 if (command == "city") {
@@ -454,9 +458,11 @@ if (command == "view") {
     overlayMode = static_cast<OverlayMode>(value);
   } else if (action == "projection") {
     const auto value = args.at("projection").get<std::string>();
-    if (value != "3d" && value != "isometric" && value != "top_down")
+    if (value != "3d" && value != "perspective" && value != "isometric" && value != "top_down")
       throw std::runtime_error("Unknown projection");
     threeDimensionalView = value != "top_down";
+    if(threeDimensionalView) perspectiveView = value == "perspective";
+    cameraOrbiting = false;
     toolDragging = false;
     roadPlan = {};
     zonePlan = {};
@@ -466,12 +472,12 @@ if (command == "view") {
     if (scale < minimumTilePixels || scale > 48)
       throw std::runtime_error("Tile scale outside supported range");
     const int vx = args.value("view_x", viewX),
-              vy = args.value("view_y", viewY),
-              ox = args.value("offset_x", cameraOffsetX),
-              oy = args.value("offset_y", cameraOffsetY);
+              vy = args.value("view_y", viewY);
+    const float ox = args.value("offset_x", cameraOffsetX),
+                oy = args.value("offset_y", cameraOffsetY);
     if (vx < 0 || vy < 0 || vx >= mapSize || vy >= mapSize ||
-        std::abs(static_cast<int64_t>(ox)) > 100000 ||
-        std::abs(static_cast<int64_t>(oy)) > 100000)
+        !std::isfinite(ox) || !std::isfinite(oy) ||
+        std::abs(ox) > 100000 || std::abs(oy) > 100000)
       throw std::runtime_error("Camera outside supported range");
     const float yaw=args.value("yaw",cameraYaw), pitch=args.value("pitch",cameraPitch);
     if (!std::isfinite(yaw) || !std::isfinite(pitch) || yaw<0 || yaw>=360 || pitch<20 || pitch>80)

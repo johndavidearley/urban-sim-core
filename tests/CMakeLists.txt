@@ -1,5 +1,7 @@
 # Test executable with all test sources
 add_executable(test_core
+  ScenePicking3DTests.cpp
+  BuildingModels3DTests.cpp
   Camera3DTests.cpp
   VisualizerGeometryTests.cpp
   CoreTests.cpp

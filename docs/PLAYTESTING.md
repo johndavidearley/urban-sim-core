@@ -954,3 +954,57 @@ yaws, exercises depth attachments after window resize, and retains the earlier
 2D/isometric probes. Scene 16–19 include red-over-blue depth probes near the
 bottom edge: the nearer red rectangle is submitted first and must remain
 visible, with a green UI square over both.
+
+
+The next 3D pass adds right-drag orbiting with no active construction tool,
+continuous orbit/zoom pivots, and full site geometry. Right-click during road,
+zone, service, district or terminal editing retains its existing tool behavior.
+The graphics smoke now captures 24 scenes; scenes 20–23 show all utility power
+sources, civic facilities, a 2×2 solar array, waterfront cargo/passenger terminals
+and an airport at four camera angles. These are renderer fixtures and do not
+grant progression or funds in normal gameplay.
+
+
+### Perspective projection
+
+`view` accepts `projection: "perspective"`; `3d` and the retained `isometric`
+alias select orthographic. `T` toggles the active 3D projection; from top-down,
+`T` enters perspective. `F3` retains the last 3D projection on return from the
+map view. Ground coordinates, construction and camera controls use the active
+projection. Sky rays return `valid: false` rather than a parcel behind the eye.
+
+The graphics smoke now captures 32 scenes. Scenes 24–27 render the site fixture
+in perspective at four yaws. Scenes 28–31 move the camera close to the map at a
+low pitch and include plots crossing the near plane, checking homogeneous
+clipping and preview behavior. The HUD and fixed pixel probes remain in screen
+space. Orthographic remains the startup default for retained playthroughs.
+
+
+### Building architecture gallery
+
+The graphics smoke now captures 40 scenes. Scenes 32–35 show the architecture
+gallery in orthographic 3D; scenes 36–39 show it in perspective. Each projection
+covers four yaws, with ordinary buildings at six capacity tiers, open and closed
+hotels, all six unique buildings and all four monuments. Models are derived from
+building metadata and parcel position, so save/load and process-local entity ID
+changes preserve their appearance. The fixture does not alter player unlocks.
+
+
+### Visible surface picking
+
+`coordinates` now accepts `direction: "screen_to_visible_tile"`. It returns the
+parcel of the nearest visible 3D surface, matching hover and the I inspector
+key. `screen_to_tile` retains ground-grid behavior for construction. In top-down
+view, both screen queries return the ground tile.
+
+For `tile_to_screen`, optional `height` (0–16, default 0) projects the center of
+a tile at a world height in 3D views. Nonzero height is rejected in top-down.
+This supports testing roofs and elevated parts without approximating screen
+coordinates. A visible-surface query may return a building where a ground query
+returns another parcel or invalid sky. Facilities and terminals return their
+site anchor; HUD and construction highlights do not participate.
+
+The roof inspection acceptance fixture contains one tall office. At four angles
+in each camera projection, it projects a roof point, pins that building through
+native I input, then proves that a road drag from the same pixel still starts
+on the ground behind it. Fixtures do not change normal construction rules.

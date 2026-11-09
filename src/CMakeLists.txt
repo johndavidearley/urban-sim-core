@@ -101,6 +101,8 @@ target_link_libraries(UrbanSimCore-unique-journey-audit PRIVATE urban_sim_core)
 
 # CPU-side visualizer geometry remains usable without a window or graphics SDK.
 add_library(urban_sim_visualizer_drawing STATIC
+  visualization/BuildingModels3D.cpp
+  visualization/ScenePicking3D.cpp
   visualization/Scene3D.cpp
   visualization/VisualizerTypes.cpp
   visualization/VisualizerOverlay.cpp

@@ -1,3 +1,4 @@
+#include "src/visualization/ScenePicking3D.hpp"
 #include "src/visualization/Scene3D.hpp"
 #include "src/gameplay/CatalogUnlocks.hpp"
 #include <algorithm>
@@ -70,6 +71,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     };
   VulkanRenderer gpu(host.window());
   DrawList drawList;
+  ScenePicking3D scenePicking;
   DrawList *renderer = &drawList;
   int windowWidth = 1280, windowHeight = 800;
   if (argc > 1 && (std::string(argv[1]) == "--graphics-smoke" ||
@@ -186,6 +188,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   int viewX = 0;
   int viewY = 0;
   bool threeDimensionalView = true;
+  bool perspectiveView = false;
   float cameraYaw = 45.f, cameraPitch = 35.f;
   bool showBudgetPanel = false;
   bool showTransportPanel = false;
@@ -209,8 +212,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   bool budgetBonds = false;
   int bondPrincipalChoice = 0, bondTermChoice = 0;
   bool cleanUiMode = false;
-  int cameraOffsetX = 0;
-  int cameraOffsetY = 0;
+  float cameraOffsetX = 0.f;
+  float cameraOffsetY = 0.f;
   TransitOverlayCache transitOverlayCache;
   OverlayMode overlayMode = OverlayMode::Zone;
   bool showLegend = true;
@@ -304,7 +307,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   uint32_t lastHudRefreshMs = 0;
   int mouseX = 0;
   int mouseY = 0;
-  bool cameraPanning = false;
+  bool cameraOrbiting = false;
+  bool cameraPanning{false};
   int cameraLastX = 0;
   int cameraLastY = 0;
   int cameraPanRemainderX = 0;
@@ -316,15 +320,6 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   bool sessionDirty = !loadedAtStartup;
   bool showQuitDialog = false;
 
-  auto isometricProjection = [&]() {
-    const int height = std::max(6, tilePixels / 2);
-    const int centeredY = std::max(18, (windowHeight - mapSize * height) / 2);
-    return IsometricProjection(
-        tilePixels, height,
-        {windowWidth / 2 - (viewX - viewY) * (tilePixels / 2) +
-             cameraOffsetX,
-         centeredY - (viewX + viewY) * (height / 2) + cameraOffsetY});
-  };
   auto camera3D = [&]() {
     Camera3D camera;
     camera.yaw = cameraYaw; camera.pitch = cameraPitch;
@@ -335,21 +330,53 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     const auto offset=camera.project({float(viewX),0.f,float(viewY)});
     camera.originX -= offset.x-camera.originX;
     camera.originY -= offset.y-camera.originY;
+    camera.perspective = perspectiveView;
+    camera.centerX = windowWidth*.5f; camera.centerY = windowHeight*.5f;
+    camera.focalLength = std::max(200.f,windowHeight*1.2f);
     return camera;
   };
+  auto constructionToolActive = [&]() {
+    return roadToolActive || zoneToolActive || bulldozeToolActive ||
+           serviceToolActive || districtToolActive || portToolActive;
+  };
+  auto cameraCanOrbit = [&]() { return threeDimensionalView && !constructionToolActive(); };
   auto orbitCamera = [&](float turn, float tilt) {
-    const Coord anchor = camera3D().screenToTile({windowWidth/2,windowHeight/2});
-    auto camera=camera3D(); camera.orbit(turn,tilt);
-    cameraYaw=camera.yaw; cameraPitch=camera.pitch;
-    const auto p=camera3D().tileCenter(anchor);
-    cameraOffsetX += windowWidth/2-p.x;
-    cameraOffsetY += windowHeight/2-p.y;
+    auto camera = camera3D();
+    const float previousX = camera.originX, previousY = camera.originY;
+    camera.orbitAt(windowWidth*.5f, windowHeight*.5f, turn, tilt);
+    cameraYaw = camera.yaw; cameraPitch = camera.pitch;
+    cameraOffsetX += camera.originX - previousX;
+    cameraOffsetY += camera.originY - previousY;
   };
   auto tileAtScreen = [&](int screenX, int screenY) {
     if (threeDimensionalView) {
       return camera3D().screenToTile({screenX, screenY});
     }
     return Coord{viewX + screenX / tilePixels, viewY + screenY / tilePixels};
+  };
+  auto inspectorTileAtScreen = [&](int screenX,int screenY) {
+    if(!threeDimensionalView) return tileAtScreen(screenX,screenY);
+    if(screenX<0 || screenY<0 || screenX>=windowWidth || screenY>=windowHeight) return Coord{-1,-1};
+    // Keyboard pinning and tool queries may follow camera or city changes in
+    // the same event batch, so rebuild from current geometry for these queries.
+    DrawList scratch;scratch.viewportWidth=windowWidth;scratch.viewportHeight=windowHeight;
+    scratch.frameTimeMs=renderer->frameTimeMs;
+    ScenePicking3D picking;
+    const auto delivered=liveState.budgetPolicy.fundedFacilities(facilities);
+    const auto& shown=(overlayMode==OverlayMode::Zone || overlayMode==OverlayMode::Transit) ? facilities : delivered;
+    const TransitMarks* marks=overlayMode==OverlayMode::Transit ? &transitOverlayCache.update(roads,liveState.transitRoutes) : nullptr;
+    const auto camera=camera3D();
+    drawCity3D(&scratch,camera,map,roads,store,shown,overlayMode,liveState.routeHeatByTile,
+               liveState.waste.happinessPenalty+liveState.deathcare.happinessPenalty,
+               districts,selectedDistrictId,marks,&liveState.regionalConnections,&picking);
+    return picking.pick(camera,{screenX,screenY});
+  };
+  auto centerCameraOn = [&](Coord tile, float x, float y) {
+    auto camera = camera3D();
+    const float previousX=camera.originX, previousY=camera.originY;
+    camera.centerOn({tile.x+.5f,0.f,tile.y+.5f},x,y);
+    cameraOffsetX += camera.originX-previousX;
+    cameraOffsetY += camera.originY-previousY;
   };
   auto focusDevelopedArea = [&]() {
     int minX = mapSize;
@@ -384,9 +411,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
     cameraOffsetX = 0;
     cameraOffsetY = 0;
-    const ScreenPoint projected = camera3D().tileCenter(center);
-    cameraOffsetX += windowWidth / 2 - projected.x;
-    cameraOffsetY += windowHeight / 2 - projected.y;
+    centerCameraOn(center,windowWidth*.5f,windowHeight*.5f);
   };
   focusDevelopedArea();
 
@@ -576,6 +601,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   };
 
   auto activatePaletteTool = [&](PaletteTool tool) {
+    cameraOrbiting = false;
     if (tool == PaletteTool::Zone && zoneToolActive) {
       selectedZone = nextPlayableZone(selectedZone);
     } else if (tool == PaletteTool::Service && serviceToolActive) {
@@ -841,7 +867,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     if (index >= 5) throw std::runtime_error("Alert index must be 0 to 4");
     showTransportPanel=false;
     budgetAlerts = false; budgetTrends = false;
-    toolDragging = false; cameraPanning = false;
+    toolDragging = false; cameraPanning = cameraOrbiting = false;
     activatePaletteTool(PaletteTool::None);
     if (index == 4) { showBudgetPanel = true; budgetServices = false; budgetBonds = false; }
     else {
@@ -1126,7 +1152,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
          {"expenses", liveState.treasuryExpenses},
          {"autonomous_growth", liveState.autonomousGrowth},
          {"overlay", static_cast<int>(overlayMode)},
-         {"projection", threeDimensionalView ? "3d" : "top_down"},
+         {"projection", threeDimensionalView ? (perspectiveView ? "perspective" : "3d") : "top_down"},
          {"tile_pixels", tilePixels},
          {"camera",
           {{"view_x", viewX},
@@ -1318,7 +1344,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       host.dimensions(windowWidth, windowHeight);
       if (event.type == EventType::FocusLost) {
         toolDragging = false;
-        cameraPanning = false;
+        cameraPanning = cameraOrbiting = false;
         roadPlan = {};
         zonePlan = {};
         bulldozePlan = {};
@@ -1364,7 +1390,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         showUniquePanel=!(showUniquePanel && monumentCatalog==requestedMonuments);
         monumentCatalog=requestedMonuments;
         showBudgetPanel=showTransportPanel=showRegionalPanel=false;
-        toolDragging=cameraPanning=false;
+        toolDragging=cameraPanning=cameraOrbiting=false;
         continue;
       }
       if (showUniquePanel) {
@@ -1398,7 +1424,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       if ((event.type==EventType::KeyDown && event.key.sym==Key::U) || clickedRegional) {
         showRegionalPanel=!showRegionalPanel;
         showTransportPanel=false;showBudgetPanel=false;
-        toolDragging=false;cameraPanning=false;
+        toolDragging=false;cameraPanning=cameraOrbiting=false;
         continue;
       }
       if (showRegionalPanel) {
@@ -1443,9 +1469,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
             pinnedInspector=target;
             overlayMode=OverlayMode::ServiceCoverage;
             threeDimensionalView=true;
-            const auto projected=camera3D().tileCenter(target);
-            cameraOffsetX+=windowWidth/2-projected.x;
-            cameraOffsetY+=windowHeight*2/3-projected.y;
+            centerCameraOn(target,windowWidth*.5f,windowHeight*2.f/3.f);
           }
           if (action==3 && regionalHotelTab) {
             const auto& building=hotels[selected].building;
@@ -1550,6 +1574,13 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         showQuitDialog = true;
       } else if (event.type == EventType::KeyDown) {
         switch (event.key.sym) {
+        case Key::T:
+          cameraOrbiting = false;
+          perspectiveView = !threeDimensionalView || !perspectiveView;
+          if(!threeDimensionalView) { threeDimensionalView=true; focusDevelopedArea(); }
+          toolDragging=false; roadPlan={}; zonePlan={}; bulldozePlan={}; districtPlan={};
+          notify(perspectiveView ? "PERSPECTIVE VIEW - T FOR ORTHOGRAPHIC" : "ORTHOGRAPHIC 3D VIEW - T FOR PERSPECTIVE",true);
+          break;
         case Key::Home:
           if (threeDimensionalView) orbitCamera(-15.f,0.f);
           break;
@@ -1595,7 +1626,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         case Key::I:
           if (map.isValid(pinnedInspector)) pinnedInspector={-1,-1};
-          else {pinnedInspector=tileAtScreen(mouseX,mouseY);activatePaletteTool(PaletteTool::None);}
+          else {pinnedInspector=inspectorTileAtScreen(mouseX,mouseY);activatePaletteTool(PaletteTool::None);}
           break;
         case Key::Escape:
           if (map.isValid(pinnedInspector)) {pinnedInspector={-1,-1};break;}
@@ -1697,12 +1728,13 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           showOnboarding = !showOnboarding;
           break;
         case Key::F3:
+          cameraOrbiting = false;
           threeDimensionalView = !threeDimensionalView;
           toolDragging = false;
           roadPlan = {};
           zonePlan = {};
           bulldozePlan = {};
-          notify(threeDimensionalView ? "3D VIEW - HOME/END ROTATE, PAGE UP/DOWN TILT" : "TOP DOWN VIEW", true);
+          notify(threeDimensionalView ? (perspectiveView ? "PERSPECTIVE VIEW" : "ORTHOGRAPHIC 3D VIEW - T FOR PERSPECTIVE") : "TOP DOWN VIEW", true);
           break;
         case Key::F4:
           cleanUiMode = !cleanUiMode;
@@ -1726,18 +1758,18 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                  true);
           break;
         case Key::F8:
-          showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;
+          showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=cameraOrbiting=false;
           break;
         case Key::F7:
           showBudgetPanel = true; budgetAlerts = true; budgetTrends = false;
-          toolDragging = false; cameraPanning = false;
+          toolDragging = false; cameraPanning = cameraOrbiting = false;
           break;
         case Key::F6:
           showBudgetPanel = true;
           budgetAlerts = false;
           budgetTrends = false;
           toolDragging = false;
-          cameraPanning = false;
+          cameraPanning = cameraOrbiting = false;
           break;
         case Key::F5:
           saveSession();
@@ -1861,7 +1893,24 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         }
       } else if (event.type == EventType::MouseDown &&
+                 event.button.button == MouseButton::Right && cameraCanOrbit()) {
+        cameraOrbiting = true;
+        cameraPanning = false;
+        cameraLastX = event.button.x;
+        cameraLastY = event.button.y;
+      } else if (event.type == EventType::MouseUp &&
+                 event.button.button == MouseButton::Right) {
+        cameraOrbiting = false;
+      } else if (event.type == EventType::MouseMotion && cameraOrbiting) {
+        if(cameraCanOrbit())
+          orbitCamera((event.motion.x-cameraLastX)*.35f,
+                      (cameraLastY-event.motion.y)*.25f);
+        else cameraOrbiting = false;
+        cameraLastX = event.motion.x;
+        cameraLastY = event.motion.y;
+      } else if (event.type == EventType::MouseDown &&
                  event.button.button == MouseButton::Middle) {
+        cameraOrbiting = false;
         cameraPanning = true;
         cameraLastX = event.button.x;
         cameraLastY = event.button.y;
@@ -1869,7 +1918,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         cameraPanRemainderY = 0;
       } else if (event.type == EventType::MouseUp &&
                  event.button.button == MouseButton::Middle) {
-        cameraPanning = false;
+        cameraPanning = cameraOrbiting = false;
       } else if (event.type == EventType::Scroll) {
         host.mousePosition(&mouseX, &mouseY);
         const bool overHud = mouseX >= windowWidth - kHudPanelWidth - 12 &&
@@ -1886,14 +1935,16 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         if (!overHud && !overLegend && !overPalette && !overDistrictPanel &&
             event.wheel.y != 0) {
           const Coord anchor = tileAtScreen(mouseX, mouseY);
+          auto camera = camera3D();
           const int direction = event.wheel.y > 0 ? 1 : -1;
           tilePixels = std::max(minimumTilePixels,
                                 std::min(48, tilePixels + direction * 2));
           if (threeDimensionalView) {
-            const ScreenPoint projected =
-                camera3D().tileCenter(anchor);
-            cameraOffsetX += mouseX - projected.x;
-            cameraOffsetY += mouseY - projected.y;
+            camera.zoomAt(float(mouseX), float(mouseY), tilePixels/1.41421356f);
+            // Changing tile scale also changes the camera's base origin.
+            const auto updated = camera3D();
+            cameraOffsetX += camera.originX - updated.originX;
+            cameraOffsetY += camera.originY - updated.originY;
           } else {
             viewX = anchor.x - mouseX / tilePixels;
             viewY = anchor.y - mouseY / tilePixels;
@@ -1962,16 +2013,16 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           loadSession();
           break;
         case HudAction::Transport:
-          showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=false;
+          showTransportPanel=true;showBudgetPanel=false;toolDragging=false;cameraPanning=cameraOrbiting=false;
           break;
         case HudAction::Alerts:
           showBudgetPanel = true; budgetAlerts = true; budgetTrends = false;
-          toolDragging = false; cameraPanning = false;
+          toolDragging = false; cameraPanning = cameraOrbiting = false;
           break;
         case HudAction::Budget:
           showBudgetPanel = true;
           toolDragging = false;
-          cameraPanning = false;
+          cameraPanning = cameraOrbiting = false;
           break;
         case HudAction::ToggleDisasters:
           liveState.enableDisasters = !liveState.enableDisasters;
@@ -2037,10 +2088,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                                            windowWidth, windowHeight));
       } else if (event.type == EventType::MouseDown && !cleanUiMode &&
                  event.button.button==MouseButton::Left && overMonumentButton(event.button.x,event.button.y)) {
-        showUniquePanel=true;monumentCatalog=true;toolDragging=cameraPanning=false;
+        showUniquePanel=true;monumentCatalog=true;toolDragging=cameraPanning=cameraOrbiting=false;
       } else if (event.type == EventType::MouseDown && !cleanUiMode &&
                  event.button.button==MouseButton::Left && overUniqueButton(event.button.x,event.button.y)) {
-        showUniquePanel=true;monumentCatalog=false;toolDragging=cameraPanning=false;
+        showUniquePanel=true;monumentCatalog=false;toolDragging=cameraPanning=cameraOrbiting=false;
       } else if (event.type == EventType::MouseDown && !cleanUiMode &&
                  event.button.button == MouseButton::Left && overPortButton(event.button.x,event.button.y)) {
         selectPortAction();
@@ -2236,7 +2287,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     if (threeDimensionalView) {
       drawCity3D(renderer,camera3D(),map,roads,store,overlayFacilities,overlayMode,
                  liveState.routeHeatByTile,liveState.waste.happinessPenalty+liveState.deathcare.happinessPenalty,
-                 districts,selectedDistrictId,overlayMode==OverlayMode::Transit ? &transitMarks : nullptr);
+                 districts,selectedDistrictId,overlayMode==OverlayMode::Transit ? &transitMarks : nullptr, &liveState.regionalConnections,&scenePicking);
       for(const auto coord:burningCoords) {
         const auto p=camera3D().tileCenter(coord);
         drawFireMarker(renderer,{p.x,p.y},tilePixels);
@@ -2285,7 +2336,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
     if (!threeDimensionalView && !districts.getDistricts().empty()) {
       drawDistrictOutlines(renderer, districts, threeDimensionalView,
-                           isometricProjection(), viewX, viewY, tilePixels,
+                           IsometricProjection(2, 2), viewX, viewY, tilePixels,
                            selectedDistrictId);
     }
 
@@ -2319,7 +2370,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     const bool mouseOverGuide =
         !cleanUiMode && showOnboarding && mouseX >= 14 && mouseX < (onboardingStep == 6 ? 664 : 364) &&
         mouseY >= windowHeight - 154 && mouseY < windowHeight - 62;
-    const Coord hoveredTile = map.isValid(pinnedInspector) ? pinnedInspector : tileAtScreen(mouseX, mouseY);
+    const Coord hoverSelection=threeDimensionalView && !constructionToolActive()
+      ? scenePicking.pick(camera3D(),{mouseX,mouseY}) : tileAtScreen(mouseX,mouseY);
+    const Coord hoveredTile = map.isValid(pinnedInspector) ? pinnedInspector : hoverSelection;
     const bool inspectMap = !showRegionalPanel && !showTransportPanel && !showBudgetPanel &&
       (map.isValid(pinnedInspector) || (!mouseOverHud && !mouseOverLegend && !mouseOverPalette && !mouseOverDistrictPanel && !mouseOverGuide &&
         (cleanUiMode || (!overMonumentButton(mouseX,mouseY) && !overUniqueButton(mouseX,mouseY) && !overPortButton(mouseX,mouseY) && !overAirportButton(mouseX,mouseY) && !overHotelButton(mouseX,mouseY) && !overTourismButton(mouseX,mouseY))) && !overPortBanner(mouseX,mouseY))) && map.isValid(hoveredTile);

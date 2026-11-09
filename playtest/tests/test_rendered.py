@@ -56,6 +56,171 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             self.assertLessEqual(s.last_state["camera"]["pitch"], 80)
             await s.screenshot(f"3d-orbit-{yaw}")
 
+    async def test_3d_mouse_orbit_preserves_pivot_and_right_click_still_cancels_roads(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("view", {"action": "toggle", "name": "compact_ui", "enabled": True})
+        await s.request("view", {"action": "focus"})
+        before = await s.request("coordinates", {"direction": "tile_to_screen", "x": 16, "y": 16})
+        before = {k: before[k] for k in ("x", "y")}
+        initial = s.last_state["camera"].copy()
+        await s.request("input", {"events": [
+            {"type": "down", "button": "right", "x": 640, "y": 390},
+            {"type": "move", "x": 713, "y": 359},
+            {"type": "up", "button": "right", "x": 713, "y": 359},
+        ]})
+        self.assertNotEqual(s.last_state["camera"]["yaw"], initial["yaw"])
+        self.assertNotEqual(s.last_state["camera"]["pitch"], initial["pitch"])
+        after = await s.request("coordinates", {"direction": "tile_to_screen", "x": 16, "y": 16})
+        # Odd-height windows center on half pixels; integer projection may
+        # round either way while the subpixel pivot remains unchanged.
+        for k in ("x", "y"):
+            self.assertLessEqual(abs(before[k]-after[k]), 1)
+        keys = [{"type": "key", "key": k} for _ in range(24) for k in ("Home", "End")]
+        await s.request("input", {"events": keys})
+        after = await s.request("coordinates", {"direction": "tile_to_screen", "x": 16, "y": 16})
+        # Odd-height windows center on half pixels; integer projection may
+        # round either way while the subpixel pivot remains unchanged.
+        for k in ("x", "y"):
+            self.assertLessEqual(abs(before[k]-after[k]), 1)
+        pivot = {"x": before["x"]+43, "y": before["y"]+27}
+        for _ in range(12):
+            await s.request("input", {"events": [
+                {"type": "scroll", "delta": 1, **pivot},
+                {"type": "scroll", "delta": -1, **pivot},
+            ]})
+        after = await s.request("coordinates", {"direction": "tile_to_screen", "x": 16, "y": 16})
+        # Odd-height windows center on half pixels; integer projection may
+        # round either way while the subpixel pivot remains unchanged.
+        for k in ("x", "y"):
+            self.assertLessEqual(abs(before[k]-after[k]), 1)
+        await s.screenshot("sites-mouse-orbit")
+        camera = s.last_state["camera"].copy()
+        await s.request("input", {"events": [
+            {"type": "key", "key": "R"},
+            {"type": "down", "button": "left", **before},
+            {"type": "down", "button": "right", **before},
+            {"type": "move", "x": before["x"] + 50, "y": before["y"]},
+            {"type": "up", "button": "right", **before},
+            {"type": "up", "button": "left", **before},
+        ]})
+        self.assertEqual(camera, s.last_state["camera"])
+        self.assertEqual(s.last_state["funds"], 50000)
+        await s.request("input", {"events": [
+            {"type": "key", "key": "R"},
+            {"type": "down", "button": "right", **before},
+            {"type": "key", "key": "F3"},
+            {"type": "move", "x": before["x"]+50, "y": before["y"]},
+            {"type": "up", "button": "right", **before},
+            {"type": "key", "key": "F3"},
+            {"type": "down", "button": "right", **before},
+            {"type": "key", "key": "R"},
+            {"type": "move", "x": before["x"]+50, "y": before["y"]},
+            {"type": "up", "button": "right", **before},
+        ]})
+        self.assertEqual(camera["yaw"], s.last_state["camera"]["yaw"])
+        self.assertEqual(camera["pitch"], s.last_state["camera"]["pitch"])
+
+    async def test_perspective_native_building_camera_toggle_and_sky_picking(self):
+        s = self.session
+        for yaw, pitch in ((0, 20), (90, 35), (180, 60), (270, 80)):
+            await s.city("new", 32)
+            await s.request("view", {"action": "projection", "projection": "perspective"})
+            await s.request("view", {"action": "camera", "yaw": yaw, "pitch": pitch})
+            await s.request("view", {"action": "toggle", "name": "compact_ui", "enabled": True})
+            await s.request("view", {"action": "focus"})
+            points = []
+            for x in (14, 18):
+                p = await s.request("coordinates", {"direction": "tile_to_screen", "x": x, "y": 16})
+                point = {k: p[k] for k in ("x", "y")}
+                picked = await s.request("coordinates", {"direction": "screen_to_tile", **point})
+                self.assertEqual((picked["x"], picked["y"]), (x, 16))
+                points.append(point)
+            await s.request("input", {"events": [
+                {"type": "key", "key": "R"},
+                {"type": "down", "button": "left", **points[0]},
+                {"type": "move", **points[1]},
+            ]})
+            await s.screenshot(f"perspective-road-preview-{yaw}")
+            await s.request("input", {"events": [{"type": "up", "button": "left", **points[1]}]})
+            tiles = await s.request("inspect", {"section": "tiles", "x": 16, "y": 16})
+            self.assertTrue(tiles["items"][0]["road"])
+            self.assertEqual(s.last_state["projection"], "perspective")
+            if pitch == 20:
+                sky = await s.request("coordinates", {"direction": "screen_to_tile", "x": 640, "y": 0})
+                self.assertFalse(sky["valid"])
+                funds = s.last_state["funds"]
+                await s.request("input", {"events": [
+                    {"type": "down", "button": "left", "x": 640, "y": 0},
+                    {"type": "up", "button": "left", "x": 640, "y": 0},
+                ]})
+                self.assertEqual(s.last_state["funds"], funds)
+            await s.request("input", {"events": [{"type": "key", "key": "R"}]})
+            center = await s.request("coordinates", {"direction": "tile_to_screen", "x": 16, "y": 16})
+            center = {k: center[k] for k in ("x", "y")}
+            await s.request("input", {"events": [
+                {"type": "down", "button": "right", **center},
+                {"type": "move", "x": center["x"]+30, "y": center["y"]-10},
+                {"type": "up", "button": "right", **center},
+                {"type": "scroll", "delta": 1, "x": center["x"]+41, "y": center["y"]+23},
+                {"type": "scroll", "delta": -1, "x": center["x"]+41, "y": center["y"]+23},
+                {"type": "key", "key": "T"},
+            ]})
+            self.assertEqual(s.last_state["projection"], "3d")
+            await s.request("input", {"events": [{"type": "key", "key": "T"}]})
+            self.assertEqual(s.last_state["projection"], "perspective")
+            after = await s.request("coordinates", {"direction": "tile_to_screen", "x": 16, "y": 16})
+            for k in ("x", "y"):
+                self.assertLessEqual(abs(center[k]-after[k]), 1)
+
+    async def test_visible_roof_inspection_preserves_ground_construction_picking(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.city("save")
+        session = json.loads(s.artifact("urban_sim_session.json").read_text())
+        core = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        building_id = core["nextEntityId"]
+        core["nextEntityId"] = building_id + 1
+        core["buildings"] = [{"id": building_id, "type": 4, "position": {"x": 16, "y": 16},
+                              "capacity": 1152, "occupancy": 0}]
+        tile = next(t for t in core["tiles"] if (t["x"], t["y"]) == (16, 16))
+        tile["buildingId"] = building_id
+        tile["zone"] = 5
+        core_path = s.artifact("roof-inspector.city.json")
+        core_path.write_text(json.dumps(core))
+        session["citySnapshot"] = str(core_path)
+        fixture = s.artifact("roof-inspector.json")
+        fixture.write_text(json.dumps(session))
+        for projection in ("3d", "perspective"):
+            for yaw in (45, 135, 225, 315):
+                await s.city("load", import_path=str(fixture))
+                await s.request("view", {"action": "projection", "projection": projection})
+                await s.request("view", {"action": "camera", "yaw": yaw, "pitch": 20})
+                await s.request("view", {"action": "focus"})
+                roof = await s.request("coordinates", {"direction": "tile_to_screen", "x": 16, "y": 16, "height": 2.137})
+                point = {k: roof[k] for k in ("x", "y")}
+                visible = await s.request("coordinates", {"direction": "screen_to_visible_tile", **point})
+                self.assertEqual((visible["x"], visible["y"]), (16, 16))
+                ground = await s.request("coordinates", {"direction": "screen_to_tile", **point})
+                self.assertNotEqual((ground["x"], ground["y"]), (16, 16))
+                await s.request("input", {"events": [{"type": "move", **point}, {"type": "key", "key": "I"}]})
+                self.assertEqual(s.last_state["ui"]["pinned_tile"], [16, 16])
+                await s.screenshot(f"roof-inspector-{projection}-{yaw}")
+                await s.request("input", {"events": [{"type": "key", "key": "I"}]})
+                endpoint = await s.request("coordinates", {"direction": "tile_to_screen", "x": ground["x"]+1, "y": ground["y"]})
+                endpoint = {k: endpoint[k] for k in ("x", "y")}
+                await s.request("input", {"events": [
+                    {"type": "key", "key": "R"},
+                    {"type": "down", "button": "left", **point},
+                    {"type": "move", **endpoint},
+                    {"type": "up", "button": "left", **endpoint},
+                ]})
+                start = await s.request("inspect", {"section": "tiles", "x": ground["x"], "y": ground["y"]})
+                self.assertTrue(start["items"][0]["road"])
+                home = await s.request("inspect", {"section": "tiles", "x": 16, "y": 16})
+                self.assertEqual(home["items"][0]["building_id"], building_id)
+                self.assertFalse(home["items"][0]["road"])
+
     async def unlock_catalog_fixture(self, threshold=10000, funds=None):
         """Grant progression to isolate older feature tests from M49 gates."""
         s = self.session

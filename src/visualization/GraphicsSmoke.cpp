@@ -57,6 +57,71 @@ int runGraphicsSmoke(WindowHost &host, VulkanRenderer &gpu,
     map.getTile({x, 14}).type = 0;
     map.getTile({x, 14}).zone = static_cast<int>(ZoneType::Park);
   }
+  // A separate flat fixture exposes every utility source and full terminal
+  // footprints without changing the retained historical captures.
+  CityMap sitesMap({24,24}); RoadNetwork sitesRoads(sitesMap);
+  EntityStore sitesStore;
+  std::vector<ServiceFacility> sitesFacilities;
+  std::vector<regional::Connection> terminals;
+  for(int z=18;z<24;++z) for(int x=0;x<24;++x) sitesMap.getTile({x,z}).type=2;
+  for(int x=1;x<23;++x) {
+    if(x>1) sitesRoads.buildRoad({x-1,8},{x,8});
+    sitesMap.getTile({x,10}).zone=int(ZoneType::Park);
+  }
+  for(size_t i=0;i<kServiceTypeCount;++i) {
+    ServiceFacility site{static_cast<ServiceType>(i),{2+int(i),7},10,1.f};
+    if(site.type==ServiceType::Garbage) site.landfillRemaining=site.landfillCapacity/3;
+    sitesFacilities.push_back(site);
+  }
+  for(int source=0;source<8;++source) {
+    ServiceFacility site{ServiceType::Power,{1+source*3,3},10,1.f};
+    site.powerSource=static_cast<PowerSourceType>(source);
+    sitesFacilities.push_back(site);
+  }
+  ServiceFacility intake{ServiceType::Water,{20,17},10,1.f};
+  intake.surfaceWater=true;sitesFacilities.push_back(intake);
+  ServiceFacility treatment{ServiceType::Sanitation,{22,17},10,1.f};
+  treatment.surfaceWater=true;treatment.sewageTreatment=true;sitesFacilities.push_back(treatment);
+  for(auto kind:{regional::Kind::Airport,regional::Kind::CargoPort,regional::Kind::PassengerTerminal}) {
+    regional::Connection terminal;
+    terminal.id=uint32_t(terminals.size()+1);terminal.kind=kind;terminal.constructed=true;
+    terminal.origin=kind==regional::Kind::Airport ? Coord{3,12} :
+                    kind==regional::Kind::CargoPort ? Coord{10,17} : Coord{15,17};
+    terminal.width=kind==regional::Kind::Airport ? 4 : 2;terminal.height=2;
+    terminals.push_back(terminal);
+    for(int dz=0;dz<terminal.height;++dz) for(int dx=0;dx<terminal.width;++dx)
+      sitesMap.getTile({terminal.origin.x+dx,terminal.origin.y+dz}).regionalConnectionId=terminal.id;
+  }
+  CityMap architectureMap({24,24});RoadNetwork architectureRoads(architectureMap);
+  EntityStore architectureStore;
+  for(int x=1;x<23;++x) {
+    if(x>1) architectureRoads.buildRoad({x-1,6},{x,6});
+    if(x>1) architectureRoads.buildRoad({x-1,17},{x,17});
+  }
+  for(int row=0;row<4;++row) for(int column=0;column<6;++column) {
+    const auto type=static_cast<BuildingType>(row+1);
+    const Coord tile{2+column*3,2+row*3};
+    const auto id=architectureStore.createBuilding(type,tile,defaultBuildingCapacity(type)*(1<<column));
+    architectureMap.getTile(tile).buildingId=id;
+  }
+  for(uint32_t kind=1;kind<=uniques::count;++kind) {
+    const Coord tile{2+int(kind-1)*3,15};
+    Building b;b.id=architectureStore.createBuilding(BuildingType::Office,tile,0);
+    b.type=BuildingType::Office;b.position=tile;b.uniqueKind=kind;
+    architectureStore.upsertBuilding(b);architectureMap.getTile(tile).buildingId=b.id;
+  }
+  for(uint32_t kind=1;kind<=4;++kind) {
+    const Coord tile{2+int(kind-1)*4,20};
+    Building b;b.id=architectureStore.createBuilding(BuildingType::Office,tile,0);
+    b.type=BuildingType::Office;b.position=tile;b.monumentKind=kind;
+    architectureStore.upsertBuilding(b);architectureMap.getTile(tile).buildingId=b.id;
+  }
+  for(int hotel=0;hotel<2;++hotel) {
+    const Coord tile{19+hotel*3,20};
+    Building b;b.id=architectureStore.createBuilding(BuildingType::Commercial,tile,12);
+    b.type=BuildingType::Commercial;b.position=tile;b.capacity=12;b.hotelBeds=32;b.hotelOpen=hotel==0;
+    architectureStore.upsertBuilding(b);architectureMap.getTile(tile).buildingId=b.id;
+  }
   LiveSimulationState state;
   state.paused = true;
   state.demand = {0.4f, 0.3f, 0.2f, 0.1f};
@@ -66,7 +131,7 @@ int runGraphicsSmoke(WindowHost &host, VulkanRenderer &gpu,
   size_t submitted = 0, warmedCapacity = 0;
   std::vector<double> frameTimes;
   std::vector<double> generationTimes;
-  const int frameCount = benchmark ? 240 : 20;
+  const int frameCount = benchmark ? 240 : 40;
   for (int frame = 0; frame < frameCount; ++frame) {
     const int scene = benchmark ? 0 : frame;
     const auto frameStart = std::chrono::steady_clock::now();
@@ -83,9 +148,45 @@ int runGraphicsSmoke(WindowHost &host, VulkanRenderer &gpu,
     list.color = {91, 108, 91, 255};
     list.clear();
     const bool iso = benchmark || (scene >= 8 && scene < 16);
-    const auto mode = static_cast<OverlayMode>(scene % 8);
+    const auto mode = scene>=20 ? OverlayMode::Zone : static_cast<OverlayMode>(scene % 8);
     IsometricProjection projection(32, 16, {width / 2 - 110, 180});
-    if(benchmark || scene>=16) {
+    if(scene>=32) {
+      Camera3D camera;camera.yaw=45.f+((scene-32)%4)*90.f;
+      camera.scale=24.f;camera.centerX=width*.5f;camera.centerY=height*.5f;
+      camera.focalLength=height*1.2f;camera.perspective=scene>=36;
+      camera.centerOn({12,0,12},width*.5f,height*.5f);
+      list.viewportWidth=width;list.viewportHeight=height;
+      DistrictSystem districts;
+      drawCity3D(&list,camera,architectureMap,architectureRoads,architectureStore,{},
+                 OverlayMode::Zone,{},0.f,districts,0,nullptr);
+    } else if(scene>=20) {
+      Camera3D camera;camera.yaw=45.f+((scene-20)%4)*90.f;
+      camera.scale=scene>=28 ? 80.f : 22.f;
+      camera.originX=width*.5f;camera.originY=height*.5f;
+      camera.centerX=width*.5f;camera.centerY=height*.5f;
+      camera.focalLength=height*1.2f;
+      camera.perspective=scene>=24;
+      if(scene>=28) camera.pitch=20.f;
+      camera.centerOn({12,0,12},width*.5f,height*.5f);
+      list.viewportWidth=width;list.viewportHeight=height;
+      DistrictSystem districts;
+      drawCity3D(&list,camera,sitesMap,sitesRoads,sitesStore,sitesFacilities,
+                 OverlayMode::Zone,heat,0.f,districts,0,nullptr,&terminals);
+      if(scene>=28) {
+        // Select a plot crossing the near plane to exercise preview clipping.
+        bool selected=false;
+        for(int z=0;z<24 && !selected;++z) for(int x=0;x<24 && !selected;++x) {
+          float nearest=1e9f,farthest=-1e9f;
+          for(int dz:{0,1}) for(int dx:{0,1}) {
+            const float depth=camera.viewDepth({float(x+dx),.04f,float(z+dz)});
+            nearest=std::min(nearest,depth);farthest=std::max(farthest,depth);
+          }
+          if(nearest<Camera3D::nearPlane && farthest>=Camera3D::nearPlane) {
+            drawGroundHighlight(&list,camera,{x,z},{80,220,120},165);selected=true;
+          }
+        }
+      }
+    } else if(benchmark || scene>=16) {
       Camera3D camera; camera.yaw=45.f+(scene-16)*90.f;
       camera.scale=32.f; camera.originX=width*.5f;
       camera.originY=height*.5f;
@@ -159,7 +260,7 @@ int runGraphicsSmoke(WindowHost &host, VulkanRenderer &gpu,
           std::chrono::duration<double, std::milli>(generated - frameStart)
               .count());
     }
-    if (frame == (benchmark ? 10 : 17))
+    if (frame == (benchmark ? 10 : frameCount-3))
       warmedCapacity = gpu.bufferCapacity();
     if (frame == frameCount - 1 && gpu.bufferCapacity() != warmedCapacity)
       throw std::runtime_error("Geometry buffers grew after warm-up.");

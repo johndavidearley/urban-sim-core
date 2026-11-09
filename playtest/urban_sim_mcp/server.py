@@ -407,7 +407,7 @@ def create_server(session: Session) -> FastMCP:
     async def view(
         action: Literal["overlay", "projection", "camera", "focus", "toggle"],
         overlay: Annotated[int, Field(ge=0, le=8)] | None = None,
-        projection: Literal["3d", "isometric", "top_down"] | None = None,
+        projection: Literal["3d", "perspective", "isometric", "top_down"] | None = None,
         tile_pixels: Annotated[int, Field(ge=2, le=48)] | None = None,
         view_x: Coordinate | None = None,
         view_y: Coordinate | None = None,
@@ -482,12 +482,13 @@ def create_server(session: Session) -> FastMCP:
 
     @server.tool(annotations=readonly)
     async def coordinates(
-        direction: Literal["tile_to_screen", "screen_to_tile"],
+        direction: Literal["tile_to_screen", "screen_to_tile", "screen_to_visible_tile"],
         x: Coordinate,
         y: Coordinate,
+        height: Annotated[float, Field(ge=0, le=16)] = 0,
     ) -> dict[str, Any]:
-        """Convert tile centers and logical window coordinates using the active camera/projection."""
-        return await session.request("coordinates", dict(direction=direction, x=x, y=y))
+        """Project tile centers at an optional 3D height, or pick ground/visible geometry from a screen point."""
+        return await session.request("coordinates", dict(direction=direction, x=x, y=y, height=height))
 
     @server.tool(annotations=local, structured_output=False)
     async def screenshot(name: str = "frame") -> CallToolResult:
@@ -600,6 +601,7 @@ def create_server(session: Session) -> FastMCP:
                     "save": "F5",
                     "load": "F9",
                     "projection": "F3",
+                    "perspective": "T",
                     "quit": "Escape",
                 },
                 "input_sources": "input=synthetic player events; tool/city/time/view=semantic; window=native except simulated focus_lost",

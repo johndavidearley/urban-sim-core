@@ -10,5 +10,7 @@ void drawCity3D(DrawList* list, const Camera3D& camera, const CityMap& map,
                 const std::vector<ServiceFacility>& facilities, OverlayMode overlay,
                 const std::unordered_map<Coord,float,Vec2Hash>& heat, float penalty,
                 const DistrictSystem& districts, DistrictId selectedDistrict,
-                const TransitMarks* transit);
+                const TransitMarks* transit,
+                const std::vector<regional::Connection>* terminals = nullptr,
+                ScenePicking3D* picking = nullptr);
 }

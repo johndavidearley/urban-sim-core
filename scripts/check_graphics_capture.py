@@ -24,7 +24,7 @@ def main():
     parser.add_argument('--tolerance', type=int, default=3)
     parser.add_argument('--max-different-fraction', type=float, default=0.01)
     args = parser.parse_args()
-    for scene in range(20):
+    for scene in range(40):
         path = args.captures / f'scene-{scene}.ppm'
         width, height, pixels = read_ppm(path)
         logical_width, logical_height = (1100, 720) if 8 <= scene < 16 else (1280, 800)
@@ -57,7 +57,7 @@ def main():
             fraction = different / (width * height)
             if fraction > args.max_different_fraction:
                 raise AssertionError(f'{path}: {fraction:.2%} pixels differ beyond tolerance')
-    print('20 graphics captures passed geometry/color/depth checks' + (' and reference comparison' if args.reference else ''))
+    print('40 graphics captures passed geometry/color/depth checks' + (' and reference comparison' if args.reference else ''))
 
 
 if __name__ == '__main__':

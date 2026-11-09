@@ -738,12 +738,13 @@ struct VulkanRenderer::Impl {
           {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
            static_cast<uint32_t>(offsetof(Vertex, r))},
           {2, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, u))},
-          {3, 0, VK_FORMAT_R32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, z))}};
+          {3, 0, VK_FORMAT_R32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, z))},
+          {4, 0, VK_FORMAT_R32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, clipW))}};
       auto input = info<VkPipelineVertexInputStateCreateInfo>(
           VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO);
       input.vertexBindingDescriptionCount = 1;
       input.pVertexBindingDescriptions = &binding;
-      input.vertexAttributeDescriptionCount = 4;
+      input.vertexAttributeDescriptionCount = 5;
       input.pVertexAttributeDescriptions = attributes;
       auto assembly = info<VkPipelineInputAssemblyStateCreateInfo>(
           VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO);
