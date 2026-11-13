@@ -48,7 +48,7 @@ inline std::string lockedReason(const PopulationMilestones& milestones, uint32_t
 
 inline const char* unlockedSummary(uint32_t threshold) {
   switch (threshold) {
-    case 500: return "ARTERIALS PARKS DISTRICTS CEMETERY RECYCLING";
+    case 500: return "ARTERIALS HIGHWAYS RAMPS PARKS DISTRICTS CEMETERY RECYCLING";
     case 1200: return "BUS OFFICE GAS SOLAR HEIGHT CAPS BONDS";
     case 2500: return "SUBSTATION HYDRO TREATMENT CREMATORIUM INCINERATOR";
     case 5000: return "CARGO PASSENGER TERMINALS HOTELS";

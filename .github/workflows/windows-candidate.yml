@@ -1,0 +1,101 @@
+name: Windows consumer candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Candidate version, for example 0.1.0-candidate.1'
+        required: true
+        default: '0.1.0-candidate.1'
+      steam_app_id:
+        description: 'Optional assigned AppID (also supply the Windows DepotID)'
+        required: false
+      steam_depot_id:
+        description: 'Optional assigned Windows DepotID'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows-candidate:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      CANDIDATE_VERSION: ${{ inputs.version }}
+      STEAM_APP_ID: ${{ inputs.steam_app_id }}
+      STEAM_DEPOT_ID: ${{ inputs.steam_depot_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test packaging and Steam preview validation
+        run: python -m unittest discover -s scripts/tests -v
+
+      - name: Install build-only Vulkan SDK
+        shell: pwsh
+        run: |
+          $version = '1.4.313.0'
+          $installer = Join-Path $env:RUNNER_TEMP 'vulkan-sdk.exe'
+          $sdkRoot = Join-Path $env:RUNNER_TEMP 'VulkanSDK'
+          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$version/windows/vulkansdk-windows-X64-$version.exe" -OutFile $installer
+          $process = Start-Process -FilePath $installer -ArgumentList "--root `"$sdkRoot`" --accept-licenses --default-answer --confirm-command install" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Vulkan SDK installation failed' }
+          "VULKAN_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$sdkRoot\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Configure static MSVC x64 consumer build
+        run: >-
+          cmake -S . -B build-windows -A x64
+          -DURBAN_SIM_WINDOWS_RELEASE=ON
+          -DURBAN_SIM_WARNINGS_AS_ERRORS=ON
+
+      - name: Build candidate and tests
+        run: >-
+          cmake --build build-windows --config Release --parallel 2
+          --target UrbanSimCore UrbanSimCore-visualizer test_core
+
+      - name: Run unit tests
+        run: ctest --test-dir build-windows -C Release --parallel 4 --output-on-failure
+
+      - name: Stage and audit consumer artifact
+        shell: pwsh
+        run: |
+          $destination = Join-Path 'build-windows' "UrbanSimCore-$env:CANDIDATE_VERSION-windows-x64"
+          python scripts/package_windows.py --build build-windows --output "$destination" --version "$env:CANDIDATE_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw 'Consumer package audit failed' }
+          $verification = Start-Process -FilePath (Join-Path $destination 'UrbanSimCore.exe') -ArgumentList '--verify-package' -Wait -PassThru
+          if ($verification.ExitCode -ne 0) { throw 'Package launcher structure check failed' }
+          # This checks layout only, not GPU readiness or consumer-PC acceptance.
+          "CANDIDATE_DIRECTORY=$destination" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Prepare optional offline Steam preview
+        shell: pwsh
+        run: |
+          if ($env:STEAM_APP_ID -or $env:STEAM_DEPOT_ID) {
+            if (-not $env:STEAM_APP_ID -or -not $env:STEAM_DEPOT_ID) { throw 'Supply both assigned Steam IDs' }
+            python scripts/prepare_steam_depot.py --package "$env:CANDIDATE_DIRECTORY" --output build-windows/steam-preview --app-id "$env:STEAM_APP_ID" --depot-id "$env:STEAM_DEPOT_ID"
+            if ($LASTEXITCODE -ne 0) { throw 'Steam preview staging failed' }
+          }
+
+      - name: Upload internal review candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: UrbanSimCore-windows-x64-${{ inputs.version }}
+          path: |
+            build-windows/UrbanSimCore-*-windows-x64.zip
+            build-windows/steam-preview/
+          if-no-files-found: error
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-candidate-test-logs
+          path: build-windows/Testing/
+          if-no-files-found: ignore

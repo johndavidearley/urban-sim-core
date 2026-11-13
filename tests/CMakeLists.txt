@@ -18,6 +18,7 @@ add_executable(test_core
   TrafficSystemTests.cpp
   EconomySystemTests.cpp
   MetricsSystemTests.cpp
+  EnvironmentSystemTests.cpp
   ServiceSystemTests.cpp
   DepartmentCapacityTests.cpp
   DistrictSystemTests.cpp
@@ -52,6 +53,7 @@ add_executable(test_core
   BulldozeToolTests.cpp
   ServiceToolTests.cpp
   DistrictToolTests.cpp
+  GameSaveStoreTests.cpp
   GameplaySessionSystemTests.cpp
   TreasurySystemTests.cpp
   WasteSystemTests.cpp

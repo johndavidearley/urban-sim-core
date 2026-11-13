@@ -1,6 +1,7 @@
 #include "src/visualization/VisualizerApp.hpp"
 #include <iostream>
 #include <exception>
+#include <string>
 
 int main(int argc, char* argv[]) {
   try { return runVisualizer(argc, argv, nullptr); }
@@ -17,7 +18,8 @@ int main(int argc, char* argv[]) {
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
   try { return runVisualizer(__argc, __argv, nullptr); }
   catch (const std::exception& error) {
-    MessageBoxA(nullptr, error.what(), "UrbanSimCore Visualizer", MB_OK | MB_ICONERROR);
+    const std::string message=std::string("UrbanSimCore could not start. Verify the installed game files and update your graphics driver. If the problem continues, include these details in your report:\n\n")+error.what();
+    MessageBoxA(nullptr, message.c_str(), "UrbanSimCore", MB_OK | MB_ICONERROR);
     return 1;
   }
 }

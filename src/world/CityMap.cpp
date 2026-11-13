@@ -9,6 +9,8 @@ CityMap::CityMap(glm::ivec2 dims)
   
   // Initialize all tiles
   tiles.resize(dims.x * dims.y);
+  environmentCells.resize(dims.x*dims.y);
+  utilityCells.resize(dims.x*dims.y);
   pollutions.assign(dims.x * dims.y, 0.0f);
   landValues.assign(dims.x * dims.y, 100.0f);
   for (int y = 0; y < dims.y; ++y) {

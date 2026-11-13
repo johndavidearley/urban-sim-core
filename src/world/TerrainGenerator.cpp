@@ -1,3 +1,4 @@
+#include "src/systems/EnvironmentSystem.hpp"
 #include "src/world/TerrainGenerator.hpp"
 
 #include <algorithm>
@@ -141,6 +142,19 @@ TerrainStats TerrainGenerator::generate(CityMap& map, uint32_t seed, const Terra
     map.getTile(coordOf(*it)).type = 1;
     ++hills;
   }
+
+  map.environment()={};
+  EnvironmentSystem::initialize(map,seed);
+  const auto range=std::minmax_element(field.begin(),field.end());
+  const float span=float(std::max(1,*range.second-*range.first));
+  for(size_t i=0;i<count;++i) {
+    const auto p=coordOf(i);auto& cell=map.environment(p);
+    const float variation=float(field[i]-*range.first)/span;
+    if(map.getTile(p).type==2) {
+      cell.bedMeters+=(variation-.5f)*.04f;cell.terrainMeters=cell.bedMeters+2.f;
+    } else cell.terrainMeters+=(map.getTile(p).type==1 ? 18.f : 1.f)*variation;
+  }
+  EntityStore empty;EnvironmentSystem::updateWind(map,empty);
 
   stats.waterTiles = static_cast<uint32_t>(waterCount);
   stats.terrainTiles = static_cast<uint32_t>(terrainCount);

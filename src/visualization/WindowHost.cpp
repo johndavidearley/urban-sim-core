@@ -1,5 +1,5 @@
 #include "src/visualization/WindowHost.hpp"
-#define GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <cmath>
 #include <cstdlib>
@@ -23,6 +23,7 @@ Key translateGLFWKey(int code, int mods) {
   case GLFW_KEY_HOME: return Key::Home;
   case GLFW_KEY_END: return Key::End;
   case GLFW_KEY_I: return Key::I;
+  case GLFW_KEY_W: return Key::W;
   case GLFW_KEY_ESCAPE:
     return Key::Escape;
   case GLFW_KEY_ENTER:
@@ -117,6 +118,10 @@ Key translateGLFWKey(int code, int mods) {
   case GLFW_KEY_M: return Key::M;
   case GLFW_KEY_U: return Key::U;
   case GLFW_KEY_V: return Key::V;
+  case GLFW_KEY_X: return Key::X;
+  case GLFW_KEY_F10: return Key::F10;
+  case GLFW_KEY_F11: return Key::F11;
+  case GLFW_KEY_BACKSPACE: return Key::Backspace;
   case GLFW_KEY_Z:
     return Key::Z;
   default:
@@ -144,6 +149,9 @@ WindowHost::WindowHost(int width, int height) {
   glfwSetErrorCallback([](int, const char *message) {
     std::cerr << "GLFW: " << message << '\n';
   });
+  // Use the loader already linked by the renderer. Dynamic name lookup can
+  // miss MacPorts/Homebrew or bundled loaders even though linking succeeds.
+  glfwInitVulkanLoader(vkGetInstanceProcAddr);
   if (!glfwInit())
     throw std::runtime_error(
         "GLFW initialization failed: check your display session.");
@@ -170,6 +178,9 @@ WindowHost::WindowHost(int width, int height) {
         event.key = {translateGLFWKey(key, mods), action == GLFW_REPEAT};
         host(w).queue(event);
       });
+  glfwSetCharCallback(window_, [](GLFWwindow* w,unsigned int codepoint) {
+    InputEvent event;event.type=EventType::TextInput;event.codepoint=codepoint;host(w).queue(event);
+  });
   glfwSetCursorPosCallback(window_, [](GLFWwindow *w, double x, double y) {
     InputEvent event;
     event.type = EventType::MouseMotion;
@@ -245,6 +256,19 @@ void WindowHost::title(const std::string &text) {
 }
 void WindowHost::resize(int width, int height) {
   glfwSetWindowSize(window_, width, height);
+}
+void WindowHost::displayMode(bool borderless,int width,int height) {
+  glfwSetWindowAttrib(window_,GLFW_DECORATED,borderless?GLFW_FALSE:GLFW_TRUE);
+  if(borderless) {
+    GLFWmonitor* monitor=glfwGetPrimaryMonitor();
+    if(monitor) {
+      int x=0,y=0;glfwGetMonitorPos(monitor,&x,&y);
+      if(const GLFWvidmode* mode=glfwGetVideoMode(monitor)) {
+        glfwSetWindowPos(window_,x,y);glfwSetWindowSize(window_,mode->width,mode->height);return;
+      }
+    }
+  }
+  glfwSetWindowSize(window_,width,height);
 }
 uint32_t WindowHost::timeMs() const {
   if (playtestClock) return playtestClock();

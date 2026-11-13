@@ -1,5 +1,7 @@
 // Executed exclusively on the GLFW main thread, sharing the player action
 // closures.
+if((showSettings || showSaveBrowser) && (command=="tool" || command=="time" || command=="budget" || command=="city"))
+  throw std::runtime_error(showSaveBrowser?"Close save browser before gameplay commands":"Close settings before gameplay commands");
 if (command == "status" || command == "diagnostics")
   return {{"capabilities", playtestCapabilities()}};
 if (command == "stop") {
@@ -104,12 +106,24 @@ if (command == "inspect") {
                           {"width", r.w},
                           {"height", r.h}});
     };
+    Json saveRows=Json::array();
+    for(const auto& row:saveBrowser.rows) saveRows.push_back({{"name",row.name},{"backup",row.backup},{"tick",row.tick},{"width",row.width},{"height",row.height},{"valid",row.valid}});
     if (showQuitDialog)
       for (int i = 1; i <= 3; ++i)
         rect(std::array<std::string, 3>{"save_and_quit", "discard_and_quit",
                                         "cancel"}[static_cast<size_t>(i - 1)],
              quitButtonRect(static_cast<QuitAction>(i), windowWidth,
                             windowHeight));
+    else if(showSaveBrowser) {
+      const std::array<const char*,8> names{{"saves_close","saves_load","saves_save","saves_previous","saves_next","saves_clear","saves_name","saves_refresh"}};
+      for(int i=0;i<8;++i) rect(names[size_t(i)],SaveBrowser::control(i,windowWidth,windowHeight));
+      for(int i=0;i<SaveBrowser::pageSize && saveBrowser.page*SaveBrowser::pageSize+i<int(saveBrowser.rows.size());++i)
+        rect("saves_row_"+std::to_string(i),SaveBrowser::control(100+i,windowWidth,windowHeight));
+    }
+    else if(showSettings) {
+      const std::array<const char*,7> names{{"settings_close","settings_resolution","settings_display","settings_text","settings_reset","settings_help","settings_apply"}};
+      for(int i=0;i<7;++i) if(!(settingsHelp && i>=1 && i<=4)) rect(names[size_t(i)],settingsButton(i,windowWidth,windowHeight));
+    }
     else if (showUniquePanel) {
       if(monumentCatalog) {
         for(size_t i=0;i<monuments::count;++i)
@@ -160,9 +174,11 @@ if (command == "inspect") {
                                           "load", "disasters", "budget", "alerts", "transport"}[static_cast<size_t>(i - 1)],
                hudControlRect(static_cast<HudAction>(i), windowWidth));
       if (!cleanUiMode) {rect("monuments",monumentButtonRect());rect("uniques",uniqueButtonRect());rect("connections",regionalButtonRect());rect("ports",portButtonRect());rect("airport",airportButtonRect());rect("hotel",hotelButtonRect());rect("tourism",tourismButtonRect());}
-      for (int i = 0; i < 5; ++i)
-        rect(std::array<std::string, 5>{"road", "zone", "bulldoze", "service",
-                                        "district"}[static_cast<size_t>(i)],
+      rect("settings",settingsShortcut());rect("saves",savesShortcut());
+      if(!cleanUiMode && showOnboarding) {rect("guide_action",guideButton(0,windowHeight));rect("guide_help",guideButton(1,windowHeight));rect("guide_hide",guideButton(2,windowHeight));}
+      for (int i = 0; i < 6; ++i)
+        rect(std::array<std::string, 6>{"road", "zone", "bulldoze", "service",
+                                        "district", "pipe"}[static_cast<size_t>(i)],
              paletteButtonRect(i, windowWidth, windowHeight));
       if (!cleanUiMode && selectedDistrictId != 0)
         for (int i = 1; i <= 3; ++i)
@@ -185,7 +201,7 @@ if (command == "inspect") {
       const auto r=trendChartRect(i,windowWidth,windowHeight);
       charts.push_back({{"index",i},{"x",r.x},{"y",r.y},{"width",r.w},{"height",r.h}});
     }
-    return {{"controls", controls},{"charts",charts}};
+    return {{"save_rows",saveRows}, {"controls", controls},{"charts",charts}};
   }
   const int offset = args.value("offset", 0), limit = args.value("limit", 128);
   if (offset < 0 || limit < 1 || limit > 512)
@@ -223,6 +239,36 @@ if (command == "inspect") {
         {"job_capacity",n.jobCapacity},{"crime_rate",n.crime},{"illness_rate",n.illness},
         {"service_coverage",n.serviceCoverage}}}};
   }
+  if(section=="utilities") {
+    const auto funded=liveState.budgetPolicy.fundedFacilities(facilities);
+    const auto result=UtilityNetworkSystem::evaluate(map,store,funded);
+    Json lifts=Json::array(),boosters=Json::array();
+    size_t water=0,sewer=0;const auto dims=map.getDimensions();
+    for(int y=0;y<dims.y;++y) for(int x=0;x<dims.x;++x) {water+=map.utility({x,y}).waterPipe;sewer+=map.utility({x,y}).sewerPipe;
+      const auto i=static_cast<size_t>(y)*dims.x+x;
+      if(map.utility({x,y}).waterBooster) boosters.push_back({{"x",x},{"y",y},{"powered",result.boosterPowered[i]},{"flow",result.boosterUsed[i]},{"capacity",UtilityNetworkSystem::boosterCapacity}});
+      if(map.utility({x,y}).sewageLift) lifts.push_back({{"x",x},{"y",y},{"powered",result.liftPowered[i]},{"flow",result.liftUsed[i]},{"capacity",UtilityNetworkSystem::liftCapacity}});}
+    return {{"boosters",boosters},{"station_upkeep",UtilityNetworkSystem::operatingCost(map)},{"booster_upkeep",boosters.size()*UtilityNetworkSystem::boosterUpkeep},{"lifts",lifts},{"lift_upkeep",lifts.size()*UtilityNetworkSystem::liftUpkeep},{"enabled",map.pipeNetworksEnabled()},{"water_pipe_tiles",water},{"sewer_pipe_tiles",sewer},
+      {"water_delivered",std::accumulate(result.sourceUsed.begin(),result.sourceUsed.end(),0.)},
+      {"sewage_generated",result.generated},{"sewage_handled",result.discharged},
+      {"saved_sewage_backlog",map.environment().sewageBacklog},{"projected_sewage_backlog",result.totalBacklog},
+      {"pipe_capacity_m3_tick",UtilityNetworkSystem::pipeCapacity},{"pump_head_m",UtilityNetworkSystem::pumpHead}};
+  }
+  if(section=="environment") {
+    double volume=0,mass=0;const auto dims=map.getDimensions();
+    for(int z=0;z<dims.y;++z) for(int x=0;x<dims.x;++x) {volume+=map.environment({x,z}).water;mass+=map.environment({x,z}).contaminant;}
+    const auto effective=liveState.budgetPolicy.fundedFacilities(facilities);
+    const auto water=EnvironmentSystem::waterCapacities(map,effective);Json sites=Json::array();
+    for(size_t i=0;i<effective.size();++i) {
+      const auto& f=effective[i];
+      sites.push_back({{"x",f.position.x},{"y",f.position.y},{"type",int(f.type)},
+        {"rated_power_mw",f.powerCapacityMW},{"actual_power_mw",f.powerCapacityMW*(f.powerSource==PowerSourceType::Wind ? EnvironmentSystem::windPowerFactor(map,f.position) : 1.f)},
+        {"water_capacity",water[i]},{"intake_clean_fraction",f.surfaceWater ? EnvironmentSystem::cleanFraction(map,f.position) : 1.f},
+        {"drainage_factor",f.surfaceWater ? EnvironmentSystem::drainageFactor(map,f.position) : 1.f}});
+    }
+    return {{"environment",map.environment()},{"water_volume_m3",volume},{"contaminant_mass",mass},{"facilities",sites},
+      {"units",{{"water","m3"},{"wind","m/s"},{"current","tiles/tick"}}}};
+  }
   if (section == "tiles") {
     const int x = args.value("x", 0), y = args.value("y", 0),
               w = args.value("width", 1), h = args.value("height", 1);
@@ -245,6 +291,16 @@ if (command == "inspect") {
                          {"road_access", t.connectedToRoad},
                          {"pollution", map.pollution({tx, ty})},
                          {"land_value", map.landValue({tx, ty})}});
+        items.back()["environment"]=map.environment({tx,ty});
+        items.back()["utility"]=map.utility({tx,ty});
+        items.back()["sewer"]=t.connectedToSewer;
+        items.back()["utility"]["booster_flow"]=map.utility({tx,ty}).boosterFlow;
+        items.back()["utility"]["booster_powered"]=map.utility({tx,ty}).boosterPowered;
+        items.back()["utility"]["pressure_margin_m"]=map.utility({tx,ty}).waterPressure;
+        items.back()["utility"]["lift_flow"]=map.utility({tx,ty}).liftFlow;
+        items.back()["utility"]["lift_powered"]=map.utility({tx,ty}).liftPowered;
+        items.back()["utility"]["water_demand"]=map.utility({tx,ty}).waterDemand;
+        items.back()["utility"]["water_delivered"]=map.utility({tx,ty}).waterDelivered;
         const auto* building = store.getBuilding(t.buildingId);
         if (building && building->type == BuildingType::Residential) {
           items.back()["crime_rate"] = building->crimeRate;
@@ -255,10 +311,11 @@ if (command == "inspect") {
   }
   if (section == "roads") {
     for (const auto& edge : roads.getAllEdgeTraffic()) {
-      items.push_back({{"x1", edge.from.x}, {"y1", edge.from.y},
-                       {"x2", edge.to.x}, {"y2", edge.to.y},
-                       {"road_class", edge.roadClass == RoadClass::Arterial ? "arterial" : "local"},
-                       {"capacity", edge.capacity}, {"load", edge.currentLoad},
+      items.push_back({{"x1", roadTile(edge.from).x}, {"y1", roadTile(edge.from).y},
+                       {"x2", roadTile(edge.to).x}, {"y2", roadTile(edge.to).y},
+                       {"from_level",roadLevel(edge.from)},{"to_level",roadLevel(edge.to)},
+                       {"road_class", roadClassToken(edge.roadClass)},
+                       {"one_way",edge.oneWay},{"elevation",edge.elevation},{"length",edge.length},{"capacity", edge.capacity}, {"load", edge.currentLoad},
                        {"freight_load", edge.freightLoad},{"visitor_load",edge.visitorLoad}, {"congestion", edge.congestion}});
     }
   } else if (section == "entities") {
@@ -451,10 +508,19 @@ if (showQuitDialog)
   throw std::runtime_error("Cancel the quit dialog before gameplay commands");
 if (command == "view") {
   const auto action = args.at("action").get<std::string>();
-  if (action == "overlay") {
+  if(action=="environment") {
+    const double value=args.value("inflow_scale",map.environment().inflowScale);
+    if(!std::isfinite(value)||value<0||value>2) throw std::runtime_error("Inflow scale must be 0..2");
+    if(args.value("enabled",false) && !map.environment().initialized) {
+      EnvironmentSystem::initialize(map,1000u+liveState.simulationSeed-98765u);sessionDirty=true;
+    }
+    if(args.contains("inflow_scale")) {
+      map.environment().inflowScale=value;sessionDirty=true;
+    }
+  } else if (action == "overlay") {
     const int value = args.at("overlay");
-    if (value < 0 || value > 8)
-      throw std::runtime_error("Overlay must be 0..8");
+    if (value < 0 || value > 11)
+      throw std::runtime_error("Overlay must be 0..11");
     overlayMode = static_cast<OverlayMode>(value);
   } else if (action == "projection") {
     const auto value = args.at("projection").get<std::string>();
@@ -552,7 +618,9 @@ if (command == "tool") {
   }
   const auto name = args.at("name").get<std::string>();
   PaletteTool type;
-  if (name == "road")
+  if (name == "pipe")
+    type = PaletteTool::Pipe;
+  else if (name == "road")
     type = PaletteTool::Road;
   else if (name == "zone")
     type = PaletteTool::Zone;
@@ -610,10 +678,24 @@ if (command == "tool") {
   RoadClass roadClass = selectedRoadClass;
   if (args.contains("road_class")) {
     const auto value = args.at("road_class").get<std::string>();
-    if (type != PaletteTool::Road || (value != "local" && value != "arterial"))
-      throw std::runtime_error("Road class must be local or arterial on the road tool");
-    roadClass = value == "arterial" ? RoadClass::Arterial : RoadClass::Local;
+    const std::array<std::string,4> classes{{"local","arterial","highway","ramp"}};
+    const auto found=std::find(classes.begin(),classes.end(),value);
+    if(type!=PaletteTool::Road || found==classes.end()) throw std::runtime_error("Unknown road class");
+    roadClass=static_cast<RoadClass>(found-classes.begin());
   }
+  int layout=0;
+  if(args.contains("road_layout")) {
+    const std::array<std::string,4> layouts{{"grid","line","curve","roundabout"}};
+    const auto name=args.at("road_layout").get<std::string>();
+    const auto found=std::find(layouts.begin(),layouts.end(),name);
+    if(type!=PaletteTool::Road || found==layouts.end()) throw std::runtime_error("Unknown road layout");
+    layout=static_cast<int>(found-layouts.begin());
+  }
+  const int elevation=args.value("elevation",0);
+  if(elevation < -1 || elevation > 1 || (args.contains("elevation") && type!=PaletteTool::Road && type!=PaletteTool::Bulldoze))
+    throw std::runtime_error("Elevation must be -1, 0 or 1 on road/bulldoze tools");
+  if((int(roadClass)>=2 || elevation!=0) && layout==0) layout=1;
+
   ZoneType zone = selectedZone;
   ServiceType service = selectedService;
   DistrictArchetype archetype = selectedArchetype;
@@ -647,12 +729,18 @@ if (command == "tool") {
   if (args.value("sewage_treatment", false) && (type != PaletteTool::Service ||
       service != ServiceType::Sanitation || !args.value("surface_water", false)))
     throw std::runtime_error("Treatment requires shoreline Sanitation");
+  const std::string pipeType=args.value("pipe_kind",std::string("combined"));
+  if(pipeType!="water" && pipeType!="sewer" && pipeType!="combined" && pipeType!="lift" && pipeType!="booster") throw std::runtime_error("Unknown pipe kind");
+  if((args.contains("pipe_kind") || args.contains("remove")) && type!=PaletteTool::Pipe) throw std::runtime_error("Pipe options require pipe tool");
   activatePaletteTool(type);
+  if(type==PaletteTool::Pipe) {pipeKind=pipeType=="booster"?5:pipeType=="lift"?4:pipeType=="water"?1:pipeType=="sewer"?2:3;pipeSnap=args.value("snapped",true);pipeRemove=args.value("remove",false);}
   portAction=selectedPortAction;
   selectedUnique=requestedUnique;
   selectedMonument=requestedMonument;
   showUniquePanel=false;
   selectedRoadClass = roadClass;
+  if(type==PaletteTool::Road) {roadLayout=layout;roadSnap=args.value("snapped",true);roadClickStage=0;}
+  if(type==PaletteTool::Road || type==PaletteTool::Bulldoze) roadElevation=elevation;
   selectedZone = zone;
   selectedService = service;
   if (type == PaletteTool::Service) {
@@ -663,7 +751,23 @@ if (command == "tool") {
   if (action == "apply") {
     toolDragStart = start;
     lastActionSuccess = true;
-    if (type == PaletteTool::Port)
+    if(type==PaletteTool::Pipe) {
+      pipePlan=PipeTool::plan(map,{args.value("start_x",start.x+.5f),args.value("start_y",start.y+.5f)},
+        {args.value("end_x",end.x+.5f),args.value("end_y",end.y+.5f)},pipeKind,pipeSnap,pipeRemove,funds);
+      applyPlacement(end);
+    } else if(type==PaletteTool::Road && roadLayout!=0) {
+      const glm::vec2 first{args.value("start_x",start.x+.5f),args.value("start_y",start.y+.5f)};
+      const glm::vec2 last{args.value("end_x",end.x+.5f),args.value("end_y",end.y+.5f)};
+      RoadAlignment alignment;
+      if(roadLayout==3) alignment=RoadTool::roundabout(first,args.value("radius",3.f),roadClass,roadSnap);
+      else if(roadLayout==2) {
+        if(!args.contains("control_x") || !args.contains("control_y")) throw std::runtime_error("Curve requires control_x/control_y");
+        alignment=RoadTool::curve(first,{args.at("control_x").get<float>(),args.at("control_y").get<float>()},last,roadClass,roadSnap);
+      } else alignment=RoadTool::straight(first,last,roadClass,roadSnap);
+      alignment.elevation=roadElevation;
+      roadPlan=RoadTool::planAlignment(map,roads,alignment,funds,&facilities);
+      applyPlacement(end);
+    } else if (type == PaletteTool::Port)
       applyPort(start,portCapacity);
     else if (type == PaletteTool::Service)
       applyService(start);

@@ -7,6 +7,9 @@ add_library(urban_sim_core
   entities/PopulationStore.cpp
   systems/GrowthSystem.cpp
   systems/PopulationSystem.cpp
+  systems/EnvironmentSystem.cpp
+  systems/UtilityNetworkSystem.cpp
+  gameplay/PipeTool.cpp
   systems/FreightSystem.cpp
   systems/NeighborhoodSystem.cpp
   systems/MigrationSystem.cpp
@@ -55,6 +58,7 @@ add_library(urban_sim_core
   metrics/CityMetrics.cpp
   persistence/SaveLoadSystem.cpp
   persistence/ReplayVerifier.cpp
+  persistence/GameSaveStore.cpp
   persistence/GameplaySessionSystem.cpp
   visualization/MapRenderer.cpp
   visualization/IsometricProjection.cpp
@@ -148,7 +152,16 @@ if(URBAN_SIM_BUILD_VISUALIZER)
     DESTINATION share/urban-sim/fonts)
   install(DIRECTORY "${CMAKE_SOURCE_DIR}/playtest/" DESTINATION share/urban-sim/playtest
     PATTERN "__pycache__" EXCLUDE PATTERN "*.egg-info" EXCLUDE PATTERN "tests" EXCLUDE)
+  if(URBAN_SIM_WINDOWS_RELEASE)
+    add_executable(UrbanSimCore WIN32 visualization/WindowsLauncher.cpp)
+    target_link_libraries(UrbanSimCore PRIVATE user32)
+    target_compile_definitions(UrbanSimCore PRIVATE UNICODE _UNICODE)
+    install(TARGETS UrbanSimCore RUNTIME DESTINATION .)
+  endif()
   get_target_property(URBAN_SIM_GLFW_TYPE glfw TYPE)
+  if(URBAN_SIM_WINDOWS_RELEASE AND NOT URBAN_SIM_GLFW_TYPE STREQUAL "STATIC_LIBRARY")
+    message(FATAL_ERROR "The Windows consumer candidate requires static GLFW")
+  endif()
   if(WIN32 AND URBAN_SIM_GLFW_TYPE STREQUAL "SHARED_LIBRARY")
     add_custom_command(TARGET UrbanSimCore-playtest POST_BUILD
       COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:glfw>" "$<TARGET_FILE_DIR:UrbanSimCore-playtest>" VERBATIM)

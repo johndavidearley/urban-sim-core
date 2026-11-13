@@ -1,6 +1,8 @@
 #pragma once
 
 #include <vector>
+#include "src/world/Environment.hpp"
+#include "src/world/Utility.hpp"
 #include <glm/glm.hpp>
 #include "src/world/Tile.hpp"
 
@@ -18,12 +20,24 @@ private:
   // whole Tile struct for one field) is the whole point of this move.
   std::vector<float> pollutions;
   std::vector<float> landValues;
+  std::vector<EnvironmentCell> environmentCells;
+  EnvironmentState environmentState;
+  std::vector<UtilityCell> utilityCells;
+  bool usePipeNetworks=false;
 
   size_t getIndex(Coord coord) const;
   
 public:
   CityMap(glm::ivec2 dims);
   
+  bool& pipeNetworksEnabled() {return usePipeNetworks;}
+  bool pipeNetworksEnabled() const {return usePipeNetworks;}
+  UtilityCell& utility(Coord coord) {return utilityCells[getIndex(coord)];}
+  const UtilityCell& utility(Coord coord) const {return utilityCells[getIndex(coord)];}
+  EnvironmentCell& environment(Coord coord) {return environmentCells[getIndex(coord)];}
+  const EnvironmentCell& environment(Coord coord) const {return environmentCells[getIndex(coord)];}
+  EnvironmentState& environment() {return environmentState;}
+  const EnvironmentState& environment() const {return environmentState;}
   Tile& getTile(Coord coord);
   const Tile& getTile(Coord coord) const;
 

@@ -4,7 +4,7 @@ For the authoritative current validation baseline and active priorities, see
 [STATUS.md](STATUS.md). This document retains detailed milestone history and
 future ideas.
 
-Last updated: October 19, 2026
+Last updated: November 12, 2026
 
 ## Current Status Snapshot
 
@@ -1254,6 +1254,26 @@ rendered cases pass; default 400-tick CSV is unchanged. See
   the city kept growing. Decide whether uncollected waste should cost growth.
 - Service satisfaction moves migration only between 0.6× and 1.0×. If M50's
   shortfalls do not cost enough growth, that weight is the next lever.
+
+---
+
+## Phase 15: Minimum Steam Early Access release (M55–M58) — M55/M56/M57 in progress
+
+The active release scope and acceptance criteria are in
+[EARLY_ACCESS.md](EARLY_ACCESS.md). M55 display acceptance and
+[M56 save protection](M56_RELIABILITY.md) and
+[M57 consumer packaging](M57_STEAM_PRODUCT.md) are in progress; all release gates remain open:
+
+| Milestone | Deliverable | Release gate |
+|---|---|---|
+| M55 | Complete player journey | Native empty-city-to-10k journey, current utilities, onboarding and basic settings |
+| M56 | Reliable and measurable game | Save recovery, current CI, packaged soaks and measured minimum-hardware performance |
+| M57 | Steam-ready product | Clean Steam install, accurate approved store page, recorded eligibility dates |
+| M58 | Outside-player validation and release | Independent sessions, blockers resolved, build approval and publisher go/no-go |
+
+M57's account/store preparation can run alongside M55/M56. Further simulation
+expansion is deferred; launch depends on the current build's playability and
+release evidence. Older milestones and benchmarks do not close these gates.
 
 ---
 

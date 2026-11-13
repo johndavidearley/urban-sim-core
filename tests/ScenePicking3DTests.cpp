@@ -1,3 +1,4 @@
+#include "src/visualization/RoadCurves.hpp"
 #include "gtest/gtest.h"
 #include "src/visualization/Scene3D.hpp"
 #include "src/visualization/ScenePicking3D.hpp"
@@ -83,4 +84,86 @@ TEST(ScenePicking3D, ClippedSurfacesAndConstructionOverlaysDoNotBecomeVisibleObj
   {scene3d::PickCollector collector(&scene,&picking);
     scene3d::PickParcel parcel(&scene,{0,0});drawGroundHighlight(&scene,camera,{0,0},{255,0,0},150);}
   EXPECT_EQ(picking.triangleCount(),0u);
+}
+
+TEST(ScenePicking3D, RaisedTerrainRemainsSelectableInBothProjections) {
+  CityMap map({16,16});RoadNetwork roads(map);EntityStore store;DistrictSystem districts;
+  for(int z=4;z<=10;++z) for(int x=4;x<=10;++x) map.getTile({x,z}).type=1;
+  // At the center all four corners are three steps inside the rough region.
+  const WorldPoint summit{7.5f,3*.55f+.18f,7.5f};
+  for(bool perspective:{false,true}) {
+    Camera3D camera;camera.perspective=perspective;camera.scale=60;camera.pitch=60;
+    camera.centerOn({7.5f,0,7.5f},640,400);
+    DrawList scene;ScenePicking3D picking;
+    drawCity3D(&scene,camera,map,roads,store,{},OverlayMode::Zone,{},0,districts,0,nullptr,nullptr,&picking);
+    expectTile(picking.pick(camera,camera.worldToScreen(summit)),{7,7});
+    // Constructing a road cuts a level clearing through the same terrain.
+    map.getTile({7,7}).hasRoad=true;
+    drawCity3D(&scene,camera,map,roads,store,{},OverlayMode::Zone,{},0,districts,0,nullptr,nullptr,&picking);
+    expectTile(picking.pick(camera,camera.worldToScreen({7.5f,.012f,7.5f})),{7,7});
+    map.getTile({7,7}).hasRoad=false;
+  }
+}
+
+TEST(ScenePicking3D, HillsUseRoundedProfilesAndShorelinesContainArcGeometry) {
+  CityMap map({16,16});RoadNetwork roads(map);EntityStore store;DistrictSystem districts;
+  for(int z=4;z<=10;++z) for(int x=4;x<=10;++x) map.getTile({x,z}).type=1;
+  map.getTile({2,2}).type=2;
+  Camera3D camera;camera.pitch=90;camera.yaw=0;camera.scale=40;
+  DrawList scene;ScenePicking3D picking;
+  drawCity3D(&scene,camera,map,roads,store,{},OverlayMode::Zone,{},0,districts,0,nullptr,nullptr,&picking);
+  const auto hasVertex=[&](WorldPoint world) {
+    const auto expected=camera.project(world);
+    return std::any_of(scene.vertices.begin(),scene.vertices.end(),[&](const auto& vertex) {
+      return std::abs(vertex.x-expected.x)<.001f && std::abs(vertex.y-expected.y)<.001f &&
+             std::abs(vertex.z-expected.depth)<.000001f;
+    });
+  };
+  // The quarter-tile slope follows a rounded crest rather than a straight
+  // line from the edge to the peak. Shared edges retain the original height.
+  EXPECT_TRUE(hasVertex({7.25f,3*.55f+.09f,7.5f}));
+  EXPECT_TRUE(hasVertex({7.f,3*.55f,7.5f}));
+  // The midpoint of a circular bank differs from a square or diagonal cut.
+  const float inset=.42f*(1.f-std::sqrt(.5f));
+  EXPECT_TRUE(hasVertex({2.f+inset,0,2.f+inset}));
+  expectTile(picking.pick(camera,camera.worldToScreen({2.03f,0,2.03f})),{2,2});
+  expectTile(picking.pick(camera,camera.worldToScreen({2.5f,-.025f,2.5f})),{2,2});
+}
+
+TEST(ScenePicking3D, SplineRoadBendsRemainSelectableInBothProjections) {
+  CityMap map({16,16});RoadNetwork roads(map);EntityStore store;DistrictSystem districts;
+  for(Coord t:{Coord{7,7},Coord{8,7},Coord{7,8}}) map.getTile(t).hasRoad=true;
+  roads.buildRoad({7,7},{8,7});roads.buildRoad({7,7},{7,8});
+  for(bool perspective:{false,true}) {
+    Camera3D camera;camera.perspective=perspective;camera.scale=80;camera.pitch=60;
+    camera.centerOn({7.5f,0,7.5f},640,400);
+    DrawList scene;ScenePicking3D picking;
+    drawCity3D(&scene,camera,map,roads,store,{},OverlayMode::Zone,{},0,districts,0,nullptr,nullptr,&picking);
+    expectTile(picking.pick(camera,camera.worldToScreen({7.64645f,.016f,7.64645f})),{7,7});
+  }
+}
+
+TEST(RoadCurves, EveryBendHasAlignedTangentsAndStaysInsideItsParcel) {
+  for(int dx:{-1,1}) for(int dy:{-1,1}) {
+    CityMap map({8,8});RoadNetwork roads(map);
+    roads.buildRoad({3,3},{3+dx,3});roads.buildRoad({3,3},{3,3+dy});
+    const auto curve=roadCurve(map,&roads,{3,3});
+    ASSERT_TRUE(curve.valid);
+    const auto start=curve.point(0),end=curve.point(1);
+    EXPECT_NEAR(start.x,.5f+.5f*dx,.00001f);EXPECT_FLOAT_EQ(start.y,.5f);
+    EXPECT_FLOAT_EQ(end.x,.5f);EXPECT_NEAR(end.y,.5f+.5f*dy,.00001f);
+    EXPECT_NEAR(curve.normal(0).x,0,.00001f);
+    EXPECT_NEAR(curve.normal(1).y,0,.00001f);
+    curve.ribbon(.76f,0,[&](const std::array<glm::vec2,4>& points) {
+      for(const auto p:points) {
+        EXPECT_GE(p.x,-.00001f);EXPECT_LE(p.x,1.00001f);
+        EXPECT_GE(p.y,-.00001f);EXPECT_LE(p.y,1.00001f);
+      }
+    });
+    // A third connection becomes a junction rather than dropping a branch.
+    roads.buildRoad({3,3},{3-dx,3});
+    EXPECT_FALSE(roadCurve(map,&roads,{3,3}).valid);
+    roads.removeRoad({3,3},{3,3+dy});
+    EXPECT_FALSE(roadCurve(map,&roads,{3,3}).valid); // Straight-through road.
+  }
 }

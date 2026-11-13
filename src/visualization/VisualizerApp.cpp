@@ -1,3 +1,15 @@
+#include "src/persistence/GameSaveStore.hpp"
+#include "src/visualization/SaveBrowser.hpp"
+#include "src/visualization/PlayerSettings.hpp"
+#include "src/visualization/CityGuideUI.hpp"
+#include <numeric>
+#include "src/gameplay/PipeTool.hpp"
+#include "src/persistence/UtilityJson.hpp"
+#include "src/systems/UtilityNetworkSystem.hpp"
+#include "src/persistence/EnvironmentJson.hpp"
+#include <iomanip>
+#include "src/systems/EnvironmentSystem.hpp"
+#include "src/visualization/RoadAlignmentRender.hpp"
 #include "src/visualization/ScenePicking3D.hpp"
 #include "src/visualization/Scene3D.hpp"
 #include "src/gameplay/CatalogUnlocks.hpp"
@@ -62,6 +74,16 @@ using namespace visualizer;
 
 int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   WindowHost host(1280, 800);
+  const auto preferencesPath=PlayerSettings::path(bridge!=nullptr);
+  const bool graphicsProbe=argc>1 && (std::string(argv[1])=="--graphics-smoke" || std::string(argv[1])=="--graphics-benchmark");
+  auto preferences=graphicsProbe?PlayerSettings{}:PlayerSettings::load(preferencesPath);
+  gReadableUiText=preferences.readable;
+  if(!graphicsProbe && std::filesystem::exists(preferencesPath)) {
+    const auto size=PlayerSettings::sizes[size_t(preferences.resolution)];host.displayMode(preferences.borderless,size.x,size.y);
+  }
+  auto pendingPreferences=preferences;
+  bool showSettings=false,settingsHelp=false;
+  std::string settingsStatus;
   host.playtestInput = bridge != nullptr;
   if (bridge)
     host.playtestClock = [&]() {
@@ -79,7 +101,32 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     return runGraphicsSmoke(host, gpu, argc > 2 ? argv[2] : "graphics-smoke",
                             std::string(argv[1]) == "--graphics-benchmark");
   }
-  constexpr const char *kSessionPath = "urban_sim_session.json";
+  // Opt-in bridge runs exercise the production store in an isolated run folder.
+  const bool protectedSaves=!bridge || std::getenv("URBAN_SIM_PROTECTED_SAVES")!=nullptr;
+  GameSaveStore playerSaves(bridge?std::filesystem::current_path()/"player-saves":GameSaveStore::defaultRoot());
+  std::string kSessionPath = "urban_sim_session.json";
+  std::string recoveryNotice;
+  std::string activeSaveName="City";
+  bool showSaveBrowser=false;
+  SaveBrowser saveBrowser;
+  auto resolvePlayerSave = [&]() {
+    bool recovered=false;
+    auto path=playerSaves.recover(activeSaveName,recovered,&recoveryNotice);
+    if(path.empty() && !std::filesystem::exists(playerSaves.root()/"City.json") &&
+       !std::filesystem::exists(playerSaves.root()/"Autosave.json") && std::filesystem::exists("urban_sim_session.json")) {
+      recoveryNotice="LEGACY CITY LOADED - F5 SAVES TO YOUR USER FOLDER";
+      return std::string("urban_sim_session.json");
+    }
+    if(path.empty()) {
+      path=playerSaves.recover("Autosave",recovered,&recoveryNotice);
+      if(!path.empty()) recoveryNotice="RECOVERED AUTOSAVE - F5 TO KEEP THIS CITY";
+      else {
+        std::cerr<<"Player save recovery: "<<recoveryNotice<<'\n';
+        recoveryNotice="CANNOT LOAD CITY OR AUTOSAVE - CURRENT CITY KEPT";
+      }
+    } else if(!recovered) recoveryNotice.clear();
+    return path;
+  };
   const StartScreenResult start =
       runStartScreen(host, gpu, renderer, windowWidth, windowHeight, bridge);
   if (start.quit)
@@ -88,6 +135,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   int mapSize = start.mapSize;
   std::string startupError;
   if (start.loadSession) {
+    if(!start.selectedSession.empty()) {
+      kSessionPath=start.selectedSession;activeSaveName=start.selectedSaveName;
+    } else if(protectedSaves) kSessionPath=resolvePlayerSave();
     int savedWidth = 0;
     int savedHeight = 0;
     if (!GameplaySessionSystem::readMapDimensions(kSessionPath, savedWidth,
@@ -177,6 +227,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.demand = Zoning::calculateDemand(1000u);
     liveState.paused = true;
   }
+  if(!loadedAtStartup) {EnvironmentSystem::initialize(map,bridge ? bridge->simulationSeed : 98765u);map.pipeNetworksEnabled()=true;}
   refreshLiveDerivedState(map, roads, store, population, facilities, liveState,
                           98765u, false, true, loadedAtStartup);
   refreshRouteHeat(store, population, roads, liveState,
@@ -219,6 +270,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   bool showLegend = true;
   bool roadToolActive = false;
   RoadClass selectedRoadClass = RoadClass::Local;
+  int roadElevation=0;
+  int roadLayout=0; // Existing grid drag, continuous line, Bezier, roundabout.
+  bool roadSnap=true;
+  int roadClickStage=0;
+  glm::vec2 roadAnchor{0,0},roadControl{0,0};
+  const std::array<const char*,4> roadLayouts{{"GRID DRAG","LINE","CURVE","ROUNDABOUT"}};
   bool zoneToolActive = false;
   bool bulldozeToolActive = false;
   bool serviceToolActive = false;
@@ -292,6 +349,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   DistrictArchetype selectedArchetype = DistrictArchetype::General;
   bool toolDragging = false;
   Coord toolDragStart{0, 0};
+  bool pipeToolActive=false,pipeSnap=true,pipeRemove=false;
+  int pipeKind=3;
+  glm::vec2 pipeStart{};
+  PipePlan pipePlan;
   RoadPlan roadPlan;
   ZonePlan zonePlan;
   BulldozePlan bulldozePlan;
@@ -316,6 +377,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   ToastNotification toast;
   int onboardingStep = loadedAtStartup ? 6 : 0;
   bool guideBudgetReviewed = false;
+  bool guideSaved=loadedAtStartup;
   bool showOnboarding = !loadedAtStartup;
   bool sessionDirty = !loadedAtStartup;
   bool showQuitDialog = false;
@@ -353,6 +415,57 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       return camera3D().screenToTile({screenX, screenY});
     }
     return Coord{viewX + screenX / tilePixels, viewY + screenY / tilePixels};
+  };
+  auto roadPointAtScreen=[&](int x,int y) {
+    if(threeDimensionalView) {
+      if(selectedRoadClass==RoadClass::Ramp && roadElevation==1) {
+        const auto camera=camera3D();float best=std::max(10.f,camera.scale*.6f);best*=best;
+        glm::vec2 target{-1,-1};
+        for(const auto& host:roads.alignments()) if(host.roadClass==RoadClass::Highway && host.elevation==1)
+          for(const auto& curve:host.curves) {
+            const int steps=curve.subdivisions();
+            for(int i=1;i<steps;++i) {
+              const float t=float(i)/steps;if(host.height(t)<.799f) continue;
+              const auto p=curve.point(t);const auto screen=camera.worldToScreen({p.x,host.height(t),p.y});
+              const float dx=float(screen.x-x),dy=float(screen.y-y),distance=dx*dx+dy*dy;
+              if(distance<best) {best=distance;target=p;}
+            }
+          }
+        if(target.x>=0) return target;
+      }
+      const auto p=camera3D().ground(float(x),float(y));
+      if(!p.valid) return glm::vec2{-1,-1};
+      return glm::vec2{p.x,p.z};
+    }
+    return glm::vec2{viewX+float(x)/tilePixels,viewY+float(y)/tilePixels};
+  };
+  auto roadBar=[&]() {return visualizer::Rect{std::max(12,(windowWidth-620)/2),windowHeight-116,620,48};};
+  auto overRoadBar=[&](int x,int y) {
+    return (roadToolActive || bulldozeToolActive) && pointInRect(x,y,roadBar());
+  };
+  auto cancelRoadGesture=[&]() {roadClickStage=0;toolDragging=false;roadPlan={};};
+  auto changeRoadElevation=[&](int level) {
+    roadElevation=std::clamp(level,-1,1);cancelRoadGesture();bulldozePlan={};
+    if(roadElevation!=0 && (roadLayout==0 || roadLayout==3)) roadLayout=1;
+  };
+  auto cycleRoadLayout=[&]() {
+    roadLayout=(roadLayout+1)%4;cancelRoadGesture();
+    if((int(selectedRoadClass)>=2 && roadLayout==0) || (roadElevation!=0 && (roadLayout==0 || roadLayout==3))) roadLayout=1;
+  };
+  auto cycleRoadClass=[&]() {
+    selectedRoadClass=static_cast<RoadClass>((int(selectedRoadClass)+1)%4);cancelRoadGesture();
+    if((int(selectedRoadClass)>=2 && roadLayout==0) || (roadElevation!=0 && (roadLayout==0 || roadLayout==3))) roadLayout=1;
+  };
+  auto previewAlignment=[&](glm::vec2 point) {
+    RoadAlignment alignment;
+    if(roadLayout==3) {
+      const auto delta=point-roadAnchor;
+      alignment=RoadTool::roundabout(roadAnchor,std::sqrt(delta.x*delta.x+delta.y*delta.y),selectedRoadClass,roadSnap);
+    } else if(roadLayout==2 && roadClickStage==2) {
+      alignment=RoadTool::curve(roadAnchor,roadControl,point,selectedRoadClass,roadSnap);
+    } else alignment=RoadTool::straight(roadAnchor,point,selectedRoadClass,roadSnap);
+    alignment.elevation=roadElevation;
+    roadPlan=RoadTool::planAlignment(map,roads,alignment,funds,&facilities);
   };
   auto inspectorTileAtScreen = [&](int screenX,int screenY) {
     if(!threeDimensionalView) return tileAtScreen(screenX,screenY);
@@ -425,7 +538,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   if (!startupError.empty()) {
     notify("LOAD FAILED - NEW CITY STARTED", false);
   } else if (loadedAtStartup) {
-    notify("GAME LOADED", true);
+    notify(protectedSaves && !recoveryNotice.empty()?recoveryNotice:"GAME LOADED", true);
   }
 
   auto executeSimulationTick = [&]() {
@@ -462,7 +575,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
   };
 
-  auto saveSession = [&]() -> bool {
+  uint32_t lastAutosaveTick=liveState.tick;
+  auto saveSession = [&](bool automatic=false,const std::string& namedSlot=std::string{}) -> bool {
     GameplaySessionState session;
     session.funds = funds;
     session.tick = liveState.tick;
@@ -504,18 +618,30 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     session.transitRoutes = liveState.transitRoutes;
     captureSessionDistricts(districts, session);
     std::string error;
-    if (GameplaySessionSystem::save(kSessionPath, map, roads, store, population,
-                                    session, &error)) {
-      notify("GAME SAVED", true);
-      sessionDirty = false;
+    const bool saved=!protectedSaves && namedSlot.empty()
+      ? GameplaySessionSystem::save(kSessionPath,map,roads,store,population,session,&error)
+      : playerSaves.save(automatic?"Autosave":namedSlot.empty()?activeSaveName:namedSlot,map,roads,store,population,session,&error);
+    if (saved) {
+      if(!automatic) {guideSaved=true;if(!namedSlot.empty()) activeSaveName=namedSlot;}
+      notify(automatic?"AUTOSAVE COMPLETE":"GAME SAVED", true);
+      if(!automatic) sessionDirty = false;
       return true;
     } else {
-      notify(error.empty() ? "SAVE FAILED" : error, false);
+      if(protectedSaves) {
+        std::cerr<<"Player save: "<<error<<'\n';
+        notify("SAVE FAILED - PREVIOUS SAVES KEPT",false);
+      } else notify(error.empty() ? "SAVE FAILED" : error, false);
       return false;
     }
   };
 
-  auto loadSession = [&]() {
+  auto loadSession = [&](const std::string& selectedPath=std::string{},const std::string& selectedName=std::string{}) {
+    if(!selectedPath.empty()) {kSessionPath=selectedPath;recoveryNotice.clear();}
+    else if(protectedSaves) {
+      const auto path=resolvePlayerSave();
+      if(path.empty()) {notify(recoveryNotice,false);return false;}
+      kSessionPath=path;
+    }
     GameplaySessionState session;
     std::string error;
     if (!GameplaySessionSystem::load(kSessionPath, map, roads, store,
@@ -523,6 +649,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       notify(error.empty() ? "LOAD FAILED" : error, false);
       return false;
     }
+    if(!selectedName.empty()) activeSaveName=selectedName;
     funds = session.funds;
     liveState.tick = session.tick;
     liveState.budgetPolicy = session.budgetPolicy;
@@ -580,6 +707,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                             true, true);
     refreshRouteHeat(store, population, roads, liveState,
                      3001u + (liveState.tick * 31u));
+    pipeToolActive=false;pipePlan={};
     roadToolActive = false;
     zoneToolActive = false;
     bulldozeToolActive = false;
@@ -593,10 +721,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     servicePlan = {};
     districtPlan = {};
     selectedDistrictId = 0;
-    onboardingStep = 6;
+    guideSaved=true;
+    onboardingStep = city_guide::Complete;
     showOnboarding = false;
     sessionDirty = false;
-    notify("GAME LOADED", true);
+    notify(protectedSaves && !recoveryNotice.empty()?recoveryNotice:"GAME LOADED", true);
     return true;
   };
 
@@ -609,6 +738,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     } else if (tool == PaletteTool::District && districtToolActive) {
       selectedArchetype = nextPlayableArchetype(selectedArchetype);
     }
+    if(tool==PaletteTool::Pipe && pipeToolActive) pipeKind=pipeKind>=4?1:pipeKind%3+1;
+    pipeToolActive=tool==PaletteTool::Pipe;pipePlan={};
+    if(pipeToolActive) overlayMode=OverlayMode::Utilities;
     roadToolActive = tool == PaletteTool::Road;
     zoneToolActive = tool == PaletteTool::Zone;
     bulldozeToolActive = tool == PaletteTool::Bulldoze;
@@ -623,6 +755,92 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     districtPlan = {};
   };
 
+  auto savesShortcut=[&]() {return visualizer::Rect{144,windowHeight-56,120,42};};
+  auto toggleSaves=[&]() {
+    showSaveBrowser=!showSaveBrowser;
+    if(showSaveBrowser) {saveBrowser.refresh(playerSaves);saveBrowser.name=activeSaveName;}
+    toolDragging=cameraPanning=cameraOrbiting=false;roadPlan={};pipePlan={};
+    liveState.lastTickMs=host.timeMs();
+  };
+  auto browserAction=[&](int action) {
+    if(action==0) {toggleSaves();return;}
+    if(action==7) {saveBrowser.refresh(playerSaves);return;}
+    if(action==2) {
+      auto name=saveBrowser.name;
+      if(!GameSaveStore::validName(name) || SaveBrowser::folded(name)=="autosave") {
+        saveBrowser.status="Choose a valid name; Autosave is reserved.";return;
+      }
+      bool exists=false;
+      for(const auto& entry:saveBrowser.rows) if(SaveBrowser::folded(entry.name)==SaveBrowser::folded(name)) {
+        name=entry.name;exists=true;break;
+      }
+      if(exists && saveBrowser.confirmation!="save:"+name) {
+        saveBrowser.confirmation="save:"+name;saveBrowser.status="Replace "+name+"? Press Save city again to confirm.";return;
+      }
+      if(saveSession(false,name)) {
+        saveBrowser.refresh(playerSaves);saveBrowser.name=name;saveBrowser.status="Saved "+name+". Previous generations are kept as backups.";
+        for(size_t i=0;i<saveBrowser.rows.size();++i) if(saveBrowser.rows[i].name==name && !saveBrowser.rows[i].backup) {
+          saveBrowser.selected=int(i);saveBrowser.page=int(i)/SaveBrowser::pageSize;break;
+        }
+      } else saveBrowser.status="Save failed. Current city and previous saves are kept.";
+    }
+    if(action==1 && saveBrowser.selected>=0 && saveBrowser.selected<int(saveBrowser.rows.size())) {
+      const auto row=saveBrowser.rows[size_t(saveBrowser.selected)];
+      if(!row.valid) {saveBrowser.status="This generation is unavailable. Choose a valid backup.";return;}
+      if(row.width!=mapSize || row.height!=mapSize) {saveBrowser.status="Different map size. Load this city from the start-screen Saves browser.";return;}
+      const auto key="load:"+row.name+":"+std::to_string(row.backup);
+      if(sessionDirty && saveBrowser.confirmation!=key) {
+        saveBrowser.confirmation=key;saveBrowser.status="Unsaved changes. Press Load selected again to replace this city.";return;
+      }
+      std::string reason;
+      const auto path=playerSaves.resolve(row.name,row.backup,&reason);
+      if(path.empty() || !loadSession(path,SaveBrowser::folded(row.name)=="autosave"?"City":row.name)) {
+        saveBrowser.status="Cannot load this generation. Current city is kept.";return;
+      }
+      showSaveBrowser=false;liveState.lastTickMs=host.timeMs();notify("LOADED "+row.name+(row.backup?" BACKUP "+std::to_string(row.backup):""),true);
+    }
+  };
+
+  auto settingsToggle=[&]() {
+    showSettings=!showSettings;pendingPreferences=preferences;settingsStatus.clear();
+    toolDragging=false;cameraPanning=cameraOrbiting=false;roadPlan={};pipePlan={};
+    liveState.lastTickMs=host.timeMs();
+  };
+  auto settingsAction=[&](int action) {
+    if(action==0 || (action==6 && settingsHelp)) {settingsToggle();return;}
+    if(action==1) pendingPreferences.resolution=(pendingPreferences.resolution+1)%int(PlayerSettings::sizes.size());
+    if(action==2) pendingPreferences.borderless=!pendingPreferences.borderless;
+    if(action==3) pendingPreferences.readable=!pendingPreferences.readable;
+    if(action==4) pendingPreferences={};
+    if(action==5) settingsHelp=!settingsHelp;
+    if(action==6) {
+      if(!pendingPreferences.save(preferencesPath)) {settingsStatus="Could not save preferences; previous settings retained.";return;}
+      preferences=pendingPreferences;gReadableUiText=preferences.readable;
+      const auto size=PlayerSettings::sizes[size_t(preferences.resolution)];host.displayMode(preferences.borderless,size.x,size.y);
+      settingsStatus="Preferences saved. Close to resume your city.";
+    }
+  };
+  auto settingsShortcut=[&]() {return visualizer::Rect{12,windowHeight-56,120,42};};
+  auto guideAction=[&](int action) {
+    if(action==2) {showOnboarding=false;return;}
+    if(action==1) {settingsHelp=true;settingsToggle();return;}
+    if(action!=0) return;
+    switch(onboardingStep) {
+      case city_guide::Road:activatePaletteTool(PaletteTool::Road);break;
+      case city_guide::Zones:activatePaletteTool(PaletteTool::Zone);selectedZone=ZoneType::Residential;break;
+      case city_guide::Power:case city_guide::PowerRepair:
+        activatePaletteTool(PaletteTool::Service);selectedService=ServiceType::Power;selectedPowerSource=PowerSourceType::Generic;break;
+      case city_guide::Water:activatePaletteTool(PaletteTool::Service);selectedService=ServiceType::Water;surfaceWaterTool=false;break;
+      case city_guide::Sanitation:activatePaletteTool(PaletteTool::Service);selectedService=ServiceType::Sanitation;surfaceWaterTool=false;break;
+      case city_guide::Pipes:case city_guide::WaterRepair:case city_guide::Drainage:
+        activatePaletteTool(PaletteTool::Pipe);pipeKind=onboardingStep==city_guide::Drainage?2:3;pipeRemove=false;break;
+      case city_guide::Waste:activatePaletteTool(PaletteTool::Service);selectedService=ServiceType::Garbage;break;
+      case city_guide::Time:liveState.paused=false;sessionDirty=true;break;
+      case city_guide::Save:saveSession();break;
+      case city_guide::Complete:guideBudgetReviewed=false;break;
+      default:showBudgetPanel=true;showTransportPanel=false;showRegionalPanel=false;toolDragging=false;break;
+    }
+  };
   auto setTourism=[&](bool enabled) {
     liveState.tourism.enabled=enabled;sessionDirty=true;
     notify(enabled ? "TOURISM ON - ARRIVALS REQUIRE REACHABLE PARKS" :
@@ -649,7 +867,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     notify(std::string("PORT ")+portActions[portAction]+" - V CYCLES, ESC CANCELS",true);
   };
   auto toolUnlockThreshold = [&]() -> uint32_t {
-    if (roadToolActive) return selectedRoadClass == RoadClass::Arterial ? catalog::arterials : 0;
+    if (roadToolActive) return selectedRoadClass != RoadClass::Local ? catalog::arterials : 0;
     if (zoneToolActive) return catalog::zone(selectedZone);
     if (serviceToolActive) return catalog::service(selectedService, selectedPowerSource, treatmentMode());
     if (districtToolActive) return catalog::districts;
@@ -766,9 +984,19 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       ((toolDragStart == tile && DistrictTool::districtAt(districts, tile) != 0) ||
        DistrictTool::plan(map, districts, toolDragStart, tile, selectedArchetype).removeId != 0);
     if (!existingDistrict && rejectLocked(toolUnlockThreshold())) return;
-    if (roadToolActive) {
-      roadPlan = RoadTool::plan(map, roads, toolDragStart, tile, funds,
-                                selectedRoadClass, &facilities);
+    if(pipeToolActive) {
+      if(pipePlan.tiles.empty()) pipePlan=PipeTool::plan(map,glm::vec2(toolDragStart)+glm::vec2{.5f,.5f},glm::vec2(tile)+glm::vec2{.5f,.5f},pipeKind,pipeSnap,pipeRemove,funds);
+      const auto cost=pipePlan.cost;
+      if(PipeTool::apply(map,pipePlan,funds)) {
+        sessionDirty=true;
+        refreshLiveDerivedState(map,roads,store,population,facilities,liveState,1003u+liveState.tick*31u,false,false);
+        notify(std::string(pipeKind==5?(pipeRemove?"WATER BOOSTER REMOVED $":"WATER BOOSTER BUILT $"):pipeKind==4?(pipeRemove?"SEWER LIFT REMOVED $":"SEWER LIFT BUILT $"):(pipeRemove?"PIPES REMOVED $":"PIPES LAID $"))+std::to_string(cost),true);
+      } else notify(pipePlan.error.empty()?"PIPE ROUTE CHANGED":pipePlan.error,false);
+      pipePlan={};
+    } else if (roadToolActive) {
+      if(roadLayout==0)
+        roadPlan = RoadTool::plan(map, roads, toolDragStart, tile, funds,
+                                  selectedRoadClass, &facilities);
       const int64_t cost = roadPlan.cost;
       if (RoadTool::build(map, roads, roadPlan, funds, &facilities)) {
         sessionDirty = true;
@@ -798,7 +1026,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       }
     } else if (bulldozeToolActive) {
       bulldozePlan = BulldozeTool::plan(map, roads, facilities, toolDragStart,
-                                        tile, funds);
+                                        tile, funds,roadElevation);
       const int64_t cost = bulldozePlan.cost;
       if (BulldozeTool::apply(map, roads, store, facilities, bulldozePlan,
                               funds)) {
@@ -907,7 +1135,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       [&](const auto& e){return e.routeId==route.id;});
     if (entry!=liveState.transitCache.entries.end()) for (const auto& edge:roads.getAllEdgeTraffic()) {
       if (entry->distanceField.count(edge.from) && entry->distanceField.count(edge.to) && edge.congestion>peak) {
-        peak=edge.congestion; target=edge.from;
+        peak=edge.congestion; target=roadTile(edge.from);
       }
     }
     return {peak,target};
@@ -1130,6 +1358,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"net", liveState.populationChange.net},
            {"desirability", liveState.populationChange.desirability}}},
          {"budget", budgetStatus()},
+         {"pipe_networks",map.pipeNetworksEnabled()},
+         {"environment",map.environment()},
          {"funds", funds},
          {"paused", liveState.paused},
          {"disasters", {{"enabled", liveState.enableDisasters},
@@ -1162,7 +1392,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
          {"tools",
           {{"road", roadToolActive},
            {"road_class",
-            selectedRoadClass == RoadClass::Arterial ? "arterial" : "local"},
+            roadClassToken(selectedRoadClass)},
+           {"pipe",pipeToolActive},{"pipe_kind",pipeKind},{"pipe_snap",pipeSnap},{"pipe_remove",pipeRemove},
            {"zone", zoneToolActive},
            {"bulldoze", bulldozeToolActive},
            {"service", serviceToolActive},
@@ -1171,6 +1402,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"hotel",portToolActive && portAction==6},
            {"unique",portToolActive && portAction==7},{"unique_kind",selectedUnique},
            {"monument",portToolActive && portAction==8},{"monument_kind",selectedMonument},
+           {"road_layout",roadLayouts[roadLayout]},{"road_snap",roadSnap},{"road_elevation",roadElevation},
+           {"road_click_stage",roadClickStage},{"road_alignment_count",roads.alignments().size()},
            {"dragging", toolDragging},
            {"zone_type", static_cast<int>(selectedZone)},
            {"service_type", static_cast<int>(selectedService)},
@@ -1178,7 +1411,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"surface_water", surfaceMode()},{"sewage_treatment", treatmentMode()},
            {"archetype", static_cast<int>(selectedArchetype)}}},
          {"preview",
-          {{"road_error", roadPlan.error},
+          {{"pipe",{{"valid",pipePlan.valid},{"cost",pipePlan.cost},{"changed",pipePlan.changed},{"error",pipePlan.error}}},
+           {"road_error", roadPlan.error},
            {"zone_error", zonePlan.error},
            {"bulldoze_error", bulldozePlan.error},
            {"service_error", servicePlan.error},
@@ -1188,7 +1422,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
              {"cost", roadPlan.cost},
              {"new_segments", roadPlan.newSegments},
              {"upgraded_segments", roadPlan.upgradedSegments},
-             {"road_class", roadPlan.roadClass == RoadClass::Arterial ? "arterial" : "local"},
+             {"road_class", roadClassToken(roadPlan.roadClass)},{"elevation",roadPlan.alignment.elevation},
              {"tiles", roadPlan.tiles.size()}}},
            {"zone",
             {{"valid", zonePlan.valid},
@@ -1291,7 +1525,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"industrial", liveState.demand.industrial},
            {"office", liveState.demand.office}}},
          {"ui",
-          {{"legend", showLegend},
+          {{"save_browser",showSaveBrowser},{"save_name",activeSaveName},{"save_browser_name",saveBrowser.name},{"save_browser_status",saveBrowser.status},{"save_browser_selected",saveBrowser.selected},{"save_browser_page",saveBrowser.page},{"save_browser_editing",saveBrowser.editing},{"settings",showSettings},{"settings_help",settingsHelp},{"settings_resolution",pendingPreferences.resolution},{"settings_borderless",pendingPreferences.borderless},
+           {"legend", showLegend},
            {"compact", cleanUiMode},
            {"budget", showBudgetPanel},
            {"transport",showTransportPanel},
@@ -1359,6 +1594,31 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                  event.type == EventType::MouseUp) {
         mouseX = event.button.x;
         mouseY = event.button.y;
+      }
+      if(!showQuitDialog && !showSettings && !showSaveBrowser &&
+         ((event.type==EventType::KeyDown && event.key.sym==Key::F11) ||
+          (event.type==EventType::MouseDown && event.button.button==MouseButton::Left && SaveBrowser::contains(savesShortcut(),event.button.x,event.button.y)))) {
+        toggleSaves();continue;
+      }
+      if(showSaveBrowser) {
+        if(event.type==EventType::Quit) {showSaveBrowser=false;showQuitDialog=true;}
+        else browserAction(saveBrowser.input(event,windowWidth,windowHeight,true));
+        continue;
+      }
+      if(!showQuitDialog && event.type==EventType::KeyDown && event.key.sym==Key::F10) {settingsToggle();continue;}
+      if(showSettings) {
+        if(event.type==EventType::Quit) {showSettings=false;showQuitDialog=true;}
+        if(event.type==EventType::KeyDown && event.key.sym==Key::Escape) settingsToggle();
+        if(event.type==EventType::MouseDown && event.button.button==MouseButton::Left)
+          settingsAction(settingsHit(event.button.x,event.button.y,windowWidth,windowHeight,settingsHelp));
+        continue;
+      }
+      if(!showQuitDialog && !showBudgetPanel && !showTransportPanel && !showRegionalPanel && !showUniquePanel &&
+         event.type==EventType::MouseDown && event.button.button==MouseButton::Left &&
+         pointInRect(event.button.x,event.button.y,settingsShortcut())) {settingsHelp=false;settingsToggle();continue;}
+      if(!showQuitDialog && !cleanUiMode && showOnboarding && !showBudgetPanel && !showTransportPanel && !showRegionalPanel && !showUniquePanel &&
+         event.type==EventType::MouseDown && event.button.button==MouseButton::Left && overGuide(event.button.x,event.button.y,windowHeight)) {
+        guideAction(guideHit(event.button.x,event.button.y,windowHeight));continue;
       }
       if (showQuitDialog) {
         if (event.type == EventType::KeyDown && event.key.sym == Key::Escape) {
@@ -1573,7 +1833,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       if (event.type == EventType::Quit) {
         showQuitDialog = true;
       } else if (event.type == EventType::KeyDown) {
+        if(event.key.sym==Key::R || event.key.sym==Key::Z || event.key.sym==Key::B || event.key.sym==Key::S || event.key.sym==Key::P) {pipeToolActive=false;pipePlan={};}
         switch (event.key.sym) {
+        case Key::X:
+          if(!event.key.repeat) activatePaletteTool(PaletteTool::Pipe);
+          break;
         case Key::T:
           cameraOrbiting = false;
           perspectiveView = !threeDimensionalView || !perspectiveView;
@@ -1588,9 +1852,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           if (threeDimensionalView) orbitCamera(15.f,0.f);
           break;
         case Key::PageUp:
+          if(roadToolActive || bulldozeToolActive) {changeRoadElevation(roadElevation+1);break;}
           if (threeDimensionalView) orbitCamera(0.f,5.f);
           break;
         case Key::PageDown:
+          if(roadToolActive || bulldozeToolActive) {changeRoadElevation(roadElevation-1);break;}
           if (threeDimensionalView) orbitCamera(0.f,-5.f);
           break;
         case Key::K:
@@ -1602,6 +1868,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           notify("AIRPORT $" + std::to_string(regional::terminalSpec(regional::Kind::Airport)->constructionCost) + " + $30/TICK - 4X2 LAND; UTILITIES ON EVERY TILE",true);
           break;
         case Key::V:
+          if(pipeToolActive) {pipeRemove=!pipeRemove;toolDragging=false;pipePlan={};break;}
           if (serviceToolActive && selectedService == ServiceType::Power) {
             constexpr std::array<PowerSourceType, 8> sources{{
               PowerSourceType::Generic, PowerSourceType::Coal, PowerSourceType::NaturalGas,
@@ -1630,9 +1897,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           break;
         case Key::Escape:
           if (map.isValid(pinnedInspector)) {pinnedInspector={-1,-1};break;}
-          if (toolDragging || roadToolActive || zoneToolActive ||
+          if (pipeToolActive || toolDragging || roadToolActive || zoneToolActive ||
               bulldozeToolActive || serviceToolActive || districtToolActive || portToolActive) {
             toolDragging = false;
+            pipeToolActive=false;pipePlan={};
             roadToolActive = false;
             zoneToolActive = false;
             bulldozeToolActive = false;
@@ -1777,17 +2045,16 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         case Key::F9:
           loadSession();
           break;
+        case Key::W:
+          overlayMode=overlayMode==OverlayMode::Wind ? OverlayMode::WaterCurrent :
+            overlayMode==OverlayMode::WaterCurrent ? OverlayMode::Utilities :
+            overlayMode==OverlayMode::Utilities ? OverlayMode::Zone : OverlayMode::Wind;
+          break;
         case Key::A:
+          if(pipeToolActive) {pipeKind=pipeKind==5?3:5;toolDragging=false;pipePlan={};break;}
           if (roadToolActive && !event.key.repeat) {
-            selectedRoadClass = selectedRoadClass == RoadClass::Local
-                                    ? RoadClass::Arterial
-                                    : RoadClass::Local;
-            toolDragging = false;
-            roadPlan = {};
-            notify(selectedRoadClass == RoadClass::Arterial
-                       ? "ARTERIAL ROAD - DRAG TO BUILD OR UPGRADE"
-                       : "LOCAL ROAD",
-                   true);
+            cycleRoadClass();
+            notify(std::string(roadClassName(selectedRoadClass))+" - L LAYOUT - O SNAP",true);
           }
           break;
         case Key::R:
@@ -1874,7 +2141,16 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           servicePlan = {};
           districtPlan = {};
           break;
+        case Key::L:
+          if(pipeToolActive) {pipeKind=pipeKind==4?3:4;toolDragging=false;pipePlan={};break;}
+          if(roadToolActive && !event.key.repeat) {cycleRoadLayout();notify(roadLayouts[roadLayout],true);}
+          break;
         case Key::O:
+          if(pipeToolActive) {pipeSnap=!pipeSnap;toolDragging=false;pipePlan={};break;}
+          if(roadToolActive && !event.key.repeat) {
+            roadSnap=!roadSnap;if(roadLayout==0 && !roadSnap) roadLayout=1;
+            cancelRoadGesture();notify(roadSnap ? "GRID SNAP ON" : "FREEFORM PLACEMENT",true);break;
+          }
           cycleOriginFilter(liveState, store);
           refreshRouteHeat(store, population, roads, liveState,
                            1003u + (liveState.tick * 31u));
@@ -2080,6 +2356,15 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         default:
           break;
         }
+      } else if(event.type==EventType::MouseDown && overRoadBar(event.button.x,event.button.y)) {
+        if(event.button.button==MouseButton::Left) {
+          const int button=(event.button.x-roadBar().x)/124;
+          if(button==0 && roadToolActive) cycleRoadClass();
+          else if(button==1 && roadToolActive) cycleRoadLayout();
+          else if(button==2 && roadToolActive) {roadSnap=!roadSnap;if(roadLayout==0&&!roadSnap) roadLayout=1;cancelRoadGesture();}
+          else if(button==3) changeRoadElevation(roadElevation==0 ? 1 : roadElevation==1 ? -1 : 0);
+          else if(button==4) cancelRoadGesture();
+        }
       } else if (event.type == EventType::MouseDown &&
                  event.button.button == MouseButton::Left &&
                  paletteHitTest(event.button.x, event.button.y, windowWidth,
@@ -2116,8 +2401,31 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           const Coord tile = tileAtScreen(event.button.x, event.button.y);
           applyService(tile);
         }
+      } else if(roadToolActive && roadLayout!=0 && event.type==EventType::MouseDown) {
+        if(!toolDragging) roadClickStage=0;
+        if(event.button.button==MouseButton::Right) cancelRoadGesture();
+        else if(event.button.button==MouseButton::Left) {
+          const auto point=roadPointAtScreen(event.button.x,event.button.y);
+          const Coord tile{int(std::floor(point.x)),int(std::floor(point.y))};
+          if(map.isValid(tile)) {
+            if(roadClickStage==0) {
+              roadAnchor=point;roadClickStage=1;toolDragging=true;toolDragStart=tile;roadPlan={};
+            } else if(roadLayout==2 && roadClickStage==1) {
+              roadControl=point;roadClickStage=2;previewAlignment(point);
+            } else {
+              previewAlignment(point);
+              const bool wasValid=roadPlan.valid;
+              applyPlacement(tile);
+              if(wasValid) cancelRoadGesture();
+            }
+          }
+        }
+      } else if(roadToolActive && roadLayout!=0 && event.type==EventType::MouseMotion) {
+        if(roadClickStage>0 && toolDragging) previewAlignment(roadPointAtScreen(event.motion.x,event.motion.y));
+      } else if(roadToolActive && roadLayout!=0 && event.type==EventType::MouseUp) {
+        // Continuous roads use click stages; releasing a click does not build.
       } else if (event.type == EventType::MouseDown &&
-                 (roadToolActive || zoneToolActive || bulldozeToolActive ||
+                 (pipeToolActive || roadToolActive || zoneToolActive || bulldozeToolActive ||
                   districtToolActive)) {
         if (event.button.button == MouseButton::Right) {
           if (districtToolActive && !toolDragging) {
@@ -2141,6 +2449,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
           if (map.isValid(tile)) {
             toolDragging = true;
             toolDragStart = tile;
+            if(pipeToolActive) {pipeStart=roadPointAtScreen(event.button.x,event.button.y);pipePlan=PipeTool::plan(map,pipeStart,pipeStart,pipeKind,pipeSnap,pipeRemove,funds);}
             roadPlan = {};
             zonePlan = {};
             bulldozePlan = {};
@@ -2154,7 +2463,8 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       } else if (event.type == EventType::MouseMotion && toolDragging) {
         const Coord tile = tileAtScreen(event.motion.x, event.motion.y);
         if (map.isValid(tile)) {
-          if (roadToolActive) {
+          if(pipeToolActive) {pipePlan=PipeTool::plan(map,pipeStart,roadPointAtScreen(event.motion.x,event.motion.y),pipeKind,pipeSnap,pipeRemove,funds);}
+          else if (roadToolActive) {
             roadPlan = RoadTool::plan(map, roads, toolDragStart, tile, funds,
                                       selectedRoadClass, &facilities);
           } else if (zoneToolActive) {
@@ -2162,7 +2472,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                 ZoneTool::plan(map, toolDragStart, tile, selectedZone, funds, &facilities);
           } else if (bulldozeToolActive) {
             bulldozePlan = BulldozeTool::plan(map, roads, facilities,
-                                              toolDragStart, tile, funds);
+                                              toolDragStart, tile, funds,roadElevation);
           } else if (districtToolActive) {
             districtPlan = DistrictTool::plan(map, districts, toolDragStart,
                                               tile, selectedArchetype);
@@ -2172,6 +2482,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                  event.button.button == MouseButton::Left) {
         const Coord tile = tileAtScreen(event.button.x, event.button.y);
         if (map.isValid(tile)) {
+          if(pipeToolActive) pipePlan=PipeTool::plan(map,pipeStart,roadPointAtScreen(event.button.x,event.button.y),pipeKind,pipeSnap,pipeRemove,funds);
           applyPlacement(tile);
         }
         toolDragging = false;
@@ -2184,33 +2495,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
 
     if (showBudgetPanel && !budgetAlerts && !budgetTrends)
       guideBudgetReviewed = true;
-    if (showOnboarding) {
-      const int previousGuideStep = onboardingStep;
-      bool homes = false, jobs = false;
-      for (int y = 0; y < mapSize && !(homes && jobs); ++y)
-        for (int x = 0; x < mapSize; ++x) {
-          const auto zone = static_cast<ZoneType>(map.zone({x, y}));
-          homes |= zone == ZoneType::Residential;
-          jobs |= zone == ZoneType::Commercial || zone == ZoneType::Industrial ||
-                  zone == ZoneType::Office;
-        }
-      const auto hasService = [&](ServiceType type) {
-        return std::any_of(facilities.begin(), facilities.end(),
-                           [&](const auto& facility) { return facility.type == type; });
-      };
-      if (liveState.milestones.highestReached > 0) onboardingStep = 6;
-      else if (roads.getRoadCount() == 0) onboardingStep = 0;
-      else if (!(homes && jobs)) onboardingStep = 1;
-      else if (liveState.tick == 0) onboardingStep = 2;
-      else if (!hasService(ServiceType::Power)) onboardingStep = 3;
-      else if (!hasService(ServiceType::Water)) onboardingStep = 4;
-      else if (!guideBudgetReviewed) onboardingStep = 5;
-      else onboardingStep = 6;
-      if (onboardingStep == 6 && liveState.milestones.highestReached == 0 && previousGuideStep != 6) {
-        showOnboarding = false;
-        notify("CITY GUIDE COMPLETE - F1 TO REVIEW", true);
-      }
-    }
+    onboardingStep=city_guide::evaluate(map,roads,facilities,liveState.tick,population.getTotalPopulation(),guideBudgetReviewed,guideSaved);
 
     if (!running) {
       if (bridge)
@@ -2242,15 +2527,24 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     const uint32_t nowMs = host.timeMs();
     renderer->frameTimeMs =
         bridge && bridge->deterministic ? bridge->animationTime() : nowMs;
-    if ((!bridge || !bridge->deterministic) && !showQuitDialog &&
+    if ((!bridge || !bridge->deterministic) && !showQuitDialog && !showSettings && !showSaveBrowser &&
         !liveState.paused &&
         (nowMs - liveState.lastTickMs) >= liveState.tickIntervalMs) {
       executeSimulationTick();
       liveState.lastTickMs = nowMs;
     }
 
+    if(protectedSaves && liveState.tick>=lastAutosaveTick && liveState.tick-lastAutosaveTick>=200 && !showQuitDialog && !showSettings && !showSaveBrowser) {
+      lastAutosaveTick=liveState.tick; // Retry after another interval, including on failure.
+      saveSession(true);
+      liveState.lastTickMs=host.timeMs();
+    }
+    if(liveState.tick<lastAutosaveTick) lastAutosaveTick=liveState.tick;
+
     setDrawColor(renderer, 91, 108, 91, 255);
     clearFrame(renderer);
+
+    if(!toolDragging || !roadToolActive) roadClickStage=0;
 
     const auto deliveredFacilities = liveState.budgetPolicy.fundedFacilities(facilities);
     const auto& overlayFacilities = (overlayMode == OverlayMode::Zone || overlayMode == OverlayMode::Transit) ? facilities : deliveredFacilities;
@@ -2330,6 +2624,88 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       }
     }
 
+    if(!threeDimensionalView) for(int level:{-1,0,1}) for(const auto& alignment:roads.alignments())
+      if(alignment.elevation==level) drawAlignmentTopDown(renderer,alignment,viewX,viewY,tilePixels,{57,63,70},false,&roads);
+
+    if(overlayMode==OverlayMode::Utilities) {
+      const auto point=[&](float x,float z) -> ScreenPoint {
+        if(threeDimensionalView) return camera3D().worldToScreen({x,.09f,z});
+        return {int((x-viewX)*tilePixels),int((z-viewY)*tilePixels)};
+      };
+      const auto dims=map.getDimensions();
+      for(int y=0;y<dims.y;++y) for(int x=0;x<dims.x;++x) {
+        const auto& cell=map.utility({x,y});
+        for(int kind:{1,2}) {
+          if(kind==1?!cell.waterPipe:!cell.sewerPipe) continue;
+          const float offset=kind==1?-.07f:.07f;
+          const auto a=point(x+.5f+offset,y+.5f+offset);
+          if(a.x<-100 || a.y<-100 || a.x>windowWidth+100 || a.y>windowHeight+100) continue;
+          const RGB color=kind==1?RGB{75,200,255}:RGB{245,150,65};
+          drawFilledRect(renderer,a.x-2,a.y-2,4,4,color);
+          for(Coord d:{Coord{1,0},Coord{0,1}}) {
+            const Coord n{x+d.x,y+d.y};if(!map.isValid(n)) continue;
+            const auto& next=map.utility(n);if(kind==1?!next.waterPipe:!next.sewerPipe) continue;
+            const auto b=point(n.x+.5f+offset,n.y+.5f+offset);
+            setDrawColor(renderer,color.r,color.g,color.b,255);renderer->line(a.x,a.y,b.x,b.y);renderer->line(a.x+1,a.y,b.x+1,b.y);
+          }
+        }
+        for(int station:{4,5}) {
+          if(station==4?!cell.sewageLift:!cell.waterBooster) continue;
+          const auto p=point(x+.5f,y+.5f);const bool powered=station==4?cell.liftPowered:cell.boosterPowered;
+          const RGB status=powered?RGB{135,250,125}:RGB{255,85,85};
+          const int cx=p.x+(cell.sewageLift && cell.waterBooster?(station==4?7:-7):0);
+          drawFilledRect(renderer,cx-6,p.y-6,12,12,{25,35,40},255);
+          drawRectOutline(renderer,cx-6,p.y-6,12,12,status,255);
+          drawText(renderer,cx-3,p.y-5,station==4?"L":"B",status,1);
+        }
+      }
+      const int panelX=std::max(12,windowWidth/2-230);
+      drawFilledRect(renderer,panelX,104,460,94,{18,31,40},240);
+      drawText(renderer,panelX+8,112,"BLUE WATER - ORANGE SEWER - TRUNKS 100 M3/TICK",{210,235,245},1);
+      drawText(renderer,panelX+8,130,"HOMES: GREEN SERVED - RED NO WATER - AMBER SEWAGE",{210,235,245},1);
+      drawText(renderer,panelX+8,148,"X TYPE - L LIFT - A BOOST - O SNAP - V REMOVE",{210,235,245},1);
+      drawText(renderer,panelX+8,164,map.pipeNetworksEnabled()?"HEAD 20M - LIFT 50 / BOOST 75 M3/T - NEED POWER":"LEGACY ROAD WATER - FIRST PIPE ENABLES NETWORKS",{175,215,225},1);
+      const Coord pressureTile=map.isValid(pinnedInspector)?pinnedInspector:tileAtScreen(mouseX,mouseY);
+      std::string pressureText="HOVER A PIPE OR PARCEL FOR PRESSURE AND DELIVERY";
+      if(map.isValid(pressureTile)) {
+        const auto& c=map.utility(pressureTile);std::ostringstream pressure;
+        pressure<<std::fixed<<std::setprecision(1)<<"HEAD "<<c.waterPressure<<" M - WATER "<<c.waterDelivered<<"/"<<c.waterDemand<<" M3/T";
+        pressureText=pressure.str();
+      }
+      drawText(renderer,panelX+8,182,pressureText,{175,215,225},1);
+    }
+    if(overlayMode==OverlayMode::Wind || overlayMode==OverlayMode::WaterCurrent) {
+      const auto dims=map.getDimensions();
+      for(int z=0;z<dims.y;++z) for(int x=0;x<dims.x;++x) {
+        const Coord tile{x,z};const auto& e=map.environment(tile);
+        if(overlayMode==OverlayMode::Wind && (x%4 || z%4)) continue;
+        if(overlayMode==OverlayMode::WaterCurrent && map.getTile(tile).type!=2) continue;
+        const float vx=overlayMode==OverlayMode::Wind ? e.windX : e.currentX,vz=overlayMode==OverlayMode::Wind ? e.windZ : e.currentZ;
+        const float norm=std::sqrt(vx*vx+vz*vz);if(norm<.000001f) continue;
+        const float dx=vx/norm*.32f,dz=vz/norm*.32f;
+        ScreenPoint a,b;
+        if(threeDimensionalView) {
+          a=camera3D().worldToScreen({x+.5f,.08f,z+.5f});b=camera3D().worldToScreen({x+.5f+dx,.08f,z+.5f+dz});
+        } else {
+          a={int((x+.5f-viewX)*tilePixels),int((z+.5f-viewY)*tilePixels)};
+          b={int((x+.5f+dx-viewX)*tilePixels),int((z+.5f+dz-viewY)*tilePixels)};
+        }
+        if(a.x<0||a.y<0||a.x>=windowWidth||a.y>=windowHeight) continue;
+        const float sx=float(b.x-a.x),sy=float(b.y-a.y),length=std::sqrt(sx*sx+sy*sy);if(length<1) continue;
+        setDrawColor(renderer,240,248,232,230);renderer->line(a.x,a.y,b.x,b.y);
+        renderer->triangle(float(b.x),float(b.y),b.x-sx/length*4-sy/length*3,b.y-sy/length*4+sx/length*3,
+                            b.x-sx/length*4+sy/length*3,b.y-sy/length*4-sx/length*3);
+      }
+      const auto& e=map.environment();std::ostringstream weather;
+      weather<<std::fixed<<std::setprecision(1)<<"WIND "<<std::sqrt(e.windX*e.windX+e.windZ*e.windZ)<<" M/S - W CYCLES WIND/FLOW";
+      drawFilledRect(renderer,windowWidth/2-190,104,380,60,{18,31,40},235);
+      drawText(renderer,windowWidth/2-182,112,weather.str(),{215,235,240},1);
+      drawText(renderer,windowWidth/2-182,132,e.initialized ?
+        "SEWAGE BACKLOG " + std::to_string(static_cast<int64_t>(e.sewageBacklog))+" M3" : "ENVIRONMENT INITIALIZES ON NEXT TICK",{215,235,240},1);
+      drawText(renderer,windowWidth/2-182,148,overlayMode==OverlayMode::Wind ?
+        "BLUE CALM - YELLOW STRONG - ARROWS DOWNWIND" : "BLUE CLEAN - BROWN CONTAMINATED - ARROWS DOWNSTREAM",{175,215,225},1);
+    }
+
     if (selectedDistrictId != 0 &&
         districts.getDistrictConst(selectedDistrictId) == nullptr) {
       selectedDistrictId = 0;
@@ -2368,13 +2744,12 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         districts.getDistrictConst(selectedDistrictId) != nullptr &&
         pointInDistrictPanel(mouseX, mouseY);
     const bool mouseOverGuide =
-        !cleanUiMode && showOnboarding && mouseX >= 14 && mouseX < (onboardingStep == 6 ? 664 : 364) &&
-        mouseY >= windowHeight - 154 && mouseY < windowHeight - 62;
+        !cleanUiMode && showOnboarding && overGuide(mouseX,mouseY,windowHeight);
     const Coord hoverSelection=threeDimensionalView && !constructionToolActive()
       ? scenePicking.pick(camera3D(),{mouseX,mouseY}) : tileAtScreen(mouseX,mouseY);
     const Coord hoveredTile = map.isValid(pinnedInspector) ? pinnedInspector : hoverSelection;
     const bool inspectMap = !showRegionalPanel && !showTransportPanel && !showBudgetPanel &&
-      (map.isValid(pinnedInspector) || (!mouseOverHud && !mouseOverLegend && !mouseOverPalette && !mouseOverDistrictPanel && !mouseOverGuide &&
+      (map.isValid(pinnedInspector) || (!overRoadBar(mouseX,mouseY) && !mouseOverHud && !mouseOverLegend && !mouseOverPalette && !mouseOverDistrictPanel && !mouseOverGuide &&
         (cleanUiMode || (!overMonumentButton(mouseX,mouseY) && !overUniqueButton(mouseX,mouseY) && !overPortButton(mouseX,mouseY) && !overAirportButton(mouseX,mouseY) && !overHotelButton(mouseX,mouseY) && !overTourismButton(mouseX,mouseY))) && !overPortBanner(mouseX,mouseY))) && map.isValid(hoveredTile);
     if (inspectMap && !portToolActive) {
       if (threeDimensionalView) {
@@ -2389,13 +2764,13 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
 
     if (toolDragging) {
       const bool valid =
-          roadToolActive
+          pipeToolActive ? pipePlan.valid : roadToolActive
               ? roadPlan.valid
               : (zoneToolActive ? zonePlan.valid
                                 : (districtToolActive ? districtPlan.valid
                                                       : bulldozePlan.valid));
       const std::vector<Coord> &previewTiles =
-          roadToolActive
+          pipeToolActive ? pipePlan.tiles : roadToolActive
               ? roadPlan.tiles
               : (zoneToolActive ? zonePlan.tiles
                                 : (districtToolActive ? districtPlan.tiles
@@ -2499,17 +2874,24 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       }
     }
 
+    if(roadToolActive && toolDragging && roadPlan.hasAlignment && !roadPlan.alignment.curves.empty()) {
+      const RGB color=roadPlan.valid ? RGB{80,220,235} : RGB{235,75,75};
+      if(threeDimensionalView) drawAlignment3D(renderer,camera3D(),roadPlan.alignment,color,true);
+      else drawAlignmentTopDown(renderer,roadPlan.alignment,viewX,viewY,tilePixels,color,true);
+    }
+
     std::string activeToolLabel = "NONE";
-    if (portToolActive) activeToolLabel=portAction==8 ? monuments::spec(selectedMonument)->name :
+    if(pipeToolActive) activeToolLabel=std::string(pipeKind==5?"WATER BOOSTER $3000 +$5/T":pipeKind==4?"SEWER LIFT $2500 +$4/T":pipeKind==3?"WATER + SEWER":pipeKind==1?"WATER PIPE":"SEWER PIPE")+(pipeRemove?" / REMOVE":" / LAY")+(pipeSnap?" / SNAP":" / FREE");
+    else if (portToolActive) activeToolLabel=portAction==8 ? monuments::spec(selectedMonument)->name :
       portAction==7 ? uniques::spec(selectedUnique)->name :
       portAction==6 ? "HOTEL" : std::string("TERMINAL ")+portActions[portAction];
     else if (roadToolActive) {
       activeToolLabel =
-          selectedRoadClass == RoadClass::Arterial ? "ARTERIAL" : "LOCAL ROAD";
+          std::string(roadClassName(selectedRoadClass))+" / "+roadLayouts[roadLayout]+(roadSnap ? " / SNAP / " : " / FREE / ")+roadElevationName(roadElevation);
     } else if (zoneToolActive) {
       activeToolLabel = Zoning::zoneToString(static_cast<int>(selectedZone));
     } else if (bulldozeToolActive) {
-      activeToolLabel = "BULLDOZE";
+      activeToolLabel = std::string("BULLDOZE / ")+roadElevationName(roadElevation);
     } else if (serviceToolActive) {
       activeToolLabel = selectedService == ServiceType::Power
         ? powerFacilityName(selectedPowerSource)
@@ -2532,7 +2914,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
     drawToolPalette(renderer, windowWidth, windowHeight, roadToolActive,
                     zoneToolActive, bulldozeToolActive, serviceToolActive,
-                    districtToolActive, mouseX, mouseY);
+                    districtToolActive, mouseX, mouseY,pipeToolActive);
     if (!cleanUiMode && !showRegionalPanel && !showBudgetPanel && !showTransportPanel) {
       const auto uniqueButton=uniqueButtonRect();
       const auto monumentButton=monumentButtonRect();
@@ -2670,11 +3052,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     const PaletteTool hoveredTool =
         paletteHitTest(mouseX, mouseY, windowWidth, windowHeight);
     switch (hoveredTool) {
+    case PaletteTool::Pipe:
+      uiHoverText="PIPES: X TYPE - L SEWER LIFT - A WATER BOOSTER - O SNAP - V REMOVE";break;
     case PaletteTool::Road:
       uiHoverText =
-          "ROAD: A LOCAL/ARTERIAL - $" + std::to_string(RoadTool::kCostPerSegment) + "/$" +
-          std::to_string(RoadTool::kArterialCostPerSegment) + " NEW - $" +
-          std::to_string(RoadTool::kUpgradeCostPerSegment) + " UPGRADE";
+          "ROAD: A TYPE - L LAYOUT - O SNAP - $" + std::to_string(RoadTool::segmentPrice(selectedRoadClass))+"/NEW SEGMENT";
       break;
     case PaletteTool::Zone:
       uiHoverText = std::string("ZONE ") +
@@ -2814,12 +3196,30 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
         : (treatmentMode() ? "TREATED SEWAGE - NO INTAKE CONTAMINATION; REPLACES RAW OUTLETS"
                            : "RAW SEWAGE - NEARBY INTAKES LOSE CLEAN WATER SUPPLY");
     }
+    if((roadToolActive || bulldozeToolActive) && !showBudgetPanel && !showTransportPanel && !showRegionalPanel && !showQuitDialog) {
+      const auto bar=roadBar();
+      drawFilledRect(renderer,bar.x,bar.y,bar.w,bar.h,{22,31,38},245);
+      const std::array<std::string,5> labels{{roadToolActive ? std::string("A ")+roadClassName(selectedRoadClass) : "BULLDOZE",
+        roadToolActive ? std::string("L ")+roadLayouts[roadLayout] : "SELECT AREA",
+        roadToolActive ? (roadSnap ? "O SNAP ON" : "O FREEFORM") : "PAGE UP/DOWN",roadElevationName(roadElevation),"CANCEL"}};
+      for(int i=0;i<5;++i) {
+        drawRectOutline(renderer,bar.x+i*124,bar.y,124,25,{100,150,165},255);
+        drawText(renderer,bar.x+i*124+5,bar.y+7,labels[static_cast<size_t>(i)],{210,230,235},1);
+      }
+      const std::string hint=bulldozeToolActive ? "REMOVE ONLY THE SELECTED ROAD LEVEL - PAGE UP/DOWN CHANGES LEVEL" : roadElevation!=0 ?
+        (selectedRoadClass==RoadClass::Ramp && roadElevation==1 ? "CLICK HIGHWAY DECK AND GROUND - FLOW START TO END - MIN 12 SEGMENTS" :
+         "GROUND APPROACHES AT BOTH ENDS - AT LEAST 12 SEGMENTS - PGUP/PGDN LEVEL") : roadLayout==0 ? "DRAG TO BUILD GRID ROADS" : roadLayout==3 ?
+        "CLICK CENTER, THEN RADIUS - CLOCKWISE TRAFFIC" : roadLayout==2 ?
+        "CLICK START, CONTROL POINT, END - RAMPS FLOW START TO END" : "CLICK START, THEN END - RAMPS FLOW START TO END";
+      drawText(renderer,bar.x+6,bar.y+32,hint,{170,205,215},1);
+    }
     drawUiTooltip(renderer, mouseX, mouseY, windowWidth, windowHeight,
                   uiHoverText);
 
     std::string placementWarning;
     if (toolDragging) {
-      if (roadToolActive && !roadPlan.valid) {
+      if(pipeToolActive && !pipePlan.valid) placementWarning=pipePlan.error;
+      else if (roadToolActive && !roadPlan.valid) {
         placementWarning = roadPlan.error;
       } else if (zoneToolActive && !zonePlan.valid) {
         placementWarning = zonePlan.error;
@@ -2873,6 +3273,14 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       if(monumentCatalog) drawMonumentCatalog(renderer,windowWidth,windowHeight,store,roads,selectedMonument);
       else drawUniqueCatalog(renderer,windowWidth,windowHeight,liveState.uniqueProgress,store,selectedUnique);
     }
+    const auto settingsRect=settingsShortcut();
+    drawFilledRect(renderer,settingsRect.x,settingsRect.y,settingsRect.w,settingsRect.h,{34,48,60},245);
+    drawText(renderer,settingsRect.x+8,settingsRect.y+14,"F10 SETTINGS",{220,235,245},1);
+    const auto savesRect=savesShortcut();
+    drawFilledRect(renderer,savesRect.x,savesRect.y,savesRect.w,savesRect.h,{34,48,60},245);
+    drawText(renderer,savesRect.x+8,savesRect.y+14,"F11 SAVES",{220,235,245},1);
+    if(showSaveBrowser) drawSaveBrowser(renderer,windowWidth,windowHeight,saveBrowser,true);
+    if(showSettings) drawSettings(renderer,windowWidth,windowHeight,pendingPreferences,settingsHelp,settingsStatus);
     if (showQuitDialog) {
       drawQuitDialog(renderer, windowWidth, windowHeight, mouseX, mouseY,
                      sessionDirty);

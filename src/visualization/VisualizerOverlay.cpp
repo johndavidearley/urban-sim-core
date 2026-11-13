@@ -68,6 +68,10 @@ bool resolveRoadAnchor(const RoadNetwork& roads, Coord coord, Coord& outAnchor) 
 }
 
 int shortestRoadDistance(const RoadNetwork& roads, Coord start, Coord goal) {
+  if(roads.hasSeparatedRoads()) {
+    const auto field=roads.distanceField({start},1000000);const auto found=field.find(goal);
+    return found==field.end() ? -1 : found->second;
+  }
   if (start == goal) {
     return 0;
   }
@@ -389,6 +393,20 @@ RGB tileColor(
 ) {
   const Tile& tile = map.getTile(coord);
 
+  if(overlayMode==OverlayMode::Utilities) {
+    if(tile.buildingId) return !tile.connectedToWater?RGB{205,65,65}:!tile.connectedToSewer?RGB{230,160,55}:RGB{75,185,115};
+    return tile.type==2?RGB{45,85,105}:RGB{72,85,89};
+  }
+  if(overlayMode==OverlayMode::Wind) {
+    const auto& e=map.environment(coord);const float speed=std::sqrt(e.windX*e.windX+e.windZ*e.windZ);
+    const float strength=std::clamp(speed/18.f,0.f,1.f);
+    return {static_cast<uint8_t>(60+170*strength),static_cast<uint8_t>(140+70*strength),static_cast<uint8_t>(210-150*strength)};
+  }
+  if(overlayMode==OverlayMode::WaterCurrent) {
+    if(tile.type!=2) return {135,151,130};
+    const auto& e=map.environment(coord);const float dirty=e.water>0 ? std::clamp(float(20*e.contaminant/e.water),0.f,1.f) : 0;
+    return {static_cast<uint8_t>(55+110*dirty),static_cast<uint8_t>(145-45*dirty),static_cast<uint8_t>(215-145*dirty)};
+  }
   if (overlayMode == OverlayMode::LandValue) {
     return landValueColor(map.landValue(coord));
   }
@@ -421,7 +439,7 @@ RGB tileColor(
   }
 
   if (tile.hasRoad) {
-    color = {153, 158, 154};
+    color = roads.alignmentCovers(coord) ? terrainTint(tile,zoneColor(0)) : RGB{153,158,154};
   }
 
   if (tile.buildingId != 0) {

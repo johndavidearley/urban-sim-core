@@ -1,3 +1,5 @@
+#include "src/systems/UtilityNetworkSystem.hpp"
+#include "src/systems/EnvironmentSystem.hpp"
 #include "src/systems/TourismAccess.hpp"
 #include "src/systems/TourismTravel.hpp"
 #include "src/systems/PlayableCityTick.hpp"
@@ -261,6 +263,7 @@ void playableCityTick(
   const uint32_t populationBefore = population.getTotalPopulation();
   state.milestones.observe(populationBefore);
   const uint32_t tickSeed = options.baseSeed + (state.tick * 31u);
+  EnvironmentSystem::step(map,roads,store,facilities,options.baseSeed,false);
   const float educationNow = state.laggedEducationCoverage;
   int ax0 = 0, ay0 = 0, ax1 = 0, ay1 = 0;
   activeBounds(map, ax0, ay0, ax1, ay1);
@@ -277,6 +280,7 @@ void playableCityTick(
   if (options.refreshPollution) {
     city_sim::updatePollution(map, store, ax0, ay0, ax1, ay1, pool);
     city_sim::applyPowerPlantPollution(map, roads, facilities, ax0, ay0, ax1, ay1);
+    EnvironmentSystem::transportAir(map);
   }
 
   if (!state.serviceCache.boundedDepartments || !ServiceSystem::isCacheValid(roads, facilities, state.serviceCache)) {
@@ -441,7 +445,7 @@ void playableCityTick(
   TrafficSystem::refreshCongestion(roads,state.trafficSummary);
   state.migrationConditions.congestion=state.trafficSummary.averageEdgeCongestion;
   state.tourism.accounting=tourism::account(state.tourism.report);
-  int64_t serviceOperatingCosts = state.budgetPolicy.serviceCost(baseFacilities) + TransitSystem::operatingCost(state.transitRoutes) + regional::regionalOperatingCost(state.regionalConnections);
+  int64_t serviceOperatingCosts = UtilityNetworkSystem::operatingCost(map) + state.budgetPolicy.serviceCost(baseFacilities) + TransitSystem::operatingCost(state.transitRoutes) + regional::regionalOperatingCost(state.regionalConnections);
   state.treasuryLedger = {};
   state.treasuryLedger.valid = true;
   state.treasuryLedger.tick = state.tick + 1;

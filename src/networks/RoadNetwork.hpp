@@ -8,6 +8,7 @@
 #include <queue>
 #include <cstdint>
 #include "src/world/CityMap.hpp"
+#include "src/networks/RoadAlignment.hpp"
 
 // Unique ID for road nodes (which are at tile coordinates)
 struct RoadNodeId {
@@ -38,7 +39,7 @@ struct RoadNodeIdHash {
   }
 };
 
-enum class RoadClass : int { Local = 0, Arterial = 1 };
+
 // Aggregate trip/truck throughput per simulation traffic pass, not lane count.
 constexpr float kLocalRoadCapacity = 100.0f;
 constexpr float kArterialRoadCapacity = 400.0f;
@@ -48,12 +49,14 @@ public:
   struct Edge {
     RoadNodeId from;
     RoadNodeId to;
-    float length;      // Always 1.0 for grid movement
+    float length;      // Unit grid edge or full approach-to-approach crossing length
     float capacity;    // Max vehicles per tick
     float currentLoad; // Commuters, freight and visitor trips using this edge
     RoadClass roadClass = RoadClass::Local;
     float freightLoad = 0.0f;
     float visitorLoad = 0.0f;
+    bool oneWay = false;
+    int elevation = 0;
 
     float getCongestion() const {
       if (capacity == 0) return 0.0f;
@@ -107,6 +110,21 @@ public:
   void clear();
   bool hasRoad(glm::ivec2 from, glm::ivec2 to) const;
   
+  bool buildSeparatedRoad(Coord from,Coord to,float length,int elevation);
+  bool canAttachDeckJunction(Coord node) const;
+  bool attachDeckJunction(Coord node);
+  float edgeLength(Coord from,Coord to) const;
+  bool hasSeparatedRoads() const;
+  std::unordered_map<Coord,int,Vec2Hash> distanceField(const std::vector<Coord>& sources,int maxDistance) const;
+  int edgeElevation(Coord from,Coord to) const;
+  bool canTravel(Coord from,Coord to) const;
+  bool setOneWay(Coord from,Coord to,bool enabled);
+  const std::vector<RoadAlignment>& alignments() const {return alignments_;}
+  void addAlignment(const RoadAlignment& alignment);
+  bool alignmentCovers(Coord tile) const;
+  bool alignmentOwnsEdge(Coord from,Coord to) const;
+  bool hasLegacyRoadAt(Coord tile) const;
+
   // Connectivity
   void updateConnectivity(glm::ivec2 startNode);
   bool isConnected(glm::ivec2 nodeCoord) const;
@@ -161,16 +179,21 @@ public:
     RoadClass roadClass = RoadClass::Local;
     float freightLoad = 0.0f;
     float visitorLoad = 0.0f;
+    bool oneWay = false;
+    float length = 1.f;
+    int elevation = 0;
   };
   std::vector<EdgeTrafficInfo> getAllEdgeTraffic() const;
   
 private:
+  std::vector<RoadAlignment> alignments_;
   const CityMap& cityMap;
   std::unordered_map<EdgeKey, Edge, EdgeKeyHash> edges;
   // Only tiles that currently touch a road edge (lazy). Empty map until
   // the first buildRoad; cleared nodes with no remaining edges are erased
   // on removeRoad so memory tracks the live road network.
   std::unordered_map<glm::ivec2, Node, Vec2Hash> nodes;
+  size_t separatedRoadCount_ = 0;
   uint64_t topologyVersion = 0;
   uint64_t routingVersion = 0;
   

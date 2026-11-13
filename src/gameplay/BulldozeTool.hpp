@@ -19,6 +19,7 @@ struct BulldozeEdge {
 struct BulldozePlan {
   std::vector<Coord> tiles;
   std::vector<BulldozeEdge> roadEdges;
+  int elevation = 0;
   int buildings = 0;
   int services = 0;
   int zonedTiles = 0;
@@ -40,7 +41,8 @@ public:
     const std::vector<ServiceFacility>& facilities,
     Coord start,
     Coord end,
-    int64_t availableFunds
+    int64_t availableFunds,
+    int elevation = 0
   );
 
   static bool apply(

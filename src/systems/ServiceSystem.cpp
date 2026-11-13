@@ -1,3 +1,6 @@
+#include <numeric>
+#include "src/systems/UtilityNetworkSystem.hpp"
+#include "src/systems/EnvironmentSystem.hpp"
 #include <tuple>
 #include "ServiceSystem.hpp"
 #include "src/systems/WasteSystem.hpp"
@@ -67,6 +70,8 @@ std::unordered_map<Coord, int, Vec2Hash> buildMultiSourceDistanceField(
   if (maxDistance < 0 || sources.empty()) {
     return distance;
   }
+
+  if(roads.hasSeparatedRoads()) return roads.distanceField(sources,maxDistance);
 
   distance.reserve(static_cast<size_t>(std::max(16, maxDistance * maxDistance * 2))
                    * std::max<size_t>(1, sources.size() / 2));
@@ -248,6 +253,7 @@ float ServiceSystem::intakeCleanFraction(
     const RoadNetwork &roads, const std::vector<ServiceFacility> &facilities,
     Coord intake) {
   const auto &map = roads.getCityMap();
+  if(map.environment().initialized) return EnvironmentSystem::cleanFraction(map,intake);
   const Coord directions[] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
   std::unordered_map<Coord, float, Vec2Hash> discharge;
   for (const auto &facility : facilities) {
@@ -313,6 +319,8 @@ void ServiceSystem::buildCache(
   cache.departments = {};
   cache.entries.clear();
   cache.wasteFacilities.clear();
+  cache.utilityFacilities=facilities;
+  cache.usesPipeNetworks=roads.getCityMap().pipeNetworksEnabled();
   cache.powerGenerationCapacityMW = 0.0f;
   cache.powerWeightedEmissions = 0.0f;
   cache.waterSupplyUnits = 0.0f;
@@ -338,7 +346,12 @@ void ServiceSystem::buildCache(
   std::unordered_map<GroupKey, std::vector<Coord>, GroupKeyHash> groups;
   groups.reserve(facilities.size());
 
+  const auto& environmentMap=roads.getCityMap();
+  const auto waterCapacities=environmentMap.environment().initialized ?
+    EnvironmentSystem::waterCapacities(environmentMap,facilities) : std::vector<float>{};
+  size_t facilityIndex=0;
   for (const ServiceFacility& facility : facilities) {
+    const auto currentIndex=facilityIndex++;
     if (facility.type == ServiceType::Education)
       cache.schoolSeats += 800.0f * std::clamp(facility.quality, 0.0f, 1.0f);
     if (facility.type == ServiceType::Health)
@@ -347,13 +360,14 @@ void ServiceSystem::buildCache(
     // A disconnected plant still contributes to the city's installed source
     // mix, while buildings only receive Power coverage through the graph.
     if (facility.type == ServiceType::Power) {
-      const float capacity = std::max(0.0f, facility.powerCapacityMW);
+      const float capacity = std::max(0.0f, facility.powerCapacityMW)*
+        (facility.powerSource==PowerSourceType::Wind ? EnvironmentSystem::windPowerFactor(environmentMap,facility.position) : 1.f);
       cache.powerGenerationCapacityMW += capacity;
       cache.powerWeightedEmissions += capacity * std::max(0.0f, facility.emissionsKgPerMWh);
     } else if (facility.type == ServiceType::Water) {
       const float clean = facility.surfaceWater
         ? intakeCleanFraction(roads, facilities, facility.position) : 1.f;
-      cache.waterSupplyUnits += std::max(0.0f, facility.waterSupplyUnits) * clean;
+      cache.waterSupplyUnits += waterCapacities.empty() ? std::max(0.0f, facility.waterSupplyUnits)*clean : waterCapacities[currentIndex];
     }
     if (facility.type == ServiceType::Garbage || facility.type == ServiceType::Recycling)
       cache.wasteFacilities.push_back(facility);
@@ -363,7 +377,8 @@ void ServiceSystem::buildCache(
     }
     if (boundedDepartments && departmentIndex(facility.type) >= 0) {
       cache.departmentSites.push_back({facility.type, facility.position,
-        departmentCapacity(facility.type) * std::clamp(facility.quality, 0.f, 1.f),
+        departmentCapacity(facility.type) * std::clamp(facility.quality, 0.f, 1.f)*
+          (facility.type==ServiceType::Sanitation && facility.surfaceWater ? EnvironmentSystem::drainageFactor(environmentMap,facility.position) : 1.f),
         buildMultiSourceDistanceField(roads, {anchor}, facility.maxTravelDistance)});
     }
     groups[{facility.type, facility.maxTravelDistance}].push_back(anchor);
@@ -383,6 +398,7 @@ void ServiceSystem::buildCache(
 
   cache.builtForFacilityCount = facilities.size();
   cache.builtForFacilitySignature = facilitySignature(facilities);
+  cache.builtForEnvironmentTick=environmentMap.environment().initialized ? environmentMap.environment().tick+1 : 0;
   cache.builtForTopologyVersion = roads.getTopologyVersion();
   cache.cachedStoreMutationVersion = static_cast<uint64_t>(-1);
 
@@ -454,9 +470,10 @@ bool ServiceSystem::isCacheValid(
   const std::vector<ServiceFacility>& facilities,
   const ServiceCoverageCache& cache
 ) {
-  return cache.builtForFacilityCount == facilities.size()
+  return cache.usesPipeNetworks==roads.getCityMap().pipeNetworksEnabled() && cache.builtForFacilityCount == facilities.size()
       && cache.builtForFacilitySignature == facilitySignature(facilities)
-      && cache.builtForTopologyVersion == roads.getTopologyVersion();
+      && cache.builtForTopologyVersion == roads.getTopologyVersion()
+      && cache.builtForEnvironmentTick==(roads.getCityMap().environment().initialized ? roads.getCityMap().environment().tick+1 : 0);
 }
 
 bool ServiceSystem::isResultCacheValid(
@@ -467,7 +484,7 @@ bool ServiceSystem::isResultCacheValid(
   // (create/remove/clear/upsert). A full building-position fingerprint was
   // previously rehashed on every validity check and dominated large cities
   // even on pure cache hits.
-  return !cache.boundedDepartments && cache.cachedStoreMutationVersion == store.getMutationVersion()
+  return !cache.usesPipeNetworks && !cache.boundedDepartments && cache.cachedStoreMutationVersion == store.getMutationVersion()
     && std::none_of(cache.wasteFacilities.begin(), cache.wasteFacilities.end(),
       [](const ServiceFacility& f) { return f.type == ServiceType::Incinerator; });
 }
@@ -615,6 +632,18 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     }
   }
 
+  const auto& utilityMap=roads.getCityMap();
+  UtilityNetworkResult pipeResult;
+  if(utilityMap.pipeNetworksEnabled()) {
+    pipeResult=UtilityNetworkSystem::evaluate(utilityMap,store,cache.utilityFacilities);
+    coveredByType[typeIndex(ServiceType::Water)]=0;coveredByType[typeIndex(ServiceType::Sanitation)]=0;
+    for(const auto* building:buildings) {
+      if(!utilityMap.isValid(building->position)) continue;
+      const auto i=static_cast<size_t>(building->position.y)*utilityMap.getDimensions().x+building->position.x;
+      coveredByType[typeIndex(ServiceType::Water)]+=pipeResult.waterConnected[i]?1.f:0.f;
+      coveredByType[typeIndex(ServiceType::Sanitation)]+=pipeResult.sewerConnected[i]?1.f:0.f;
+    }
+  }
   const float denom = static_cast<float>(summary.totalBuildings);
   summary.fireCoverage      = coveredByType[typeIndex(ServiceType::Fire)]      / denom;
   summary.policeCoverage    = coveredByType[typeIndex(ServiceType::Police)]    / denom;
@@ -646,6 +675,10 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   summary.waterSupplyRatio = summary.waterDemand > 0.0f
     ? std::min(1.0f, summary.waterSupply / summary.waterDemand)
     : 1.0f;
+  if(utilityMap.pipeNetworksEnabled()) {
+    const double delivered=std::accumulate(pipeResult.sourceUsed.begin(),pipeResult.sourceUsed.end(),0.);
+    summary.waterSupplyRatio=summary.waterDemand>0 ? float(std::min(1.,delivered/summary.waterDemand)) : 1.f;
+  }
   // Deliberately unchanged: only the original four types feed
   // overallCoverage/satisfaction (see the Partial/hit comment above).
   summary.overallCoverage   = (summary.fireCoverage + summary.policeCoverage +

@@ -38,7 +38,8 @@ void drawToolPalette(
   bool serviceActive,
   bool districtActive,
   int mouseX,
-  int mouseY
+  int mouseY,
+  bool pipeActive=false
 );
 
 Rect budgetPanelRect(int windowWidth, int windowHeight);

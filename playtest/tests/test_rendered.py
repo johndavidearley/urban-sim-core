@@ -27,6 +27,491 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_m55_guide_actions_settings_and_saved_preferences(self):
+        s = self.session
+        await s.city("new", 32)
+        async def key(name):
+            await s.request("input", {"events": [{"type": "key", "key": name}]})
+        async def control(name):
+            controls = (await s.request("inspect", {"section": "ui"}))["controls"]
+            r = next(c for c in controls if c["name"] == name)
+            await s.request("input", {"events": [{"type": "down", "button": "left", "x": r["x"]+r["width"]//2, "y": r["y"]+r["height"]//2},
+                {"type": "up", "button": "left", "x": r["x"]+r["width"]//2, "y": r["y"]+r["height"]//2}]})
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 0)
+        await control("guide_action")
+        self.assertTrue(s.last_state["tools"]["road"])
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 8, "y1": 16, "x2": 24, "y2": 16})
+        for kind, x in (("power", 15), ("water", 17)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": kind, "x1": x, "y1": 15})
+        for kind, x1, x2 in (("residential", 8, 12), ("commercial", 20, 24)):
+            await s.request("tool", {"action": "apply", "name": "zone", "zone": kind, "x1": x1, "y1": 15, "x2": x2, "y2": 15})
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 7)
+        await control("guide_action")
+        self.assertTrue(s.last_state["tools"]["pipe"])
+        await s.request("tool", {"action": "apply", "name": "pipe", "x1": 8, "y1": 16, "x2": 24, "y2": 16})
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 2)
+        for _ in range(100):
+            if s.last_state["population"] > 0: break
+            await key("N")
+        self.assertGreater(s.last_state["population"], 0)
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 5)
+        await control("guide_action")
+        self.assertTrue(s.last_state["ui"]["budget"])
+        await key("Escape")
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 8)
+        await control("guide_action")
+        self.assertEqual(s.last_state["tools"]["service_type"], 6)
+        await s.request("tool", {"action": "apply", "name": "service", "service": "sanitation", "x1": 17, "y1": 17})
+        await s.request("tool", {"action": "apply", "name": "service", "service": "garbage", "x1": 19, "y1": 17})
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 10)
+        await control("guide_action")
+        self.assertTrue(s.artifact("urban_sim_session.json").exists())
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 6)
+        await key("F10")
+        self.assertTrue(s.last_state["ui"]["settings"])
+        tick, funds = s.last_state["tick"], s.last_state["funds"]
+        await key("N")
+        self.assertEqual(s.last_state["tick"], tick)
+        with self.assertRaisesRegex(PlaytestError, "Close settings"):
+            await s.request("tool", {"action": "apply", "name": "road", "x1": 1, "y1": 1, "x2": 2, "y2": 1})
+        self.assertEqual(s.last_state["funds"], funds)
+        await control("settings_reset")
+        await control("settings_apply")
+        self.assertEqual(s.last_state["dimensions"]["width"], 1280)
+        self.assertEqual(s.last_state["dimensions"]["height"], 720)
+        await s.screenshot("m55-settings-1280x720")
+        await control("settings_help")
+        await s.screenshot("m55-controls-1280x720")
+        await control("settings_help")
+        await control("settings_resolution")
+        await control("settings_resolution")
+        await control("settings_apply")
+        self.assertEqual(s.last_state["dimensions"]["width"], 1920)
+        # macOS can constrain a window taller than the desktop's work area.
+        # Retain actual dimensions instead of claiming an unsupported 1080p test.
+        self.assertGreaterEqual(s.last_state["dimensions"]["height"], 720)
+        self.assertEqual(s.last_state["ui"]["settings_resolution"], 2)
+        s.artifact("display-validation.json").write_text(json.dumps({"requested": [1920, 1080], "actual": s.last_state["dimensions"],
+            "windows_150_percent_dpi_verified": False}, indent=2))
+        await s.screenshot("m55-settings-requested-1920x1080")
+        await control("settings_close")
+        await key("F10")
+        self.assertEqual(s.last_state["ui"]["settings_resolution"], 2)
+        await control("settings_reset")
+        await control("settings_apply")
+        await control("settings_close")
+        preferences = json.loads(s.artifact("urban_sim_settings.json").read_text())
+        self.assertEqual(preferences["resolution"], 0)
+        self.assertFalse(preferences["borderless"])
+        await s.screenshot("m55-city-guide-complete")
+
+    async def test_water_booster_native_pressure_power_and_continuation(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 8, "y1": 8, "x2": 8, "y2": 24})
+        for service, y in (("water", 8), ("power", 12), ("sanitation", 24)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": 7, "y1": y})
+        await s.request("tool", {"action": "apply", "name": "pipe", "x1": 8, "y1": 8, "x2": 8, "y2": 24})
+        await s.city("save")
+        core = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        session = json.loads(s.artifact("urban_sim_session.json").read_text())
+        home = core["nextEntityId"]
+        core["nextEntityId"] = home + 2
+        core["buildings"] = [{"id": home, "type": 1, "position": {"x": 9, "y": 16}, "capacity": 1000, "occupancy": 1000}]
+        core["populationGroups"] = [{"id": home + 1, "band": 0, "size": 1000, "employed": 0}]
+        heights = {(8, 14): 18, (8, 15): 30, (8, 16): 35, (9, 16): 35}
+        for tile in core["tiles"]:
+            position = (tile["x"], tile["y"])
+            if position == (9, 16):
+                tile["buildingId"] = home
+                tile["zone"] = 1
+            if position in heights:
+                tile["environment"]["terrainMeters"] = heights[position]
+        core_path = s.artifact("water-booster.city.json")
+        core_path.write_text(json.dumps(core))
+        session["citySnapshot"] = str(core_path)
+        fixture = s.artifact("water-booster.json")
+        fixture.write_text(json.dumps(session))
+        await s.city("load", import_path=str(fixture))
+        async def parcel():
+            return (await s.request("inspect", {"section": "tiles", "x": 9, "y": 16}))["items"][0]
+        async def boosters():
+            return (await s.request("inspect", {"section": "utilities"}))["boosters"]
+        self.assertFalse((await parcel())["water"])
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 40, "view_x": 0, "view_y": 6})
+        await s.request("view", {"action": "toggle", "name": "onboarding", "enabled": False})
+        await s.request("view", {"action": "toggle", "name": "compact_ui", "enabled": True})
+        point = await s.request("coordinates", {"direction": "tile_to_screen", "x": 8, "y": 14})
+        point = {k: point[k] for k in ("x", "y")}
+        funds, tick = s.last_state["funds"], s.last_state["tick"]
+        await s.request("input", {"events": [{"type": "key", "key": "X"}, {"type": "key", "key": "A"},
+            {"type": "down", "button": "left", **point}, {"type": "up", "button": "left", **point}]})
+        self.assertEqual(s.last_state["funds"], funds - 3000)
+        self.assertEqual(s.last_state["tick"], tick)
+        self.assertTrue((await parcel())["water"])
+        self.assertGreater((await parcel())["utility"]["pressure_margin_m"], 0)
+        self.assertTrue((await boosters())[0]["powered"])
+        self.assertGreater((await boosters())[0]["flow"], 0)
+        await s.request("view", {"action": "projection", "projection": "3d"})
+        await s.request("view", {"action": "focus"})
+        hover = await s.request("coordinates", {"direction": "tile_to_screen", "x": 9, "y": 16})
+        await s.request("input", {"events": [{"type": "move", **{k: hover[k] for k in ("x", "y")}}]})
+        await s.screenshot("water-booster-high-district")
+        funds = s.last_state["funds"]
+        with self.assertRaisesRegex(PlaytestError, "Remove the water booster"):
+            await s.request("tool", {"action": "apply", "name": "pipe", "pipe_kind": "water", "remove": True, "x1": 8, "y1": 14})
+        self.assertEqual(s.last_state["funds"], funds)
+
+        funding = [100] * 12
+        funding[4] = 0
+        await s.request("budget", {"action": "set_funding", "service_percent": funding})
+        self.assertFalse((await boosters())[0]["powered"])
+        self.assertFalse((await parcel())["water"])
+        await s.request("time", {"action": "step", "ticks": 1})
+        await s.city("save")
+        await s.request("time", {"action": "step", "ticks": 3})
+        expected = (await s.request("inspect", {"section": "environment"}))["environment"]
+        expected_parcel = (await parcel())["utility"]
+        await s.city("load")
+        await s.request("time", {"action": "step", "ticks": 3})
+        self.assertEqual((await s.request("inspect", {"section": "environment"}))["environment"], expected)
+        self.assertEqual((await parcel())["utility"], expected_parcel)
+        await s.request("budget", {"action": "set_funding", "service_percent": [100] * 12})
+        self.assertTrue((await parcel())["water"])
+        await s.request("tool", {"action": "apply", "name": "pipe", "pipe_kind": "booster", "remove": True, "x1": 8, "y1": 14})
+        self.assertEqual(await boosters(), [])
+        self.assertFalse((await parcel())["water"])
+        pipe = (await s.request("inspect", {"section": "tiles", "x": 8, "y": 14}))["items"][0]
+        self.assertTrue(pipe["utility"]["waterPipe"])
+        self.assertTrue(pipe["utility"]["sewerPipe"])
+
+    async def test_sewer_lift_native_power_loss_and_save_continuation(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 8, "y1": 8, "x2": 8, "y2": 24})
+        for service, y in (("water", 8), ("power", 12), ("sanitation", 24)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": 7, "y1": y})
+        await s.request("tool", {"action": "apply", "name": "pipe", "x1": 8, "y1": 8, "x2": 8, "y2": 24})
+        await s.city("save")
+        core = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        session = json.loads(s.artifact("urban_sim_session.json").read_text())
+        home = core["nextEntityId"]
+        core["nextEntityId"] = home + 2
+        core["buildings"] = [{"id": home, "type": 1, "position": {"x": 9, "y": 16}, "capacity": 1000, "occupancy": 1000}]
+        core["populationGroups"] = [{"id": home + 1, "band": 0, "size": 1000, "employed": 0}]
+        for tile in core["tiles"]:
+            if (tile["x"], tile["y"]) == (9, 16):
+                tile["buildingId"] = home
+                tile["zone"] = 1
+            if (tile["x"], tile["y"]) == (8, 20):
+                tile["environment"]["terrainMeters"] += 10
+        core_path = s.artifact("sewer-lift.city.json")
+        core_path.write_text(json.dumps(core))
+        session["citySnapshot"] = str(core_path)
+        fixture = s.artifact("sewer-lift.json")
+        fixture.write_text(json.dumps(session))
+        await s.city("load", import_path=str(fixture))
+        async def parcel():
+            return (await s.request("inspect", {"section": "tiles", "x": 9, "y": 16}))["items"][0]
+        async def lifts():
+            return (await s.request("inspect", {"section": "utilities"}))["lifts"]
+        self.assertFalse((await parcel())["sewer"])
+        await s.request("time", {"action": "step", "ticks": 1})
+        backlog = (await parcel())["utility"]["sewageBacklog"]
+        self.assertGreater(backlog, 0)
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 40, "view_x": 0, "view_y": 6})
+        await s.request("view", {"action": "toggle", "name": "onboarding", "enabled": False})
+        await s.request("view", {"action": "toggle", "name": "compact_ui", "enabled": True})
+        point = await s.request("coordinates", {"direction": "tile_to_screen", "x": 8, "y": 18})
+        point = {k: point[k] for k in ("x", "y")}
+        funds = s.last_state["funds"]
+        await s.request("input", {"events": [{"type": "key", "key": "X"}, {"type": "key", "key": "L"},
+            {"type": "down", "button": "left", **point}, {"type": "up", "button": "left", **point}]})
+        self.assertEqual(s.last_state["funds"], funds - 2500)
+        self.assertTrue((await lifts())[0]["powered"])
+        self.assertGreater((await lifts())[0]["flow"], 0)
+        self.assertEqual((await parcel())["utility"]["sewageBacklog"], backlog)  # Forecasts never pump.
+        await s.request("time", {"action": "step", "ticks": 1})
+        self.assertEqual((await parcel())["utility"]["sewageBacklog"], 0)
+        await s.request("view", {"action": "projection", "projection": "3d"})
+        await s.request("view", {"action": "focus"})
+        await s.screenshot("sewer-lift-powered")
+        # Funding the power department to zero removes both generation and reach.
+        funding = [100] * 12
+        funding[4] = 0
+        await s.request("budget", {"action": "set_funding", "service_percent": funding})
+        self.assertFalse((await lifts())[0]["powered"])
+        await s.request("time", {"action": "step", "ticks": 1})
+        self.assertGreater((await parcel())["utility"]["sewageBacklog"], 0)
+        await s.screenshot("sewer-lift-power-outage")
+        await s.city("save")
+        await s.request("time", {"action": "step", "ticks": 3})
+        expected = (await s.request("inspect", {"section": "environment"}))["environment"]
+        await s.city("load")
+        self.assertFalse((await lifts())[0]["powered"])
+        await s.request("time", {"action": "step", "ticks": 3})
+        self.assertEqual((await s.request("inspect", {"section": "environment"}))["environment"], expected)
+        await s.request("budget", {"action": "set_funding", "service_percent": [100] * 12})
+        await s.request("time", {"action": "step", "ticks": 1})
+        self.assertEqual((await parcel())["utility"]["sewageBacklog"], 0)
+        await s.request("tool", {"action": "apply", "name": "pipe", "pipe_kind": "lift", "remove": True, "x1": 8, "y1": 18})
+        self.assertEqual(await lifts(), [])
+        pipe = (await s.request("inspect", {"section": "tiles", "x": 8, "y": 18}))["items"][0]
+        self.assertTrue(pipe["utility"]["sewerPipe"])
+
+    async def test_pipe_network_native_placement_backups_and_continuation(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 8, "y1": 8, "x2": 8, "y2": 24})
+        for service, y in (("water", 8), ("power", 12), ("sanitation", 24)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": 7, "y1": y})
+        await s.city("save")
+        core = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        session = json.loads(s.artifact("urban_sim_session.json").read_text())
+        home = core["nextEntityId"]
+        core["nextEntityId"] = home + 2
+        core["buildings"] = [{"id": home, "type": 1, "position": {"x": 9, "y": 16}, "capacity": 1000, "occupancy": 1000}]
+        core["populationGroups"] = [{"id": home + 1, "band": 0, "size": 1000, "employed": 0}]
+        tile = next(t for t in core["tiles"] if (t["x"], t["y"]) == (9, 16))
+        tile["buildingId"] = home
+        tile["zone"] = 1
+        core_path = s.artifact("pipe-fixture.city.json")
+        core_path.write_text(json.dumps(core))
+        session["citySnapshot"] = str(core_path)
+        fixture = s.artifact("pipe-fixture.json")
+        fixture.write_text(json.dumps(session))
+        await s.city("load", import_path=str(fixture))
+        async def parcel():
+            return (await s.request("inspect", {"section": "tiles", "x": 9, "y": 16}))["items"][0]
+        self.assertFalse((await parcel())["water"])
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 40, "view_x": 0, "view_y": 6})
+        await s.request("view", {"action": "toggle", "name": "onboarding", "enabled": False})
+        await s.request("view", {"action": "toggle", "name": "compact_ui", "enabled": True})
+        async def point(x, y):
+            result = await s.request("coordinates", {"direction": "tile_to_screen", "x": x, "y": y})
+            return {k: result[k] for k in ("x", "y")}
+        start, end = await point(8, 8), await point(8, 24)
+        before = s.last_state["funds"]
+        await s.request("input", {"events": [{"type": "key", "key": "X"},
+            {"type": "down", "button": "left", **start}, {"type": "move", **end}]})
+        self.assertTrue(s.last_state["preview"]["pipe"]["valid"])
+        self.assertEqual(s.last_state["preview"]["pipe"]["cost"], 17 * 70)
+        await s.request("input", {"events": [{"type": "up", "button": "left", **end}]})
+        self.assertEqual(s.last_state["funds"], before - 17 * 70)
+        self.assertTrue((await parcel())["water"])
+        self.assertTrue((await parcel())["sewer"])
+        await s.request("view", {"action": "projection", "projection": "3d"})
+        await s.request("view", {"action": "focus"})
+        await s.screenshot("pipes-water-and-sewer-served")
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 40, "view_x": 0, "view_y": 6})
+        cut = await point(8, 20)
+        await s.request("input", {"events": [{"type": "key", "key": "X"}, {"type": "key", "key": "X"},
+            {"type": "key", "key": "V"}, {"type": "down", "button": "left", **cut}, {"type": "up", "button": "left", **cut}]})
+        self.assertTrue((await parcel())["water"])
+        self.assertFalse((await parcel())["sewer"])
+        await s.request("time", {"action": "step", "ticks": 1})
+        self.assertGreater((await parcel())["utility"]["sewageBacklog"], 0)
+        await s.screenshot("pipes-sewage-backup")
+        await s.city("save")
+        await s.request("time", {"action": "step", "ticks": 3})
+        expected = (await s.request("inspect", {"section": "environment"}))["environment"]
+        expected_parcel = (await parcel())["utility"]
+        await s.city("load")
+        await s.request("time", {"action": "step", "ticks": 3})
+        self.assertEqual((await s.request("inspect", {"section": "environment"}))["environment"], expected)
+        self.assertEqual((await parcel())["utility"], expected_parcel)
+        await s.request("tool", {"action": "apply", "name": "pipe", "pipe_kind": "sewer", "x1": 8, "y1": 20})
+        await s.request("time", {"action": "step", "ticks": 2})
+        self.assertEqual((await parcel())["utility"]["sewageBacklog"], 0)
+        await s.request("tool", {"action": "apply", "name": "pipe", "snapped": False,
+            "start_x": 12.2, "start_y": 10.8, "end_x": 18.8, "end_y": 15.2})
+        before = (await s.request("inspect", {"section": "utilities"}))["water_pipe_tiles"]
+        await s.city("save")
+        await s.city("load")
+        self.assertEqual((await s.request("inspect", {"section": "utilities"}))["water_pipe_tiles"], before)
+
+    async def test_environment_overlays_pause_and_exact_continuation(self):
+        s = self.session
+        await s.city("new", 32, terrain=True)
+        async def environment():
+            result = await s.request("inspect", {"section": "environment"})
+            return {k: v for k, v in result.items() if k != "state"}
+        initial = await environment()
+        self.assertTrue(initial["environment"]["initialized"])
+        self.assertGreater(initial["water_volume_m3"], 0)
+        await s.request("view", {"action": "toggle", "name": "onboarding", "enabled": False})
+        await s.request("view", {"action": "toggle", "name": "compact_ui", "enabled": True})
+        await s.request("view", {"action": "focus"})
+        await s.request("input", {"events": [{"type": "key", "key": "W"}]})
+        await s.screenshot("wind-currents")
+        self.assertEqual(await environment(), initial)
+        await s.request("input", {"events": [{"type": "key", "key": "W"}]})
+        await s.request("time", {"action": "step", "ticks": 5})
+        await s.screenshot("water-currents")
+        await s.request("view", {"action": "environment", "inflow_scale": 0})
+        await s.city("save")
+        checkpoint = await environment()
+        await s.request("time", {"action": "step", "ticks": 8})
+        expected = await environment()
+        expected_tiles = await s.request("inspect", {"section": "tiles", "x": 0, "y": 0, "width": 16, "height": 32, "limit": 512})
+        await s.city("load")
+        self.assertEqual(await environment(), checkpoint)
+        await s.request("time", {"action": "step", "ticks": 8})
+        self.assertEqual(await environment(), expected)
+        actual_tiles = await s.request("inspect", {"section": "tiles", "x": 0, "y": 0, "width": 16, "height": 32, "limit": 512})
+        self.assertEqual([t["environment"] for t in actual_tiles["items"]],
+                         [t["environment"] for t in expected_tiles["items"]])
+
+    async def test_elevated_highway_ramps_native_deck_picking_save_and_demolition(self):
+        s = self.session
+        await s.city("new", 64)
+        await self.unlock_catalog_fixture(funds=1000000)
+        await s.request("view", {"action": "toggle", "name": "compact_ui", "enabled": True})
+        await s.request("view", {"action": "toggle", "name": "onboarding", "enabled": False})
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 24, "y1": 4, "x2": 24, "y2": 55})
+        ground = (await s.request("inspect", {"section": "roads", "limit": 512}))["items"]
+        await s.request("tool", {"action": "apply", "name": "road", "road_class": "highway", "road_layout": "line",
+                                 "elevation": 1, "start_x": 4.5, "start_y": 20.5, "end_x": 52.5, "end_y": 20.5})
+        await s.request("view", {"action": "projection", "projection": "3d"})
+        await s.request("view", {"action": "camera", "yaw": 0, "pitch": 35, "tile_pixels": 28})
+        await s.request("view", {"action": "focus"})
+        await s.request("tool", {"action": "select", "name": "road", "road_class": "ramp", "road_layout": "curve",
+                                 "elevation": 1, "snapped": False})
+        deck = await s.request("coordinates", {"direction": "tile_to_screen", "x": 24, "y": 20, "height": .8})
+        flat = await s.request("coordinates", {"direction": "screen_to_tile", **deck})
+        self.assertNotEqual(flat["y"], 20)  # Flat-plane picking alone misses the deck.
+        control = await s.request("coordinates", {"direction": "tile_to_screen", "x": 32, "y": 20})
+        end = await s.request("coordinates", {"direction": "tile_to_screen", "x": 38, "y": 38})
+        async def click(point):
+            await s.request("input", {"events": [
+                {"type": "down", "button": "left", **point}, {"type": "up", "button": "left", **point}]})
+        await click(deck)
+        await click(control)
+        await s.request("input", {"events": [{"type": "move", **end}]})
+        self.assertTrue(s.last_state["preview"]["road"]["valid"], s.last_state["preview"]["road_error"])
+        await click(end)
+        self.assertEqual(s.last_state["tools"]["road_alignment_count"], 2)
+        await s.request("tool", {"action": "apply", "name": "road", "road_class": "ramp", "road_layout": "curve",
+                                 "elevation": 1, "snapped": False, "start_x": 10.5, "start_y": 38.5,
+                                 "control_x": 12.5, "control_y": 20.5, "end_x": 20.5, "end_y": 20.5})
+        await s.city("save")
+        snapshot = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        self.assertEqual(len(snapshot["roadAlignments"][0]["deckJunctions"]), 2)
+        self.assertEqual(snapshot["roadAlignments"][1]["startLevel"], 1)
+        self.assertEqual(snapshot["roadAlignments"][2]["endLevel"], 1)
+        self.assertTrue(all(edge["from"]["x"] >= 0 and edge["from"]["y"] >= 0 for edge in snapshot["roads"]))
+        await s.city("load")
+        self.assertEqual(s.last_state["tools"]["road_alignment_count"], 3)
+        await s.request("tool", {"action": "select", "name": "none"})
+        await s.request("view", {"action": "camera", "yaw": 25, "pitch": 50, "tile_pixels": 28})
+        await s.request("view", {"action": "focus"})
+        await s.request("input", {"events": [{"type": "move", "x": 0, "y": 0}]})
+        await s.screenshot("elevated-highway-entrance-and-exit")
+        await s.request("tool", {"action": "apply", "name": "bulldoze", "elevation": 1,
+                                 "x1": 4, "y1": 20, "x2": 4, "y2": 20})
+        self.assertEqual(s.last_state["tools"]["road_alignment_count"], 0)
+        after = (await s.request("inspect", {"section": "roads", "limit": 512}))["items"]
+        self.assertEqual(after, ground)
+
+    async def test_overpass_underpass_levels_and_safe_demolition(self):
+        s = self.session
+        await s.city("new", 64)
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 28, "view_x": 0, "view_y": 0})
+        await s.request("view", {"action": "toggle", "name": "onboarding", "enabled": False})
+        await s.request("tool", {"action": "apply", "name": "road", "x1": 20, "y1": 4, "x2": 20, "y2": 58})
+        ground = (await s.request("inspect", {"section": "roads", "limit": 512}))["items"]
+        await s.request("tool", {"action": "select", "name": "road", "road_layout": "line"})
+        await s.request("input", {"events": [{"type": "key", "key": "PageUp"}]})
+        self.assertEqual(s.last_state["tools"]["road_elevation"], 1)
+        async def click(x, y):
+            await s.request("input", {"events": [
+                {"type": "down", "button": "left", "x": round(x*28), "y": round(y*28)},
+                {"type": "up", "button": "left", "x": round(x*28), "y": round(y*28)}]})
+        await click(4.5, 20.5)
+        await s.request("input", {"events": [{"type": "move", "x": round(36.5*28), "y": round(20.5*28)}]})
+        self.assertTrue(s.last_state["preview"]["road"]["valid"])
+        await click(36.5, 20.5)
+        self.assertEqual(s.last_state["tools"]["road_alignment_count"], 1)
+        await s.request("tool", {"action": "apply", "name": "road", "road_layout": "line", "elevation": -1,
+                                 "start_x": 4.5, "start_y": 42.5, "end_x": 36.5, "end_y": 42.5})
+        edges = (await s.request("inspect", {"section": "roads", "limit": 512}))["items"]
+        self.assertEqual(sorted(e["elevation"] for e in edges if e["elevation"]), [-1, 1])
+        self.assertTrue(all(e["length"] == 32 for e in edges if e["elevation"]))
+        await s.city("save")
+        await s.city("load")
+        self.assertEqual(s.last_state["tools"]["road_alignment_count"], 2)
+        await s.request("tool", {"action": "select", "name": "none"})
+        await s.request("view", {"action": "toggle", "name": "compact_ui", "enabled": True})
+        await s.request("view", {"action": "projection", "projection": "3d"})
+        await s.request("view", {"action": "camera", "yaw": 35, "pitch": 70, "tile_pixels": 28})
+        await s.request("view", {"action": "focus"})
+        await s.request("input", {"events": [{"type": "move", "x": 0, "y": 0}]})
+        await s.screenshot("overpass-and-open-cut-underpass")
+        await s.request("tool", {"action": "apply", "name": "bulldoze", "elevation": 1,
+                                 "x1": 20, "y1": 20, "x2": 20, "y2": 20})
+        after = (await s.request("inspect", {"section": "roads", "limit": 512}))["items"]
+        self.assertEqual([e for e in after if e["elevation"] == 0], ground)
+        self.assertEqual([e["elevation"] for e in after if e["elevation"]], [-1])
+        self.assertEqual(s.last_state["tools"]["road_alignment_count"], 1)
+
+    async def test_freeform_curve_roundabout_highway_ramps_and_save_load(self):
+        s = self.session
+        await s.city("new", 32)
+        await self.unlock_catalog_fixture(funds=300000)
+        await s.request("view", {"action": "projection", "projection": "top_down"})
+        await s.request("view", {"action": "camera", "tile_pixels": 40, "view_x": 0, "view_y": 0})
+        await s.request("tool", {"action": "select", "name": "road", "road_class": "local",
+                                 "road_layout": "curve", "snapped": False})
+        cash = s.last_state["funds"]
+        async def click(x, y):
+            await s.request("input", {"events": [
+                {"type": "down", "button": "left", "x": round(x*40), "y": round(y*40)},
+                {"type": "up", "button": "left", "x": round(x*40), "y": round(y*40)}]})
+        await click(9.2, 12.3)
+        self.assertEqual(s.last_state["tools"]["road_click_stage"], 1)
+        self.assertEqual(s.last_state["funds"], cash)
+        await click(14.4, 10.2)
+        self.assertEqual(s.last_state["tools"]["road_click_stage"], 2)
+        await s.request("input", {"events": [{"type": "move", "x": round(20.8*40), "y": round(16.3*40)}]})
+        self.assertTrue(s.last_state["preview"]["road"]["valid"])
+        await s.screenshot("freeform-road-preview")
+        await click(20.8, 16.3)
+        self.assertEqual(s.last_state["tools"]["road_alignment_count"], 1)
+        self.assertLess(s.last_state["funds"], cash)
+        await s.request("input", {"events": [{"type": "key", "key": "O"}]})
+        self.assertTrue(s.last_state["tools"]["road_snap"])
+        await s.request("tool", {"action": "apply", "name": "road", "road_layout": "roundabout",
+                                 "start_x": 8.5, "start_y": 23.5, "radius": 3})
+        await s.request("tool", {"action": "apply", "name": "road", "road_class": "highway",
+                                 "road_layout": "line", "start_x": 2.5, "start_y": 3.5,
+                                 "end_x": 25.5, "end_y": 3.5})
+        await s.request("tool", {"action": "apply", "name": "road", "road_class": "ramp",
+                                 "road_layout": "curve", "snapped": False,
+                                 "start_x": 12.5, "start_y": 3.5, "control_x": 17.5, "control_y": 3.5,
+                                 "end_x": 18.5, "end_y": 8.5})
+        self.assertEqual(s.last_state["tools"]["road_alignment_count"], 4)
+        edges = (await s.request("inspect", {"section": "roads", "limit": 512}))["items"]
+        self.assertTrue(any(e["road_class"] == "highway" and e["capacity"] == 800 for e in edges))
+        self.assertTrue(any(e["road_class"] == "ramp" and e["one_way"] for e in edges))
+        await s.screenshot("curves-roundabout-highway-top-down")
+        await s.city("save")
+        snapshot = json.loads(s.artifact("urban_sim_session.json.city.json").read_text())
+        self.assertEqual(len(snapshot["roadAlignments"]), 4)
+        self.assertFalse(snapshot["roadAlignments"][0]["snapped"])
+        self.assertTrue(snapshot["roadAlignments"][1]["roundabout"])
+        self.assertAlmostEqual(snapshot["roadAlignments"][0]["curves"][0][0][0], round(9.2*40)/40, places=4)
+        await s.city("load")
+        self.assertEqual(s.last_state["tools"]["road_alignment_count"], 4)
+        await s.request("view", {"action": "projection", "projection": "3d"})
+        await s.request("view", {"action": "camera", "yaw": 45, "pitch": 60, "tile_pixels": 40})
+        await s.request("view", {"action": "focus"})
+        await s.screenshot("curves-roundabout-highway-3d")
+
     async def test_3d_orbit_ground_picking_and_native_road_placement(self):
         s = self.session
         for yaw, pitch in ((0, 20), (90, 35), (180, 60), (270, 80)):
@@ -238,6 +723,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s = self.session
         await s.city("new", 32)
         await s.request("tool", {"action":"apply", "name":"road", "x1":6, "y1":16, "x2":22, "y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service, x in (("power",18),("water",20)):
             await s.request("tool", {"action":"apply", "name":"service", "service":service, "x1":x, "y1":15})
         for zone, y in (("residential",15),("industrial",17)):
@@ -281,6 +767,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             await s.request("tool", request)
         self.assertEqual(s.last_state["funds"], funds)
         await s.request("tool", {"action": "apply", "name": "road", "x1": 4, "y1": 16, "x2": 24, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 4, 'y1': 16, 'x2': 24, 'y2': 16})
         for service, x in (("power", 18), ("water", 20)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
         # Legacy migration derives peak funds, without granting throughput history.
@@ -345,6 +832,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             await s.request("tool", request)
         self.assertEqual(s.last_state["funds"], funds)
         await s.request("tool", {"action": "apply", "name": "road", "x1": 4, "y1": 16, "x2": 26, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 4, 'y1': 16, 'x2': 26, 'y2': 16})
         for service, x in (("power", 18), ("water", 20)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
         for zone, y in (("residential", 15), ("industrial", 17)):
@@ -480,6 +968,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s.last_state["population"], 0)
         for x1, y1, x2, y2 in ((0,10,26,10),(17,13,26,13),(17,10,17,13)):
             await s.request("tool", dict(action="apply", name="road", x1=x1, y1=y1, x2=x2, y2=y2))
+            await s.request("tool", dict(action="apply", name="pipe", x1=x1, y1=y1, x2=x2, y2=y2))
         for service, x in (("power",15),("water",17)):
             await s.request("tool", dict(action="apply", name="service", service=service, x1=x, y1=9,
                 **({"power_source": "generic"} if service == "power" else {})))
@@ -656,6 +1145,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("new", 32)
         await self.unlock_catalog_fixture(funds=100000)
         await s.request("tool", {"action": "apply", "name": "road", "x1": 4, "y1": 16, "x2": 24, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 4, 'y1': 16, 'x2': 24, 'y2': 16})
         for service, x in (("fire", 12), ("police", 14), ("health", 16), ("education", 18),
                            ("water", 10), ("power", 8)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
@@ -868,20 +1358,28 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await self.unlock_catalog_fixture(2500, funds=1000000)
         for x in (10, 16):
             await s.request("tool", {"action":"apply", "name":"road", "x1":x, "y1":5, "x2":x, "y2":12})
+            await s.request("tool", {"action": "apply", "name": "pipe", 'x1': x, 'y1': 5, 'x2': x, 'y2': 12})
         await s.city("save")
         core_path = s.artifact("urban_sim_session.json.city.json")
         core = json.loads(core_path.read_text())
         for tile in core["tiles"]:
             if tile["x"] in (12, 14):
                 tile["type"] = 2
+        # Initialize hydraulic depth for the two newly stamped rivers.
+        core["environment"]["initialized"] = False
         core_path.write_text(json.dumps(core))
         await s.city("load")
         for service, x, y, shore in (("water",11,8,True), ("water",15,8,True),
-                                      ("sanitation",11,10,True), ("power",9,6,False)):
+                                      ("sanitation",11,6,True), ("power",9,6,False)):
             await s.request("tool", {"action":"apply", "name":"service", "service":service,
                                      "x1":x, "y1":y, "surface_water":shore})
+        # Pump sewage upstream so discharge travels past the first intake.
+        await s.request("tool", {"action":"apply", "name":"pipe", "pipe_kind":"lift", "x1":10, "y1":9})
         await s.request("tool", {"action":"apply", "name":"zone", "zone":"residential", "x1":9, "y1":8})
-        await s.request("time", {"action":"step", "ticks":20})
+        await s.request("tool", {"action":"apply", "name":"zone", "zone":"commercial", "x1":9,"y1":9})
+        await s.request("time", {"action":"step", "ticks":100})
+        self.assertGreater(s.last_state["population"], 0)
+        self.assertGreater(s.last_state["environment"]["discharge"], 0)
         facilities = (await s.request("inspect", {"section":"facilities"}))["items"]
         water = [f for f in facilities if f["type"] == "Water"]
         self.assertEqual(len(water), 2)
@@ -895,7 +1393,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.request("window", {"action":"resize", "width":800, "height":640})
         await s.request("view", {"action":"projection", "projection":"top_down"})
         await s.request("view", {"action":"camera", "tile_pixels":40, "view_x":3, "view_y":2})
-        point = await s.request("coordinates", {"direction":"tile_to_screen", "x":11, "y":10})
+        point = await s.request("coordinates", {"direction":"tile_to_screen", "x":11, "y":6})
         await s.request("input", {"events":[{"type":"move", "x":point["x"], "y":point["y"]}]})
         self.assertEqual(s.last_state["preview"]["service"]["cost"], 600000)
         self.assertTrue(s.last_state["preview"]["service"]["valid"])
@@ -910,7 +1408,11 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         treatment = next(f for f in facilities if f["type"] == "Sanitation")
         self.assertTrue(treatment["sewage_treatment"])
         self.assertEqual(treatment["name"], "Shore Treatment")
-        self.assertTrue(all(f["source_clean_fraction"] == 1. for f in facilities if f["type"] == "Water"))
+        # Treatment removes 98% of new contaminant; existing river mass persists.
+        environment = s.last_state["environment"]
+        self.assertGreater(environment["discharge"], 0)
+        self.assertAlmostEqual(environment["contaminantIn"], environment["discharge"] * .02)
+        self.assertEqual(next(f for f in facilities if f["type"] == "Water" and f["x"] == 15)["source_clean_fraction"], 1.)
         self.assertEqual(s.last_state["budget"]["service_costs"][6], 34)
         await s.request("input", {"events":[{"type":"key", "key":"Escape"}]})
         await s.screenshot("shore-treatment-inspector")
@@ -953,7 +1455,12 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s.last_state["budget"]["service_costs"][6], 0)
         self.assertEqual(s.last_state["budget"]["service_coverage"][6], 0.)
         facilities = (await s.request("inspect", {"section":"facilities"}))["items"]
-        self.assertTrue(all(f["source_clean_fraction"] == 1. for f in facilities if f["type"] == "Water"))
+        # An unfunded outlet stops discharge; existing contamination remains.
+        environment = s.last_state["environment"]
+        self.assertEqual(environment["discharge"], 0)
+        self.assertGreater(environment["sewageBacklog"], 0)
+        self.assertAlmostEqual(environment["contaminantIn"], environment["discharge"] * .02)
+        self.assertEqual(next(f for f in facilities if f["type"] == "Water" and f["x"] == 15)["source_clean_fraction"], 1.)
         with self.assertRaises(PlaytestError):
             await s.request("tool", {"action":"apply", "name":"service", "service":"water",
                                      "surface_water":True, "sewage_treatment":True, "x1":11, "y1":9})
@@ -991,6 +1498,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s = self.session
         await s.city("new", 32)
         await s.request("tool", {"action":"apply", "name":"road", "x1":6, "y1":16, "x2":22, "y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service, x in (("power",18),("water",20)):
             await s.request("tool", {"action":"apply", "name":"service", "service":service, "x1":x, "y1":15})
         for zone, y in (("residential",15),("commercial",17)):
@@ -1070,6 +1578,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s = self.session
         await s.city("new", 32)
         await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service, x in (("power", 18), ("water", 20)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
         for zone, y in (("residential", 15), ("commercial", 17)):
@@ -1141,6 +1650,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("new", 32)
         await self.unlock_catalog_fixture()
         await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service, x in (("power", 18), ("water", 20)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
         for zone, y in (("residential", 15), ("commercial", 17)):
@@ -1191,6 +1701,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("new", 32)
         await self.unlock_catalog_fixture(funds=1000000)
         await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service, x in (("power", 18), ("water", 20)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
         for zone, y in (("residential", 15), ("commercial", 17)):
@@ -1343,7 +1854,8 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         facilities = (await s.request("inspect", {"section": "facilities"}))["items"]
         self.assertEqual(len(facilities), 2)
         self.assertTrue(all(f["surface_water"] for f in facilities))
-        self.assertLess(facilities[0]["source_clean_fraction"], 1)
+        # An unused raw outlet cannot contaminate a river without sewage.
+        self.assertEqual(facilities[0]["source_clean_fraction"], 1)
         await keys("F4", "F5")
         await s.screenshot("shore-intake-and-raw-outlet")
         await s.request("window", {"action": "resize", "width": 800, "height": 640})
@@ -1376,6 +1888,9 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         for kind, x in (("power", 15), ("water", 17)):
             await s.request("tool", {"action": "apply", "name": "service",
                 "service": kind, "x1": x, "y1": 15})
+        await s.request("tool", {"action": "apply", "name": "pipe", "x1": 8, "y1": 16, "x2": 24, "y2": 16})
+        for kind, x in (("sanitation", 17), ("garbage", 19)):
+            await s.request("tool", {"action": "apply", "name": "service", "service": kind, "x1": x, "y1": 17})
         for kind, x1, x2 in (("residential", 8, 12), ("commercial", 20, 24)):
             await s.request("tool", {"action": "apply", "name": "zone",
                 "zone": kind, "x1": x1, "y1": 15, "x2": x2, "y2": 15})
@@ -1383,12 +1898,18 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(s.last_state["paused"])
         self.assertEqual(s.last_state["tick"], 1)
         self.assertEqual(s.last_state["toast"], "STEPPED TO TICK 1 - AUTO RUN PAUSED")
+        for _ in range(100):
+            if s.last_state["population"]>0: break
+            await key("N")
+        self.assertGreater(s.last_state["population"],0)
         self.assertEqual(s.last_state["ui"]["onboarding_step"], 5)
         await s.request("window", {"action": "resize", "width": 800, "height": 640})
         await s.screenshot("m36-guide-budget-minimum")
         await key("F6")
-        self.assertEqual(s.last_state["ui"]["onboarding_step"], 6)
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 10)
         await key("Escape")
+        await key("F5")
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 6)
         await key("F1")
         self.assertEqual(s.last_state["ui"]["onboarding_step"], 5)
 
@@ -1411,6 +1932,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await key("U")
         for x1,y1,x2,y2 in ((0,10,26,10),(17,13,26,13),(17,10,17,13)):
             await s.request("tool",{"action":"apply","name":"road","x1":x1,"y1":y1,"x2":x2,"y2":y2})
+            await s.request("tool", {"action": "apply", "name": "pipe", 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":9})
         await s.request("tool",{"action":"apply","name":"airport","x1":18,"y1":11})
@@ -1470,6 +1992,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                 {"type":"down","button":"left","x":c["x"]+4,"y":c["y"]+4},
                 {"type":"up","button":"left","x":c["x"]+4,"y":c["y"]+4}]})
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 0, 'y1': 16, 'x2': 22, 'y2': 16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
         await s.request("tool",{"action":"apply","name":"zone","zone":"park","x1":8,"y1":17,"x2":9,"y2":17})
@@ -1543,6 +2066,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await self.unlock_catalog_fixture()
         for x1,y1,x2,y2 in ((0,10,26,10),(0,13,26,13),(17,10,17,13),(0,10,0,16)):
             await s.request("tool",{"action":"apply","name":"road","x1":x1,"y1":y1,"x2":x2,"y2":y2})
+            await s.request("tool", {"action": "apply", "name": "pipe", 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":9})
         for zone,x1,x2 in (("residential",2,8),("commercial",9,12),("industrial",13,15)):
@@ -1643,6 +2167,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await record(s,"start");await s.city("new",32)
         await self.unlock_catalog_fixture(funds=5000000)
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 0, 'y1': 16, 'x2': 22, 'y2': 16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
         await s.request("tool",{"action":"apply","name":"zone","zone":"park","x1":8,"y1":17,"x2":9,"y2":17})
@@ -1694,6 +2219,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await record(s,"start");await s.city("new",32)
         await self.unlock_catalog_fixture(funds=5000000)
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 0, 'y1': 16, 'x2': 22, 'y2': 16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
         await s.request("tool",{"action":"apply","name":"zone","zone":"park","x1":8,"y1":17})
@@ -1753,6 +2279,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("new",32)
         await self.unlock_catalog_fixture(funds=5000000)
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 0, 'y1': 16, 'x2': 22, 'y2': 16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
         for zone,y in (("residential",15),("commercial",17)):
@@ -1845,6 +2372,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await record(s,"start");await s.city("new",32)
         await self.unlock_catalog_fixture(funds=5000000)
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 0, 'y1': 16, 'x2': 22, 'y2': 16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
         await s.request("tool",{"action":"apply","name":"zone","zone":"park","x1":8,"y1":17})
@@ -1931,6 +2459,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("new",32)
         await self.unlock_catalog_fixture(funds=5000000)
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":16,"x2":22,"y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 0, 'y1': 16, 'x2': 22, 'y2': 16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
         await s.request("view",{"action":"projection","projection":"top_down"})
@@ -2046,6 +2575,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await self.unlock_catalog_fixture()
         for x1,y1,x2,y2 in ((0,10,26,10),(17,13,26,13),(17,10,17,13)):
             await s.request("tool",{"action":"apply","name":"road","x1":x1,"y1":y1,"x2":x2,"y2":y2})
+            await s.request("tool", {"action": "apply", "name": "pipe", 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":9})
         await s.city("save")
@@ -2147,6 +2677,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.city("new",32)
         await self.unlock_catalog_fixture()
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":10,"x2":25,"y2":10})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 0, 'y1': 10, 'x2': 25, 'y2': 10})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":9})
         await s.city("save")
@@ -2242,6 +2773,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s=self.session
         await s.city("new",32)
         await s.request("tool",{"action":"apply","name":"road","x1":0,"y1":10,"x2":25,"y2":10})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 0, 'y1': 10, 'x2': 25, 'y2': 10})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":9})
         for zone,x1,x2 in (("residential",1,8),("commercial",20,25)):
@@ -2413,6 +2945,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s = self.session
         await s.city("new", 32)
         await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service, x in (("power", 15), ("water", 17)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
         for zone, y in (("residential", 15), ("commercial", 17)):
@@ -2485,6 +3018,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s = self.session
         await s.city("new", 32)
         await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service, x in (("power", 15), ("water", 17)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
         for zone, y in (("residential", 15), ("commercial", 17)):
@@ -2518,6 +3052,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.request("budget", {"action": "trends"})
         await s.screenshot("trends-empty")
         await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service, x in (("power", 15), ("water", 17)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
         for zone, y in (("residential", 15), ("commercial", 17)):
@@ -2576,6 +3111,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.screenshot("alerts-unchecked")
         await s.request("budget", {"action":"close"})
         await s.request("tool", {"action":"apply","name":"road","x1":6,"y1":16,"x2":22,"y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool", {"action":"apply","name":"service","service":service,"x1":x,"y1":15})
         for zone,y in (("residential",15),("commercial",17)):
@@ -2643,6 +3179,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         blocked = await s.request("inspect", {"section":"diagnostics","x":6,"y":15})
         self.assertIn("no_road",blocked["growth"]["blockers"])
         await s.request("tool", {"action":"apply","name":"road","x1":6,"y1":16,"x2":22,"y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool", {"action":"apply","name":"service","service":service,"x1":x,"y1":15})
         for zone,y in (("residential",15),("commercial",17)):
@@ -2683,6 +3220,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         await s.screenshot("transport-empty")
         await s.request("budget",{"action":"close"})
         await s.request("tool",{"action":"apply","name":"road","x1":6,"y1":16,"x2":22,"y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
         for zone,y in (("residential",15),("commercial",17)):
@@ -2764,6 +3302,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             self.fail("Could not focus "+name)
         await s.city("new",32)
         await s.request("tool",{"action":"apply","name":"road","x1":6,"y1":16,"x2":22,"y2":16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service,x in (("power",15),("water",17)):
             await s.request("tool",{"action":"apply","name":"service","service":service,"x1":x,"y1":15})
         for zone,y in (("residential",15),("commercial",17)):
@@ -2848,6 +3387,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         s = self.session
         await s.city("new", 32)
         await s.request("tool", {"action": "apply", "name": "road", "x1": 6, "y1": 16, "x2": 22, "y2": 16})
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 6, 'y1': 16, 'x2': 22, 'y2': 16})
         for service, x in (("power", 15), ("water", 17)):
             await s.request("tool", {"action": "apply", "name": "service", "service": service, "x1": x, "y1": 15})
         for zone, y in (("residential", 15), ("commercial", 17)):
@@ -3307,6 +3847,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             "tool",
             {"action": "apply", "name": "road", "x1": 8, "y1": 32, "x2": 40, "y2": 32},
         )
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 8, 'y1': 32, 'x2': 40, 'y2': 32})
         for service, x, y in (
             ("power", 24, 31),
             ("water", 24, 33),
@@ -3374,6 +3915,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             "tool",
             {"action": "apply", "name": "road", "x1": 40, "y1": 32, "x2": 42, "y2": 36},
         )
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 40, 'y1': 32, 'x2': 42, 'y2': 36})
         for y in range(36, 61, 4):
             await s.request(
                 "tool",
@@ -3386,6 +3928,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                     "y2": y,
                 },
             )
+            await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 10, 'y1': y, 'x2': 42, 'y2': y})
         for x in range(10, 43, 4):
             await s.request(
                 "tool",
@@ -3398,6 +3941,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                     "y2": 60,
                 },
             )
+            await s.request("tool", {"action": "apply", "name": "pipe", 'x1': x, 'y1': 36, 'x2': x, 'y2': 60})
         for x in (15, 35):
             for service, sx, y in (
                 ("power", x, 47),
@@ -3489,7 +4033,17 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(s.last_state["population"], 1200)
         self.assertGreater(s.last_state["routes"], 0)
         self.assertTrue(s.last_state["ui"]["onboarding"])
-        self.assertEqual(s.last_state["ui"]["onboarding_step"], 6)
+        # This migration fixture has unserved outer zones. Earned population
+        # must not bypass the guide's actual parcel-level power repair check.
+        self.assertEqual(s.last_state["ui"]["onboarding_step"], 12)
+        controls = (await s.request("inspect", {"section": "ui"}))["controls"]
+        repair = next(c for c in controls if c["name"] == "guide_action")
+        x, y = repair["x"] + repair["width"] // 2, repair["y"] + repair["height"] // 2
+        await s.request("input", {"events": [
+            {"type": "down", "button": "left", "x": x, "y": y},
+            {"type": "up", "button": "left", "x": x, "y": y}]})
+        self.assertTrue(s.last_state["tools"]["service"])
+        self.assertEqual(s.last_state["tools"]["service_type"], 4)
         entities = await s.request("inspect", {"section": "entities", "limit": 512})
         homes = [b for b in entities["items"] if b["type"] == 1 and b["occupancy"] > 0]
         self.assertGreater(len(homes), 1)
@@ -3572,6 +4126,7 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
             "tool",
             {"action": "apply", "name": "road", "x1": 0, "y1": 16, "x2": 24, "y2": 16},
         )
+        await s.request("tool", {"action": "apply", "name": "pipe", 'x1': 0, 'y1': 16, 'x2': 24, 'y2': 16})
         for service, y in (("power", 15), ("water", 17)):
             await s.request(
                 "tool",
@@ -3740,6 +4295,9 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
                     },
                 )
                 self.assertFalse(road.isError)
+                pipes = await client.call_tool("tool", {"action": "apply", "name": "pipe",
+                    "x1": 6, "y1": 12, "x2": 10, "y2": 12})
+                self.assertFalse(pipes.isError)
                 for service, y in (("power", 11), ("water", 13)):
                     plant = await client.call_tool(
                         "tool",

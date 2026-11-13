@@ -1,3 +1,4 @@
+#include "src/systems/UtilityNetworkSystem.hpp"
 #include "src/systems/CitySimSupport.hpp"
 
 #include <algorithm>
@@ -402,6 +403,7 @@ void applyPowerPlantPollution(
         const RoadNetwork::Node* node = roads.getNode(pos);
         if (node == nullptr) continue;
         for (const RoadNodeId& neighbor : node->adjacent) {
+          if(roads.edgeLength(pos,neighbor.coord)>kRadius-hops) continue;
           if (seen.insert(neighbor.coord).second) pending.push({neighbor.coord, hops + 1});
         }
       }
@@ -596,9 +598,9 @@ std::vector<Coord> sampleRouteStops(const Pathfinding::Path& path, int stopSpaci
   if (path.waypoints.empty()) return stops;
   const size_t step = static_cast<size_t>(std::max(1, stopSpacing));
   for (size_t i = 0; i < path.waypoints.size(); i += step) {
-    stops.push_back(path.waypoints[i]);
+    if(roadLevel(path.waypoints[i])==0) stops.push_back(path.waypoints[i]);
   }
-  if (stops.back() != path.waypoints.back()) {
+  if (roadLevel(path.waypoints.back())==0 && (stops.empty() || stops.back() != path.waypoints.back())) {
     stops.push_back(path.waypoints.back());
   }
   return stops;
@@ -659,6 +661,7 @@ void updateUtilityConnectivity(
     }));
   }
   for (auto& f : futs) f.get();
+  UtilityNetworkSystem::refresh(map,store,cache.utilityFacilities);
 }
 
 // Keep roughly one route of `mode` per `popPerRoute` residents (capped at

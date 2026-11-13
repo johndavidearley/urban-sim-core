@@ -40,7 +40,7 @@ Json playtestCapabilities() {
         {"hotel_placement",true},
         {"tourism_cohorts",true},
         {"transit_overlay", true},
-        {"road_classes", true},
+        {"road_classes", true},{"freeform_roads",true},{"road_roundabouts",true},{"directional_ramps",true},{"separated_crossings",true},{"elevated_ramp_connections",true},{"environment_currents",true},
         {"population_flow", true},
         {"neighborhood_rates", true},
         {"utility_supply", true},
@@ -191,11 +191,11 @@ void PlaytestBridge::begin(
 #define K(name) {#name, Key::name}
               K(Escape), K(Enter), K(Tab), K(Home), K(End), K(PageUp), K(PageDown), K(I), K(J), K(K), K(E), K(M), K(Space), K(Period), K(Equal), K(Plus),
               K(Minus),  K(Left),  K(Right), K(Up),     K(Down),  K(F1),
-              K(F2),     K(F3),    K(F4),    K(F5), K(F6), K(F7), K(F8),     K(F9), K(U),    K(Num1),
+              K(F2),     K(F3),    K(F4),    K(F5), K(F6), K(F7), K(F8),     K(F9), K(F10), K(F11), K(Backspace), K(U),    K(Num1),
               K(Num2),   K(Num3),  K(Num4),  K(Num5),   K(Num6),  K(Num7),
               K(Num8), K(Num9),   K(A),     K(B),     K(C),      K(D),     K(F),
               K(G),      K(H),     K(L),     K(N),      K(O),     K(P),
-              K(R),      K(S),     K(T),     K(V), K(Z)
+              K(R),      K(S),     K(T),     K(V), K(W), K(X), K(Z)
 #undef K
           };
           event.type = EventType::KeyDown;
@@ -207,6 +207,14 @@ void PlaytestBridge::begin(
             }
           if (!found)
             throw std::runtime_error("Unknown key: " + key);
+        } else if (type == "text") {
+          const auto text=item.at("text").get<std::string>();
+          if(text.empty() || text.size()>48) throw std::runtime_error("Expected 1..48 text characters");
+          for(unsigned char c:text) {
+            if(c<32 || c>126) throw std::runtime_error("Text injection supports printable ASCII");
+            InputEvent typed;typed.type=EventType::TextInput;typed.codepoint=c;validated.push_back(typed);
+          }
+          continue;
         } else if (type == "move") {
           event.type = EventType::MouseMotion;
           event.motion = {x, y};
@@ -237,6 +245,7 @@ void PlaytestBridge::begin(
           throw std::runtime_error("Unknown input event type");
         validated.push_back(event);
       }
+      if(validated.size()>256) throw std::runtime_error("Expanded input exceeds 256 events");
       for (const auto &event : validated)
         host.queue(event);
     } else if (command == "window") {

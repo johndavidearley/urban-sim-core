@@ -14,6 +14,8 @@ class RoadNetwork;
 
 struct RoadPlan {
   std::vector<Coord> tiles;
+  RoadAlignment alignment;
+  bool hasAlignment = false;
   int newSegments = 0;
   int upgradedSegments = 0;
   RoadClass roadClass = RoadClass::Local;
@@ -32,6 +34,14 @@ public:
                        Coord start, Coord end, int64_t availableFunds,
                        RoadClass roadClass = RoadClass::Local,
                        const std::vector<ServiceFacility>* facilities = nullptr);
+
+  static RoadAlignment straight(glm::vec2 start,glm::vec2 end,RoadClass roadClass,bool snapped);
+  static RoadAlignment curve(glm::vec2 start,glm::vec2 control,glm::vec2 end,RoadClass roadClass,bool snapped);
+  static RoadAlignment roundabout(glm::vec2 center,float radius,RoadClass roadClass,bool snapped);
+  static RoadPlan planAlignment(const CityMap& map,const RoadNetwork& roads,
+    const RoadAlignment& alignment,int64_t availableFunds,
+    const std::vector<ServiceFacility>* facilities=nullptr,bool requireConnections=true);
+  static int64_t segmentPrice(RoadClass roadClass);
 
   static bool build(CityMap& map, RoadNetwork& roads, const RoadPlan& plan, int64_t& availableFunds,
                     const std::vector<ServiceFacility>* facilities = nullptr);

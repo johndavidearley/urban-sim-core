@@ -21,7 +21,8 @@ struct TerrainStats {
 
 // Stamps water (Tile::type == 2) and rough terrain (Tile::type == 1) onto a map
 // with a continuous river and connected lake. Deterministic for seed + params.
-// Only writes Tile::type; zones, buildings, roads, and land value are untouched.
+// Writes tile types and persistent terrain/water-bed environmental data.
+// Zones, buildings, roads, and land value are untouched.
 // Intended to run on a freshly constructed (all-empty) map.
 class TerrainGenerator {
 public:

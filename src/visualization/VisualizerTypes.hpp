@@ -55,6 +55,9 @@ enum class OverlayMode {
   Happiness = 6,
   RouteHeatmap = 7,
   Transit = 8,
+  Wind = 9,
+  WaterCurrent = 10,
+  Utilities = 11,
 };
 
 enum class PaletteTool {
@@ -65,6 +68,7 @@ enum class PaletteTool {
   Service,
   District,
   Port,
+  Pipe,
 };
 
 enum class HudAction {
@@ -159,6 +163,8 @@ struct ToastNotification {
 };
 
 struct StartScreenResult {
+  std::string selectedSession;
+  std::string selectedSaveName="City";
   bool quit = false;
   bool loadSession = false;
   int mapSize = 64;

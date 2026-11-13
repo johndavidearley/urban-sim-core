@@ -1,3 +1,4 @@
+#include "src/visualization/CityGuideUI.hpp"
 #include "src/gameplay/Monuments.hpp"
 #include "src/gameplay/CatalogUnlocks.hpp"
 #include <algorithm>
@@ -68,11 +69,12 @@ void drawToolPalette(
   bool serviceActive,
   bool districtActive,
   int mouseX,
-  int mouseY
+  int mouseY,
+  bool pipeActive
 ) {
-  const std::array<const char*, 5> labels = {"R ROAD", "Z ZONE", "B BULL", "S SVC", "P DIST"};
-  const std::array<bool, 5> active = {
-    roadActive, zoneActive, bulldozeActive, serviceActive, districtActive
+  const std::array<const char*, 6> labels = {"R ROAD", "Z ZONE", "B BULL", "S SVC", "P DIST", "X PIPES"};
+  const std::array<bool, 6> active = {
+    roadActive, zoneActive, bulldozeActive, serviceActive, districtActive, pipeActive
   };
   for (size_t i = 0; i < labels.size(); ++i) {
     const Rect rect = paletteButtonRect(static_cast<int>(i), windowWidth, windowHeight);
@@ -845,57 +847,18 @@ void drawUniqueCatalog(DrawList* renderer, int width, int height,
   drawText(renderer, x + 18, y + 518, "BENEFITS TAPER WITH DISTANCE; STRONGEST NEARBY EFFECT APPLIES", {185,205,215}, 1);
 }
 
-void drawOnboarding(DrawList* renderer, int windowHeight, int step, const PopulationMilestones* milestones) {
-  if (step == 6 && milestones) {
-    const int x = 14, y = windowHeight - 154;
-    drawFilledRect(renderer, x, y, 650, 92, {16, 20, 26}, 235);
-    drawRectOutline(renderer, x, y, 650, 92, {120, 205, 255}, 255);
-    drawText(renderer, x + 12, y + 10, "CITY MILESTONE " + std::to_string(milestones->highestReached), {120, 205, 255}, 2);
-    drawText(renderer, x + 550, y + 12, "F1 HIDE", {155, 165, 180}, 1);
-    drawText(renderer, x + 12, y + 42, catalog::unlockedSummary(milestones->highestReached), {235, 238, 242}, 1);
-    const auto next = milestones->nextThreshold();
-    drawText(renderer, x + 12, y + 66, next ? "NEXT AT " + std::to_string(next) + " RESIDENTS - UNLOCKS ARE PERMANENT" :
-      "ALL POPULATION MILESTONES REACHED - UNLOCKS ARE PERMANENT", {175, 185, 200}, 1);
-    return;
-  }
-  if (step < 0 || step > 5) {
-    return;
-  }
-  constexpr int x = 14;
-  const int y = windowHeight - 154;
-  constexpr int width = 350;
-  constexpr int height = 92;
-  drawFilledRect(renderer, x, y, width, height, {16, 20, 26}, 235);
-  drawRectOutline(renderer, x, y, width, height, {120, 205, 255}, 255);
-  drawText(renderer, x + 12, y + 10, "CITY GUIDE", {120, 205, 255}, 2);
-  drawText(renderer, x + 250, y + 12, "F1 HIDE", {155, 165, 180}, 1);
-  switch (step) {
-    case 0:
-      drawText(renderer, x + 12, y + 38, "1 BUILD A ROAD", {235, 238, 242}, 2);
-      drawText(renderer, x + 12, y + 62, "SELECT ROAD THEN DRAG", {175, 185, 200}, 1);
-      break;
-    case 1:
-      drawText(renderer, x + 12, y + 38, "2 ZONE LAND", {235, 238, 242}, 2);
-      drawText(renderer, x + 12, y + 62, "ZONE HOMES AND JOBS BY ROADS", {175, 185, 200}, 1);
-      break;
-    case 2:
-      drawText(renderer, x + 12, y + 38, "3 START TIME", {235, 238, 242}, 2);
-      drawText(renderer, x + 12, y + 62, "CLICK PLAY OR PRESS SPACE", {175, 185, 200}, 1);
-      break;
-    case 3:
-      drawText(renderer, x + 12, y + 38, "4 PLACE POWER", {235, 238, 242}, 2);
-      drawText(renderer, x + 12, y + 62, "CYCLE SERVICE TO POWER", {175, 185, 200}, 1);
-      break;
-    case 4:
-      drawText(renderer, x + 12, y + 38, "5 PLACE WATER", {235, 238, 242}, 2);
-      drawText(renderer, x + 12, y + 62, "CYCLE SERVICE TO WATER", {175, 185, 200}, 1);
-      break;
-    case 5:
-      drawText(renderer, x + 12, y + 38, "6 REVIEW F6 BUDGET", {235, 238, 242}, 2);
-      drawText(renderer, x + 12, y + 62, "CHECK UPKEEP BEFORE ADDING SERVICES", {175, 185, 200}, 1);
-      break;
-    default:
-      break;
+void drawOnboarding(DrawList* renderer,int windowHeight,int step,const PopulationMilestones* milestones) {
+  const auto p=guidePanel(windowHeight);const auto text=city_guide::copy(step);
+  drawFilledRect(renderer,p.x,p.y,p.w,p.h,{16,25,34},245);
+  drawRectOutline(renderer,p.x,p.y,p.w,p.h,{120,205,255},255);
+  drawText(renderer,p.x+12,p.y+12,text.title,{155,220,250},2);
+  drawText(renderer,p.x+12,p.y+46,text.detail,{220,232,240},1);
+  drawText(renderer,p.x+12,p.y+68,text.hint,{190,215,228},1);
+  if(step==city_guide::Complete && milestones && milestones->nextThreshold())
+    drawText(renderer,p.x+12,p.y+88,"NEXT UNLOCK: "+std::to_string(milestones->nextThreshold())+" RESIDENTS",{195,215,225},1);
+  for(int i=0;i<3;++i) {
+    const auto r=guideButton(i,windowHeight);drawFilledRect(renderer,r.x,r.y,r.w,r.h,{40,65,80},255);
+    drawText(renderer,r.x+6,r.y+7,i==0?text.action:i==1?"HELP / SETTINGS":"HIDE",{225,240,250},1);
   }
 }
 
@@ -1037,7 +1000,7 @@ void drawTileInspector(
 
   drawText(renderer, x + 10, y + 63,
            std::string("POWER ") + (tile.connectedToPower ? "YES" : "NO")
-             + "  WATER " + (tile.connectedToWater ? "YES" : "NO"),
+             + "  WATER " + (tile.connectedToWater ? "YES" : "NO") + " SEWER " + (tile.connectedToSewer ? "YES" : "NO"),
            (tile.connectedToPower && tile.connectedToWater) ? RGB{135, 220, 150} : RGB{255, 150, 120}, 1);
   if (tile.hasRoad) {
     bool arterial = false;

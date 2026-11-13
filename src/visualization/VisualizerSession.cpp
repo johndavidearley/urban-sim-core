@@ -1,3 +1,4 @@
+#include "src/visualization/SaveBrowser.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -393,6 +394,9 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
   int mouseY = 0;
   bool choosing = true;
   bool startFramePresented = false;
+  bool showSaves=false;
+  SaveBrowser browser;
+  GameSaveStore saves(bridge?std::filesystem::current_path()/"player-saves":GameSaveStore::defaultRoot());
   while (choosing) {
     if (bridge) {
       if (bridge->disconnected()) { result.quit=true; break; }
@@ -403,12 +407,26 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
           if(section!="summary" && section!="ui") throw std::runtime_error("City inspection requires gameplay");
           Json controls=Json::array();
           auto rect=[&](const std::string& name,int x,int y,int w,int h) {controls.push_back({{"name",name},{"x",x},{"y",y},{"width",w},{"height",h}});};
+          Json saveRows=Json::array();
+          for(const auto& row:browser.rows) saveRows.push_back({{"name",row.name},{"backup",row.backup},{"tick",row.tick},{"width",row.width},{"height",row.height},{"valid",row.valid}});
+          if(showSaves) {
+            for(int i:{0,1,3,4,7}) {
+              const char* names[]={"saves_close","saves_load","saves_save","saves_previous","saves_next","saves_clear","saves_name","saves_refresh"};
+              const auto r=SaveBrowser::control(i,windowWidth,windowHeight);rect(names[i],r.x,r.y,r.w,r.h);
+            }
+            for(int i=0;i<SaveBrowser::pageSize && browser.page*SaveBrowser::pageSize+i<int(browser.rows.size());++i) {
+              const auto r=SaveBrowser::control(100+i,windowWidth,windowHeight);rect("saves_row_"+std::to_string(i),r.x,r.y,r.w,r.h);
+            }
+            return {{"controls",controls},{"save_browser",true},{"save_rows",saveRows},{"save_browser_page",browser.page},{"save_browser_status",browser.status}};
+          }
+          rect("saves",windowWidth/2-110,565,220,32);
           rect("new",windowWidth/2-220,500,200,54);rect("load",windowWidth/2+20,500,200,54);
           rect("terrain",windowWidth/2-130,444,260,38);
           for(int i=0;i<3;++i) rect("size_"+std::to_string(sizes[static_cast<size_t>(i)]),windowWidth/2-190+i*130,380,110,44);
           return {{"controls",controls},{"selected_map_size",result.mapSize},{"terrain",result.generateTerrain}};
         }
         if (command == "stop") { result.quit=true; choosing=false; return Json::object(); }
+        if(showSaves && command=="city") throw std::runtime_error("Close save browser before gameplay commands");
         if (command == "city" && (args.at("action") == "new" || args.at("action") == "load")) {
           const int size=args.value("size",64);
           if(size!=32 && size!=64 && size!=96) throw std::runtime_error("Map size must be 32, 64, or 96");
@@ -432,6 +450,26 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
       } else if (event.type == EventType::MouseDown) {
         mouseX = event.button.x;
         mouseY = event.button.y;
+      }
+      if(!showSaves && ((event.type==EventType::KeyDown && event.key.sym==Key::F11) ||
+         (event.type==EventType::MouseDown && event.button.button==MouseButton::Left &&
+          pointInRect(event.button.x,event.button.y,{windowWidth/2-110,565,220,32})))) {
+        browser.refresh(saves);browser.status="Choose a city or backup to load.";showSaves=true;continue;
+      }
+      if(showSaves && event.type!=EventType::Quit) {
+        const int action=browser.input(event,windowWidth,windowHeight,false);
+        if(action==0) showSaves=false;
+        if(action==7) {browser.refresh(saves);browser.status="Choose a city or backup to load.";}
+        if(action==1 && browser.selected>=0 && browser.selected<int(browser.rows.size())) {
+          const auto row=browser.rows[size_t(browser.selected)];
+          const auto path=saves.resolve(row.name,row.backup);
+          if(path.empty() || row.width!=row.height) browser.status="Cannot load this generation. Choose a valid backup.";
+          else {
+            result.selectedSession=path;result.selectedSaveName=SaveBrowser::folded(row.name)=="autosave"?"City":row.name;
+            result.loadSession=true;choosing=false;break;
+          }
+        }
+        continue;
       }
       if (event.type == EventType::Quit) {
         result.quit = true;
@@ -516,8 +554,11 @@ StartScreenResult runStartScreen(WindowHost& host, VulkanRenderer& gpu, DrawList
                    loadHovered ? RGB{58, 80, 112} : RGB{45, 62, 88}, 255);
     drawRectOutline(renderer, loadButton.x, loadButton.y, loadButton.w, loadButton.h,
                     loadHovered ? RGB{205, 225, 255} : RGB{145, 190, 245}, 255);
-    drawText(renderer, loadButton.x + (loadButton.w - textWidth("LOAD SESSION",2)) / 2, loadButton.y + 20, "LOAD SESSION", {235, 240, 250}, 2);
-    drawText(renderer, (windowWidth - textWidth("ENTER NEW   L LOAD   T TERRAIN",1)) / 2, 585, "ENTER NEW   L LOAD   T TERRAIN", {150, 160, 175}, 1);
+    drawText(renderer, loadButton.x + (loadButton.w - textWidth("QUICK LOAD",2)) / 2, loadButton.y + 20, "QUICK LOAD", {235, 240, 250}, 2);
+    drawFilledRect(renderer,windowWidth/2-110,565,220,32,{45,62,88});
+    drawText(renderer,windowWidth/2-88,575,"F11 SAVED CITIES",{225,240,250},1);
+    drawText(renderer, (windowWidth - textWidth("ENTER NEW   L QUICK LOAD   T TERRAIN",1)) / 2, 612, "ENTER NEW   L QUICK LOAD   T TERRAIN", {150, 160, 175}, 1);
+    if(showSaves) drawSaveBrowser(renderer,windowWidth,windowHeight,browser,false);
     const bool presented = gpu.present(*renderer, bridge ? bridge->capturePath : "");
     if (presented && !startFramePresented) {
       host.title("UrbanSimCore Visualizer (Start Screen)");

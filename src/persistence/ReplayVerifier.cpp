@@ -109,10 +109,23 @@ uint64_t ReplayVerifier::calculateChecksum(
   hashValue(hash, snapshot.width);
   hashValue(hash, snapshot.height);
 
+  if(snapshot.environment.initialized) {
+    const auto& e=snapshot.environment;
+    hashValue(hash,e.seed);hashValue(hash,e.tick);hashValue(hash,e.windX);hashValue(hash,e.windZ);hashValue(hash,e.windPhase);
+    for(double v:{e.inflowScale,e.sewageBacklog,e.inflow,e.outflow,e.withdrawal,e.discharge,e.contaminantIn,
+                  e.contaminantOut,e.contaminantDecay,e.sewageGenerated,e.sewageHandled}) hashValue(hash,v);
+  }
+  if(snapshot.pipeNetworksEnabled) hashValue(hash,snapshot.pipeNetworksEnabled);
   for (const SerializedTile& tile : snapshot.tiles) {
     hashValue(hash, tile.x);
     hashValue(hash, tile.y);
     hashValue(hash, tile.type);
+    if(snapshot.environment.initialized) {
+      const auto& c=tile.environment;
+      hashValue(hash,c.terrainMeters);hashValue(hash,c.bedMeters);hashValue(hash,c.water);hashValue(hash,c.contaminant);
+      hashValue(hash,c.currentX);hashValue(hash,c.currentZ);hashValue(hash,c.windX);hashValue(hash,c.windZ);
+    }
+    if(snapshot.pipeNetworksEnabled) {hashValue(hash,tile.utility.waterPipe);hashValue(hash,tile.utility.sewerPipe);if(tile.utility.sewageLift) hashValue(hash,tile.utility.sewageLift);if(tile.utility.waterBooster) hashValue(hash,uint32_t{0x424f4f53});hashValue(hash,tile.utility.sewageBacklog);hashValue(hash,tile.connectedToSewer);}
     hashValue(hash, tile.zone);
     hashValue(hash, tile.landValue);
     hashValue(hash, tile.pollution);
@@ -161,6 +174,18 @@ uint64_t ReplayVerifier::calculateChecksum(
     hashValue(hash, road.currentLoad);
     hashValue(hash, road.roadClass);
     hashValue(hash, road.freightLoad);
+    if(road.elevation!=0) {hashValue(hash,road.elevation);hashValue(hash,road.length);}
+    if(road.fromLevel || road.toLevel) {hashValue(hash,road.fromLevel);hashValue(hash,road.toLevel);}
+    if(road.oneWay) {
+      hashValue(hash,road.oneWay);hashValue(hash,road.from.x);hashValue(hash,road.from.y);
+    }
+  }
+  for(const auto& a:snapshot.roadAlignments) {
+    if(a.elevation!=0) hashValue(hash,a.elevation);
+    if(a.startLevel || a.endLevel) {hashValue(hash,a.startLevel);hashValue(hash,a.endLevel);}
+    for(size_t index:a.deckJunctions) hashValue(hash,index);
+    hashValue(hash,a.roadClass);hashValue(hash,a.snapped);hashValue(hash,a.oneWay);hashValue(hash,a.roundabout);
+    for(const auto& c:a.curves) for(const auto p:c.points) {hashValue(hash,p.x);hashValue(hash,p.y);}
   }
 
   return hash;

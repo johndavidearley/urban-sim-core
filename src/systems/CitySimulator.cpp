@@ -1,3 +1,5 @@
+#include "src/systems/UtilityNetworkSystem.hpp"
+#include "src/systems/EnvironmentSystem.hpp"
 #include "src/systems/CitySimulator.hpp"
 #include "src/systems/CityDisasterState.hpp"
 #include "src/gameplay/ServiceTool.hpp"
@@ -140,6 +142,7 @@ SimResult CitySimulator::run(
 
   for (int tick = 0; infinite || tick < ticks; ++tick) {
     const uint32_t tickSeed = seed + static_cast<uint32_t>(tick);
+    EnvironmentSystem::step(map,roads,store,options.budgetPolicy.fundedFacilities(facilities),seed,false);
     const float educationNow = lastEducationCoverage;
 
     const ZoneDemand demand = options.budgetPolicy.adjustedDemand(
@@ -344,6 +347,7 @@ SimResult CitySimulator::run(
     // interval-gated; values persist on the map between recomputes, so a
     // skipped tick just means slightly stale figures, not stale-forever ones.
     city_sim::applyPowerPlantPollution(map, roads, fundedFacilities, ax0, ay0, ax1, ay1);
+    EnvironmentSystem::transportAir(map);
     if (tick % std::max(1, options.landValueInterval) == 0) {
       const auto t0 = Clock::now();
       LandValueSystem::updateLandValues(map, roads, store, &coverageCache, ax0, ay0, ax1, ay1);
@@ -465,7 +469,7 @@ SimResult CitySimulator::run(
     }
 
     int64_t operatingCosts = constructionSpend;
-    operatingCosts += options.budgetPolicy.serviceCost(facilities) + TransitSystem::operatingCost(transitRoutes);
+    operatingCosts += UtilityNetworkSystem::operatingCost(map) + options.budgetPolicy.serviceCost(facilities) + TransitSystem::operatingCost(transitRoutes);
     const auto treasury = TreasurySystem::applyEconomy(
         economy, funds, options.treasuryTickScale, operatingCosts,
         &debt, options.treasuryInterestRate);

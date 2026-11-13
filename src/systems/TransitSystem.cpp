@@ -22,6 +22,8 @@ std::unordered_map<Coord, int, Vec2Hash> multiSourceDistanceField(
     return distance;
   }
 
+  if(roads.hasSeparatedRoads()) return roads.distanceField(sources,maxDistance);
+
   std::queue<Coord> frontier;
   for (const Coord& s : sources) {
     if (roads.getNode(s) == nullptr) continue;

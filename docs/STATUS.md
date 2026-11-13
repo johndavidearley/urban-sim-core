@@ -1,6 +1,46 @@
 # Project Status
 
-Last verified: November 9, 2026
+Last verified locally: November 13, 2026
+
+
+The active release plan is [Minimum Steam Early Access, M55–M58](EARLY_ACCESS.md).
+M55 is in progress; no release gate is verified. Freeze further simulation expansion and finish
+the player journey, reliability/performance, Steam packaging/store setup, and
+outside-player acceptance. Windows 64-bit is the provisional launch target;
+shipping support is not verified yet.
+
+The November 13 local baseline is 764 passing C++ tests and seven Python tests.
+M55 now has actionable onboarding, display/controls settings and saved preferences.
+The fresh native journey with mandatory pipes reaches 10,036 residents, passes
+100 consecutive nonnegative operating ticks, and verifies exact continuation
+plus actual save/quit/relaunch/load/resume. See [M55 evidence](M55_PLAYER_JOURNEY.md).
+Actual 1920×1080 and Windows 150% scaling readability remain open, so M55 remains
+in progress. On the M55 candidate, all 57 rendered cases have local passing evidence (54 in the full rerun and
+three corrected cases in targeted rechecks), with logs and candidate hash in
+`playtest-artifacts/m55-rendered-updated/verification-summary.json`.
+Current hosted CI and Windows consumer packaging are not established by these results.
+Historical verification notes below retain their original scope.
+
+M56 has started with the transactional player save store, OS user-data locations,
+three retained backups, separate autosaves and validated recovery. Eleven
+save-store tests pass. F11 / Saves now exposes custom names and exact generation
+selection in-game and on the start screen, including unavailable rows, pagination,
+and confirmation before replacing a save or unsaved progress. Native acceptance
+loads named 32×32 and 96×96 cities and verifies realtime modal isolation. Native corruption/backup/autosave recovery, actual
+save-and-quit/restart and invalid-load preservation pass on the earned 10k city.
+Implementation, checks and remaining gates are tracked in [M56_RELIABILITY.md](M56_RELIABILITY.md).
+M55's Windows display acceptance remains open.
+The same candidate now passes all 57 rendered cases in one invocation and all
+762 headless cases under each of ASan/UBSan and ThreadSanitizer, with no findings.
+ASan leak detection was disabled on this Mac. No gameplay source fixes were
+needed. [Local qualification](M56_QUALIFICATION.md) retains logs and source/build
+identity. Fresh hosted CI, Windows performance and packaged soaks remain open.
+
+M57 has started with an MSVC x64 consumer profile, a Windows driver-checking
+bootstrap, versioned PE/dependency-audited packaging, notices and offline Steam
+preview generation. A manual Windows candidate workflow is prepared. Real
+Windows compilation, consumer/Steam acceptance and publisher account/rights/store
+actions remain open. See [M57 implementation and handoff](M57_STEAM_PRODUCT.md).
 
 Visible 3D surface inspection is complete locally (November 9, 2026). Hover and
 the I inspector key now trace rendered world triangles, selecting roofs, walls,
@@ -630,12 +670,14 @@ Quick performance smoke (headless):
 
 ## Current Priorities
 
-Phase 13 is complete: hospital demand, landfill lifetime, fire containment
-and substations. Phase 14 (M49–M54) in `ROADMAP.md` is in progress and keeps money
-scarce by giving it uses the city needs: population milestones, capacity for
-fire, police and sanitation, export prices that fall with volume, unique
-buildings, monuments, and a v2 journey with a balance pass. M49–M53 are complete
-locally. Next is M54's new journey and integrated balance pass.
+The four [Early Access release gates](EARLY_ACCESS.md) are the active queue:
+M55 player journey, M56 reliability/performance, M57 Steam product preparation,
+and M58 external validation/release. M56 save protection is in progress while
+M55 Windows display acceptance remains open; M57 account/store preparation can proceed in parallel. No release gate is complete; further simulation features
+are deferred unless needed to fix a demonstrated launch blocker.
+
+Phase 14 (M49–M54) is complete locally as recorded above. Its journey predates
+the new pipes; the fresh M55 journey now passes locally as recorded above.
 The Phase 12 list below is kept for reference.
 
 1. **M39 Landfills that fill.** Implemented locally. Garbage sites start
@@ -662,8 +704,8 @@ Still constraints, not milestones:
   multi-trial, release builds).
 - Split `GrowthPressureReport` and `CityPrinters` only if build times
   hurt.
-- MSVC release packaging only if Windows shipping is required. CI already
-  builds Windows.
+- Windows release packaging and clean-machine validation are now M57 gates.
+  A Windows CI build alone does not establish shipping readiness.
 
 ## Document Roles
 

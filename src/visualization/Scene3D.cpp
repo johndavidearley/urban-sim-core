@@ -1,15 +1,19 @@
+#include "src/systems/EnvironmentSystem.hpp"
+#include "src/visualization/RoadAlignmentRender.hpp"
+#include "src/visualization/RoadCurves.hpp"
 #include "src/visualization/Scene3DPrimitives.hpp"
 #include "src/visualization/BuildingModels3D.hpp"
 #include "src/visualization/Scene3D.hpp"
 #include "src/visualization/VisualizerOverlay.hpp"
 #include "src/systems/ParkSystem.hpp"
 #include <array>
+#include <unordered_set>
 
 namespace visualizer {
 namespace {
 using namespace scene3d;
 // Small procedural landmarks retain their actual simulation footprint.
-void serviceSite(DrawList* l, const Camera3D& c, const ServiceFacility& f) {
+void serviceSite(DrawList* l, const Camera3D& c, const ServiceFacility& f,const CityMap* map=nullptr) {
   const float x=float(f.position.x), z=float(f.position.y);
   const float span=float(facilityFootprintSpan(f));
   const RGB color=serviceFacilityColor(f.type), concrete{190,193,178};
@@ -26,13 +30,19 @@ void serviceSite(DrawList* l, const Camera3D& c, const ServiceFacility& f) {
   if(f.type==ServiceType::Power && f.powerSource==PowerSourceType::Wind) {
     box(l,c,x+.45f,z+.45f,.1f,.1f,.025f,1.2f,concrete);
     box(l,c,x+.4f,z+.4f,.2f,.2f,1.18f,.16f,{225,230,214});
-    const float angle=float(l->frameTimeMs%8000u)*.00078539816f;
+    const auto local=map && map->environment().initialized ? map->environment(f.position) : EnvironmentCell{};
+    const float norm=std::sqrt(local.windX*local.windX+local.windZ*local.windZ);
+    const float sideX=norm>.001f ? -local.windZ/norm : 1.f,sideZ=norm>.001f ? local.windX/norm : 0.f;
+    const float angle=map && map->environment().initialized ?
+      (EnvironmentSystem::windPowerFactor(norm)>0 ? map->environment().windPhase : 0.f) : float(l->frameTimeMs%8000u)*.00078539816f;
     for(int blade=0;blade<3;++blade) {
       const float a=angle+blade*2.0943951f;
       const float dx=std::cos(a)*.47f, dy=std::sin(a)*.47f;
       const float wx=-std::sin(a)*.035f, wy=std::cos(a)*.035f;
-      quad(l,c,{{{x+.5f+wx,1.25f+wy,z+.385f},{x+.5f+dx+wx,1.25f+dy+wy,z+.385f},
-                 {x+.5f+dx-wx,1.25f+dy-wy,z+.385f},{x+.5f-wx,1.25f-wy,z+.385f}}},{232,234,220});
+      quad(l,c,{{{x+.5f+wx*sideX,1.25f+wy,z+.5f+wx*sideZ},
+                 {x+.5f+(dx+wx)*sideX,1.25f+dy+wy,z+.5f+(dx+wx)*sideZ},
+                 {x+.5f+(dx-wx)*sideX,1.25f+dy-wy,z+.5f+(dx-wx)*sideZ},
+                 {x+.5f-wx*sideX,1.25f-wy,z+.5f-wx*sideZ}}},{232,234,220});
     }
     return;
   }
@@ -163,14 +173,51 @@ void drawCity3D(DrawList* l,const Camera3D& c,const CityMap& map,const RoadNetwo
   PickCollector collector(l,picking);
   PickParcel background(l,{-1,-1});
   const auto size=map.getDimensions();
-  // A solid plinth gives the flat simulation map a visible edge from every angle.
-  box(l,c,0,0,float(size.x),float(size.y),-.35f,.27f,{91,108,83});
+  std::unordered_set<Coord,Vec2Hash> cuts;
+  for(const auto& alignment:roads.alignments()) if(alignment.elevation<0)
+    cuts.insert(alignment.footprint.begin(),alignment.footprint.end());
+  // Lower the base beneath open cuts so it cannot occlude underpass roads.
+  box(l,c,0,0,float(size.x),float(size.y),cuts.empty() ? -.35f : -1.25f,cuts.empty() ? .27f : .2f,{91,108,83});
+  if(!cuts.empty()) {
+    const float w=float(size.x),d=float(size.y),bottom=-1.05f;
+    quad(l,c,{{{0,0,0},{w,0,0},{w,bottom,0},{0,bottom,0}}},{91,108,83});
+    quad(l,c,{{{w,0,0},{w,0,d},{w,bottom,d},{w,bottom,0}}},{101,118,91});
+    quad(l,c,{{{w,0,d},{0,0,d},{0,bottom,d},{w,bottom,d}}},{109,124,96});
+    quad(l,c,{{{0,0,d},{0,0,0},{0,bottom,0},{0,bottom,d}}},{87,103,80});
+  }
   std::unordered_map<Coord,const ServiceFacility*,Vec2Hash> sites;
   for(const auto& f:facilities) {
     const int span=facilityFootprintSpan(f);
     for(int dz=0;dz<span;++dz) for(int dx=0;dx<span;++dx)
       sites[{f.position.x+dx,f.position.y+dz}]=&f;
   }
+  // Distance into undeveloped rough terrain gives connected ridges rather
+  // than separate tile-sized spikes. Developed parcels form level clearings.
+  const int stride=size.x+2;
+  std::vector<int> relief(static_cast<size_t>(stride)*(size.y+2),0);
+  auto index=[&](int x,int z) {return static_cast<size_t>(z+1)*stride+x+1;};
+  for(int z=0;z<size.y;++z) for(int x=0;x<size.x;++x) {
+    const auto& tile=map.getTile({x,z});
+    if(tile.type==1 && !tile.hasRoad && !tile.buildingId && !tile.zone &&
+       !tile.regionalConnectionId && !sites.count({x,z})) relief[index(x,z)]=6;
+  }
+  for(int z=0;z<size.y;++z) for(int x=0;x<size.x;++x)
+    relief[index(x,z)]=std::min(relief[index(x,z)],1+std::min(relief[index(x-1,z)],relief[index(x,z-1)]));
+  for(int z=size.y-1;z>=0;--z) for(int x=size.x-1;x>=0;--x)
+    relief[index(x,z)]=std::min(relief[index(x,z)],1+std::min(relief[index(x+1,z)],relief[index(x,z+1)]));
+  const auto cornerHeight=[&](int x,int z) {
+    const int shared=std::min({relief[index(x-1,z-1)],relief[index(x,z-1)],relief[index(x-1,z)],relief[index(x,z)]});
+    if(map.environment().initialized && shared>0) {
+      float height=100000.f;
+      for(int dz:{-1,0}) for(int dx:{-1,0}) {
+        const Coord p{x+dx,z+dz};
+        if(map.isValid(p)) height=std::min(height,map.environment(p).terrainMeters/50.f);
+      }
+      return std::max(0.f,height);
+    }
+    return .55f*float(std::min({relief[index(x-1,z-1)],relief[index(x,z-1)],
+                               relief[index(x-1,z)],relief[index(x,z)]}));
+  };
   for(int z=0;z<size.y;++z) for(int x=0;x<size.x;++x) {
     const Coord t{x,z};const auto& tile=map.getTile(t);
     PickParcel parcel(l,t);
@@ -179,12 +226,73 @@ void drawCity3D(DrawList* l,const Camera3D& c,const CityMap& map,const RoadNetwo
     if(!c.perspective && (center.x < -c.scale*8 || center.x > l->viewportWidth+c.scale*8 ||
        center.y < -c.scale*2 || center.y > l->viewportHeight+c.scale*12)) continue;
     const RGB ground=tileColor(map,roads,store,t,mode==OverlayMode::Transit ? OverlayMode::Zone : mode,facilities,heat,penalty);
-    slab(l,c,float(x),float(z),1,1,tile.type==2 ? -.025f : 0.f,ground);
+    if(relief[index(x,z)]>0) {
+      const std::array<WorldPoint,4> corners{{
+        {float(x),cornerHeight(x,z),float(z)}, {x+1.f,cornerHeight(x+1,z),float(z)},
+        {x+1.f,cornerHeight(x+1,z+1),z+1.f}, {float(x),cornerHeight(x,z+1),z+1.f}}};
+      // Smooth interpolation has matching heights and tangents on shared
+      // edges. A gentle rounded crest replaces the old tile-center pyramid.
+      const auto point=[&](float u,float v) -> WorldPoint {
+        const float su=u*u*(3.f-2.f*u),sv=v*v*(3.f-2.f*v);
+        const float near=corners[0].y+(corners[1].y-corners[0].y)*su;
+        const float far=corners[3].y+(corners[2].y-corners[3].y)*su;
+        const float crest=std::sin(u*3.14159265f)*std::sin(v*3.14159265f);
+        return {x+u,near+(far-near)*sv+.18f*crest*crest,z+v};
+      };
+      const auto slope=[&](WorldPoint a,WorldPoint b,WorldPoint peak) {
+        const float ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z;
+        const float vx=peak.x-a.x,vy=peak.y-a.y,vz=peak.z-a.z;
+        const float nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
+        const float length=std::sqrt(nx*nx+ny*ny+nz*nz);
+        const float light=.72f+.28f*std::clamp((-nx*.4f-ny*.82f-nz*.4f)/length,0.f,1.f);
+        triangle(l,c,{{a,b,peak}},shade(ground,light));
+      };
+      constexpr int subdivisions=4;
+      for(int v=0;v<subdivisions;++v) for(int u=0;u<subdivisions;++u) {
+        const float u0=float(u)/subdivisions,u1=float(u+1)/subdivisions;
+        const float v0=float(v)/subdivisions,v1=float(v+1)/subdivisions;
+        const auto a=point(u0,v0),b=point(u1,v0),d=point(u0,v1),e=point(u1,v1);
+        slope(a,b,e);slope(a,e,d);
+      }
+    } else if(cuts.count(t)) {
+      constexpr float floor=-.95f;
+      slab(l,c,float(x),float(z),1,1,floor,{116,115,99});
+      for(Coord d:{Coord{1,0},Coord{-1,0},Coord{0,1},Coord{0,-1}}) {
+        if(cuts.count({x+d.x,z+d.y})) continue;
+        const float ax=d.x>0 ? x+1.f : float(x),az=d.y>0 ? z+1.f : float(z);
+        const float bx=ax+(d.x==0 ? 1.f : 0.f),bz=az+(d.y==0 ? 1.f : 0.f);
+        quad(l,c,{{{ax,0,az},{bx,0,bz},{bx,floor,bz},{ax,floor,az}}},{143,150,137});
+      }
+    } else slab(l,c,float(x),float(z),1,1,tile.type==2 ? -.025f : 0.f,ground);
     if(tile.type==2) {
+      // Round each convex water corner into a quarter circle. The bank
+      // occupies only the corner of its water parcel, so tile ownership and
+      // the adjacent buildable land remain stable for tools and picking.
+      for(int dz:{-1,1}) for(int dx:{-1,1}) {
+        const Coord across{x+dx,z},along{x,z+dz};
+        if(!map.isValid(across)||!map.isValid(along) ||
+           map.getTile(across).type==2 || map.getTile(along).type==2) continue;
+        const float cx=dx<0 ? float(x) : x+1.f,cz=dz<0 ? float(z) : z+1.f;
+        const float sx=float(-dx),sz=float(-dz),radius=.42f;
+        const RGB bank=tileColor(map,roads,store,across,
+          mode==OverlayMode::Transit ? OverlayMode::Zone : mode,facilities,heat,penalty);
+        constexpr int segments=8;
+        for(int step=0;step<segments;++step) {
+          const float a=float(step)*1.57079633f/segments,b=float(step+1)*1.57079633f/segments;
+          const auto arc=[&](float angle,float r,float y) -> WorldPoint {
+            return {cx+sx*(radius-r*std::cos(angle)),y,cz+sz*(radius-r*std::sin(angle))};
+          };
+          triangle(l,c,{{{cx,0,cz},arc(a,radius,0),arc(b,radius,0)}},bank);
+          // A narrow sandy lip makes the curved waterline legible.
+          quad(l,c,{{arc(a,radius,0),arc(a,radius-.035f,-.018f),
+                      arc(b,radius-.035f,-.018f),arc(b,radius,0)}},
+               mode==OverlayMode::Zone ? RGB{193,184,144} : bank);
+        }
+      }
       slab(l,c,x+.15f,z+.35f,.4f,.025f,-.02f,{133,185,213});
       continue;
     }
-    if(tile.hasRoad) {
+    if(tile.hasRoad && roads.hasLegacyRoadAt(t)) {
       bool arterial=false;
       for(Coord d:{Coord{1,0},Coord{-1,0},Coord{0,1},Coord{0,-1}}) {
         Coord n{t.x+d.x,t.y+d.y};
@@ -193,16 +301,30 @@ void drawCity3D(DrawList* l,const Camera3D& c,const CityMap& map,const RoadNetwo
       const float width=arterial ? .76f : .55f, margin=(1-width)*.5f;
       const RGB asphalt=(mode==OverlayMode::Zone || mode==OverlayMode::Transit) ? RGB{57,63,70} : ground;
       const RGB stripe{223,202,133};
-      slab(l,c,x+margin,z+margin,width,width,.012f,asphalt);
-      for(Coord d:{Coord{1,0},Coord{-1,0},Coord{0,1},Coord{0,-1}}) {
-        const Coord n{t.x+d.x,t.y+d.y};
-        if(!map.isValid(n)||!map.getTile(n).hasRoad) continue;
-        if(d.x) {
-          slab(l,c,x+(d.x>0 ? .5f : 0.f),z+margin,.5f,width,.012f,asphalt);
-          slab(l,c,x+(d.x>0 ? .65f : .1f),z+.49f,.23f,.025f,.016f,stripe);
-        } else {
-          slab(l,c,x+margin,z+(d.y>0 ? .5f : 0.f),width,.5f,.012f,asphalt);
-          slab(l,c,x+.49f,z+(d.y>0 ? .65f : .1f),.025f,.23f,.016f,stripe);
+      const auto curve=roadCurve(map,&roads,t);
+      if(curve.valid) {
+        const auto ribbon=[&](float w,float offset,float y,RGB color) {
+          curve.ribbon(w,offset,[&](const std::array<glm::vec2,4>& points) {
+            std::array<WorldPoint,4> world;
+            for(size_t i=0;i<4;++i) world[i]={x+points[i].x,y,z+points[i].y};
+            quad(l,c,world,color);
+          });
+        };
+        ribbon(width,0,.012f,asphalt);
+        if(arterial) {ribbon(.025f,-.045f,.016f,stripe);ribbon(.025f,.045f,.016f,stripe);}
+        else ribbon(.025f,0,.016f,stripe);
+      } else {
+        slab(l,c,x+margin,z+margin,width,width,.012f,asphalt);
+        for(Coord d:{Coord{1,0},Coord{-1,0},Coord{0,1},Coord{0,-1}}) {
+          const Coord n{t.x+d.x,t.y+d.y};
+          if(!roads.hasRoad(t,n)) continue;
+          if(d.x) {
+            slab(l,c,x+(d.x>0 ? .5f : 0.f),z+margin,.5f,width,.012f,asphalt);
+            slab(l,c,x+(d.x>0 ? .65f : .1f),z+.49f,.23f,.025f,.016f,stripe);
+          } else {
+            slab(l,c,x+margin,z+(d.y>0 ? .5f : 0.f),width,.5f,.012f,asphalt);
+            slab(l,c,x+.49f,z+(d.y>0 ? .65f : .1f),.025f,.23f,.016f,stripe);
+          }
         }
       }
     }
@@ -240,9 +362,15 @@ void drawCity3D(DrawList* l,const Camera3D& c,const CityMap& map,const RoadNetwo
       if(z==district.maxCorner.y) slab(l,c,float(x),z+.965f,1,.035f,.035f,tint);
     }
   }
+  for(const auto& alignment:roads.alignments()) {
+    const auto anchor=alignment.path.front();
+    const RGB asphalt=(mode==OverlayMode::Zone || mode==OverlayMode::Transit) ? RGB{57,63,70} :
+      tileColor(map,roads,store,anchor,mode,facilities,heat,penalty);
+    drawAlignment3D(l,c,alignment,asphalt,false,&roads);
+  }
   // Draw entire sites after the ground: footprint corners may be offscreen and
   // water parcels must not hide a constructed waterfront terminal.
-  for(const auto& f:facilities) {PickParcel site(l,f.position);serviceSite(l,c,f);}
+  for(const auto& f:facilities) {PickParcel site(l,f.position);serviceSite(l,c,f,&map);}
   if(terminals) for(const auto& terminal:*terminals) {PickParcel site(l,terminal.origin);terminalSite(l,c,terminal);}
 }
 } // namespace visualizer

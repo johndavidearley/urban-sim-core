@@ -1,3 +1,6 @@
+#include "src/persistence/UtilityJson.hpp"
+#include "src/persistence/EnvironmentJson.hpp"
+#include "src/gameplay/RoadTool.hpp"
 #include "SaveLoadSystem.hpp"
 #include "src/gameplay/UniqueBuildings.hpp"
 #include "src/gameplay/Monuments.hpp"
@@ -140,6 +143,7 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
     return fail("tile count does not match map dimensions");
   }
 
+  if(!validEnvironment(snapshot.environment)) return fail("invalid environment state");
   std::unordered_set<int64_t> seenTiles;
   seenTiles.reserve(snapshot.tiles.size());
 
@@ -215,6 +219,11 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
     return fail("snapshot has invalid next entity ID");
 
   for (const SerializedTile& tile : snapshot.tiles) {
+    if(tile.utility.waterBooster && (!tile.utility.waterPipe || tile.type==2)) return fail("water booster requires a water pipe on land");
+    if(tile.utility.sewageLift && (!tile.utility.sewerPipe || tile.type==2)) return fail("sewer lift requires a sewer pipe on land");
+    if(!std::isfinite(tile.utility.sewageBacklog) || tile.utility.sewageBacklog<0 || tile.utility.sewageBacklog>1e15 ||
+      (!snapshot.pipeNetworksEnabled && (tile.utility.waterPipe || tile.utility.sewerPipe || tile.utility.sewageBacklog>0))) return fail("invalid underground utility tile");
+    if(snapshot.environment.initialized && !validEnvironment(tile.environment,tile.type==2)) return fail("invalid environment tile");
     if (!isInBounds(tile.x, tile.y, snapshot.width, snapshot.height)) {
       return fail("tile position is outside the map");
     }
@@ -248,14 +257,17 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
     if (!isInBounds(road.to.x, road.to.y, snapshot.width, snapshot.height)) {
       return fail("road end is outside the map");
     }
-    if (!areAdjacentCardinal(road.from, road.to)) {
-      return fail("road endpoints are not cardinally adjacent");
-    }
+    const int span=std::abs(road.from.x-road.to.x)+std::abs(road.from.y-road.to.y);
+    if(road.elevation < -1 || road.elevation > 1 || !std::isfinite(road.length) ||
+       road.fromLevel<0 || road.fromLevel>1 || road.toLevel<0 || road.toLevel>1 ||
+       ((road.fromLevel || road.toLevel) && road.elevation!=1) ||
+       (road.elevation==0 && (!areAdjacentCardinal(road.from,road.to) || road.length!=1.f)) ||
+       (road.elevation!=0 && (span==0 || road.length<1.f || road.length<float(span))))
+      return fail("road endpoints, length or elevation are invalid");
     if (!std::isfinite(road.currentLoad) || !std::isfinite(road.freightLoad) || !std::isfinite(road.visitorLoad) ||
         road.freightLoad < 0.0f || road.visitorLoad < 0.0f ||
         road.freightLoad + road.visitorLoad > road.currentLoad ||
-        (road.roadClass != RoadClass::Local &&
-         road.roadClass != RoadClass::Arterial)) {
+        !validRoadClass(road.roadClass)) {
       return fail("road class or freight load is invalid");
     }
     if (road.currentLoad < 0.0f) {
@@ -263,6 +275,81 @@ bool validateSnapshot(const CitySnapshot& snapshot, std::string* errorMessage = 
     }
   }
 
+  std::unordered_set<Coord,Vec2Hash> surfaceNodes;
+  for(const auto& road:snapshot.roads) {
+    if(road.fromLevel==0) surfaceNodes.insert(road.from);
+    if(road.toLevel==0) surfaceNodes.insert(road.to);
+  }
+  for(const auto& alignment:snapshot.roadAlignments)
+    if(alignment.path.size()<2 || alignment.footprint.empty() || alignment.curves.empty())
+      return fail("road alignment is missing its geometry or footprint");
+  if(!snapshot.roadAlignments.empty()) {
+    CityMap geometryMap({snapshot.width,snapshot.height});RoadNetwork geometryRoads(geometryMap);
+    for(const auto& tile:snapshot.tiles) geometryMap.getTile({tile.x,tile.y}).type=tile.type;
+    for(const auto& a:snapshot.roadAlignments) {
+      const auto plan=RoadTool::planAlignment(geometryMap,geometryRoads,a,std::numeric_limits<int64_t>::max(),nullptr,false);
+      if(!plan.valid || plan.tiles!=a.path || plan.alignment.footprint!=a.footprint)
+        return fail("invalid road alignment geometry or footprint");
+      for(Coord p:a.footprint) {
+        const auto found=std::find_if(snapshot.tiles.begin(),snapshot.tiles.end(),[&](const SerializedTile& t) {
+          return t.x==p.x && t.y==p.y;
+        });
+        if(found==snapshot.tiles.end() || !found->hasRoad || found->buildingId)
+          return fail("road alignment footprint is not reserved");
+      }
+      if(a.elevation!=0) {
+        const auto& curve=a.curves.front();const int steps=curve.subdivisions();
+        for(int i=0;i<=steps;++i) {
+          const float t=float(i)/steps;const auto p=curve.point(t);
+          const Coord tile{int(std::floor(p.x)),int(std::floor(p.y))};
+          if(tile!=a.path.front() && tile!=a.path.back() && std::abs(a.height(t))<.5f && surfaceNodes.count(tile))
+            return fail("road crosses a structure approach without clearance");
+        }
+        for(const auto& other:snapshot.roadAlignments) {
+          if(&a==&other || a.elevation!=other.elevation) continue;
+          for(Coord tile:a.footprint) {
+            if(tile==a.path.front() || tile==a.path.back() || tile==other.path.front() || tile==other.path.back()) continue;
+            if(std::find(other.footprint.begin(),other.footprint.end(),tile)!=other.footprint.end() &&
+               !roadDeckMerge(a,other,tile) && !roadDeckMerge(other,a,tile))
+              return fail("road structures on the same level overlap");
+          }
+        }
+      }
+      const auto route=a.routingPath();const auto indices=a.routingIndices();
+      for(size_t i=1;i<route.size();++i) {
+        const Coord from=route[i-1],to=route[i];
+        const auto edge=std::find_if(snapshot.roads.begin(),snapshot.roads.end(),[&](const SerializedRoad& r) {
+          const auto x=roadNode(r.from,r.fromLevel),y=roadNode(r.to,r.toLevel);
+          return (x==from && y==to)||(x==to && y==from);
+        });
+        if(edge==snapshot.roads.end() || edge->elevation!=a.elevation ||
+           (a.elevation!=0 && edge->length!=float(indices[i]-indices[i-1])) || (a.oneWay &&
+           !(a.roadClass==RoadClass::Ramp && edge->roadClass!=RoadClass::Ramp && !edge->oneWay) &&
+           (!edge->oneWay || roadNode(edge->from,edge->fromLevel)!=from)))
+          return fail("road alignment references a missing or conflicting road edge");
+      }
+    }
+  }
+  for(const auto& a:snapshot.roadAlignments) {
+    const auto route=a.routingPath();
+    for(Coord endpoint:{route.front(),route.back()}) if(roadLevel(endpoint)==1) {
+      bool attached=false;
+      for(const auto& host:snapshot.roadAlignments) if(host.hasDeckAt(roadTile(endpoint))) {
+        for(size_t index:host.deckJunctions) if(roadNode(host.path[index],1)==endpoint) attached=true;
+      }
+      if(!attached) return fail("ramp references a missing highway deck junction");
+    }
+  }
+  for(const auto& road:snapshot.roads) if(road.elevation!=0) {
+    const auto from=roadNode(road.from,road.fromLevel),to=roadNode(road.to,road.toLevel);
+    bool owned=false;
+    for(const auto& a:snapshot.roadAlignments) if(a.elevation==road.elevation) {
+      const auto route=a.routingPath();
+      for(size_t i=1;i<route.size();++i)
+        if((route[i-1]==from && route[i]==to)||(route[i-1]==to && route[i]==from)) owned=true;
+    }
+    if(!owned) return fail("separated road is missing its alignment");
+  }
   return true;
 }
 
@@ -353,6 +440,8 @@ CitySnapshot SaveLoadSystem::captureSnapshot(
 ) {
   CitySnapshot snapshot;
   snapshot.version = kCurrentSnapshotVersion;
+  snapshot.environment=map.environment();
+  snapshot.pipeNetworksEnabled=map.pipeNetworksEnabled();
   snapshot.nextEntityId = EntityIdUtils::nextEntityId();
   const glm::ivec2 dims = map.getDimensions();
   snapshot.width = dims.x;
@@ -365,7 +454,8 @@ CitySnapshot SaveLoadSystem::captureSnapshot(
       SerializedTile serialized;
       serialized.x = x;
       serialized.y = y;
-      serialized.type = tile.type;
+      serialized.type = tile.type;serialized.environment=map.environment({x,y});
+      serialized.utility=map.utility({x,y});serialized.connectedToSewer=tile.connectedToSewer;
       serialized.zone = tile.zone;
       serialized.landValue = map.landValue({x, y});
       serialized.pollution = map.pollution({x, y});
@@ -399,11 +489,12 @@ CitySnapshot SaveLoadSystem::captureSnapshot(
   const auto edgeTraffic = roads.getAllEdgeTraffic();
   snapshot.roads.reserve(edgeTraffic.size());
   for (const auto& edge : edgeTraffic) {
-    snapshot.roads.push_back(SerializedRoad{edge.from, edge.to,
+    snapshot.roads.push_back(SerializedRoad{roadTile(edge.from), roadTile(edge.to),
                                             edge.currentLoad, edge.roadClass,
-                                            edge.freightLoad,edge.visitorLoad});
+                                            edge.freightLoad,edge.visitorLoad,edge.oneWay,edge.length,edge.elevation,roadLevel(edge.from),roadLevel(edge.to)});
   }
 
+  snapshot.roadAlignments=roads.alignments();
   return snapshot;
 }
 
@@ -430,12 +521,15 @@ bool SaveLoadSystem::applySnapshot(
   population.clear();
   roads.clear();
 
+  map.environment()=snapshot.environment;
+  map.pipeNetworksEnabled()=snapshot.pipeNetworksEnabled;
   for (const SerializedTile& serialized : snapshot.tiles) {
     if (!map.isValid({serialized.x, serialized.y})) {
       return false;
     }
     Tile& tile = map.getTile({serialized.x, serialized.y});
-    tile.type = serialized.type;
+    tile.type = serialized.type;map.environment({serialized.x,serialized.y})=serialized.environment;
+    map.utility({serialized.x,serialized.y})=serialized.utility;tile.connectedToSewer=serialized.connectedToSewer;
     tile.zone = serialized.zone;
     map.landValue({serialized.x, serialized.y}) = serialized.landValue;
     map.pollution({serialized.x, serialized.y}) = serialized.pollution;
@@ -456,18 +550,19 @@ bool SaveLoadSystem::applySnapshot(
   }
 
   for (const SerializedRoad& road : snapshot.roads) {
-    roads.buildRoad(road.from, road.to);
-    roads.setRoadClass(road.from, road.to, road.roadClass);
-    if (road.currentLoad > 0.0f) {
-      roads.updateCongestion(road.from, road.to,
-                             road.currentLoad - road.freightLoad - road.visitorLoad);
-      roads.addFreightLoad(road.from, road.to, road.freightLoad);
-      roads.addVisitorLoad(road.from,road.to,road.visitorLoad);
+    const auto from=roadNode(road.from,road.fromLevel),to=roadNode(road.to,road.toLevel);
+    if(road.elevation!=0) roads.buildSeparatedRoad(from,to,road.length,road.elevation);
+    else roads.buildRoad(from,to);
+    roads.setRoadClass(from,to,road.roadClass);roads.setOneWay(from,to,road.oneWay);
+    if(road.currentLoad>0.f) {
+      roads.updateCongestion(from,to,road.currentLoad-road.freightLoad-road.visitorLoad);
+      roads.addFreightLoad(from,to,road.freightLoad);roads.addVisitorLoad(from,to,road.visitorLoad);
     }
   }
 
+  for(const auto& alignment:snapshot.roadAlignments) roads.addAlignment(alignment);
   if (!snapshot.roads.empty()) {
-    roads.updateConnectivity(snapshot.roads.front().from);
+    roads.updateConnectivity(roadNode(snapshot.roads.front().from,snapshot.roads.front().fromLevel));
   }
 
   uint64_t next = snapshot.nextEntityId;
@@ -495,6 +590,8 @@ bool SaveLoadSystem::saveToFile(
   json root;
   root["version"] = snapshot.version;
   root["nextEntityId"] = snapshot.nextEntityId;
+  if(snapshot.environment.initialized) root["environment"]=snapshot.environment;
+  if(snapshot.pipeNetworksEnabled) root["pipeNetworks"]={{"version",1},{"enabled",true}};
   root["map"] = {
     {"width", snapshot.width},
     {"height", snapshot.height}
@@ -515,6 +612,8 @@ bool SaveLoadSystem::saveToFile(
       {"connectedToWater", tile.connectedToWater},
       {"buildingId", tile.buildingId}
     });
+    if(snapshot.environment.initialized) root["tiles"].back()["environment"]=tile.environment;
+    if(snapshot.pipeNetworksEnabled) {root["tiles"].back()["utility"]=tile.utility;root["tiles"].back()["connectedToSewer"]=tile.connectedToSewer;}
   }
 
   root["buildings"] = json::array();
@@ -534,7 +633,21 @@ bool SaveLoadSystem::saveToFile(
              {"to", coordToJson(road.to)},
              {"currentLoad", road.currentLoad},
              {"roadClass", static_cast<int>(road.roadClass)},
-             {"freightLoad", road.freightLoad},{"visitorLoad",road.visitorLoad}});
+             {"freightLoad", road.freightLoad},{"visitorLoad",road.visitorLoad},{"oneWay",road.oneWay},{"length",road.length},{"elevation",road.elevation},{"fromLevel",road.fromLevel},{"toLevel",road.toLevel}});
+  }
+
+  root["roadAlignments"]=json::array();
+  for(const auto& a:snapshot.roadAlignments) {
+    json curves=json::array(),path=json::array(),footprint=json::array();
+    for(const auto& curve:a.curves) {
+      json points=json::array();
+      for(const auto p:curve.points) points.push_back({p.x,p.y});
+      curves.push_back(points);
+    }
+    for(Coord p:a.path) path.push_back(coordToJson(p));
+    for(Coord p:a.footprint) footprint.push_back(coordToJson(p));
+    root["roadAlignments"].push_back({{"curves",curves},{"path",path},{"footprint",footprint},
+      {"roadClass",int(a.roadClass)},{"snapped",a.snapped},{"oneWay",a.oneWay},{"roundabout",a.roundabout},{"elevation",a.elevation},{"startLevel",a.startLevel},{"endLevel",a.endLevel},{"deckJunctions",a.deckJunctions}});
   }
 
   std::ofstream out(filePath);
@@ -597,6 +710,11 @@ bool SaveLoadSystem::loadSnapshotFromFile(
         throw std::runtime_error("invalid next entity ID");
       snapshot.nextEntityId = next.get<uint64_t>();
     }
+    if(root.contains("environment")) snapshot.environment=root.at("environment").get<EnvironmentState>();
+    if(root.contains("pipeNetworks")) {
+      if(root.at("pipeNetworks").at("version").get<int>()!=1) throw std::runtime_error("unsupported pipe network version");
+      snapshot.pipeNetworksEnabled=root.at("pipeNetworks").at("enabled").get<bool>();
+    }
     snapshot.width = root.at("map").at("width").get<int>();
     snapshot.height = root.at("map").at("height").get<int>();
 
@@ -605,6 +723,8 @@ bool SaveLoadSystem::loadSnapshotFromFile(
       tile.x = tileJson.at("x").get<int>();
       tile.y = tileJson.at("y").get<int>();
       tile.type = tileJson.at("type").get<int>();
+      if(snapshot.pipeNetworksEnabled) {tile.utility=tileJson.at("utility").get<UtilityCell>();tile.connectedToSewer=tileJson.at("connectedToSewer").get<bool>();}
+      if(snapshot.environment.initialized) tile.environment=tileJson.at("environment").get<EnvironmentCell>();
       tile.zone = tileJson.at("zone").get<int>();
       tile.landValue = tileJson.at("landValue").get<float>();
       tile.pollution = tileJson.at("pollution").get<float>();
@@ -632,7 +752,29 @@ bool SaveLoadSystem::loadSnapshotFromFile(
       road.roadClass = static_cast<RoadClass>(roadJson.value("roadClass", 0));
       road.freightLoad = roadJson.value("freightLoad", 0.0f);
       road.visitorLoad = roadJson.value("visitorLoad",0.0f);
+      road.oneWay = roadJson.value("oneWay",false);
+      road.length = roadJson.value("length",1.f);road.elevation=roadJson.value("elevation",0);
+      road.fromLevel=roadJson.value("fromLevel",0);road.toLevel=roadJson.value("toLevel",0);
       snapshot.roads.push_back(road);
+    }
+    for(const auto& item:root.value("roadAlignments",json::array())) {
+      RoadAlignment a;a.roadClass=static_cast<RoadClass>(item.at("roadClass").get<int>());
+      a.snapped=item.at("snapped").get<bool>();a.oneWay=item.at("oneWay").get<bool>();
+      a.roundabout=item.at("roundabout").get<bool>();a.elevation=item.value("elevation",0);
+      a.startLevel=item.value("startLevel",0);a.endLevel=item.value("endLevel",0);
+      a.deckJunctions=item.value("deckJunctions",std::vector<size_t>{});
+      for(const auto& curve:item.at("curves")) {
+        if(!curve.is_array() || curve.size()!=4) throw std::runtime_error("road Bezier needs four points");
+        RoadBezier b;
+        for(size_t i=0;i<4;++i) {
+          if(!curve[i].is_array() || curve[i].size()!=2) throw std::runtime_error("invalid road control point");
+          b.points[i]={curve[i][0].get<float>(),curve[i][1].get<float>()};
+        }
+        a.curves.push_back(b);
+      }
+      for(const auto& p:item.at("path")) a.path.push_back(coordFromJson(p));
+      for(const auto& p:item.at("footprint")) a.footprint.push_back(coordFromJson(p));
+      snapshot.roadAlignments.push_back(std::move(a));
     }
   } catch (const std::exception& ex) {
     if (diagnostics != nullptr) {

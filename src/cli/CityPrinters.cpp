@@ -324,7 +324,10 @@ void printPath(const Pathfinding::Path& path) {
             << path.totalDistance << "):\n";
   for (size_t i = 0; i < path.waypoints.size(); ++i) {
     if (i > 0) std::cout << " -> ";
-    std::cout << "(" << path.waypoints[i].x << "," << path.waypoints[i].y << ")";
+    const auto node=path.waypoints[i],tile=roadTile(node);
+    std::cout << "(" << tile.x << "," << tile.y;
+    if(roadLevel(node)!=0) std::cout << ",level=" << roadLevel(node);
+    std::cout << ")";
   }
   std::cout << "\n";
 }

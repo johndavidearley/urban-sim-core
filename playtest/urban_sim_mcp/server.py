@@ -44,14 +44,18 @@ KEYS = [
     "F7",
     "F8",
     "F9",
+    "F10",
+    "F11",
+    "Backspace",
     *[f"Num{i}" for i in range(1, 10)],
     *list("ABCDEFGHJKLMNOPRSTUVZ"),
 ]
 
 
 class InputEvent(BaseModel):
+    text: Annotated[str, Field(min_length=1, max_length=48)] | None = None
     model_config = ConfigDict(extra="forbid")
-    type: Literal["key", "move", "down", "up", "scroll", "focus_lost", "close"]
+    type: Literal["key", "move", "down", "up", "scroll", "focus_lost", "close", "text"]
     key: str | None = None
     repeat: bool = False
     x: Coordinate = 0
@@ -83,6 +87,8 @@ INSPECTION_REFERENCE = {
         "regional_alerts",
         "tourism",
         "roads",
+        "environment",
+        "utilities",
     ],
     "summary": {
         "path": "state",
@@ -139,12 +145,13 @@ INSPECTION_REFERENCE = {
             "x2",
             "y2",
             "road_class",
+            "one_way", "from_level", "to_level",
             "capacity",
             "load",
             "freight_load",
             "congestion",
         ],
-        "capacity": "local=10, arterial=40 vehicles/tick",
+        "capacity": "local=100, arterial=400, highway=800, ramp=200 aggregate vehicles/tick",
         "load": "commuters plus freight; freight_load is trucks only",
         "upgrade": "tool(action=apply,name=road,road_class=arterial); $1400 per existing local segment",
     },
@@ -258,6 +265,8 @@ def create_server(session: Session) -> FastMCP:
     ) -> dict[str, Any]:
         """Inject ordered player input. Click=down/up, drag=down/move/up. Keys use names in controls resource."""
         for event in events:
+            if event.type == "text" and not event.text:
+                raise PlaytestError("Text events require 1..48 printable ASCII characters")
             if event.type == "key" and event.key not in KEYS:
                 raise PlaytestError(f"Unknown key; valid keys: {', '.join(KEYS)}")
         return await session.request(
@@ -303,7 +312,7 @@ def create_server(session: Session) -> FastMCP:
     async def tool(
         action: Literal["select", "apply", "district_policy", "district_delete"],
         name: (
-            Literal["road", "zone", "bulldoze", "service", "district", "port", "airport", "hotel", "unique", "monument", "none"] | None
+            Literal["road", "zone", "bulldoze", "service", "district", "port", "airport", "hotel", "unique", "monument", "pipe", "none"] | None
         ) = None,
         x1: Coordinate = 0,
         y1: Coordinate = 0,
@@ -317,14 +326,26 @@ def create_server(session: Session) -> FastMCP:
         surface_water: bool | None = None,
         sewage_treatment: bool | None = None,
         archetype: str | None = None,
-        road_class: Literal["local", "arterial"] | None = None,
+        road_class: Literal["local", "arterial", "highway", "ramp"] | None = None,
+        road_layout: Literal["grid", "line", "curve", "roundabout"] | None = None,
+        pipe_kind: Literal["water", "sewer", "combined", "lift", "booster"] | None = None,
+        remove: bool | None = None,
+        snapped: bool | None = None,
+        elevation: Literal[-1, 0, 1] | None = None,
+        start_x: float | None = None,
+        start_y: float | None = None,
+        end_x: float | None = None,
+        end_y: float | None = None,
+        control_x: float | None = None,
+        control_y: float | None = None,
+        radius: float | None = None,
         id: UInt32 | None = None,
         budget_cap: int | None = None,
         height_cap: Literal[0, 1, 2, 4, 8, 16, 32, 64] | None = None,
         port_action: Literal["cargo", "passenger", "remove", "toggle", "capacity", "airport"] | None = None,
         capacity: Annotated[int, Field(ge=0, le=200)] | None = None,
     ) -> dict[str, Any]:
-        """Use gameplay tools with normal plans, costs and validation. Player placements require their permanent population milestone; locked actions return the required resident threshold. budget inspect reports catalog_milestones, construction_prices and current/next progression. Endpoints are tile coordinates; services use x1/y1; surface_water selects shoreline intake/raw outlet variants. sewage_treatment=true with shoreline sanitation builds clean treatment ($600000, $34/tick), replacing raw outlets in place. power_source on service power selects generic, coal, gas, nuclear, solar, wind, hydro, or substation (0 MW, $150000, $4/tick; extends power reach only). Road class local/arterial supports build or upgrade. Policies support archetype, budget cap, and height_cap (0 uncapped, or 1, 2, 4, 8, 16, 32, 64). Monument uses name=monument and monument=catalog key; budget monuments lists built-unique prerequisites, effects, costs and upkeep; budget action=monuments opens M catalog. Unique uses name=unique and unique=catalog key with x1/y1; budget unique_buildings reports permanent achievement progress, costs, upkeep and local land-value effects; budget action=uniques opens the E catalog. Hotel uses x1/y1 on empty unzoned land with road/power/water; $1500000, 32 beds, 12 commercial jobs; building enables tourism; visitors require reachable parks. Terminal tools use x1/y1; name airport defaults to 4x2 airport placement, while port_action selects cargo/passenger/airport/remove/toggle/capacity. Capacity sets 0..200 goods, 0..60 sea passengers or 0..120 air passengers; omission cycles presets."""
+        """Use gameplay tools with normal plans, costs and validation. pipe lays separate water/sewer/combined underground lines using pipe_kind; snapped=true makes an L route, false follows a continuous straight route rasterized to connected tiles. remove=true removes only the selected pipe types. pipe_kind=booster places a powered inline water booster on one land water-pipe tile for $3000 plus $5/tick, with 20m head and 75 m3/tick shared capacity; it requires connected upstream water. Remove it for $100 before removing its water pipe. pipe_kind=lift places an inline powered sewer lift on one existing land sewer tile for $2500 plus $4/tick, with 20m head and 50 m3/tick capacity; removal costs $100. Remove lifts before removing their sewer pipe. Water costs $40/tile, sewer $30/tile; removal costs $10/changed tile. Crossings join same-kind pipes. Sources and parcels connect on their own or adjacent pipe tiles. First pipe enables explicit networks for legacy cities. Player placements require their permanent population milestone; locked actions return the required resident threshold. budget inspect reports catalog_milestones, construction_prices and current/next progression. Endpoints are tile coordinates; services use x1/y1; surface_water selects shoreline intake/raw outlet variants. sewage_treatment=true with shoreline sanitation builds clean treatment ($600000, $34/tick), replacing raw outlets in place. power_source on service power selects generic, coal, gas, nuclear, solar, wind, hydro, or substation (0 MW, $150000, $4/tick; extends power reach only). Road classes: local/arterial/highway/ramp. road_layout grid/line/curve/roundabout, snapped toggles grid snapping; continuous layouts accept start_x/start_y/end_x/end_y in world units, curve requires control_x/control_y, roundabout uses radius (minimum 2). Ramps flow from start to end; roundabouts circulate clockwise. elevation=-1/0/1 selects underpass/ground/overpass for roads or demolition. Crossings need at least 12 routing segments. Ramp + elevation=1 snaps one endpoint to the level deck of an elevated highway; start on deck for an exit or end on deck for an entrance. Other crossings do not create junctions. Highway demolition includes attached ramps; deleting a ramp preserves its host. Touching any part with bulldoze removes the whole continuous alignment. Policies support archetype, budget cap, and height_cap (0 uncapped, or 1, 2, 4, 8, 16, 32, 64). Monument uses name=monument and monument=catalog key; budget monuments lists built-unique prerequisites, effects, costs and upkeep; budget action=monuments opens M catalog. Unique uses name=unique and unique=catalog key with x1/y1; budget unique_buildings reports permanent achievement progress, costs, upkeep and local land-value effects; budget action=uniques opens the E catalog. Hotel uses x1/y1 on empty unzoned land with road/power/water; $1500000, 32 beds, 12 commercial jobs; building enables tourism; visitors require reachable parks. Terminal tools use x1/y1; name airport defaults to 4x2 airport placement, while port_action selects cargo/passenger/airport/remove/toggle/capacity. Capacity sets 0..200 goods, 0..60 sea passengers or 0..120 air passengers; omission cycles presets."""
         return await session.request(
             "tool",
             compact(
@@ -343,6 +364,9 @@ def create_server(session: Session) -> FastMCP:
                 sewage_treatment=sewage_treatment,
                 archetype=archetype,
                 road_class=road_class,
+                road_layout=road_layout, snapped=snapped, elevation=elevation, pipe_kind=pipe_kind, remove=remove,
+                start_x=start_x, start_y=start_y, end_x=end_x, end_y=end_y,
+                control_x=control_x, control_y=control_y, radius=radius,
                 id=id,
                 budget_cap=budget_cap,
                 height_cap=height_cap,
@@ -405,8 +429,8 @@ def create_server(session: Session) -> FastMCP:
 
     @server.tool(annotations=local)
     async def view(
-        action: Literal["overlay", "projection", "camera", "focus", "toggle"],
-        overlay: Annotated[int, Field(ge=0, le=8)] | None = None,
+        action: Literal["overlay", "projection", "camera", "focus", "toggle", "environment"],
+        overlay: Annotated[int, Field(ge=0, le=11)] | None = None,
         projection: Literal["3d", "perspective", "isometric", "top_down"] | None = None,
         tile_pixels: Annotated[int, Field(ge=2, le=48)] | None = None,
         view_x: Coordinate | None = None,
@@ -422,8 +446,9 @@ def create_server(session: Session) -> FastMCP:
             | None
         ) = None,
         enabled: bool | None = None,
+        inflow_scale: Annotated[float, Field(ge=0, le=2)] | None = None,
     ) -> dict[str, Any]:
-        """Choose overlay/projection, focus or position camera, or set an existing gameplay/UI toggle."""
+        """Choose overlay/projection, camera or a toggle. Overlay 11 shows water/sewer pipes and disconnected parcels. Overlay 9 is wind, 10 water currents/contamination. environment with enabled=true initializes legacy worlds; inflow_scale (0..2) controls boundary replenishment on future ticks. Inspection/previews never advance weather or hydrology."""
         return await session.request(
             "view",
             compact(
@@ -438,7 +463,7 @@ def create_server(session: Session) -> FastMCP:
                 offset_x=offset_x,
                 offset_y=offset_y,
                 name=name,
-                enabled=enabled,
+                enabled=enabled, inflow_scale=inflow_scale,
             ),
         )
 
@@ -457,7 +482,7 @@ def create_server(session: Session) -> FastMCP:
             "regional_report",
             "regional_alerts",
             "tourism",
-            "roads",
+            "roads", "environment", "utilities",
         ] = "summary",
         offset: Annotated[int, Field(ge=0)] = 0,
         limit: Annotated[int, Field(ge=1, le=512)] = 128,
@@ -585,6 +610,8 @@ def create_server(session: Session) -> FastMCP:
                 "gameplay": {
                     "road": "R",
                     "road_class_toggle": "A (road tool active)",
+                    "road_layout": "L cycles grid/line/curve/roundabout; O toggles snapping",
+                    "road_level": "PageUp/PageDown selects underpass/ground/overpass with Roads or Bulldoze active",
                     "zone": "Z",
                     "bulldoze": "B",
                     "service": "S",

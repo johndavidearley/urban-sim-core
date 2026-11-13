@@ -1,3 +1,4 @@
+#include "src/visualization/RoadCurves.hpp"
 #include "src/visualization/UiFontAtlas.hpp"
 #include "src/visualization/TransitOverlay.hpp"
 #include <algorithm>
@@ -153,7 +154,7 @@ void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
     }
   }
 
-  if (tile.hasRoad) {
+  if (tile.hasRoad && (!roads || roads->hasLegacyRoadAt(coord))) {
     bool arterial = false;
     if (roads)
       for (Coord delta : {Coord{1, 0}, Coord{-1, 0}, Coord{0, 1}, Coord{0, -1}})
@@ -171,17 +172,34 @@ void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
     const bool west = hasRoadAt(map, {coord.x - 1, coord.y});
     const bool east = hasRoadAt(map, {coord.x + 1, coord.y});
 
-    drawFilledRect(renderer, centerX - half, centerY - half, roadWidth, roadWidth, {58, 61, 65});
-    if (north) drawFilledRect(renderer, centerX - half, y, roadWidth, size / 2 + 1, {58, 61, 65});
-    if (south) drawFilledRect(renderer, centerX - half, centerY, roadWidth, size - size / 2, {58, 61, 65});
-    if (west) drawFilledRect(renderer, x, centerY - half, size / 2 + 1, roadWidth, {58, 61, 65});
-    if (east) drawFilledRect(renderer, centerX, centerY - half, size - size / 2, roadWidth, {58, 61, 65});
+    const auto curve=roadCurve(map,roads,coord);
+    if(curve.valid) {
+      const auto ribbon=[&](float w,float offset,RGB color) {
+        setDrawColor(renderer,color.r,color.g,color.b,255);
+        curve.ribbon(w,offset,[&](const std::array<glm::vec2,4>& p) {
+          renderer->triangle(x+p[0].x*size,y+p[0].y*size,x+p[1].x*size,y+p[1].y*size,x+p[2].x*size,y+p[2].y*size);
+          renderer->triangle(x+p[0].x*size,y+p[0].y*size,x+p[2].x*size,y+p[2].y*size,x+p[3].x*size,y+p[3].y*size);
+        });
+      };
+      ribbon(arterial ? .76f : .55f,0,{58,61,65});
+      if(size>=14) {
+        if(arterial) {ribbon(.025f,-.045f,{225,198,94});ribbon(.025f,.045f,{225,198,94});}
+        else ribbon(.025f,0,{225,198,94});
+      }
+    } else {
+      drawFilledRect(renderer, centerX - half, centerY - half, roadWidth, roadWidth, {58, 61, 65});
+      if (north) drawFilledRect(renderer, centerX - half, y, roadWidth, size / 2 + 1, {58, 61, 65});
+      if (south) drawFilledRect(renderer, centerX - half, centerY, roadWidth, size - size / 2, {58, 61, 65});
+      if (west) drawFilledRect(renderer, x, centerY - half, size / 2 + 1, roadWidth, {58, 61, 65});
+      if (east) drawFilledRect(renderer, centerX, centerY - half, size - size / 2, roadWidth, {58, 61, 65});
 
-    if (size >= 14) {
-      const RGB marking{225, 198, 94};
-      if (north || south) drawFilledRect(renderer, centerX, y + 2, 1, std::max(1, size - 4), marking, 190);
-      if (west || east) drawFilledRect(renderer, x + 2, centerY, std::max(1, size - 4), 1, marking, 190);
+      if (size >= 14) {
+        const RGB marking{225, 198, 94};
+        if (north || south) drawFilledRect(renderer, centerX, y + 2, 1, std::max(1, size - 4), marking, 190);
+        if (west || east) drawFilledRect(renderer, x + 2, centerY, std::max(1, size - 4), 1, marking, 190);
+      }
     }
+
   }
 
   if (tile.buildingId != 0) {
@@ -502,7 +520,7 @@ void drawIsometricTile(
       groundRect(u, v, i < 2 ? 13 : 100, i < 2 ? 100 : 13, {218, 207, 150}, 220);
     }
   }
-  if (tile.hasRoad) {
+  if (tile.hasRoad && roads.hasLegacyRoadAt(coord)) {
     std::array<bool, 4> connected{};
     int connections = 0;
     bool arterial = false;
@@ -515,27 +533,45 @@ void drawIsometricTile(
     const int low = arterial ? 16 : 24;
     const int high = 100 - low;
     const RGB asphalt{57, 62, 67};
-    groundRect(low, low, high - low, high - low, asphalt);
-    for (size_t i = 0; i < connected.size(); ++i) {
-      if (!connected[i]) continue;
-      const int u = i == 0 ? high : (i == 1 ? 0 : low);
-      const int v = i == 2 ? high : (i == 3 ? 0 : low);
-      groundRect(u, v, i < 2 ? low : high - low, i < 2 ? high - low : low, asphalt);
-      if (width < 24) continue;
-      // Lane markings stop before junctions; arterial roads get double lines.
-      const RGB marking{225, 199, 113};
-      for (int offset : {arterial ? 47 : 49, arterial ? 53 : 49}) {
-        if (i < 2) groundRect(i == 0 ? 76 : 5, offset, 19, 3, marking, 220);
-        else groundRect(offset, i == 2 ? 76 : 5, 3, 19, marking, 220);
-        if (!arterial) break;
+    const auto curve=roadCurve(map,&roads,coord);
+    if(curve.valid) {
+      const auto ribbon=[&](float w,float offset,RGB color) {
+        setDrawColor(renderer,color.r,color.g,color.b,255);
+        curve.ribbon(w,offset,[&](const std::array<glm::vec2,4>& p) {
+          std::vector<Point> polygon;
+          for(const auto v:p) polygon.push_back(groundPoint(int(std::lround(v.x*100)),int(std::lround(v.y*100))));
+          renderer->polygon(polygon);
+        });
+      };
+      ribbon(arterial ? .68f : .52f,0,asphalt);
+      if(width>=24) {
+        if(arterial) {ribbon(.03f,-.04f,{225,199,113});ribbon(.03f,.04f,{225,199,113});}
+        else ribbon(.03f,0,{225,199,113});
       }
-      if (connections >= 3 && width >= 32) {
-        for (int stripe = low + 4; stripe < high - 3; stripe += 10) {
-          if (i < 2) groundRect(i == 0 ? high - 6 : low + 2, stripe, 4, 6, {223, 227, 221}, 220);
-          else groundRect(stripe, i == 2 ? high - 6 : low + 2, 6, 4, {223, 227, 221}, 220);
+    } else {
+      groundRect(low, low, high - low, high - low, asphalt);
+      for (size_t i = 0; i < connected.size(); ++i) {
+        if (!connected[i]) continue;
+        const int u = i == 0 ? high : (i == 1 ? 0 : low);
+        const int v = i == 2 ? high : (i == 3 ? 0 : low);
+        groundRect(u, v, i < 2 ? low : high - low, i < 2 ? high - low : low, asphalt);
+        if (width < 24) continue;
+        // Lane markings stop before junctions; arterial roads get double lines.
+        const RGB marking{225, 199, 113};
+        for (int offset : {arterial ? 47 : 49, arterial ? 53 : 49}) {
+          if (i < 2) groundRect(i == 0 ? 76 : 5, offset, 19, 3, marking, 220);
+          else groundRect(offset, i == 2 ? 76 : 5, 3, 19, marking, 220);
+          if (!arterial) break;
+        }
+        if (connections >= 3 && width >= 32) {
+          for (int stripe = low + 4; stripe < high - 3; stripe += 10) {
+            if (i < 2) groundRect(i == 0 ? high - 6 : low + 2, stripe, 4, 6, {223, 227, 221}, 220);
+            else groundRect(stripe, i == 2 ? high - 6 : low + 2, 6, 4, {223, 227, 221}, 220);
+          }
         }
       }
     }
+
   }
 
   if (ParkSystem::isPark(map, coord)) {
@@ -778,14 +814,15 @@ int paletteWidth() {
 Rect paletteButtonRect(int index, int windowWidth, int windowHeight) {
   const int startX = (windowWidth - paletteWidth()) / 2;
   const int y = windowHeight - kPaletteBottomMargin - kPaletteButtonHeight;
+  if(index==5) return {startX+4*(kPaletteButtonWidth+kPaletteGap),y-50,kPaletteButtonWidth,kPaletteButtonHeight};
   return {startX + index * (kPaletteButtonWidth + kPaletteGap), y,
           kPaletteButtonWidth, kPaletteButtonHeight};
 }
 
 PaletteTool paletteHitTest(int mouseX, int mouseY, int windowWidth, int windowHeight) {
-  const std::array<PaletteTool, 5> tools = {
+  const std::array<PaletteTool, 6> tools = {
     PaletteTool::Road, PaletteTool::Zone, PaletteTool::Bulldoze, PaletteTool::Service,
-    PaletteTool::District
+    PaletteTool::District, PaletteTool::Pipe
   };
   for (size_t i = 0; i < tools.size(); ++i) {
     const Rect rect = paletteButtonRect(static_cast<int>(i), windowWidth, windowHeight);

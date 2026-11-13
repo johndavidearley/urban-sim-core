@@ -20,6 +20,7 @@ struct Tile {
   bool connectedToRoad = false;
   bool connectedToPower = true;   // Stub: true for MVP
   bool connectedToWater = true;   // Stub: true for MVP
+  bool connectedToSewer = true;
   uint32_t buildingId = 0;        // 0 = no building
   // Derived from constructed regional records in a gameplay session, not a
   // building ID and not duplicated in the core snapshot JSON.

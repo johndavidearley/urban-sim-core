@@ -83,6 +83,11 @@ void multiSourceDistanceField(
     return;
   }
 
+  if(roads.hasSeparatedRoads()) {
+    for(const auto& [coord,distance]:roads.distanceField(sources,maxDistance)) field.tryVisit(coord,distance);
+    return;
+  }
+
   std::queue<Coord> frontier;
   for (const Coord& s : sources) {
     if (field.tryVisit(s, 0)) {

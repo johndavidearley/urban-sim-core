@@ -12,7 +12,8 @@ enum class EventType {
   MouseDown,
   MouseUp,
   Scroll,
-  FocusLost
+  FocusLost,
+  TextInput
 };
 enum class Key {
   Unknown,
@@ -46,6 +47,9 @@ enum class Key {
   F7,
   F8,
   F9,
+  F10,
+  F11,
+  Backspace,
   Num1,
   Num2,
   Num3,
@@ -71,12 +75,15 @@ enum class Key {
   T,
   U,
   V,
+  W,
+  X,
   Z
 };
 Key translateGLFWKey(int code, int mods);
 enum class MouseButton { Other, Left, Middle, Right };
 struct InputEvent {
   EventType type = EventType::Quit;
+  uint32_t codepoint = 0;
   struct {
     int x = 0, y = 0;
   } motion;
@@ -108,6 +115,7 @@ public:
   std::function<uint32_t()> playtestClock;
   void title(const std::string &text);
   void resize(int width, int height);
+  void displayMode(bool borderless,int width,int height);
   uint32_t timeMs() const;
   void queue(InputEvent event) { events_.push_back(event); }
 

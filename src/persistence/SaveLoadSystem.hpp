@@ -20,6 +20,9 @@ struct SerializedTile {
   bool connectedToPower = true;
   bool connectedToWater = true;
   uint32_t buildingId = 0;
+  EnvironmentCell environment;
+  UtilityCell utility;
+  bool connectedToSewer=true;
 };
 
 struct SerializedRoad {
@@ -29,6 +32,10 @@ struct SerializedRoad {
   RoadClass roadClass = RoadClass::Local;
   float freightLoad = 0.0f;
   float visitorLoad = 0.0f;
+  bool oneWay = false;
+  float length = 1.f;
+  int elevation = 0;
+  int fromLevel = 0, toLevel = 0;
 };
 
 struct CitySnapshot {
@@ -39,8 +46,11 @@ struct CitySnapshot {
   std::vector<Building> buildings;
   std::vector<PopulationGroup> populationGroups;
   std::vector<SerializedRoad> roads;
+  std::vector<RoadAlignment> roadAlignments;
   // Zero is legacy/unspecified: derive from the greatest live ID on restore.
   uint64_t nextEntityId = 0;
+  EnvironmentState environment;
+  bool pipeNetworksEnabled=false;
 };
 
 struct SnapshotLoadDiagnostics {

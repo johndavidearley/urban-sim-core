@@ -61,6 +61,9 @@ const char* overlayModeName(OverlayMode mode) {
       return "happiness";
     case OverlayMode::RouteHeatmap:
       return "route-heat";
+    case OverlayMode::Utilities: return "WATER / SEWERS";
+    case OverlayMode::Wind: return "WIND";
+    case OverlayMode::WaterCurrent: return "WATER FLOW / CONTAMINATION";
     case OverlayMode::Transit:
       return "transit";
     default:

@@ -1,6 +1,7 @@
 #include "src/gameplay/BulldozeTool.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 #include <tuple>
 
@@ -26,9 +27,11 @@ BulldozePlan BulldozeTool::plan(
   const std::vector<ServiceFacility>& facilities,
   Coord start,
   Coord end,
-  int64_t availableFunds
+  int64_t availableFunds,
+  int elevation
 ) {
-  BulldozePlan result;
+  BulldozePlan result;result.elevation=elevation;
+  if(elevation < -1 || elevation > 1) {result.error="invalid demolition level";return result;}
   const Coord minCorner{std::min(start.x, end.x), std::min(start.y, end.y)};
   const Coord maxCorner{std::max(start.x, end.x), std::max(start.y, end.y)};
   if (!map.isValid(minCorner) || !map.isValid(maxCorner)) {
@@ -46,20 +49,49 @@ BulldozePlan BulldozeTool::plan(
         result.error = "remove the regional terminal before bulldozing its site";
         return result;
       }
-      result.buildings += tile.buildingId != 0 ? 1 : 0;
-      result.zonedTiles += map.zone(coord) != static_cast<int>(ZoneType::None) ? 1 : 0;
+      if(elevation==0) {
+        result.buildings += tile.buildingId != 0 ? 1 : 0;
+        result.zonedTiles += map.zone(coord) != static_cast<int>(ZoneType::None) ? 1 : 0;
+      }
 
       const RoadNetwork::Node* node = roads.getNode(coord);
       if (node == nullptr) {
         continue;
       }
       for (const RoadNodeId neighbor : node->adjacent) {
-        edgeKeys.insert(canonicalEdge(coord, neighbor.coord));
+        if(roads.edgeElevation(coord,neighbor.coord)==elevation) edgeKeys.insert(canonicalEdge(coord, neighbor.coord));
       }
     }
   }
 
-  for (const ServiceFacility& facility : facilities) {
+  // Removing a highway also removes ramps attached to its deck; removing a
+  // ramp alone leaves the host highway and its retained split points intact.
+  const auto& alignments=roads.alignments();std::vector<bool> affected(alignments.size(),false);
+  for(size_t i=0;i<alignments.size();++i) if(alignments[i].elevation==elevation)
+    affected[i]=std::any_of(alignments[i].footprint.begin(),alignments[i].footprint.end(),[&](Coord p) {
+      return p.x>=minCorner.x && p.x<=maxCorner.x && p.y>=minCorner.y && p.y<=maxCorner.y;
+    });
+  for(size_t i=0;i<alignments.size();++i) if(affected[i] && alignments[i].roadClass==RoadClass::Highway) {
+    const auto deck=alignments[i].routingPath();
+    for(size_t j=0;j<alignments.size();++j) if(alignments[j].roadClass==RoadClass::Ramp && alignments[j].elevation==elevation) {
+      const auto route=alignments[j].routingPath();
+      for(Coord endpoint:{route.front(),route.back()})
+        if(roadLevel(endpoint)==1 && std::find(deck.begin(),deck.end(),endpoint)!=deck.end()) affected[j]=true;
+    }
+  }
+  for(size_t i=0;i<alignments.size();++i) if(affected[i]) {
+    const auto route=alignments[i].routingPath();
+    for(size_t n=1;n<route.size();++n) {
+      const auto key=canonicalEdge(route[n-1],route[n]);bool shared=false;
+      for(size_t j=0;j<alignments.size();++j) if(!affected[j] && alignments[j].elevation==elevation) {
+        const auto other=alignments[j].routingPath();
+        for(size_t k=1;k<other.size();++k) if(canonicalEdge(other[k-1],other[k])==key) shared=true;
+      }
+      if(!shared) edgeKeys.insert(key);
+    }
+  }
+
+  if(elevation==0) for (const ServiceFacility& facility : facilities) {
     const bool hit = std::any_of(result.tiles.begin(), result.tiles.end(),
       [&](Coord coord) { return facilityCoversTile(facility, coord); });
     if (hit) ++result.services;
@@ -71,9 +103,11 @@ BulldozePlan BulldozeTool::plan(
       {std::get<2>(edge), std::get<3>(edge)}
     });
   }
+  int64_t roadCost=0;
+  for(const auto& edge:result.roadEdges) roadCost+=int64_t(std::ceil(roads.edgeLength(edge.from,edge.to)))*kCostPerRoadSegment;
   result.cost = static_cast<int64_t>(result.buildings) * kCostPerBuilding
     + static_cast<int64_t>(result.services) * kCostPerService
-    + static_cast<int64_t>(result.roadEdges.size()) * kCostPerRoadSegment
+    + roadCost
     + static_cast<int64_t>(result.zonedTiles) * kCostPerZonedTile;
 
   if (result.cost == 0) {
@@ -100,7 +134,7 @@ bool BulldozeTool::apply(
     return false;
   }
   const BulldozePlan current = BulldozeTool::plan(
-    map, roads, facilities, plan.tiles.front(), plan.tiles.back(), availableFunds
+    map, roads, facilities, plan.tiles.front(), plan.tiles.back(), availableFunds,plan.elevation
   );
   if (!current.valid || current.cost != plan.cost || current.roadEdges.size() != plan.roadEdges.size()) {
     return false;
@@ -109,7 +143,7 @@ bool BulldozeTool::apply(
   for (const BulldozeEdge& edge : plan.roadEdges) {
     roads.removeRoad(edge.from, edge.to);
   }
-  for (const Coord coord : plan.tiles) {
+  if(plan.elevation==0) for (const Coord coord : plan.tiles) {
     Tile& tile = map.getTile(coord);
     if (tile.buildingId != 0) {
       store.removeBuilding(tile.buildingId);
@@ -120,7 +154,7 @@ bool BulldozeTool::apply(
       map.landValue(coord) = Zoning::defaultLandValueForZone(ZoneType::None);
     }
   }
-  facilities.erase(
+  if(plan.elevation==0) facilities.erase(
     std::remove_if(
       facilities.begin(), facilities.end(), [&plan](const ServiceFacility& facility) {
         return std::any_of(plan.tiles.begin(), plan.tiles.end(),

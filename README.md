@@ -6,6 +6,10 @@ Current implementation and validation details are maintained in
 [docs/STATUS.md](docs/STATUS.md). The detailed [roadmap](docs/ROADMAP.md) is a
 milestone history and idea backlog rather than the active status source.
 
+The minimum Steam Early Access release plan is [M55–M58](docs/EARLY_ACCESS.md):
+player journey, reliability/performance, Steam packaging/store, and outside-player
+validation. Further simulation features are deferred until those gates pass.
+
 Power facilities can be generic coverage utilities or typed generators with
 capacity and lifecycle emissions:
 
@@ -85,6 +89,30 @@ inspect state, capture PNG screenshots, and record/replay isolated scenarios.
 See [graphics validation and troubleshooting](docs/GRAPHICS.md) for smoke
 captures, validation layers, runtime requirements, and the platform checklist.
 
+The 3D view renders undeveloped rough terrain as connected, rounded hills
+with shaded slopes, and softens water corners with curved, sandy banks.
+Slopes taper to level ground beside water and developed parcels; building or
+zoning a hill creates a level clearing. This visual relief also appears in
+existing saves and does not change simulation construction rules.
+
+Roads support both freeform and grid-snapped placement. Activate **R**, then
+use the road toolbar (or **L**) to select Grid Drag, Line, Curve, or Roundabout.
+**O** toggles snapping, and **A** cycles Local, Arterial, Highway, and One-way Ramp.
+Line uses start/end clicks; Curve uses start/control/end clicks; Roundabout uses
+center/radius clicks (minimum radius 2 tiles). Ramps flow from start to end,
+roundabouts circulate clockwise, and nearby road endpoints join automatically.
+Right-click or Escape cancels. The preview shows the shape and construction cost.
+
+Geometry, level and direction survive save/load. **Page Up / Page Down** selects
+ground, overpass or open-cut underpass while Roads or Bulldoze is active.
+Separated crossings require at least 12 routing segments and do not create
+junctions where roads cross. Elevated highways have ground approaches and accept
+one-way ramps on their level deck: select Ramp + Curve + Overpass, then click
+deck/control/ground for an exit or ground/control/deck for an entrance. Traffic uses a
+sampled tile network beneath the continuous geometry. Fully enclosed tunnels,
+arbitrary stacked interchanges and lane-level merging are not modeled.
+Bulldozing a continuous road removes its whole alignment on the selected level. See [road construction](docs/ROADS.md).
+
 Controls:
 - On launch, choose a 32, 64, or 96 tile map, toggle procedural terrain,
   start a new city, or load the existing session
@@ -94,7 +122,7 @@ Controls:
 - `T`: switch the 3D camera between orthographic and perspective
 - Right mouse drag with no construction tool selected: orbit and tilt the 3D camera
 - `Home` / `End`: orbit the 3D camera left / right
-- `Page Up` / `Page Down`: raise / lower the 3D viewing angle
+- `Page Up` / `Page Down`: change road level while Roads/Bulldoze is active; otherwise raise/lower the 3D viewing angle
 - `F4`: toggle detailed panels and the compact clean-gameplay HUD
 - `F`: center the 3D camera on the developed area
 - Click the bottom tool palette to select Roads, Zoning, Bulldoze, Services,
@@ -665,9 +693,11 @@ From there, expand into traffic micro-simulation, utilities, services, and polic
 Goods now add batched freight to commuter congestion. CLI
 `--simulate-no-freight` provides a comparison run. The trade gate is at
 `(0, map height/2)`; disconnected cargo appears as unrouted goods in the HUD,
-CSV and MCP inspection. While the road tool is active, **A** switches local
-(capacity 100) and arterial (400) roads. Drag to build or upgrade: $100 per new
-local segment, $1,500 per new arterial, $1,400 per local segment upgraded.
+CSV and MCP inspection. While the road tool is active, **A** cycles local
+(capacity 100), arterial (400), highway (800), and one-way ramp (200) roads.
+Grid Drag builds or upgrades local/arterial roads: $100 per new local segment,
+$1,500 per new arterial, $1,400 per local segment upgraded. Continuous highway
+and ramp placement costs $2,400/$900 per new routing segment; see [road construction](docs/ROADS.md).
 Road classes survive save/load. See [MCP playtesting](docs/PLAYTESTING.md) for
 freight metrics and road inspection.
 
@@ -923,3 +953,90 @@ stabilization script exercises mature mixed-access closures, demolition, load an
 recovery; the optional benchmark target separates shared tick CPU time from
 rendering/IPC and reports routing/cache sizes without hardware-dependent test
 thresholds.
+
+Wind and water currents now advance with simulation ticks. Press `W` to cycle
+wind speed/direction, water currents/contamination, and the zoning overlay.
+Wind turbines use local wind speed, with terrain/building shelter, cut-in and
+storm cut-out speeds. Surface-water intakes share available water and lose usable
+capacity as contamination rises. Sewage follows water currents; shoreline outlets
+need freeboard to drain, and blocked outlets accumulate a saved sewage backlog.
+Treatment removes 98% of discharged contamination in this gameplay model.
+
+Environment state, terrain heights, water beds, weather and contamination persist
+in saves and resume deterministically. Older saves initialize their environment on
+the first simulation tick. The current model transports water within existing water
+tiles; flooding, changing shorelines, turbine wakes and flow-dependent hydropower
+remain future work. The playtest environment inspector exposes water and pollutant
+balance ledgers; `view(action="environment", inflow_scale=0..2)` adjusts upstream
+replenishment without advancing time.
+
+Underground water and sewer networks are available with **X** (or the X PIPES
+palette button). Drag to lay a combined trench; press X again to cycle water,
+sewer, and combined lines. **O** switches between a snapped L route and a freeform
+straight route rasterized onto connected tiles. **V** switches laying/removing;
+removal affects only the selected pipe types, preserving roads and buildings.
+Water costs $40 per new tile, sewer $30; removal costs $10 per changed tile.
+
+The utilities overlay (11, also in the W cycle) shows water pipes in blue and
+sewers in orange. Buildings are green when served, red without sufficient water,
+and amber when sewage cannot drain. Sources, outlets, and parcels connect to
+pipes on their own tile or a cardinal neighbour. Shared trunks carry 100 m³/tick.
+Water facilities act as pumps with 20 m of lift and a small distance head loss;
+sewers follow downhill or flat terrain grades. Disconnected or overloaded parcels
+retain sewage until a route is restored. Treatment and surface-water withdrawal
+use the actual routed volumes. This is a coarse capacity/grade model; adjustable
+pipe depths and hydraulic pressure solving remain future work.
+
+New games require pipes. Existing saves retain legacy road water until their
+first pipe is laid; that action enables explicit networks citywide and preserves
+any accumulated sewage. Pipe topology and parcel backlogs persist in saves;
+paused inspections and construction previews never advance utility flows.
+
+Inline sewage lift stations let sewers cross uphill reaches. With the pipe tool
+selected, press **L** to switch to lift placement and click an existing sewer tile
+on land. Each station costs $2500 plus $4/tick, supplies 20 m of head (less distance
+loss), and pumps at most 50 m³/tick shared by every connected parcel and outlet.
+Stations can be chained. They require local electricity coverage and an active
+power source; loss of power or a disconnected outlet leaves sewage in the backlog.
+The utilities overlay marks powered lifts green and unpowered lifts red.
+Use **V** in lift mode to remove a station for $100; its pipes remain in place.
+Remove a lift before removing the sewer underneath it. Topology, backlogs, and
+upkeep continue through saves; read-only forecasts never operate the pumps.
+
+Water booster stations extend supply to high neighborhoods. Select pipes with
+**X**, press **A** for booster mode, and click an existing land water-pipe tile.
+A booster costs $3000 plus $5/tick, provides 20 m of head above its elevation
+(less distance loss), and carries 75 m³/tick shared across sources and parcels.
+It needs local power coverage, active generation, and upstream water reaching
+its own elevation. Boosters can be chained; they cannot create water or replenish
+pressure at every intervening pipe tile. Use **V** in booster mode to remove one
+for $100 before removing its water pipe. Sewer pipes and lifts remain intact.
+
+The utilities overlay marks boosters **B** and sewer lifts **L**, green when
+powered and red when off. Hover a parcel or pipe to see its route's available
+pressure head and delivered/demanded water. These readouts are forecasts; no
+water moves until a simulation tick. Booster topology, costs, and deterministic
+continuation are included in saves.
+
+The M55 city guide now checks utility delivery and provides clickable next
+steps through construction, growth, budgeting and saving. **F10** or the
+Settings button opens display preferences and an in-game controls/recovery
+reference; gameplay waits while it is open. Windowed/borderless display mode,
+window-size presets and readable text preferences are saved separately from
+cities. See [M55 progress and reproduction](docs/M55_PLAYER_JOURNEY.md) for the
+native launch-map journey and outstanding display validation.
+
+M56 adds protected player saves in the OS user-data folder: **F5** quicksaves,
+**F9** validates and loads with backup recovery, and a separate autosave runs
+every 200 simulation ticks. Each slot retains three previous generations.
+Save-and-quit stays open if saving fails. Existing working-directory cities can
+be imported without rewriting their originals. See [save compatibility and recovery](docs/SAVE_COMPATIBILITY.md)
+and [M56 progress](docs/M56_RELIABILITY.md). **F11 / Saves** opens the named-save
+and backup browser in-game and on the start screen. It confirms overwrites and
+loads over unsaved progress; F5 continues saving to the active named city.
+Windows performance and packaged-build soaks remain pending.
+
+M57's [Windows consumer candidate pipeline](docs/M57_STEAM_PRODUCT.md) prepares
+an MSVC x64/static-runtime package with dependency audits and offline Steam
+preview scripts. The manual Windows workflow and publisher handoff are ready
+for review; Windows/Steam consumer acceptance and release approval remain open.

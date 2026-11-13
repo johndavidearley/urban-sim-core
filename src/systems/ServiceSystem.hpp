@@ -152,6 +152,9 @@ static_assert(kServiceTypeCount <= 16, "ServiceCoverageMask needs more bits");
 // The result cache avoids re-evaluating building coverage when neither the
 // entity store nor the topology-dependent distance fields have changed.
 struct ServiceCoverageCache {
+  uint64_t builtForEnvironmentTick = 0;
+  std::vector<ServiceFacility> utilityFacilities;
+  bool usesPipeNetworks=false;
   bool citywideHealth = false, citywideEducation = false;
   // M54 keeps the starting city's reach-only growth score below 500 residents.
   uint64_t residentOccupants = 0;

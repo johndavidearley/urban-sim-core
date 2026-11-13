@@ -100,14 +100,16 @@ Pathfinding::Path runAStar(
 
     for (const RoadNodeId& neighborId : currentNode->adjacent) {
       glm::ivec2 neighbor = neighborId.coord;
+      if(!network.canTravel(current,neighbor)) continue;
 
-      float edgeCost = 1.0f;
+      const float length=network.edgeLength(current,neighbor);
+      float edgeCost = length;
       if (useCongestion) {
         // Prefer arterial free-flow travel while keeping minimum cost 1,
         // so the Manhattan heuristic remains admissible.
         if (network.getRoadClass(current, neighbor) == RoadClass::Local)
-          edgeCost += 0.25f;
-        edgeCost += network.getCongestion(current, neighbor) * congestionWeight;
+          edgeCost += 0.25f*length;
+        edgeCost += network.getCongestion(current, neighbor) * congestionWeight * length;
       }
 
       const float alt = g + edgeCost;
@@ -127,7 +129,8 @@ Pathfinding::Path runAStar(
 } // namespace
 
 float Pathfinding::heuristic(glm::ivec2 a, glm::ivec2 b) {
-  // Manhattan distance
+  // Deck nodes have distinct graph IDs but share physical tile positions.
+  a=roadTile(a);b=roadTile(b);
   return static_cast<float>(std::abs(a.x - b.x) + std::abs(a.y - b.y));
 }
 
