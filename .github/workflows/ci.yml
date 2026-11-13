@@ -89,7 +89,7 @@ jobs:
         run: timeout 100s xvfb-run -a bash scripts/smoke_wayland.sh ./build-ci/bin/UrbanSimCore-visualizer graphics-wayland
 
       - name: MCP rendered playtests (X11)
-        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        if: ${{ success() && runner.os == 'Linux' }}
         env:
           URBAN_SIM_PLAYTEST_EXECUTABLE: ${{ github.workspace }}/build-ci/bin/UrbanSimCore-playtest
           URBAN_SIM_PLAYTEST_ARTIFACTS: ${{ github.workspace }}/playtest-artifacts/x11
@@ -97,7 +97,7 @@ jobs:
         run: timeout 600s xvfb-run -a bash scripts/smoke_playtest_x11.sh
 
       - name: MCP rendered playtests (Wayland)
-        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        if: ${{ success() && runner.os == 'Linux' }}
         run: timeout 600s xvfb-run -a bash scripts/smoke_playtest_wayland.sh ./build-ci/bin/UrbanSimCore-playtest ./playtest-artifacts/wayland
 
       - name: Upload MCP playtest evidence
