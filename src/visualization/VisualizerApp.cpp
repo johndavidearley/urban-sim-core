@@ -102,7 +102,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                             std::string(argv[1]) == "--graphics-benchmark");
   }
   // Opt-in bridge runs exercise the production store in an isolated run folder.
-  const bool protectedSaves=!bridge || std::getenv("URBAN_SIM_PROTECTED_SAVES")!=nullptr;
+  const bool protectedSaves=!bridge || environmentValue("URBAN_SIM_PROTECTED_SAVES").has_value();
   GameSaveStore playerSaves(bridge?std::filesystem::current_path()/"player-saves":GameSaveStore::defaultRoot());
   std::string kSessionPath = "urban_sim_session.json";
   std::string recoveryNotice;

@@ -1,5 +1,6 @@
 #include "src/persistence/GameSaveStore.hpp"
 #include "src/core/EntityId.hpp"
+#include "src/core/Environment.hpp"
 #include "src/world/CityMap.hpp"
 #include "src/networks/RoadNetwork.hpp"
 #include "src/entities/EntityStore.hpp"
@@ -116,8 +117,8 @@ void collect(const std::filesystem::path& root) {
 
 std::filesystem::path GameSaveStore::defaultRoot() {
   const auto environment=[](const char* name) {
-    const char* value=std::getenv(name);
-    const std::filesystem::path path=value?value:"";
+    const auto value=environmentValue(name);
+    const std::filesystem::path path=value?*value:"";
     return path.is_absolute()?path:std::filesystem::path{};
   };
 #ifdef _WIN32

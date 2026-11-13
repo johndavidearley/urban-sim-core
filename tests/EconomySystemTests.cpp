@@ -29,8 +29,8 @@ TEST_F(EconomySystemTests, PlayableExportVolumeDiscountPreservesSmallTradesAndCa
     EXPECT_EQ(playable.exportedGoods, volume);
     EXPECT_EQ(flat.exportRevenue, volume * 40);
     EXPECT_EQ(playable.exportRevenue, std::min<int64_t>(volume, 2000) * 40);
-    if (volume <= 2000) EXPECT_EQ(playable.exportRevenue, flat.exportRevenue);
-    if (volume > 2000) EXPECT_LT(playable.exportUnitPrice, 40.0);
+    if (volume <= 2000) { EXPECT_EQ(playable.exportRevenue, flat.exportRevenue); }
+    if (volume > 2000) { EXPECT_LT(playable.exportUnitPrice, 40.0); }
     EXPECT_EQ(playable.totalRevenue, playable.totalTaxRevenue + playable.exportRevenue);
   }
 }

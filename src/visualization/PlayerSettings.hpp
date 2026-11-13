@@ -1,4 +1,5 @@
 #pragma once
+#include "src/core/Environment.hpp"
 #include "src/visualization/VisualizerRender.hpp"
 #include "src/visualization/WindowHost.hpp"
 #include <array>
@@ -15,7 +16,7 @@ struct PlayerSettings {
   static std::filesystem::path path(bool playtest) {
     if(playtest) return "urban_sim_settings.json";
 #ifdef _WIN32
-    if(const char* root=std::getenv("APPDATA")) return std::filesystem::path(root)/"UrbanSimCore/settings.json";
+    if(const auto root=environmentValue("APPDATA")) return std::filesystem::path(*root)/"UrbanSimCore/settings.json";
 #elif defined(__APPLE__)
     if(const char* root=std::getenv("HOME")) return std::filesystem::path(root)/"Library/Application Support/UrbanSimCore/settings.json";
 #else

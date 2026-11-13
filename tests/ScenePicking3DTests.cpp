@@ -63,7 +63,9 @@ TEST(ScenePicking3D, VisibleSkylineCanBeInspectedWhenTheGroundRayPointsIntoTheSk
   camera.centerOn({8.5f,0,8.5f},640,400);
   DrawList scene;ScenePicking3D picking;
   drawCity3D(&scene,camera,map,roads,store,{},OverlayMode::Zone,{},0,districts,0,nullptr,nullptr,&picking);
-  const auto roof=camera.worldToScreen({8.5f,2.24f,8.5f});
+  // Sample inside the crown's silhouette. Its exact top edge can round to a
+  // screen pixel above the geometry on a different compiler/architecture.
+  const auto roof=camera.worldToScreen({8.5f,2.17f,8.5f});
   EXPECT_FALSE(camera.ground(float(roof.x),float(roof.y)).valid);
   expectTile(picking.pick(camera,roof),{8,8});
 }
