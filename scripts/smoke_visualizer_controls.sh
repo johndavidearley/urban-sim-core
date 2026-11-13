@@ -66,7 +66,8 @@ save_checkpoint() {
 }
 
 # Own the WM configuration: desktop shortcuts must not intercept game keys.
-cat > openbox.xml <<'XML'
+mkdir -p "$XDG_CONFIG_HOME/openbox"
+cat > "$XDG_CONFIG_HOME/openbox/rc.xml" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
   <focus><focusNew>yes</focusNew><followMouse>no</followMouse></focus>
@@ -74,7 +75,7 @@ cat > openbox.xml <<'XML'
   <mouse/>
 </openbox_config>
 XML
-openbox --sm-disable --config "$work_dir/openbox.xml" > wm.log 2>&1 &
+openbox --sm-disable > wm.log 2>&1 &
 wm_pid=$!
 for attempt in $(seq 1 100); do
   if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q '0x'; then break; fi
