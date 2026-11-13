@@ -65,7 +65,16 @@ save_checkpoint() {
   tap F5
 }
 
-openbox --sm-disable > wm.log 2>&1 &
+# Own the WM configuration: desktop shortcuts must not intercept game keys.
+cat > openbox.xml <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <focus><focusNew>yes</focusNew><followMouse>no</followMouse></focus>
+  <keyboard/>
+  <mouse/>
+</openbox_config>
+XML
+openbox --sm-disable --config "$work_dir/openbox.xml" > wm.log 2>&1 &
 wm_pid=$!
 for attempt in $(seq 1 100); do
   if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q '0x'; then break; fi
@@ -118,6 +127,11 @@ xdotool getwindowname "$window" | grep -q ' | '
 tap F3 # top-down, 28 logical pixels/tile
 tap F4 # compact UI
 tap r
+for attempt in $(seq 1 50); do
+  if xdotool getwindowname "$window" | grep -q 'Tool:ROAD'; then break; fi
+  sleep 0.1
+done
+xdotool getwindowname "$window" | grep -q 'Tool:ROAD'
 drag 126 350 294 350 # road along row 12
 tap z
 drag 126 322 294 322 # residential zoning alongside the road
