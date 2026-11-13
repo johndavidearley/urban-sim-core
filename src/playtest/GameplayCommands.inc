@@ -686,8 +686,8 @@ if (command == "tool") {
   int layout=0;
   if(args.contains("road_layout")) {
     const std::array<std::string,4> layouts{{"grid","line","curve","roundabout"}};
-    const auto name=args.at("road_layout").get<std::string>();
-    const auto found=std::find(layouts.begin(),layouts.end(),name);
+    const auto layoutName=args.at("road_layout").get<std::string>();
+    const auto found=std::find(layouts.begin(),layouts.end(),layoutName);
     if(type!=PaletteTool::Road || found==layouts.end()) throw std::runtime_error("Unknown road layout");
     layout=static_cast<int>(found-layouts.begin());
   }
