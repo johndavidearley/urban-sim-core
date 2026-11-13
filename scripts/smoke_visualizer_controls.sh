@@ -22,6 +22,10 @@ cleanup() {
       xprop -root _NET_ACTIVE_WINDOW || true
     fi
     mkdir -p "$artifacts_dir"
+    python3 - <<'PYSCREEN' || true
+from PIL import ImageGrab
+ImageGrab.grab().save('failure-screen.png')
+PYSCREEN
     cp -R "$work_dir/." "$artifacts_dir/"
   fi
   test -z "$app_pid" || kill "$app_pid" 2>/dev/null || true
@@ -82,8 +86,13 @@ fi
 xdotool windowmap --sync "$window"
 xdotool windowactivate --sync "$window"
 xdotool windowfocus --sync "$window"
-tap() { xdotool key --clearmodifiers "$1"; sleep 0.15; }
+focus() {
+  xdotool windowactivate --sync "$window"
+  xdotool windowfocus --sync "$window"
+}
+tap() { focus; xdotool key --clearmodifiers "$1"; sleep 0.15; }
 drag() {
+  focus
   xdotool mousemove --window "$window" "$1" "$2" mousedown 1
   sleep 0.15
   xdotool mousemove --window "$window" "$3" "$4"
