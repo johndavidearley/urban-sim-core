@@ -30,6 +30,9 @@ cleanup() {
 }
 trap cleanup EXIT
 cd "$work_dir"
+# Keep production settings and managed saves isolated from the runner's home.
+export XDG_CONFIG_HOME="$work_dir/config"
+export XDG_DATA_HOME="$work_dir/data"
 cat > saved_state.py <<'PYHELPER'
 import json
 import os
@@ -37,13 +40,16 @@ import time
 from pathlib import Path
 
 def read_saved_state():
-    session_path = Path('urban_sim_session.json')
+    root = Path(os.environ['XDG_DATA_HOME']) / 'urban-sim/saves'
+    manifest_path = root / 'City.json'
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         try:
-            if session_path.stat().st_mtime_ns >= int(os.environ['URBAN_SMOKE_SAVE_AFTER_NS']):
+            if manifest_path.stat().st_mtime_ns >= int(os.environ['URBAN_SMOKE_SAVE_AFTER_NS']):
+                manifest = json.loads(manifest_path.read_text())
+                session_path = root / 'objects' / manifest['generation'] / 'session.json'
                 session = json.loads(session_path.read_text())
-                city = json.loads(Path(session['citySnapshot']).read_text())
+                city = json.loads((session_path.parent / session['citySnapshot']).read_text())
                 return session, city
         except (FileNotFoundError, json.JSONDecodeError):
             pass
