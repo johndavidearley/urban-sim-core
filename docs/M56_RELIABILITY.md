@@ -1,8 +1,12 @@
 # M56 — Save protection, reliability and performance
 
-Status: **in progress** (November 13, 2026). M55's Windows display acceptance
-remains open; this work starts the independent save-protection portion of M56.
-No Windows performance or packaged-build soak result is claimed.
+Status: **in progress** (November 14, 2026). M55's Windows display acceptance
+is locally verified. Windows protected save/browser/recovery acceptance passes,
+and the Python cancellation failure is fixed. A measured 1080p probe still
+fails the p95 frame-time floor (37.15 ms vs 33.3 ms). Scheduling drift is fixed;
+three two-hour packaged sessions and fresh hosted CI/leak qualification remain
+open. Current evidence and exact build scopes are in [M56_QUALIFICATION.md](M56_QUALIFICATION.md).
+The November 12–13 notes below retain their historical candidate scope.
 
 ## Player saves and recovery
 

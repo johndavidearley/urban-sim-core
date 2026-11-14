@@ -62,6 +62,7 @@ struct ServiceFacility {
   int64_t landfillRemaining = kLandfillCapacity;
   int64_t landfillLastFill = 0; // net units deposited on the last completed tick
   bool sewageTreatment = false; // shoreline Sanitation only; no raw discharge
+  bool clinic = false; // Health only: outpatient visits, no inpatient beds.
 
 };
 
@@ -112,6 +113,12 @@ struct ServiceCoverageSummary {
   float patientDemand = 0.0f;
   float hospitalBedsUsed = 0.0f;
   float hospitalCapacityFactor = 1.0f;
+  float clinicVisitCapacity = 0.0f;
+  float outpatientDemand = 0.0f;
+  float clinicVisitsUsed = 0.0f;
+  float criticalPatientDemand = 0.0f;
+  float clinicCoverage = 0.0f;
+  float hospitalCoverage = 0.0f;
 
   // Utilities are tracked separately from overallCoverage/satisfaction
   // below (which stay exactly (fire+police+health+education)/4, unchanged)
@@ -162,6 +169,7 @@ struct ServiceCoverageCache {
     ServiceType type = ServiceType::Fire;
     std::unordered_map<Coord, int, Vec2Hash> distanceField;
     int maxTravelDistance = 10;
+    bool clinic = false;
   };
   std::vector<Entry> entries;
   bool boundedDepartments = false;
@@ -184,6 +192,7 @@ struct ServiceCoverageCache {
   float waterSupplyUnits = 0.0f;
   float schoolSeats = 0.0f;
   float hospitalBeds = 0.0f;
+  float clinicVisitCapacity = 0.0f;
 
   // Nearest distance to *any* facility of *any* type, merged (min) across all
   // entries' distance fields once here in buildCache() rather than re-derived
@@ -241,7 +250,7 @@ public:
   static float coverageStrength(const ServiceCoverageCache& cache, ServiceType type, Coord anchor);
 
   static bool parseServiceType(const std::string& raw, ServiceType& outType);
-  static const char* serviceTypeToString(ServiceType type, bool surfaceWater = false, bool sewageTreatment = false);
+  static const char* serviceTypeToString(ServiceType type, bool surfaceWater = false, bool sewageTreatment = false, bool clinic = false);
   // Bounded raw-discharge exposure along connected water tiles (12 hops).
   static float intakeCleanFraction(const RoadNetwork& roads,
       const std::vector<ServiceFacility>& facilities, Coord intake);
@@ -300,6 +309,8 @@ public:
   // Illness rate is a severity index, about 0.5 even under full care. A fifth
   // of it needs a bed, so one 400-bed hospital serves about 3,000 residents.
   static constexpr float kPatientShare = 0.2f;
+  static constexpr float kCriticalPatientShare = 0.25f;
+  static float healthcareStrength(const ServiceCoverageCache& cache, Coord anchor, bool clinic);
   static void applyCivicCapacity(ServiceCoverageSummary& summary, uint32_t housedPopulation, float illnessRate);
 
   static void applyToMetrics(const ServiceCoverageSummary& summary, CityMetrics& metrics);

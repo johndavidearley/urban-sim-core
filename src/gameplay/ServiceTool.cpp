@@ -19,7 +19,8 @@ PowerPlantSpec ServiceTool::powerPlant(PowerSourceType source) {
   }
 }
 
-int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater, PowerSourceType source, bool sewageTreatment) {
+int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater, PowerSourceType source, bool sewageTreatment, bool clinic) {
+  if (type == ServiceType::Health && clinic) return 2500;
   if (type == ServiceType::Power) return powerPlant(source).constructionCost;
   if (surfaceWater && type == ServiceType::Water) return 3000;
   if (surfaceWater && type == ServiceType::Sanitation) return sewageTreatment ? catalog::treatmentCost : 2000;
@@ -40,7 +41,8 @@ int64_t ServiceTool::constructionCost(ServiceType type, bool surfaceWater, Power
   }
 }
 
-int64_t ServiceTool::operatingCostPerTick(ServiceType type, bool surfaceWater, PowerSourceType source, bool sewageTreatment) {
+int64_t ServiceTool::operatingCostPerTick(ServiceType type, bool surfaceWater, PowerSourceType source, bool sewageTreatment, bool clinic) {
+  if (type == ServiceType::Health && clinic) return 12;
   if (type == ServiceType::Power) return powerPlant(source).operatingCost;
   if (surfaceWater && type == ServiceType::Water) return 12;
   if (surfaceWater && type == ServiceType::Sanitation) return sewageTreatment ? 34 : 8;
@@ -65,7 +67,7 @@ int ServiceTool::coverageDistance(ServiceType type) {
   switch (type) {
     case ServiceType::Fire: return 16;
     case ServiceType::Police: return 14;
-    case ServiceType::Health: return 18;
+    case ServiceType::Health: return 48;
     case ServiceType::Education: return 20;
     case ServiceType::Power: return 22;
     case ServiceType::Water: return 20;
@@ -93,10 +95,15 @@ ServicePlan ServiceTool::plan(
   result.options = options;
   const int range = options.coverageDistanceOverride >= 0
     ? options.coverageDistanceOverride
-    : coverageDistance(type);
+    : (type == ServiceType::Health && options.clinic ? 18 : coverageDistance(type));
   result.facility = ServiceFacility{type, position, range, 1.0f};
   result.facility.surfaceWater = options.surfaceWater;
   result.facility.sewageTreatment = options.sewageTreatment;
+  result.facility.clinic = options.clinic;
+  if (options.clinic && type != ServiceType::Health) {
+    result.error = "clinic requires Health";
+    return result;
+  }
   if (options.sewageTreatment && (!options.surfaceWater || type != ServiceType::Sanitation)) {
     result.error = "treatment requires shoreline Sanitation";
     return result;
@@ -108,7 +115,7 @@ ServicePlan ServiceTool::plan(
     result.facility.emissionsKgPerMWh = plant.emissionsKgPerMWh;
     result.cost = plant.constructionCost;
   } else {
-    result.cost = constructionCost(type, options.surfaceWater, options.powerSource, options.sewageTreatment);
+    result.cost = constructionCost(type, options.surfaceWater, options.powerSource, options.sewageTreatment, options.clinic);
   }
   if (options.surfaceWater && type != ServiceType::Water && type != ServiceType::Sanitation) {
     result.error = "surface water mode requires Water or Sanitation";

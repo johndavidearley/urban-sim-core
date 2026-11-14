@@ -21,6 +21,7 @@ struct ServicePlacementOptions {
   bool requireRoadAccess = true;
   bool surfaceWater = false;
   bool sewageTreatment = false;
+  bool clinic = false;
   // Used when the placed type is Power. Other services ignore it.
   PowerSourceType powerSource = PowerSourceType::Generic;
   // -1 keeps the type default from coverageDistance().
@@ -41,10 +42,10 @@ public:
   static PowerPlantSpec powerPlant(PowerSourceType source);
   static int64_t constructionCost(
     ServiceType type, bool surfaceWater = false,
-    PowerSourceType source = PowerSourceType::Generic, bool sewageTreatment = false);
+    PowerSourceType source = PowerSourceType::Generic, bool sewageTreatment = false, bool clinic = false);
   static int64_t operatingCostPerTick(
     ServiceType type, bool surfaceWater = false,
-    PowerSourceType source = PowerSourceType::Generic, bool sewageTreatment = false);
+    PowerSourceType source = PowerSourceType::Generic, bool sewageTreatment = false, bool clinic = false);
   static int coverageDistance(ServiceType type);
 
   static ServicePlan plan(

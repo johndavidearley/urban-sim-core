@@ -1,13 +1,39 @@
 # Project Status
 
-Last verified locally: November 13, 2026
+Last verified locally: November 14, 2026
 
 
 The active release plan is [Minimum Steam Early Access, M55–M58](EARLY_ACCESS.md).
-M55 is in progress; no release gate is verified. Freeze further simulation expansion and finish
+M55 is verified locally on Windows; M56/M57 remain in progress and M58 is pending. Freeze further simulation expansion and finish
 the player journey, reliability/performance, Steam packaging/store setup, and
 outside-player acceptance. Windows 64-bit is the provisional launch target;
 shipping support is not verified yet.
+
+November 14 Windows M55 acceptance passes: a fresh native normal-money journey
+reaches 10,036 residents, holds 100 nonnegative operating ticks (minimum surplus
+$518), and matches 100-tick native reload/CLI continuations exactly. On the final
+HUD-only repair build, actual save/quit/relaunch/load/resume and two guide/settings
+regressions pass. Exact 1280×720 and 1920×1080 layouts plus borderless 2560×1440
+pass at real 144-DPI/150% scaling; all 13 earned-city captures were visually
+reviewed and report zero Vulkan validation errors. Service statistics no longer
+sit behind Transit/Alerts buttons. Strict MSVC x64 Release and all 764 C++ tests
+pass. [M55 evidence and build hashes](M55_PLAYER_JOURNEY.md) retain the separate
+journey/final-build identities. M57 retains consumer/Steam gates.
+
+M56 Windows qualification now fixes Python 3.11 cancellation and realtime
+schedule drift. The user-requested [outpatient clinics and central hospital](HEALTHCARE.md)
+pass paid 10k-city continuation, save/load and exact native/CLI continuation.
+Strict Release and 772 C++ tests pass; the clinic build passes all 58 rendered
+cases in one invocation. Protected clinic-save recovery/browser checks pass.
+The phase-corrected 1080p probe completes 171 of 171.4 expected ticks in 120 s,
+but p95 frame time is **37.15 ms**, above the 33.3 ms floor. M56 stays in
+progress for frame-time optimization/qualification, fresh CI/leaks and three
+two-hour packaged soaks. [Windows qualification](M56_QUALIFICATION.md) retains
+separate full-suite, timing and final marker-build identities. M55's fresh
+journey evidence remains tied to its original pre-clinic candidate.
+
+The November 13 notes below retain their historical verification scope; their
+open M55 display items are superseded by the November 14 acceptance above.
 
 The November 13 local baseline is 764 passing C++ tests and seven Python tests.
 M55 now has actionable onboarding, display/controls settings and saved preferences.

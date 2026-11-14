@@ -386,7 +386,8 @@ if (command == "inspect") {
       }
       items.back()["surface_water"] = f.surfaceWater;
       items.back()["sewage_treatment"] = f.sewageTreatment;
-      items.back()["name"] = ServiceSystem::serviceTypeToString(f.type, f.surfaceWater, f.sewageTreatment);
+      items.back()["clinic"] = f.clinic;
+      items.back()["name"] = ServiceSystem::serviceTypeToString(f.type, f.surfaceWater, f.sewageTreatment, f.clinic);
     }
   } else if (section == "districts") {
     for (const auto &d : districts.getDistricts())
@@ -704,6 +705,8 @@ if (command == "tool") {
   if (args.contains("service") &&
       !ServiceSystem::parseServiceType(args.at("service"), service))
     throw std::runtime_error("Unknown service");
+  if (args.value("clinic", false) && (type != PaletteTool::Service || service != ServiceType::Health))
+    throw std::runtime_error("Clinic requires the Health service tool");
   if (args.contains("power_source")) {
     if (type != PaletteTool::Service || service != ServiceType::Power)
       throw std::runtime_error("Power source requires the Power service tool");
@@ -746,6 +749,7 @@ if (command == "tool") {
   if (type == PaletteTool::Service) {
     surfaceWaterTool = args.value("surface_water", false);
     sewageTreatmentTool = args.value("sewage_treatment", false);
+    clinicTool = args.value("clinic", false);
   }
   selectedArchetype = archetype;
   if (action == "apply") {

@@ -151,8 +151,12 @@ class Session:
         try:
             assert self.process.stdin and self.process.stdout
             self.process.stdin.write(encoded)
-            await asyncio.wait_for(self.process.stdin.drain(), self.timeout)
-            line = await asyncio.wait_for(self.process.stdout.readline(), self.timeout)
+            # Keep I/O in this task: wait_for can lose external cancellation
+            # when its child completes at the same time on Python 3.10/3.11.
+            with anyio.fail_after(self.timeout):
+                await self.process.stdin.drain()
+            with anyio.fail_after(self.timeout):
+                line = await self.process.stdout.readline()
             if not line:
                 raise PlaytestError("Game exited without responding; see game.log")
             response = json.loads(line)

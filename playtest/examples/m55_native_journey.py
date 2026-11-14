@@ -149,6 +149,7 @@ class Journey:
         self.decision("zone", before, kind=kind, start=a, end=b)
 
     async def service(self, kind, x, y, source="Generic"):
+        clinic = kind == 2 and self.args.neighborhood_clinics and (x,y) != (48,51)
         if kind==6:
             if (x,y)==(20,59): y=61
             if (x,y)==(26,55): y=57
@@ -156,6 +157,7 @@ class Journey:
         basic = {0:5000, 1:4500, 2:6500, 3:5500, 4:12000, 5:8000, 6:7000, 7:9000}
         prices = self.s.last_state["budget"]["construction_prices"]
         cost = basic.get(kind, prices.get({8:"recycling", 9:"cemetery", 10:"crematorium", 11:"incinerator"}.get(kind), 0))
+        if clinic: cost = 2500
         if kind == 4 and source == "Wind":
             cost = 6000
         await self.wait("purchase service", funds=cost + 5000)
@@ -170,6 +172,8 @@ class Journey:
                 if self.s.last_state["tools"]["power_source"] == source:
                     break
                 await self.keys("V")
+        if kind == 2 and self.s.last_state["tools"].get("clinic", False) != clinic:
+            await self.keys("V")
         before, count = self.s.last_state["funds"], self.s.last_state["facilities"]
         p = await self.at((x, y))
         await self.click(p["x"], p["y"])
@@ -399,4 +403,5 @@ if __name__=="__main__":
     parser.add_argument("--artifacts",default="playtest-artifacts/m55-journey")
     parser.add_argument("--max-ticks",type=int,default=40000)
     parser.add_argument("--opening-only",action="store_true")
+    parser.add_argument("--neighborhood-clinics",action="store_true",help="Four local clinics and one central hospital")
     asyncio.run(Journey(parser.parse_args()).run())

@@ -1,6 +1,6 @@
 # Minimum Steam Early Access milestones
 
-Created November 12, 2026. Status: **M55/M56/M57 in progress; no release gate is complete**.
+Created November 12, 2026. Updated November 14. Status: **M55 verified locally on Windows; M56/M57 in progress; M58 pending**.
 These are project acceptance criteria, not Valve certification requirements.
 
 Ship a playable single-player city builder using the systems already implemented.
@@ -18,19 +18,20 @@ currents, pipes, sewer lifts and water boosters are implemented locally.
 Windows release readiness and Steam approval remain unverified. Historical
 M54 evidence is supplemented by the fresh journey with mandatory pipes.
 
-## M55 — Complete the player journey (in progress)
+## M55 — Complete the player journey (verified locally on Windows)
 
 **Owner:** engineering. **Depends on:** existing game systems.
 
 Implementation and evidence are tracked in [M55_PLAYER_JOURNEY.md](M55_PLAYER_JOURNEY.md).
 The fresh native journey passes with mandatory pipes, sustainable operations and
-actual quit/relaunch/load/resume. Full 1080-high and Windows display/DPI
-verification remain open.
+actual quit/relaunch/load/resume. November 14 Windows acceptance also passes
+exact 720p/1080p layouts and real 144-DPI (150%) scaling on the earned 10k city;
+all 13 final captures were visually reviewed. Evidence/build hashes are linked above.
 
 - [x] Update onboarding for roads, zoning, power, water/sewer pipes, budgets,
       and saving. Explain shortages and the action needed to recover; essential
       actions must be discoverable in the interface, not only in a key list.
-- [ ] Finish basic player settings: display mode/resolution, readable UI at
+- [x] Finish basic player settings: display mode/resolution, readable UI at
       1280×720 and 1920×1080 including 150% display scaling, and a controls guide.
       Expose volume controls if audio ships; a new audio system is not a gate.
 - [x] Record a fresh native journey on the launch map from an empty city to
@@ -48,8 +49,8 @@ M54 is a reference, not evidence that this new journey already passes.
 **Owner:** engineering/QA. **Depends on:** M55's representative city saves.
 
 The first save-protection slice is tracked in [M56_RELIABILITY.md](M56_RELIABILITY.md).
-M55's Windows display acceptance remains open; save protection can proceed using
-its locally verified representative city.
+M55's Windows display acceptance is locally verified as of November 14;
+its earned 10k Windows city is available for performance and soak qualification.
 
 - [x] Provide user-writable save locations, named manual saves, rotating
       autosaves/backups, and clear load errors. Interrupted writes and invalid

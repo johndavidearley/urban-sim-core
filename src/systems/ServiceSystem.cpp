@@ -31,6 +31,7 @@ uint64_t facilitySignature(const std::vector<ServiceFacility>& facilities) {
     mix(static_cast<uint32_t>(facility.position.y));
     mix(static_cast<uint32_t>(facility.maxTravelDistance));
     if (facility.sewageTreatment) mix(0x54524541u);
+    if (facility.clinic) mix(0x434c494eu);
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.quality)));
     mix(static_cast<uint32_t>(facility.powerSource));
     mix(static_cast<uint32_t>(std::hash<float>{}(facility.powerCapacityMW)));
@@ -174,7 +175,8 @@ bool ServiceSystem::parseServiceType(const std::string& raw, ServiceType& outTyp
   return false;
 }
 
-const char* ServiceSystem::serviceTypeToString(ServiceType type, bool surfaceWater, bool sewageTreatment) {
+const char* ServiceSystem::serviceTypeToString(ServiceType type, bool surfaceWater, bool sewageTreatment, bool clinic) {
+  if (type == ServiceType::Health && clinic) return "Clinic";
   if (sewageTreatment && surfaceWater && type == ServiceType::Sanitation) return "Shore Treatment";
   if (surfaceWater && type == ServiceType::Water) return "Water Intake";
   if (surfaceWater && type == ServiceType::Sanitation) return "Sewage Outlet";
@@ -326,6 +328,7 @@ void ServiceSystem::buildCache(
   cache.waterSupplyUnits = 0.0f;
   cache.schoolSeats = 0.0f;
   cache.hospitalBeds = 0.0f;
+  cache.clinicVisitCapacity = 0.0f;
   cache.entries.reserve(facilities.size());
 
   // Group road-anchored facilities by (type, maxTravelDistance). Equal-radius
@@ -333,13 +336,14 @@ void ServiceSystem::buildCache(
   struct GroupKey {
     ServiceType type = ServiceType::Fire;
     int maxTravelDistance = 0;
+    bool clinic = false;
     bool operator==(const GroupKey& o) const {
-      return type == o.type && maxTravelDistance == o.maxTravelDistance;
+      return type == o.type && maxTravelDistance == o.maxTravelDistance && clinic == o.clinic;
     }
   };
   struct GroupKeyHash {
     size_t operator()(const GroupKey& k) const {
-      return hashCombine(static_cast<size_t>(k.type), static_cast<size_t>(k.maxTravelDistance));
+      return hashCombine(hashCombine(static_cast<size_t>(k.type), static_cast<size_t>(k.maxTravelDistance)), static_cast<size_t>(k.clinic));
     }
   };
 
@@ -354,8 +358,10 @@ void ServiceSystem::buildCache(
     const auto currentIndex=facilityIndex++;
     if (facility.type == ServiceType::Education)
       cache.schoolSeats += 800.0f * std::clamp(facility.quality, 0.0f, 1.0f);
-    if (facility.type == ServiceType::Health)
-      cache.hospitalBeds += 400.0f * std::clamp(facility.quality, 0.0f, 1.0f);
+    if (facility.type == ServiceType::Health) {
+      if (facility.clinic) cache.clinicVisitCapacity += 200.0f * std::clamp(facility.quality, 0.0f, 1.0f);
+      else cache.hospitalBeds += 400.0f * std::clamp(facility.quality, 0.0f, 1.0f);
+    }
     // Generation exists independently of road-based distribution coverage.
     // A disconnected plant still contributes to the city's installed source
     // mix, while buildings only receive Power coverage through the graph.
@@ -381,7 +387,7 @@ void ServiceSystem::buildCache(
           (facility.type==ServiceType::Sanitation && facility.surfaceWater ? EnvironmentSystem::drainageFactor(environmentMap,facility.position) : 1.f),
         buildMultiSourceDistanceField(roads, {anchor}, facility.maxTravelDistance)});
     }
-    groups[{facility.type, facility.maxTravelDistance}].push_back(anchor);
+    groups[{facility.type, facility.maxTravelDistance, facility.clinic}].push_back(anchor);
     if (facility.type == ServiceType::Incinerator) cache.wasteFacilities.push_back(facility);
     if (facility.type == ServiceType::Incinerator) {
       groups[{ServiceType::Power, facility.maxTravelDistance}].push_back(anchor);
@@ -392,7 +398,7 @@ void ServiceSystem::buildCache(
     auto distField = buildMultiSourceDistanceField(roads, sources, key.maxTravelDistance);
     if (!distField.empty()) {
       cache.entries.push_back(
-          {key.type, std::move(distField), key.maxTravelDistance});
+          {key.type, std::move(distField), key.maxTravelDistance, key.clinic});
     }
   }
 
@@ -526,6 +532,7 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
     store.countOfType(BuildingType::Office);
   summary.schoolSeats = cache.schoolSeats;
   summary.hospitalBeds = cache.hospitalBeds;
+  summary.clinicVisitCapacity = cache.clinicVisitCapacity;
   summary.powerGenerationMW = cache.powerGenerationCapacityMW;
   summary.powerEmissionsKgPerMWh = summary.powerGenerationMW > 0.0f
     ? cache.powerWeightedEmissions / summary.powerGenerationMW
@@ -648,6 +655,21 @@ ServiceCoverageSummary ServiceSystem::evaluateFromCache(
   summary.fireCoverage      = coveredByType[typeIndex(ServiceType::Fire)]      / denom;
   summary.policeCoverage    = coveredByType[typeIndex(ServiceType::Police)]    / denom;
   summary.healthCoverage    = coveredByType[typeIndex(ServiceType::Health)]    / denom;
+  if (cache.clinicVisitCapacity > 0.f) {
+    double residents=0, clinicReach=0, hospitalReach=0;
+    for (const auto id : store.idsByBuildingType(BuildingType::Residential)) {
+      const auto& b=*store.getBuilding(id);
+      const double people=std::max(0,b.occupancy);
+      Coord anchor{-1,-1}; roads.resolveRoadAnchor(b.position,anchor);
+      residents+=people;
+      clinicReach+=people*(healthcareStrength(cache,anchor,true)>0.f ? 1.0 : 0.0);
+      hospitalReach+=people*healthcareStrength(cache,anchor,false);
+    }
+    if (residents>0) {
+      summary.clinicCoverage=static_cast<float>(clinicReach/residents);
+      summary.hospitalCoverage=static_cast<float>(hospitalReach/residents);
+    }
+  }
   summary.educationCoverage = coveredByType[typeIndex(ServiceType::Education)] / denom;
   if(cache.citywideHealth) summary.healthCoverage=1.f;
   if(cache.citywideEducation) summary.educationCoverage=1.f;
@@ -707,10 +729,27 @@ void ServiceSystem::applyCivicCapacity(ServiceCoverageSummary& summary,
   summary.schoolSeatsUsed = summary.schoolDemand * summary.effectiveEducationCoverage;
   summary.patientDemand = illnessRate > 0.f
     ? std::max(1.f, static_cast<float>(housedPopulation) * illnessRate * kPatientShare) : 0.f;
+  summary.criticalPatientDemand=summary.patientDemand*kCriticalPatientShare;
+  summary.outpatientDemand=summary.patientDemand-summary.criticalPatientDemand;
+  summary.clinicVisitsUsed=std::min(summary.clinicVisitCapacity,summary.outpatientDemand*summary.clinicCoverage);
+  // Only noncritical visits may be diverted; serious cases always need beds.
+  summary.patientDemand-=summary.clinicVisitsUsed;
   if(summary.citywideHealth) summary.hospitalBeds=std::max(summary.hospitalBeds,summary.patientDemand);
   summary.hospitalCapacityFactor = summary.patientDemand > 0.f
     ? std::min(1.f, summary.hospitalBeds / summary.patientDemand) : 1.f;
   summary.hospitalBedsUsed = std::min(summary.hospitalBeds, summary.patientDemand);
+}
+
+float ServiceSystem::healthcareStrength(const ServiceCoverageCache& cache, Coord anchor, bool clinic) {
+  if (!clinic && cache.citywideHealth) return 1.f;
+  float result=0;
+  for (const auto& entry:cache.entries) {
+    if (entry.type!=ServiceType::Health || entry.clinic!=clinic) continue;
+    const auto found=entry.distanceField.find(anchor);
+    if(found!=entry.distanceField.end()) result=std::max(result,std::clamp(1.f-
+      static_cast<float>(found->second)/(static_cast<float>(std::max(0,entry.maxTravelDistance))+1.f),0.f,1.f));
+  }
+  return result;
 }
 
 float ServiceSystem::coverageStrength(const ServiceCoverageCache &cache, ServiceType type,

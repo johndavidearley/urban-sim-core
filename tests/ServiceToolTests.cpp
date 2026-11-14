@@ -39,6 +39,30 @@ ServicePlan powerPlan(
 
 }  // namespace
 
+TEST(ServiceToolTests, NeighborhoodClinicIsCheaperSmallerAndFundedAsHealthcare) {
+  CityMap map({16,16}); RoadNetwork roads(map);
+  roads.buildRoad({4,4},{5,4});
+  ServicePlacementOptions options; options.clinic = true;
+  const auto clinic = ServiceTool::plan(map, roads, {}, ServiceType::Health, {4,3}, 10000, options);
+  const auto hospital = ServiceTool::plan(map, roads, {}, ServiceType::Health, {4,3}, 10000);
+  ASSERT_TRUE(clinic.valid) << clinic.error;
+  ASSERT_TRUE(hospital.valid) << hospital.error;
+  EXPECT_TRUE(clinic.facility.clinic);
+  EXPECT_EQ(clinic.cost, 2500);
+  EXPECT_EQ(clinic.facility.maxTravelDistance, 18);
+  EXPECT_FALSE(hospital.facility.clinic);
+  EXPECT_EQ(hospital.cost, 6500);
+  EXPECT_EQ(hospital.facility.maxTravelDistance, 48);
+  EXPECT_FALSE(ServiceTool::plan(map, roads, {}, ServiceType::Fire, {4,3}, 10000, options).valid);
+  BudgetPolicy policy;
+  EXPECT_EQ(policy.serviceCost({clinic.facility,hospital.facility}), 47);
+  policy.servicePercent[static_cast<size_t>(ServiceType::Health)] = 50;
+  const auto funded = policy.fundedFacilities({clinic.facility,hospital.facility});
+  EXPECT_TRUE(funded[0].clinic);
+  EXPECT_FLOAT_EQ(funded[0].quality, .5f);
+  EXPECT_EQ(funded[0].maxTravelDistance, 9);
+}
+
 TEST(ServiceToolTests, PlansRoadAccessibleFacilityWithTypeSpecificCostAndRange) {
   CityMap map({16, 16});
   RoadNetwork roads(map);

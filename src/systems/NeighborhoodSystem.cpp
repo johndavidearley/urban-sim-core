@@ -63,6 +63,45 @@ NeighborhoodSummary NeighborhoodSystem::evaluate(
             pollution, hospital, sewage, healthParams)
             .illnessRate;
   }
+  if (cache.clinicVisitCapacity > 0.f && !cache.citywideHealth) {
+    // Clinics handle noncritical visits only. Hospital reach and beds remain
+    // necessary for the serious share and for outpatient overflow.
+    struct Care { Building* b; float raw, clinic, hospital; };
+    std::vector<Care> care;
+    for (const auto id:store.idsByBuildingType(BuildingType::Residential)) {
+      auto& b=*store.getBuilding(id); Coord anchor{-1,-1};
+      roads.resolveRoadAnchor(b.position,anchor);
+      const float sewage=map.pipeNetworksEnabled() ? (map.getTile(b.position).connectedToSewer ? 1.f : 0.f) :
+          ServiceSystem::coverageStrength(cache,ServiceType::Sanitation,anchor);
+      care.push_back({&b,HealthSystem::unmitigatedRate(housingDensity,
+        localHealth ? map.pollution(b.position) : averagePollution,sewage,healthParams),
+        ServiceSystem::healthcareStrength(cache,anchor,true)>0.f ? 1.f : 0.f,
+        ServiceSystem::healthcareStrength(cache,anchor,false)});
+    }
+    double clinicScale=1, hospitalScale=cache.hospitalBeds>0 ? 1 : 0;
+    constexpr double serious=ServiceSystem::kCriticalPatientShare;
+    for (int iteration=0;iteration<48;++iteration) {
+      double visits=0,beds=0;
+      for(const auto& p:care) {
+        const double outpatient=std::max(p.clinic*clinicScale,p.hospital*hospitalScale);
+        const double reduction=(1-serious)*outpatient+serious*p.hospital*hospitalScale;
+        const double illness=std::clamp(p.raw*(1-healthParams.healthCoverageReduction*reduction),0.0,1.0);
+        const double need=std::max(0,p.b->occupancy)*illness*ServiceSystem::kPatientShare;
+        visits+=need*(1-serious)*p.clinic;
+        beds+=need*(serious+(1-serious)*(1-p.clinic*clinicScale))*p.hospital;
+      }
+      const double nextClinic=visits>0 ? std::min(1.0,cache.clinicVisitCapacity/visits) : 1;
+      const double nextHospital=beds>0 ? std::min(1.0,cache.hospitalBeds/beds) : (cache.hospitalBeds>0 ? 1 : 0);
+      clinicScale=(clinicScale+nextClinic)*.5;
+      hospitalScale=(hospitalScale+nextHospital)*.5;
+    }
+    for(const auto& p:care) {
+      const double outpatient=std::max(p.clinic*clinicScale,p.hospital*hospitalScale);
+      const double reduction=(1-serious)*outpatient+serious*p.hospital*hospitalScale;
+      p.b->illnessRate=static_cast<float>(std::clamp(p.raw*(1-healthParams.healthCoverageReduction*reduction),0.0,1.0));
+    }
+    return summarize(store);
+  }
   const auto fullCare = summarize(store);
   const auto demand = [&](double illness) {
     return illness > 0.0 ? std::max(1.0, population * illness * ServiceSystem::kPatientShare) : 0.0;

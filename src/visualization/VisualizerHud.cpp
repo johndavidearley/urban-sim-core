@@ -52,6 +52,9 @@ std::string schoolCapacityLine(const ServiceCoverageSummary& s) {
     (s.effectiveEducationCoverage < s.educationCoverage ? " CAP" : " REACH");
 }
 std::string hospitalCapacityLine(const ServiceCoverageSummary& s) {
+  if (s.clinicVisitCapacity > 0.f) return "BEDS " + std::to_string(std::lround(s.hospitalBedsUsed)) + "/" +
+    std::to_string(std::lround(s.hospitalBeds)) + " CLINIC " + std::to_string(std::lround(s.clinicVisitsUsed)) + "/" +
+    std::to_string(std::lround(s.clinicVisitCapacity));
   return "BEDS " + std::to_string(std::lround(s.hospitalBedsUsed)) + "/" +
     std::to_string(std::lround(s.hospitalBeds)) + " NEED " + std::to_string(std::lround(s.patientDemand)) +
     (s.healthCoverage > 0.f && s.hospitalCapacityFactor < 1.f ? " CAP" : " REACH");
@@ -583,16 +586,17 @@ void drawGameplayHud(
   } else if (liveState.lowFunds) {
     drawText(renderer, x + 244, y + 142, "LOW FUNDS", {255, 190, 70}, 1);
   }
-  drawText(renderer, x + 244, y + 158,
+  // Keep service readouts above income totals, clear of Transit/Alerts below.
+  drawText(renderer, x + 244, y + 10,
            "WASTE " + std::to_string(static_cast<int>(liveState.waste.collectionRate * 100.0f)),
            liveState.waste.collectionRate >= 0.9f ? RGB{105, 230, 135} : RGB{255, 150, 120}, 1);
-  drawText(renderer, x + 244, y + 174,
+  drawText(renderer, x + 244, y + 30,
            "DECEASED " + std::to_string(liveState.deathcare.awaitingDisposition),
            liveState.deathcare.awaitingDisposition == 0 ? RGB{160, 175, 165} : RGB{255, 150, 120}, 1);
-  drawText(renderer, x + 244, y + 190,
+  drawText(renderer, x + 244, y + 50,
            "ILL " + std::to_string(static_cast<int>(liveState.illnessRate * 100.0f)) + "%",
            liveState.illnessRate <= 0.12f ? RGB{160, 175, 165} : RGB{255, 150, 120}, 1);
-  drawText(renderer, x + 244, y + 206,
+  drawText(renderer, x + 244, y + 70,
            "CRIME " + std::to_string(static_cast<int>(liveState.crimeRate * 100.0f)) + "%",
            liveState.crimeRate <= 0.15f ? RGB{160, 175, 165} : RGB{255, 150, 120}, 1);
   const bool utilityShort =
@@ -1062,9 +1066,11 @@ void drawTileInspector(
         ? std::string(ServiceSystem::powerSourceTypeToString(facility.powerSource)) + " " +
             std::to_string(static_cast<int>(facility.powerCapacityMW)) + " MW " +
             std::to_string(static_cast<int>(facility.emissionsKgPerMWh)) + " KG/MWH"
-        : std::string("SERVICE ") + ServiceSystem::serviceTypeToString(facility.type, facility.surfaceWater, facility.sewageTreatment)
+        : std::string("SERVICE ") + (facility.type == ServiceType::Health ? (facility.clinic ? "Clinic" : "Hospital") : ServiceSystem::serviceTypeToString(facility.type, facility.surfaceWater, facility.sewageTreatment, facility.clinic))
             + " RANGE " + std::to_string(facility.maxTravelDistance);
       drawText(renderer, x + 10, y + 111, serviceLine, serviceFacilityColor(facility.type), 1);
+      if (facility.type == ServiceType::Health)
+        drawText(renderer,x+10,y+95,facility.clinic ? "OUTPATIENT 200 VISITS - NO BEDS" : "HOSPITAL 400 BEDS - SERIOUS / OVERFLOW",{185,220,215},1);
       if (facility.type == ServiceType::Garbage) {
         drawText(renderer, x + 10, y + 95,
           "FREE " + std::to_string(facility.landfillRemaining) + "/" + std::to_string(facility.landfillCapacity) + " FILL "

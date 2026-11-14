@@ -97,6 +97,13 @@ void serviceSite(DrawList* l, const Camera3D& c, const ServiceFacility& f,const 
   }
   const bool industrial=f.type==ServiceType::Power || f.type==ServiceType::Incinerator ||
                         f.type==ServiceType::Crematorium || f.type==ServiceType::Recycling;
+  if (f.type == ServiceType::Health && f.clinic) {
+    box(l,c,x+.22f,z+.25f,.56f,.48f,.025f,.24f,{187,222,214});
+    slab(l,c,x+.44f,z+.36f,.12f,.26f,.267f,{61,145,131});
+    slab(l,c,x+.37f,z+.43f,.26f,.12f,.268f,{61,145,131});
+    box(l,c,x+.4f,z+.73f,.2f,.02f,.025f,.15f,{83,132,140});
+    return;
+  }
   box(l,c,x+.12f,z+.15f,.76f,.68f,.025f,industrial ? .38f : .5f,color);
   if(industrial) {
     const int stacks=(f.type==ServiceType::Power && f.powerSource==PowerSourceType::Coal) || f.type==ServiceType::Incinerator ? 2 : 1;

@@ -27,6 +27,28 @@ class Rendered(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.session.stop()
 
+    async def test_outpatient_clinics_have_no_beds_and_round_trip_with_hospital(self):
+        s = self.session
+        await s.city("new", 32)
+        await s.request("tool", {"action":"apply","name":"road","x1":8,"y1":16,"x2":24,"y2":16})
+        before = s.last_state["funds"]
+        await s.request("tool", {"action":"apply","name":"service","service":"health","clinic":True,"x1":10,"y1":15})
+        self.assertEqual(before-s.last_state["funds"],2500)
+        self.assertEqual(s.last_state["metrics"]["hospital_beds"],0)
+        self.assertEqual(s.last_state["metrics"]["clinic_visit_capacity"],200)
+        await s.request("input", {"events":[{"type":"key","key":"V"}]})
+        self.assertFalse(s.last_state["tools"]["clinic"])
+        before = s.last_state["funds"]
+        await s.request("tool", {"action":"apply","name":"service","service":"health","clinic":False,"x1":20,"y1":15})
+        self.assertEqual(before-s.last_state["funds"],6500)
+        self.assertEqual(s.last_state["metrics"]["hospital_beds"],400)
+        await s.request("input", {"events":[{"type":"key","key":"F5"},{"type":"key","key":"F9"}]})
+        sites=(await s.request("inspect",{"section":"facilities","limit":512}))["items"]
+        self.assertEqual(sum(f["clinic"] for f in sites),1)
+        self.assertEqual(s.last_state["metrics"]["clinic_visit_capacity"],200)
+        self.assertEqual(s.last_state["metrics"]["hospital_beds"],400)
+        self.assertEqual(s.last_state["validation_errors"],0)
+
     async def test_m55_guide_actions_settings_and_saved_preferences(self):
         s = self.session
         await s.city("new", 32)

@@ -1,6 +1,8 @@
 #include "src/persistence/GameSaveStore.hpp"
 #include "src/visualization/SaveBrowser.hpp"
 #include "src/visualization/PlayerSettings.hpp"
+#include "src/visualization/PerformanceCapture.hpp"
+#include "src/visualization/RealtimeTickSchedule.hpp"
 #include "src/visualization/CityGuideUI.hpp"
 #include <numeric>
 #include "src/gameplay/PipeTool.hpp"
@@ -73,6 +75,7 @@
 using namespace visualizer;
 
 int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
+  PerformanceCapture performance(environmentValue("URBAN_SIM_PERFORMANCE_CSV").value_or(""));
   WindowHost host(1280, 800);
   const auto preferencesPath=PlayerSettings::path(bridge!=nullptr);
   const bool graphicsProbe=argc>1 && (std::string(argv[1])=="--graphics-smoke" || std::string(argv[1])=="--graphics-benchmark");
@@ -315,6 +318,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   PowerSourceType selectedPowerSource = PowerSourceType::Generic;
   bool surfaceWaterTool = start.generateTerrain && !loadedAtStartup;
   bool sewageTreatmentTool = false;
+  bool clinicTool = true;
   auto treatmentMode = [&]() {
     return surfaceWaterTool && sewageTreatmentTool && selectedService == ServiceType::Sanitation;
   };
@@ -325,6 +329,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     ServicePlacementOptions options;
     options.surfaceWater = surfaceMode();
     options.sewageTreatment = treatmentMode();
+    options.clinic = selectedService == ServiceType::Health && clinicTool;
     if (selectedService == ServiceType::Power) options.powerSource = selectedPowerSource;
     return options;
   };
@@ -542,6 +547,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   }
 
   auto executeSimulationTick = [&]() {
+    const auto tickStarted = performance.enabled() ? PerformanceCapture::Clock::now() : PerformanceCapture::Clock::time_point{};
     if (bridge)
       ++bridge->revision;
     const auto previousMilestone = liveState.milestones.highestReached;
@@ -551,6 +557,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     const bool wasInDebt = liveState.treasuryDebt > 0;
     runSimulationTick(map, roads, store, population, facilities, districts,
                       liveState, funds);
+    if (performance.enabled()) performance.tick(PerformanceCapture::ms(PerformanceCapture::Clock::now() - tickStarted));
     sessionDirty = true;
     if (liveState.milestones.highestReached > previousMilestone) {
       showOnboarding = true;
@@ -968,7 +975,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                               /*runTraffic=*/false);
       const std::string built = selectedService == ServiceType::Power
         ? powerFacilityName(servicePlan.facility.powerSource)
-        : ServiceSystem::serviceTypeToString(selectedService, surfaceMode(), treatmentMode());
+        : (selectedService == ServiceType::Health ? (clinicTool ? "Clinic" : "Hospital") : ServiceSystem::serviceTypeToString(selectedService, surfaceMode(), treatmentMode(), clinicTool));
       notify(built + " BUILT $" + std::to_string(cost), true);
     } else {
       notify(servicePlan.error.empty() ? "SERVICE BUILD FAILED"
@@ -1408,7 +1415,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"zone_type", static_cast<int>(selectedZone)},
            {"service_type", static_cast<int>(selectedService)},
            {"power_source", ServiceSystem::powerSourceTypeToString(selectedPowerSource)},
-           {"surface_water", surfaceMode()},{"sewage_treatment", treatmentMode()},
+           {"surface_water", surfaceMode()},{"sewage_treatment", treatmentMode()}, {"clinic", selectedService == ServiceType::Health && clinicTool},
            {"archetype", static_cast<int>(selectedArchetype)}}},
          {"preview",
           {{"pipe",{{"valid",pipePlan.valid},{"cost",pipePlan.cost},{"changed",pipePlan.changed},{"error",pipePlan.error}}},
@@ -1464,6 +1471,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
            {"patient_demand", liveState.serviceSummary.patientDemand},
            {"hospital_beds_used", liveState.serviceSummary.hospitalBedsUsed},
            {"hospital_capacity_factor", liveState.serviceSummary.hospitalCapacityFactor},
+           {"clinic_visit_capacity",liveState.serviceSummary.clinicVisitCapacity},
+           {"clinic_visits_used",liveState.serviceSummary.clinicVisitsUsed},
+           {"outpatient_demand",liveState.serviceSummary.outpatientDemand},
+           {"critical_patient_demand",liveState.serviceSummary.criticalPatientDemand},
            {"power_coverage", liveState.serviceSummary.powerCoverage},
            {"water_coverage", liveState.serviceSummary.waterCoverage},
            {"sanitation_coverage", liveState.serviceSummary.sanitationCoverage},
@@ -1879,6 +1890,11 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
             selectedPowerSource = sources[static_cast<size_t>(found - sources.begin() + 1) % sources.size()];
             servicePlan = {};
             notify(powerPlantLabel(), true);
+          } else if (serviceToolActive && selectedService == ServiceType::Health) {
+            clinicTool = !clinicTool;
+            servicePlan = {};
+            notify(clinicTool ? "CLINIC $2500 + $12/TICK - 200 VISITS - NO BEDS - V FOR HOSPITAL" :
+                "HOSPITAL $6500 + $35/TICK - 400 BEDS - V FOR CLINIC", true);
           } else if (serviceToolActive && (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation)) {
             if (selectedService == ServiceType::Sanitation && surfaceWaterTool && !sewageTreatmentTool) {
               sewageTreatmentTool = true;
@@ -2504,6 +2520,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
     host.dimensions(windowWidth, windowHeight);
     if (!host.drawable()) {
+      performance.suspend();
       suspended = true;
       if (bridge)
         bridge->complete(state());
@@ -2527,11 +2544,13 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     const uint32_t nowMs = host.timeMs();
     renderer->frameTimeMs =
         bridge && bridge->deterministic ? bridge->animationTime() : nowMs;
-    if ((!bridge || !bridge->deterministic) && !showQuitDialog && !showSettings && !showSaveBrowser &&
-        !liveState.paused &&
-        (nowMs - liveState.lastTickMs) >= liveState.tickIntervalMs) {
-      executeSimulationTick();
-      liveState.lastTickMs = nowMs;
+    if (!bridge || !bridge->deterministic) {
+      const auto previousTickMs=liveState.lastTickMs;
+      if (realtimeTickDue(nowMs,liveState.tickIntervalMs,liveState.lastTickMs,
+          liveState.paused || showQuitDialog || showSettings || showSaveBrowser)) {
+        performance.late((nowMs - previousTickMs) - liveState.tickIntervalMs);
+        executeSimulationTick();
+      }
     }
 
     if(protectedSaves && liveState.tick>=lastAutosaveTick && liveState.tick-lastAutosaveTick>=200 && !showQuitDialog && !showSettings && !showSaveBrowser) {
@@ -2895,7 +2914,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     } else if (serviceToolActive) {
       activeToolLabel = selectedService == ServiceType::Power
         ? powerFacilityName(selectedPowerSource)
-        : ServiceSystem::serviceTypeToString(selectedService, surfaceMode(), treatmentMode());
+        : (selectedService == ServiceType::Health ? (clinicTool ? "Clinic" : "Hospital") : ServiceSystem::serviceTypeToString(selectedService, surfaceMode(), treatmentMode(), clinicTool));
     } else if (districtToolActive) {
       activeToolLabel = DistrictSystem::archetypeToString(selectedArchetype);
     }
@@ -3072,9 +3091,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
       if (selectedService == ServiceType::Power) {
         uiHoverText = powerPlantLabel() + " - V CYCLES SOURCE";
       } else {
-        uiHoverText = std::string(ServiceSystem::serviceTypeToString(selectedService, surfaceMode(), treatmentMode())) +
-            " $" + std::to_string(ServiceTool::constructionCost(selectedService, surfaceMode(), selectedPowerSource, treatmentMode())) +
-            " + $" + std::to_string(ServiceTool::operatingCostPerTick(selectedService, surfaceMode(), selectedPowerSource, treatmentMode())) + "/TICK";
+        uiHoverText = std::string((selectedService == ServiceType::Health ? (clinicTool ? "Clinic" : "Hospital") : ServiceSystem::serviceTypeToString(selectedService, surfaceMode(), treatmentMode(), clinicTool))) +
+            " $" + std::to_string(ServiceTool::constructionCost(selectedService, surfaceMode(), selectedPowerSource, treatmentMode(), clinicTool)) +
+            " + $" + std::to_string(ServiceTool::operatingCostPerTick(selectedService, surfaceMode(), selectedPowerSource, treatmentMode(), clinicTool)) + "/TICK";
         if (selectedService == ServiceType::Water || selectedService == ServiceType::Sanitation)
           uiHoverText += selectedService == ServiceType::Sanitation ? " - V INLAND/RAW/TREATED" : " - V INLAND/SHORE";
         else uiHoverText += " - CLICK BESIDE ROAD";
@@ -3288,6 +3307,9 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
 
     const bool presented =
         gpu.present(*renderer, bridge ? bridge->capturePath : "");
+    if (presented) performance.present(liveState.tick, liveState.tickIntervalMs,
+        population.getTotalPopulation(), windowWidth, windowHeight,
+        liveState.paused || showQuitDialog || showSettings || showSaveBrowser);
     if (bridge && presented) {
       ++bridge->frame;
       bridge->complete(state());

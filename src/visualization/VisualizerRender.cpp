@@ -259,13 +259,18 @@ void drawNormalTileDetail(DrawList *renderer, const CityMap &map,
       drawFilledRect(renderer, x + 2, y + 2, std::max(1, size - 4), std::max(1, size - 4), {214, 176, 72});
       break;
     }
-    const RGB color = serviceFacilityColor(facility.type);
+  const RGB color = facility.clinic ? RGB{187,222,214} : serviceFacilityColor(facility.type);
     const int margin = std::max(2, size / 6);
     drawFilledRect(renderer, x + margin + 2, y + margin + 2, size - margin * 2, size - margin * 2, {40, 43, 48}, 130);
     drawFilledRect(renderer, x + margin, y + margin, size - margin * 2, size - margin * 2, color);
-    if (size >= 12) {
-      drawFilledRect(renderer, x + size / 2 - 1, y + margin + 2, 3, size - margin * 2 - 4, {245, 245, 235});
-      drawFilledRect(renderer, x + margin + 2, y + size / 2 - 1, size - margin * 2 - 4, 3, {245, 245, 235});
+    if (size >= 12 && facility.type == ServiceType::Health) {
+      const RGB cross = facility.clinic ? RGB{50,132,112} : RGB{195,65,62};
+      drawFilledRect(renderer, x + size / 2 - 1, y + margin + 2, 3, size - margin * 2 - 4, cross);
+      drawFilledRect(renderer, x + margin + 2, y + size / 2 - 1, size - margin * 2 - 4, 3, cross);
+    } else if (size >= 20) {
+      // A generic medical cross made every utility look like a hospital.
+      const char* name = ServiceSystem::serviceTypeToString(facility.type);
+      drawText(renderer,x+size/2-3,y+size/2-6,std::string(1,name[0]),{32,42,36},1);
     }
     break;
   }
@@ -348,7 +353,7 @@ void drawIsometricObject(
 namespace {
 void drawIsometricFacility(DrawList* renderer, ScreenPoint top, int width, int height,
                            const ServiceFacility& facility) {
-  const RGB color = serviceFacilityColor(facility.type);
+  const RGB color = facility.clinic ? RGB{187,222,214} : serviceFacilityColor(facility.type);
   const int cx = top.x;
   const int baseY = top.y + height / 2;
   const int unit = std::max(1, width / 16);
@@ -383,7 +388,7 @@ void drawIsometricFacility(DrawList* renderer, ScreenPoint top, int width, int h
                         std::max(4, height / 2), color, std::max(8, height / 2));
     return;
   }
-  const int lift = facility.type == ServiceType::Health ? height * 3 / 2 : height;
+  const int lift = facility.type == ServiceType::Health ? (facility.clinic ? std::max(3, height / 2) : height * 3 / 2) : height;
   drawIsometricObject(renderer, top, width, height, color, lift);
   const int roofY = baseY - lift;
   if (width < 22) return;

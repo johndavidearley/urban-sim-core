@@ -3,6 +3,48 @@
 #include "src/systems/ServiceSystem.hpp"
 #include "src/systems/PlayableCityTick.hpp"
 
+TEST(ServiceSystemTests, ClinicCapacityAndCacheTrackHealthcareSubtype) {
+  CityMap map({12,12}); RoadNetwork roads(map);
+  roads.buildRoad({4,4},{5,4});
+  ServiceFacility clinic{ServiceType::Health,{4,3},18,1.f}; clinic.clinic=true;
+  ServiceFacility hospital{ServiceType::Health,{5,3},48,1.f};
+  std::vector<ServiceFacility> facilities{clinic,hospital};
+  ServiceCoverageCache cache;
+  ServiceSystem::buildCache(roads,facilities,cache);
+  EXPECT_FLOAT_EQ(cache.hospitalBeds,400.f);
+  EXPECT_FLOAT_EQ(cache.clinicVisitCapacity,200.f);
+  facilities[0].clinic=false;
+  EXPECT_FALSE(ServiceSystem::isCacheValid(roads,facilities,cache));
+  ServiceSystem::buildCache(roads,facilities,cache);
+  EXPECT_FLOAT_EQ(cache.hospitalBeds,800.f);
+  EXPECT_FLOAT_EQ(cache.clinicVisitCapacity,0.f);
+  facilities[0].clinic=true; facilities[0].quality=.5f;
+  ServiceSystem::buildCache(roads,facilities,cache);
+  EXPECT_FLOAT_EQ(cache.hospitalBeds,400.f);
+  EXPECT_FLOAT_EQ(cache.clinicVisitCapacity,100.f);
+}
+
+TEST(ServiceSystemTests, ClinicsDivertNoncriticalVisitsButNeverProvideHospitalBeds) {
+  ServiceCoverageSummary summary;
+  summary.clinicVisitCapacity=800;
+  summary.clinicCoverage=1;
+  summary.hospitalBeds=400;
+  ServiceSystem::applyCivicCapacity(summary,10000,.32f);
+  EXPECT_NEAR(summary.outpatientDemand,480.f,.001f);
+  EXPECT_NEAR(summary.clinicVisitsUsed,480.f,.001f);
+  EXPECT_NEAR(summary.criticalPatientDemand,160.f,.001f);
+  EXPECT_NEAR(summary.patientDemand,160.f,.001f);
+  EXPECT_FLOAT_EQ(summary.hospitalBeds,400.f);
+  summary.hospitalBeds=0;
+  ServiceSystem::applyCivicCapacity(summary,10000,.32f);
+  EXPECT_NEAR(summary.patientDemand,160.f,.001f);
+  EXPECT_FLOAT_EQ(summary.hospitalBedsUsed,0.f);
+  EXPECT_FLOAT_EQ(summary.hospitalCapacityFactor,0.f);
+  summary.clinicVisitCapacity=0;
+  ServiceSystem::applyCivicCapacity(summary,10000,.32f);
+  EXPECT_NEAR(summary.patientDemand,640.f,.001f);
+}
+
 TEST(ServiceSystemTests, CoverageUsesRoadReachability) {
   CityMap map({12, 12});
   RoadNetwork roads(map);

@@ -1,7 +1,8 @@
 # M55 — Player journey and onboarding
 
-Status: **in progress** (November 12, 2026). This is local implementation and
-acceptance evidence, not a Steam release approval or Windows shipping claim.
+Status: **verified locally on Windows** (November 14, 2026). Player-journey,
+display/DPI and restart acceptance pass. This is not Steam release approval;
+M56 reliability/performance and M57 consumer packaging remain separate gates.
 
 ## Implemented
 
@@ -131,10 +132,73 @@ construction decisions, native scenario, saves and per-tick budget history.
 - The 10k checkpoint, 100-tick operating window, exact continuation and actual
   save/quit/relaunch/load/resume check pass locally.
 
-M55 stays in progress until those items have concrete evidence. M56 reliability
+The historical display gaps above are closed by the November 14 evidence below. M56 reliability
 soaks/performance and M57 consumer Steam packaging remain separate gates.
 
 ## Display acceptance on the target desktop
+
+### November 14 Windows baseline
+
+Native MSVC x64 Release display capture reaches exact 1280×720 and
+1920×1080 client/framebuffer sizes. Borderless mode reaches 2560×1440.
+All 13 captures report zero Vulkan validation errors. Evidence is retained in
+`build-windows/m55-display-baseline/20261114-082706-ee91ee8d/`, including
+`display-result.json`, screenshots and recorded inputs. The executable SHA-256
+is `6800557d0568e3a4caa60299024c2934ddfde80439e73f785b30d9763de347e9`.
+
+The baseline game window reports **96 DPI**, so this is 100% scaling evidence; the
+requested 150% check correctly fails. Settings, controls, budgets, both HUD text
+modes and borderless captures were visually reviewed. Modal panels and their
+controls fit at both requested resolutions. Review found that Transit/Alerts
+buttons obscure service statistics in the detailed HUD; the final build moves
+those readouts into unused space above the income totals.
+
+This first capture uses the checkout's small, 32-resident saved city, not the
+historical earned 10k checkpoint, which is absent from this checkout. The fresh
+native Windows journey and final earned-city captures below supersede this
+baseline for acceptance.
+
+### November 14 Windows acceptance
+
+The fresh, normal-money native Windows journey passes in
+`build-windows/m55-native-journey/20261114-082811-a7c373a4/`. It reaches
+10,036 residents at tick 17,010 with $3,870,100 and no debt. All 100 operating
+ticks from 17,011 through 17,110 have nonnegative cash flow; minimum surplus is
+$518. The sustainable checkpoint has 10,066 residents and full power/water
+supply. Sewage failure/recovery is exercised. Native reload and CLI continuation
+match the uninterrupted city exactly for 100 ticks. The final city has 10,207
+residents at tick 17,210. `build-identity.json`, `runner.py`, `money.csv`,
+`decisions.json`, checkpoints, `continuation.json` and `result.json` retain the
+inputs, source/build identity and results. This run uses the baseline executable
+hash above; simulation code is unchanged by the subsequent HUD-only repair.
+
+Final corrected playtest executable SHA-256:
+`02fa8cc11a605641b3a747be956c5cc467af7c693cd4d023cf479ad9fab742c8`.
+Strict MSVC x64 Release and all **764 C++ tests** pass. The two targeted native
+guide/settings regressions pass at 150% desktop scaling, including preference
+persistence and paused input isolation (`build-windows/m55-guide-final.log`).
+
+After the user selected 150% desktop scaling, final display acceptance on the
+earned 10k city passes in
+`build-windows/m55-display-final/20261114-084714-c6dde338/`. Every one of the
+13 captures reports **144 DPI through GetDpiForWindow**, exact 1280×720 and
+1920×1080 client/framebuffer dimensions, or 2560×1440 for borderless mode.
+All report zero Vulkan validation errors. Agent visual review of all 13 PNGs
+finds readable settings/controls/budget panels, both text modes, usable controls
+and no recurrence of the obscured service statistics. This records an agent
+review of actual captures, not an invented human sign-off or outside-player test.
+
+Native save-and-quit/relaunch/load/resume also passes on the corrected build:
+`build-windows/m55-restart-final/20261114-084730-019f736e/restart-result.json`.
+The first process exits with code 0; the new process preserves saved funds/tick
+and advances to tick 17,112 with 10,067 residents. The unchanged checkpoint
+SHA-256 is `3b6a5a754bea40f02aaefe7084efbea19a81318365c3d5aa43469e90e37d0708`.
+
+M55 is locally verified on this Windows desktop. Hosted CI, the separately
+observed Python 3.11 cancellation-unit-test failure, minimum-machine FPS,
+packaged soaks, SDK-free consumer/Steam acceptance and outside-player testing
+remain under M56–M58; none is claimed by this sign-off. Local evidence lives
+under the ignored build directory and must be archived before cleaning builds.
 
 `playtest/examples/m55_display_check.py` records the actual window/framebuffer
 sizes, executable hash, Vulkan validation count, and screenshots of settings,

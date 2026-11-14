@@ -1,5 +1,71 @@
 # M56 — Local candidate qualification
 
+## November 14 Windows work
+
+M56 remains **in progress**. M55's Windows display/DPI work is now locally
+verified; the historical open-display note at the end of this document is
+superseded. Current Windows evidence is retained under `build-windows/`.
+
+- Fixed bridge cancellation on Python 3.11 by keeping I/O in the requesting
+  task under AnyIO timeout scopes. All seven Python tests pass and the original
+  cancellation regression passes 30 consecutive runs.
+- Added optional `URBAN_SIM_PERFORMANCE_CSV` capture to the actual application,
+  recording buffered present-to-present wall times, simulation time and
+  scheduler lateness. Disabled by default; no GPU-timestamp claim is made.
+- The two-minute realtime probe uses the earned 96×96/10k city at actual
+  1920×1080, native 1X (700 ms), after a ten-second warmup. It makes no bridge
+  status requests during the sample. On Ryzen 5 2600, GTX 1660 Ti,
+  approximately 16 GiB RAM, driver `32.0.16.2124`, mean throughput is 47.2 FPS,
+  p95 frame time **37.3 ms**, p99 216.7 ms, and p95 simulation tick 219.2 ms.
+  The **33.3 ms p95 gate fails**. Of 171.4 expected normal-speed ticks, 169
+  complete in 120 seconds. No minimum-hardware acceptance or accumulating-
+  backlog pass is claimed. Raw rows/result:
+  `build-windows/m56-performance/20261114-085435-frames.csv` and
+  `20261114-085435-16c9d0f3/performance-result.json` in that directory.
+  Hardware JSON files and `m56-performance.log` sit in `build-windows/`.
+- During qualification the user requested neighborhood outpatient clinics and
+  a central hospital. This is an explicitly requested gameplay change, described
+  in [HEALTHCARE.md](HEALTHCARE.md). The performance baseline above predates
+  that change. The full **58-case rendered suite passes in one invocation**
+  (`m56-full-rendered.log`, 404.4 seconds) on clinic executable
+  `c7315b6aef66381f268f9492c1401e72f9b540f6c8c1dc9f8a4eaea5591fd9fb`.
+- Fixed realtime schedule drift by advancing the previous deadline rather than
+  resetting it to a late frame. Paused/modal wall time is discarded and catchup
+  remains bounded to one simulation tick per frame. Three unit regressions cover
+  cadence, pause/catchup and uint32 millisecond rollover.
+- The phase-corrected clinic build reports **171 completed ticks vs 171.4
+  expected** in 120 seconds, with maximum scheduler lateness 28 ms. Mean
+  throughput is 47.4 FPS, p95 frame time **37.15 ms**, p99 211.9 ms and p95 tick
+  time 213.2 ms. Scheduling cadence improves, but the frame-time gate still
+  **fails**. Evidence: `build-windows/m56-performance-final/20261114-093005-frames.csv`
+  and `20261114-093005-42cd2e43/performance-result.json` under that root.
+  Executable SHA-256 is
+  `26cf954982f0a8756475f2a9450aa168f037b2ff601cc51cd6d88111e4842936`.
+- Protected clinic-city corruption/backup/autosave/restart acceptance passes in
+  `build-windows/m56-clinic-recovery/20261114-092835-33657d42/` and
+  `20261114-092929-a3c12140/`. Named-save/browser, exact backup selection,
+  overwrite/unsaved-load confirmation, map-size selection and realtime modal
+  isolation pass in `build-windows/m56-clinic-browser/20261114-092933-79043f7e/`.
+  These runs use the phase-corrected executable above.
+- Final marker-only build also fixes the top-down generic medical cross on
+  nonmedical services. Strict Release, **772 C++ tests**, seven Python tests,
+  nine packaging tests and all **40 graphics probes** pass. Final healthcare
+  paid continuation, subtype save/load and ten-tick native/CLI exact continuation
+  pass; [healthcare evidence](HEALTHCARE.md) records the final hash. The full
+  58-case run above predates only scheduling and marker changes; final targeted
+  regressions and realtime probes retain their own logs/identities.
+- A real static-runtime local review package is staged as
+  `build-windows/UrbanSimCore-0.1.0-m56-outpatient.1-windows-x64.zip` (SHA-256
+  `d46f2e04291e92e9397e02ece9f3ccd86e1312800726624478a2e1efd72b82ca`).
+  PE audit and packaged launcher `--verify-package` pass. It is explicitly a
+  dirty-source internal review candidate; public distribution remains false.
+  No clean-consumer-PC, Steam or two-hour packaged-soak pass is claimed.
+
+Fresh hosted CI/leak qualification, the measured performance gate and the three
+two-hour packaged sessions remain open. Logs are local ignored build artifacts
+and must be archived before cleaning the build directory. The November 13 Mac
+results below retain their own candidate identity and sanitizer scope.
+
 November 13, 2026. The source is the existing dirty working tree; this is local
 qualification, not a hosted CI run or a Windows shipping approval. No gameplay
 source changes were required; all checks below completed successfully.

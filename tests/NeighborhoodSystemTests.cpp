@@ -28,6 +28,27 @@ struct NeighborhoodCity {
 };
 } // namespace
 
+TEST(NeighborhoodSystem, ClinicsTreatNoncriticalCasesWithoutReplacingHospitalCare) {
+  NeighborhoodCity city;
+  ServiceFacility clinic{ServiceType::Health,{3,3},18,1.f}; clinic.clinic=true;
+  ServiceSystem::buildCache(city.roads,{clinic},city.cache);
+  EXPECT_FLOAT_EQ(city.cache.hospitalBeds,0.f);
+  NeighborhoodSystem::evaluate(city.map,city.roads,city.store,city.cache,0.f,.5f,100.f,0.f);
+  const float clinicOnly=city.store.getBuilding(city.near)->illnessRate;
+  EXPECT_LT(clinicOnly,HealthSystem::unmitigatedRate(.5f,0.f,0.f));
+  ServiceFacility hospital{ServiceType::Health,{3,3},48,1.f};
+  ServiceSystem::buildCache(city.roads,{clinic,hospital},city.cache);
+  NeighborhoodSystem::evaluate(city.map,city.roads,city.store,city.cache,0.f,.5f,100.f,0.f);
+  EXPECT_LT(city.store.getBuilding(city.near)->illnessRate,clinicOnly);
+  EXPECT_FLOAT_EQ(city.cache.hospitalBeds,400.f);
+  city.roads.removeRoad({12,3},{13,3});
+  ServiceSystem::buildCache(city.roads,{clinic,hospital},city.cache);
+  NeighborhoodSystem::evaluate(city.map,city.roads,city.store,city.cache,0.f,.5f,100.f,0.f);
+  EXPECT_FLOAT_EQ(city.store.getBuilding(city.far)->illnessRate,HealthSystem::unmitigatedRate(.5f,0.f,0.f));
+}
+
+
+
 TEST(NeighborhoodSystem,
      PoliceHospitalAndSewageImproveOnlyReachableNeighborhood) {
   NeighborhoodCity city;

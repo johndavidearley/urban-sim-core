@@ -33,6 +33,12 @@ until normal backup rotation reclaims it. Legacy working-directory saves are
 read only as the initial import when no managed City/Autosave slot exists.
 The original files are not deleted by that import.
 
+The November 14 healthcare build adds an optional `clinic` flag to Health
+facilities. Missing/false preserves a legacy hospital and its stored range;
+true preserves an outpatient clinic with no beds. Old builds do not implement
+this distinction, so do not downgrade a clinic city without retaining an older
+backup. [Healthcare behavior and acceptance](HEALTHCARE.md) records this change.
+
 Newer or unknown schemas are rejected with an error; do not open a newer save
 in an older build and expect downgrade support. Early Access updates may require
 save migrations. Until a release declares and tests a migration, compatibility

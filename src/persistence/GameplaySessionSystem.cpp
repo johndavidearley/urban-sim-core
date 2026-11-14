@@ -277,6 +277,8 @@ bool GameplaySessionSystem::save(
 
   json facilities = json::array();
   for (const ServiceFacility& facility : session.facilities) {
+    if (facility.clinic && facility.type != ServiceType::Health)
+      return fail(errorMessage, "clinic requires Health");
     if (facility.sewageTreatment && (!facility.surfaceWater || facility.type != ServiceType::Sanitation))
       return fail(errorMessage, "invalid sewage treatment facility");
     if (facility.landfillCapacity <= 0 || facility.landfillCapacity > ServiceFacility::kLandfillCapacity
@@ -299,6 +301,9 @@ bool GameplaySessionSystem::save(
     });
     if (facility.surfaceWater) facilities.back()["surfaceWater"] = true;
     if (facility.sewageTreatment) facilities.back()["sewageTreatment"] = true;
+    if (facility.clinic) {
+      facilities.back()["clinic"] = true;
+    }
   }
 
   json burning = json::array();
@@ -720,6 +725,9 @@ bool GameplaySessionSystem::load(
       facility.waterSupplyUnits = item.value("waterSupplyUnits", 100.0f);
       facility.surfaceWater = item.value("surfaceWater", false);
       facility.sewageTreatment = item.value("sewageTreatment", false);
+      facility.clinic = item.value("clinic", false);
+      if (facility.clinic && facility.type != ServiceType::Health)
+        throw std::runtime_error("clinic requires Health");
       if (facility.sewageTreatment && (!facility.surfaceWater || facility.type != ServiceType::Sanitation))
         return fail(errorMessage, "invalid sewage treatment facility");
       // Saves before M46 have no capacity: those sites held 80,000. Keep

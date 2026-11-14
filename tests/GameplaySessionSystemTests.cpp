@@ -754,6 +754,34 @@ TEST(GameplaySessionSystemTests,
   std::filesystem::remove(path.string() + ".city.json");
 }
 
+TEST(GameplaySessionSystemTests, ClinicsRoundTripAndLegacyHospitalsRemainUnchanged) {
+  CityMap map({16,16}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
+  roads.buildRoad({2,3},{3,3});
+  GameplaySessionState session;
+  session.facilities = {{ServiceType::Health,{2,2},18,1.f}, {ServiceType::Health,{3,2},48,1.f}};
+  session.facilities[0].clinic = true;
+  const auto path = std::filesystem::temp_directory_path()/"urban_clinic_session.json";
+  ASSERT_TRUE(GameplaySessionSystem::save(path.string(),map,roads,store,people,session));
+  GameplaySessionState loaded;
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  ASSERT_EQ(loaded.facilities.size(),2u);
+  EXPECT_TRUE(loaded.facilities[0].clinic);
+  EXPECT_FALSE(loaded.facilities[1].clinic);
+  EXPECT_EQ(loaded.facilities[1].maxTravelDistance,48);
+  nlohmann::json json; {std::ifstream input(path); input >> json;}
+  json["facilities"][0].erase("clinic");
+  {std::ofstream output(path); output << json;}
+  ASSERT_TRUE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  EXPECT_FALSE(loaded.facilities[0].clinic);
+  EXPECT_EQ(loaded.facilities[0].maxTravelDistance,18);
+  json["facilities"][0]["clinic"] = true;
+  json["facilities"][0]["type"] = static_cast<int>(ServiceType::Fire);
+  {std::ofstream output(path); output << json;}
+  EXPECT_FALSE(GameplaySessionSystem::load(path.string(),map,roads,store,people,loaded));
+  std::filesystem::remove(path);
+  std::filesystem::remove(path.string()+".city.json");
+}
+
 TEST(GameplaySessionSystemTests, IncineratorFundingAndLegacyServicePolicyRoundTrip) {
   CityMap map({16,16}); RoadNetwork roads(map); EntityStore store; PopulationStore people;
   roads.buildRoad({2,3}, {3,3});

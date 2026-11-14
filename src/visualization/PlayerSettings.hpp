@@ -87,7 +87,7 @@ inline void drawSettings(DrawList* draw,int width,int height,const PlayerSetting
     const std::array<const char*,16> lines{{
       "R ROADS: drag a street; A type, L layout, O snap.",
       "Z ZONING: repeat to choose homes, shops or industry.",
-      "S SERVICES: repeat to choose power, water, sanitation.",
+      "S SERVICES: repeat; Health V: clinic / hospital.",
       "X PIPES: combined trenches; repeat for water/sewer.",
       "Pipe mode: L sewer lift, A booster, V lay/remove.",
       "W cycles wind, currents and utility diagnostics.",

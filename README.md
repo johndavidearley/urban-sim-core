@@ -138,6 +138,12 @@ Controls:
   Health, Education, Power, Water, Sanitation, Garbage, Recycling, Cemetery,
   Crematorium, and Incinerator. Incinerators burn residual garbage for power
   (up to 6 MW)
+- With **Health** selected, **V** switches between a neighborhood **Clinic**
+  ($2,500 + $12/tick, up to 200 noncritical visits, no inpatient beds) and a
+  central **Hospital** ($6,500 + $35/tick, 400 beds). Clinics have local road
+  reach; new hospitals have wider road reach. Serious cases and unserved
+  outpatient demand still need a reachable hospital. Existing saved hospitals
+  keep their recorded range. Both use the Health funding slider.
 - `P`: activate the district tool; press repeatedly to cycle General,
   Industrial, and Tech Hub archetypes. Left-drag paints a policy rectangle
   (free). Click an existing district to select it; ARCH cycles its archetype
