@@ -170,3 +170,50 @@ PYTHONPATH=playtest URBAN_SIM_PLAYTEST_EXECUTABLE=build-strict/bin/UrbanSimCore-
 
 On macOS, use the configured Vulkan/MoltenVK environment and allow native windows
 for the rendered checks.
+
+## Moving city activity
+
+The playable renderer displays bounded cars, freight trucks and sidewalk
+pedestrians in both 3D projections and the top-down view. Conventional surface
+streets use connected road paths; special roads use the same Bezier centerlines
+and elevation profiles as road rendering. Vehicle bodies turn with the road,
+3D depth testing keeps them behind buildings, and they do not intercept tile or
+building inspection.
+
+Cars represent the latest non-freight road load (commuters and visitors), trucks
+use freight-loaded connections, and sidewalk activity originates near occupied
+buildings. These are visual representatives of aggregate activity, rather than
+one simulated person or vehicle per resident/trip. The renderer does not change
+traffic assignment, road capacity, budgets, population or persistence. On regular
+streets, representative paths continue through connected edges with the same
+load type. Route endpoints recycle representatives; there is no physical vehicle
+collision, signal or parking simulation. Buses and trains remain separate transit
+infrastructure rather than moving vehicle types in this pass.
+
+Counts are capped at 192 cars, 64 trucks and 96 pedestrians. Route data refreshes
+when simulation tick, topology, road policy or building mutations change;
+per-frame work advances and draws the bounded representatives. Congestion slows
+vehicles without changing their position instantly when a measurement refreshes.
+The animation clock follows play/pause and speed settings and discards long
+wall-clock gaps. Traffic state is rebuilt from the city after loading, with no
+new save-format fields. Empty cities do not acquire invented inhabitants or
+vehicle demand. Sidewalk representatives are not generated on highways or ramps.
+
+Playtest state exposes `activity` counts, animation seconds and a bounded position
+sample. Use the paced native walkthrough with `--check-activity` on a developed
+mixed city to require cars/trucks/pedestrians, movement across frames and exact
+position freezing while paused. This is a functional/visual check; bridge-driven
+walkthrough timing is not an uninstrumented performance measurement.
+
+
+### Utilities following curved roads
+
+Complete water/sewer runs under a surface road alignment now draw on that
+alignment's saved continuous geometry in both 3D and top-down utility overlays.
+Grid branches attach to the displayed trunk. Water and sewer remain separately
+colored. This is a rendering projection of existing pipe cells, without new
+pipes, pressure changes, treasury charges, simulation edges or save fields.
+A missing pipe causes that run to display the actual tile network, so a smooth
+stroke cannot hide a break. Elevated roads do not project buried utilities onto
+their deck. Geometry tests cover curved runs, independent water/sewer coverage,
+missing sections and preservation of utility state.

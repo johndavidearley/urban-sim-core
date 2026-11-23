@@ -13,6 +13,10 @@ int main(int argc, char *argv[]) {
         if (value != "realtime" && value != "deterministic")
           throw std::runtime_error("Unknown time mode");
         bridge.deterministic = value == "deterministic";
+      } else if (option == "--terrain-profile") {
+        if (value != "journey")
+          throw std::runtime_error("Unknown terrain profile");
+        bridge.journeyTerrain = true;
       } else {
         size_t used = 0;
         const auto seed = std::stoull(value, &used);

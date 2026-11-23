@@ -35,6 +35,34 @@ TEST(TerrainGeneratorTests, SameSeedProducesIdenticalTerrain) {
   EXPECT_EQ(statsA.terrainTiles, statsB.terrainTiles);
 }
 
+TEST(TerrainGeneratorTests, BuildAreaKeepsBaseGradeAndDryBuildableTiles) {
+  CityMap map({96, 96});
+  TerrainParams params;
+  params.buildArea = TerrainBuildArea{{4, 34}, {70, 66}};
+  const auto stats = TerrainGenerator::generate(map, 42, params);
+
+  EXPECT_EQ(stats.waterTiles, 1658u);
+  EXPECT_EQ(stats.terrainTiles, 1105u);
+  for (int y = 0; y < 96; ++y) {
+    const float baseGrade = 8.f * (1.f - float(y) / 95.f) + 1.f;
+    for (int x = 0; x < 96; ++x) {
+      const Coord pos{x, y};
+      const auto& cell = map.environment(pos);
+      const auto type = map.getTile(pos).type;
+      if (params.buildArea->contains(pos)) {
+        ASSERT_EQ(type, 0) << x << ", " << y;
+        ASSERT_EQ(cell.water, 0.) << x << ", " << y;
+        ASSERT_FLOAT_EQ(cell.terrainMeters, baseGrade) << x << ", " << y;
+      } else if (type == 2) {
+        ASSERT_GT(cell.water, 0.) << x << ", " << y;
+        ASSERT_LT(cell.bedMeters, cell.terrainMeters) << x << ", " << y;
+      } else if (type == 1) {
+        ASSERT_GT(cell.terrainMeters, baseGrade + 11.f) << x << ", " << y;
+      }
+    }
+  }
+}
+
 TEST(TerrainGeneratorTests, DifferentSeedsProduceDifferentTerrain) {
   CityMap mapA({48, 48});
   CityMap mapB({48, 48});
@@ -134,9 +162,15 @@ TEST(TerrainGeneratorTests, WaterIsNotZonedOrBuilt) {
 
 TEST(TerrainGeneratorTests, RiverFeedsOneConnectedLakeWithUsableShorelines) {
   for (int size : {32, 64, 96}) {
-    for (uint32_t seed : {1u, 42u, 555u}) {
+    std::vector<std::pair<uint32_t, TerrainParams>> cases{{1u, {}}, {42u, {}}, {555u, {}}};
+    if (size == 96) {
+      TerrainParams journey;
+      journey.buildArea = TerrainBuildArea{{4, 34}, {70, 66}};
+      cases.emplace_back(42u, journey);
+    }
+    for (const auto& [seed, params] : cases) {
       CityMap map({size, size});
-      const auto stats = TerrainGenerator::generate(map, seed);
+      const auto stats = TerrainGenerator::generate(map, seed, params);
       std::vector<Coord> pending;
       std::vector<bool> seen(static_cast<size_t>(size * size), false);
       bool top = false, bottom = false;

@@ -15,7 +15,7 @@
 namespace visualizer {
 
 constexpr int kHudPanelWidth = 390;
-constexpr int kHudPanelHeight = 370;
+constexpr int kHudPanelHeight = 326;
 constexpr int kDistrictPanelX = 14;
 constexpr int kDistrictPanelY = 308;
 constexpr int kDistrictPanelWidth = 390;

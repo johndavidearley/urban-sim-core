@@ -1,16 +1,27 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 #include "src/world/CityMap.hpp"
 
-// Tuning for procedural terrain. Fractions are share-of-map targets; the
-// generator hits them exactly (modulo integer rounding). Connected river/lake
-// shorelines follow a smoothed height field; rough terrain takes the high ground.
+struct TerrainBuildArea {
+  Coord min;
+  Coord max;  // Inclusive tile coordinates
+
+  bool contains(Coord pos) const {
+    return pos.x >= min.x && pos.x <= max.x &&
+           pos.y >= min.y && pos.y <= max.y;
+  }
+};
+
+// Fractions are share-of-map targets, rounded down and limited by available
+// tiles. River/lake shorelines and hills follow a smoothed height field.
 struct TerrainParams {
   float waterFraction = 0.18f;    // share of tiles marked water (type 2)
   float terrainFraction = 0.12f;  // share marked rough terrain/hills (type 1)
   int smoothingPasses = 4;        // box-blur passes; higher = larger, smoother regions
+  std::optional<TerrainBuildArea> buildArea;  // Keep the base grade and buildable tile type.
 };
 
 struct TerrainStats {

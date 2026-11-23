@@ -101,3 +101,111 @@ TEST(BuildingModels3D, ArchitecturalFacesRemainFiniteNearThePerspectiveCamera) {
     }
   }
 }
+
+#include "src/visualization/CityActivityRender.hpp"
+
+TEST(CityActivity, EmptyCityHasNoInventedPeopleOrTraffic) {
+  CityMap map({16,16});RoadNetwork roads(map);EntityStore store;CityActivity activity;
+  roads.buildRoad({2,6},{3,6});
+  activity.refresh(roads,store,0);
+  EXPECT_TRUE(activity.trips().empty());
+}
+
+TEST(CityActivity, LoadedConnectedRoadsMovePauseAndClearWithoutSimulationMutation) {
+  CityMap map({16,16});RoadNetwork roads(map);EntityStore store;CityActivity activity;
+  for(int x=2;x<10;++x) {
+    roads.buildRoad({x,6},{x+1,6});roads.updateCongestion({x,6},{x+1,6},64);
+    roads.addFreightLoad({x,6},{x+1,6},2);
+  }
+  const auto home=store.createBuilding(BuildingType::Residential,{4,5},100);
+  store.getBuilding(home)->occupancy=75;
+  activity.refresh(roads,store,0);
+  bool car=false,truck=false,person=false;
+  for(const auto& trip:activity.trips()) {
+    car|=trip.kind==CityActivity::Kind::Car;truck|=trip.kind==CityActivity::Kind::Truck;
+    person|=trip.kind==CityActivity::Kind::Pedestrian;
+    for(size_t i=1;i<trip.path.size();++i) EXPECT_TRUE(roads.hasRoad(trip.path[i-1],trip.path[i]));
+  }
+  EXPECT_TRUE(car);EXPECT_TRUE(truck);EXPECT_TRUE(person);
+  const auto before=activity.actors();activity.advance(1000,false);activity.advance(1200,false);
+  const auto moving=activity.actors();ASSERT_EQ(before.size(),moving.size());
+  EXPECT_NE(before[0].x,moving[0].x);
+  const auto firstTrip=activity.trips().front();
+  roads.updateCongestion(firstTrip.path[0],firstTrip.path[1],10);
+  activity.refresh(roads,store,1);
+  EXPECT_NE(firstTrip.speed,activity.trips().front().speed);
+  EXPECT_NEAR(moving[0].x,activity.actors()[0].x,.0001f);
+  const auto paused=activity.actors();
+  activity.advance(1400,true);EXPECT_EQ(paused[0].x,activity.actors()[0].x);
+  EXPECT_EQ(store.getBuilding(home)->occupancy,75);
+  EXPECT_FLOAT_EQ(roads.getFreightLoad({2,6},{3,6}),2);
+  roads.clear();activity.refresh(roads,store,0);EXPECT_TRUE(activity.actors().empty());
+}
+
+TEST(CityActivity, VehicleRepresentativesRespectOneWayAndDoNotInterceptPicking) {
+  CityMap map({16,16});RoadNetwork roads(map);EntityStore store;CityActivity activity;
+  for(int x=2;x<10;++x) {
+    roads.buildRoad({x,6},{x+1,6});roads.setOneWay({x,6},{x+1,6},true);
+    roads.updateCongestion({x,6},{x+1,6},1000);
+  }
+  activity.refresh(roads,store,0);
+  size_t count=0;
+  for(const auto& trip:activity.trips()) {
+    if(trip.kind==CityActivity::Kind::Pedestrian) continue;
+    ++count;
+    for(size_t i=1;i<trip.path.size();++i) EXPECT_TRUE(roads.canTravel(trip.path[i-1],trip.path[i]));
+  }
+  EXPECT_LE(count,CityActivity::maxCars+CityActivity::maxTrucks);
+  DrawList list;ScenePicking3D picking;list.scenePicking=&picking;
+  Camera3D camera;camera.originX=100;camera.originY=100;
+  drawCityActivity3D(&list,camera,activity.actors());
+  EXPECT_EQ(list.scenePicking,&picking);
+  EXPECT_FALSE(list.vertices.empty());
+  EXPECT_EQ(picking.triangleCount(),0u);
+}
+
+TEST(CityActivity, CapsDenseTrafficAndNeverRoutesTrucksOverCommuterOnlyEdges) {
+  CityMap map({128,128});RoadNetwork roads(map);EntityStore store;CityActivity activity;
+  for(int x=1;x<110;++x) {
+    roads.buildRoad({x,6},{x+1,6});roads.updateCongestion({x,6},{x+1,6},1000);
+    if(x<80) roads.addFreightLoad({x,6},{x+1,6},2);
+  }
+  activity.refresh(roads,store,0);
+  size_t cars=0,trucks=0;
+  for(const auto& trip:activity.trips()) {
+    if(trip.kind==CityActivity::Kind::Car) ++cars;
+    if(trip.kind==CityActivity::Kind::Truck) {
+      ++trucks;
+      for(size_t i=1;i<trip.path.size();++i) EXPECT_GT(roads.getFreightLoad(trip.path[i-1],trip.path[i]),0);
+    }
+  }
+  EXPECT_EQ(cars,CityActivity::maxCars);EXPECT_EQ(trucks,CityActivity::maxTrucks);
+  CityActivity repeat;repeat.refresh(roads,store,0);
+  const auto a=activity.actors(),b=repeat.actors();ASSERT_EQ(a.size(),b.size());
+  for(size_t i=0;i<a.size();++i) {EXPECT_EQ(a[i].x,b[i].x);EXPECT_EQ(a[i].z,b[i].z);}
+}
+
+TEST(CityActivity, SpecialRoadsUseRenderedCurvesAndDeckHeight) {
+  CityMap map({16,16});RoadNetwork roads(map);EntityStore store;CityActivity activity;
+  ASSERT_TRUE(roads.buildSeparatedRoad({2,6},{10,6},8,1));
+  roads.updateCongestion({2,6},{10,6},20);
+  RoadAlignment alignment;alignment.path={{2,6},{10,6}};alignment.elevation=1;
+  alignment.roadClass=RoadClass::Highway;
+  RoadBezier curve;curve.points={glm::vec2{2.5f,6.5f},glm::vec2{4,3},glm::vec2{8,10},glm::vec2{10.5f,6.5f}};
+  alignment.curves.push_back(curve);roads.addAlignment(alignment);
+  activity.refresh(roads,store,0);
+  ASSERT_EQ(activity.trips().size(),1u);
+  EXPECT_FALSE(activity.trips()[0].geometry.empty());
+  const auto actor=activity.actors()[0];
+  EXPECT_GE(actor.x,2.f);EXPECT_LE(actor.x,11.f);
+  EXPECT_GT(actor.y,0);EXPECT_LE(actor.y,.8f);
+  EXPECT_NE(actor.dz,0);
+}
+
+TEST(CityActivity, HighwayDoesNotInventSidewalkWalkers) {
+  CityMap map({16,16});RoadNetwork roads(map);EntityStore store;CityActivity activity;
+  roads.buildRoad({2,6},{3,6});roads.setRoadClass({2,6},{3,6},RoadClass::Highway);
+  const auto home=store.createBuilding(BuildingType::Residential,{2,5},100);
+  store.getBuilding(home)->occupancy=75;
+  activity.refresh(roads,store,0);EXPECT_TRUE(activity.trips().empty());
+}

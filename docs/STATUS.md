@@ -1,6 +1,6 @@
 # Project Status
 
-Last verified locally: November 14, 2026
+Last verified locally: November 19, 2026
 
 
 The active release plan is [Minimum Steam Early Access, M55–M58](EARLY_ACCESS.md).
@@ -8,6 +8,67 @@ M55 is verified locally on Windows; M56/M57 remain in progress and M58 is pendin
 the player journey, reliability/performance, Steam packaging/store setup, and
 outside-player acceptance. Windows 64-bit is the provisional launch target;
 shipping support is not verified yet.
+
+November 19 mixed-road testing defaults the full journey to nine grid and nine
+freeform curved street placements; the paced walkthrough builds one of each.
+Zoning/services attach to real routing nodes, and paid water/sewer trenches
+follow every street's path. Complete roadside utility runs now render along the
+road curve in 3D and top-down views, with gaps retained in the tile-network view.
+Strict Release, 783 C++ tests and 13 Python tests pass. Full native fast geometry
+calibration reaches 10k with exact reload/CLI continuation; the paced walkthrough
+passes paid construction, cancellation, utility capture review, activity and
+reload with zero Vulkan errors. The mixed city's $545,100 reserve exceeds the
+older $500,000 finance target, so that finance gate is not requalified. See
+[mixed-layout evidence](PLAYTESTING.md#half-grid-half-curved-playtests).
+
+November 19 finance tuning reduces fixed construction prices and accelerates
+playable redevelopment while retaining recurring tax/upkeep formulas and
+starting cash. The paced native earned-city checkpoint chain reaches 10,004
+residents with $395,628, then gains $126,687 over 100 ticks including growth
+spending, with 51 fully funded facilities and no debt. It expands housing when
+affordable and retains established taxes until reserves recover. Strict Release,
+all 781 C++ cases, ten Python tests, and exact 100-tick native reload/CLI
+continuation pass with zero Vulkan validation errors. Cash is not capped and old saves
+keep their treasury. This local finance candidate does not supersede older
+Windows or performance qualification. See [finance evidence](PLAYTESTING.md#ten-thousand-resident-finance-balance)
+and [catalog changes](POPULATION_MILESTONES.md).
+
+November 18 moving city activity adds visible cars, freight trucks and sidewalk
+pedestrians in 3D, perspective and top-down views. Bounded visual representatives
+follow loaded road connections or rendered special-road geometry; they freeze
+with pause and do not change simulation/persistence. Strict Release, all 780 C++
+tests, ten Python tests and two targeted native camera/save-continuation cases
+pass. The paced 10k-city walkthrough verifies movement, pause, inspection,
+construction and reload with zero Vulkan errors. A separate quiet two-minute
+Mac 1280×720 logical-pixel probe reports 50.71 FPS mean, 17.22 ms p95 frame time
+and 171 of 171.43 expected ticks. This is local diagnostic evidence, not Windows
+1080p or packaged qualification. See [activity behavior](RENDERING_3D.md#moving-city-activity)
+and [retained acceptance](PLAYTESTING.md#moving-citizens-and-vehicles).
+
+November 18 macOS UI pass reduces hover inspection to a brief summary and
+reserves local diagnostics for pinned tiles. Reviewed service-site panels shrink
+from 406 to 164 pixels on hover and to 324 pinned; the main HUD shrinks from 370
+to 326 without smaller text. Strict Release, 774 C++ tests and ten Python tests
+pass. Paced native 1X exploration, local orbits, construction preview/cancel,
+paid street expansion, the moved Budget button and native save/reload pass with
+zero Vulkan validation errors. Four captures were visually reviewed; details and
+candidate identity are in [playtesting evidence](PLAYTESTING.md#paced-exploratory-usage).
+
+November 17 paced native exploration found and repaired tool-mode text overlapping
+the HUD illness/crime column. Long labels now fit their column with an ellipsis;
+the tool palette retains detailed road settings. Strict Release and the paced
+live-inspection/preview/cancel/paid-construction walkthrough pass, with zero
+Vulkan validation errors. The repaired preview was visually reviewed; see
+[playtesting evidence](PLAYTESTING.md#paced-exploratory-usage).
+
+November 16 macOS M56 profiling removes heap allocation from utility connector
+lookups while preserving route order. In one matching 120-second 10k-city
+comparison, mean tick time falls from 150.71 to 143.33 ms, p95 tick time from
+155.04 to 149.77 ms, and p99 frame time from 161.12 to 154.26 ms. P95 frame time
+rises from 17.28 to 20.25 ms; this remains a single local 1280×720 logical-pixel
+diagnostic. Strict Release, all 773 C++ tests and exact 100-tick whole-city/session
+continuation pass. [Qualification evidence](M56_QUALIFICATION.md) records candidate
+identities and the remaining Windows, CI/leak and packaged-soak gates.
 
 November 14 Windows M55 acceptance passes: a fresh native normal-money journey
 reaches 10,036 residents, holds 100 nonnegative operating ticks (minimum surplus
@@ -31,6 +92,18 @@ progress for frame-time optimization/qualification, fresh CI/leaks and three
 two-hour packaged soaks. [Windows qualification](M56_QUALIFICATION.md) retains
 separate full-suite, timing and final marker-build identities. M55's fresh
 journey evidence remains tied to its original pre-clinic candidate.
+
+November 14 macOS M56 follow-up reduces pressure-routing allocation using a
+bounded, evaluation-local visited-state table with a sparse fallback. In one
+unprofiled two-minute comparison on the earned 10k city, mean tick time falls
+from 184.42 to 160.21 ms and p99 frame time from 196.20 to 167.20 ms; p95 tick
+time does not improve. The display limits this diagnostic to 1280×720 logical
+pixels (2560×1440 framebuffer), so Windows 1080p acceptance remains open.
+Strict Release, 773 C++ tests, all 58 rendered cases, seven Python tests and 771
+headless cases under each of ASan/UBSan and TSan pass; leak detection is disabled
+on this Mac. The entire city and session match the baseline after 100 CLI ticks
+(apart from the output snapshot filename).
+See [qualification evidence](M56_QUALIFICATION.md).
 
 The November 13 notes below retain their historical verification scope; their
 open M55 display items are superseded by the November 14 acceptance above.

@@ -399,11 +399,33 @@ TEST(VisualizerGeometry, ExpandedDiagnosticsInspectorFitsTheMinimumWindow) {
   CityMap map({12,12}); RoadNetwork roads(map); EntityStore store;
   const auto diagnostics = BuildingDiagnostics::evaluate(map,roads,store,{4,4},{},{});
   DrawList list;
-  drawTileInspector(&list,map,roads,store,{}, {4,4},nullptr,&diagnostics,.25f);
+  drawTileInspector(&list,map,roads,store,{}, {4,4},nullptr,&diagnostics,.25f,true);
   ASSERT_FALSE(list.vertices.empty());
   for (const auto& v : list.vertices) {
     EXPECT_GE(v.x,0.f); EXPECT_GE(v.y,0.f);
     EXPECT_LT(v.x,388.f); EXPECT_LT(v.y,560.f);
+  }
+}
+
+TEST(VisualizerGeometry, HoverInspectionLeavesMoreCityVisibleThanPinnedDiagnostics) {
+  CityMap map({12,12}); RoadNetwork roads(map); EntityStore store;
+  const auto diagnostics = BuildingDiagnostics::evaluate(map,roads,store,{4,4},{},{});
+  ServiceCoverageSummary civic; civic.boundedDepartments=true;
+  DrawList hover,pinned;
+  drawTileInspector(&hover,map,roads,store,{}, {4,4},nullptr,&diagnostics,.25f,false,nullptr,&civic);
+  drawTileInspector(&pinned,map,roads,store,{}, {4,4},nullptr,&diagnostics,.25f,true,nullptr,&civic);
+  const auto bottom=[](const DrawList& list) {
+    float result=0;
+    for (const auto& v:list.vertices) result=std::max(result,v.y);
+    return result;
+  };
+  EXPECT_LE(bottom(hover),340.f);
+  EXPECT_GT(bottom(pinned),bottom(hover)+100.f);
+  EXPECT_LE(bottom(pinned),510.f);
+  for (const auto action:{HudAction::Budget,HudAction::ToggleDisasters}) {
+    const auto r=hudControlRect(action,800);
+    EXPECT_EQ(hudHitTest(r.x+r.w/2,r.y+r.h/2,800),action);
+    EXPECT_LE(r.y+r.h,12+kHudPanelHeight);
   }
 }
 
@@ -604,4 +626,53 @@ TEST(VisualizerGeometry, BondTabControlsFitAndFollowBondState) {
   drawBudgetPanel(&list, 800, 640, policy, {}, {}, bonds.funds, 0, 0, 0, false, {}, {}, false, {},
                   false, {}, 52, 0, nullptr, &bonds);
   EXPECT_GT(area(list), 0.f);
+}
+
+#include "src/visualization/UtilityOverlayGeometry.hpp"
+#include "src/gameplay/RoadTool.hpp"
+
+TEST(VisualizerGeometry, CompleteRoadsidePipesFollowCurveWithoutMutatingUtilityState) {
+  CityMap map({20,16}); RoadNetwork roads(map);
+  const auto plan=RoadTool::planAlignment(map,roads,
+    RoadTool::curve({2.5f,8.5f},{9.5f,2.5f},{16.5f,8.5f},RoadClass::Local,false),100000,nullptr,false);
+  ASSERT_TRUE(plan.valid)<<plan.error;
+  for(size_t i=1;i<plan.tiles.size();++i) roads.buildRoad(plan.tiles[i-1],plan.tiles[i]);
+  roads.addAlignment(plan.alignment);
+  for(Coord p:plan.tiles) {map.utility(p).waterPipe=true;map.utility(p).waterPressure=7.25f;}
+  const auto geometry=utilityOverlayGeometry(map,roads,true);
+  ASSERT_FALSE(geometry.segments.empty());
+  EXPECT_TRUE(std::any_of(geometry.segments.begin(),geometry.segments.end(),[](const auto& s) {
+    return std::abs(s.first.x-s.second.x)>.001f && std::abs(s.first.y-s.second.y)>.001f;
+  }));
+  const auto first=geometry.segments.front().first;
+  EXPECT_FLOAT_EQ(first.x,2.5f);EXPECT_FLOAT_EQ(first.y,8.5f);
+  EXPECT_TRUE(std::any_of(geometry.segments.begin(),geometry.segments.end(),[](const auto& s) {
+    return s.second==glm::vec2(16.5f,8.5f);
+  }));
+  EXPECT_TRUE(utilityOverlayGeometry(map,roads,false).segments.empty());
+  for(Coord p:plan.tiles) {
+    EXPECT_TRUE(map.utility(p).waterPipe);EXPECT_FALSE(map.utility(p).sewerPipe);
+    EXPECT_FLOAT_EQ(map.utility(p).waterPressure,7.25f);
+  }
+}
+
+TEST(VisualizerGeometry, MissingPipeCannotBeHiddenBySmoothRoadGeometry) {
+  CityMap map({20,16}); RoadNetwork roads(map);
+  const auto plan=RoadTool::planAlignment(map,roads,
+    RoadTool::curve({2.5f,8.5f},{9.5f,2.5f},{16.5f,8.5f},RoadClass::Local,false),100000,nullptr,false);
+  ASSERT_TRUE(plan.valid)<<plan.error;
+  for(size_t i=1;i<plan.tiles.size();++i) roads.buildRoad(plan.tiles[i-1],plan.tiles[i]);
+  roads.addAlignment(plan.alignment);
+  for(Coord p:plan.tiles) {map.utility(p).waterPipe=true;map.utility(p).sewerPipe=true;}
+  const Coord gap=plan.tiles[plan.tiles.size()/2];map.utility(gap).waterPipe=false;
+  const auto water=utilityOverlayGeometry(map,roads,true);
+  for(const auto& segment:water.segments) {
+    EXPECT_TRUE(segment.first.x==segment.second.x || segment.first.y==segment.second.y);
+    EXPECT_FALSE(segment.first==glm::vec2(gap.x+.5f,gap.y+.5f));
+    EXPECT_FALSE(segment.second==glm::vec2(gap.x+.5f,gap.y+.5f));
+  }
+  const auto sewer=utilityOverlayGeometry(map,roads,false);
+  EXPECT_TRUE(std::any_of(sewer.segments.begin(),sewer.segments.end(),[](const auto& s) {
+    return std::abs(s.first.x-s.second.x)>.001f && std::abs(s.first.y-s.second.y)>.001f;
+  }));
 }

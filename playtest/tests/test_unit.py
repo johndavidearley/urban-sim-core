@@ -7,6 +7,47 @@ from unittest.mock import AsyncMock
 from urban_sim_mcp.session import Session, PlaytestError
 from urban_sim_mcp.scenarios import evaluate_assertion
 from urban_sim_mcp.server import create_server
+from urban_sim_mcp.paced_input import PacedInput
+
+
+class PacedGestures(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_preview_cancels_before_releasing_construction(self):
+        session = unittest.mock.Mock()
+        session.request = AsyncMock()
+        player = PacedInput(session)
+        player.move = AsyncMock()
+        player.pause = AsyncMock()
+        preview = AsyncMock(side_effect=RuntimeError("Preview assertion failed"))
+        with self.assertRaisesRegex(RuntimeError, "Preview assertion failed"):
+            await player.drag((100,100), (130,100), on_hold=preview)
+        events = [call.args[1]["events"][0] for call in session.request.call_args_list]
+        self.assertEqual(events[-2], {"type":"key", "key":"Escape"})
+        self.assertEqual(events[-1]["type"], "up")
+        self.assertEqual(events[-1]["button"], "left")
+
+    async def test_interrupted_orbit_releases_button_at_last_cursor_position(self):
+        session = unittest.mock.Mock()
+        session.request = AsyncMock()
+        player = PacedInput(session)
+        player.pause = AsyncMock()
+
+        async def move(x, y, **kwargs):
+            player.cursor = (x, y)
+            if kwargs:
+                raise asyncio.CancelledError()
+
+        player.move = move
+        with self.assertRaises(asyncio.CancelledError):
+            await player.drag((100, 100), (180, 120), button="right")
+        events = [call.args[1]["events"][0] for call in session.request.call_args_list]
+        self.assertEqual(events[-1], {"type":"up", "button":"right", "x":180, "y":120})
+
+    async def test_exploration_rejects_extreme_zoom_without_input(self):
+        session = unittest.mock.Mock()
+        session.request = AsyncMock()
+        with self.assertRaises(ValueError):
+            await PacedInput(session).moderate_zoom(48)
+        session.request.assert_not_called()
 
 
 class Assertions(unittest.TestCase):
@@ -194,6 +235,38 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
                 await task
             self.assertTrue(session.broken)
             session._terminate.assert_awaited_once()
+
+
+
+
+class MixedStreetLayout(unittest.TestCase):
+    def test_half_new_streets_are_curved_and_reverse_upgrade_is_existing(self):
+        from urban_sim_mcp.street_layout import StreetLayout
+        layout=StreetLayout()
+        for i in range(18):
+            layout.records.append({'start':(0,i),'end':(10,i),'layout':layout.next_layout()})
+        self.assertEqual(layout.summary()['grid'],9)
+        self.assertEqual(layout.summary()['non_right_angle'],9)
+        self.assertTrue(layout.summary()['balanced'])
+        self.assertIs(layout.existing((10,0),(0,0)),layout.records[0])
+        self.assertEqual(len(layout.records),18)
+
+    def test_curve_connection_uses_routing_node_instead_of_wide_footprint(self):
+        from urban_sim_mcp.street_layout import StreetLayout
+        layout=StreetLayout(records=[{'start':(0,0),'end':(4,0),'layout':'curve',
+            'curve':[(.5,.5),(1.833333,2.5),(3.166667,2.5),(4.5,.5)],
+            'path':[(0,0),(1,0),(1,1),(2,1),(3,1),(3,0),(4,0)]}])
+        # The rendered midpoint reaches y=2, but that footprint tile has no node.
+        self.assertEqual(layout.site((2,0)),(2,1))
+        self.assertEqual(layout.site((2,-1)),(2,0))
+        self.assertEqual(layout.site((20,20)),(20,20))
+
+    def test_pipe_runs_preserve_every_turn_and_single_tile_stations(self):
+        from urban_sim_mcp.street_layout import runs
+        self.assertEqual(runs([(1,1),(2,1),(3,1),(3,2),(3,3),(4,3)]),
+                         [((1,1),(3,1)),((3,1),(3,3)),((3,3),(4,3))])
+        self.assertEqual(runs([(2,2)]),[((2,2),(2,2))])
+        self.assertEqual(runs([]),[])
 
 
 if __name__ == "__main__":

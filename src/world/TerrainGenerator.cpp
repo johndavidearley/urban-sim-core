@@ -70,11 +70,6 @@ TerrainStats TerrainGenerator::generate(CityMap& map, uint32_t seed, const Terra
   const float terrainFrac = std::clamp(params.terrainFraction, 0.0f, 1.0f);
   size_t waterCount = static_cast<size_t>(waterFrac * static_cast<float>(count));
   size_t terrainCount = static_cast<size_t>(terrainFrac * static_cast<float>(count));
-  // Never let the two bands overlap.
-  if (waterCount + terrainCount > count) {
-    terrainCount = count - waterCount;
-  }
-
   // 4. Reset to empty, then stamp the water (lowest) and terrain (highest) bands.
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
@@ -86,6 +81,9 @@ TerrainStats TerrainGenerator::generate(CityMap& map, uint32_t seed, const Terra
     return Coord{static_cast<int>(index % static_cast<size_t>(width)),
                  static_cast<int>(index / static_cast<size_t>(width))};
   };
+  const auto reserved = [&](Coord pos) {
+    return params.buildArea && params.buildArea->contains(pos);
+  };
 
   // A continuous meandering river feeds a broad lake. Grow its shoreline
   // from a connected frontier, rather than selecting disconnected low pixels.
@@ -93,20 +91,23 @@ TerrainStats TerrainGenerator::generate(CityMap& map, uint32_t seed, const Terra
   size_t placed = 0;
   auto stamp = [&](int x, int y) {
     const size_t index = static_cast<size_t>(y) * width + x;
-    if (!water[index] && placed < waterCount) {
+    if (!water[index] && placed < waterCount && !reserved({x, y})) {
       water[index] = true;
       ++placed;
     }
   };
-  int riverX = std::min(width - 1, width * 3 / 4);
   const int radius = std::max(0, width / 64);
+  int riverMin = std::min(width - 1, width * 2 / 3);
+  const int riverMax = std::min(width - 1, width * 9 / 10);
+  if (params.buildArea && params.buildArea->max.x < riverMax - radius)
+    riverMin = std::max(riverMin, params.buildArea->max.x + radius + 1);
+  int riverX = std::clamp(width * 3 / 4, riverMin, riverMax);
   const int lakeX = riverX;
   const int lakeY = height / 2;
   for (int y = 0; y < height && placed < waterCount; ++y) {
     const int previousX = riverX;
     riverX = std::clamp(riverX + static_cast<int>(rng.integer(0, 2)) - 1,
-                        std::min(width - 1, width * 2 / 3),
-                        std::min(width - 1, width * 9 / 10));
+                        riverMin, riverMax);
     stamp(previousX, y); // join adjacent rows even on narrow maps
     for (int x = std::max(0, riverX - radius);
          x <= std::min(width - 1, riverX + radius); ++x) stamp(x, y);
@@ -117,7 +118,7 @@ TerrainStats TerrainGenerator::generate(CityMap& map, uint32_t seed, const Terra
   auto enqueue = [&](int x, int y) {
     if (x < 0 || y < 0 || x >= width || y >= height) return;
     const size_t index = static_cast<size_t>(y) * width + x;
-    if (water[index] || queued[index]) return;
+    if (water[index] || queued[index] || reserved({x, y})) return;
     queued[index] = true;
     const int score = field[index] + 5 * (std::abs(x - lakeX) + std::abs(y - lakeY));
     frontier.push({score, index});
@@ -138,7 +139,7 @@ TerrainStats TerrainGenerator::generate(CityMap& map, uint32_t seed, const Terra
     if (water[i]) map.getTile(coordOf(i)).type = 2;
   size_t hills = 0;
   for (auto it = order.rbegin(); it != order.rend() && hills < terrainCount; ++it) {
-    if (water[*it]) continue;
+    if (water[*it] || reserved(coordOf(*it))) continue;
     map.getTile(coordOf(*it)).type = 1;
     ++hills;
   }
@@ -152,12 +153,14 @@ TerrainStats TerrainGenerator::generate(CityMap& map, uint32_t seed, const Terra
     const float variation=float(field[i]-*range.first)/span;
     if(map.getTile(p).type==2) {
       cell.bedMeters+=(variation-.5f)*.04f;cell.terrainMeters=cell.bedMeters+2.f;
-    } else cell.terrainMeters+=(map.getTile(p).type==1 ? 18.f : 1.f)*variation;
+    } else if (!reserved(p)) {
+      cell.terrainMeters += (map.getTile(p).type == 1 ? 18.f : 1.f) * variation;
+    }
   }
   EntityStore empty;EnvironmentSystem::updateWind(map,empty);
 
-  stats.waterTiles = static_cast<uint32_t>(waterCount);
-  stats.terrainTiles = static_cast<uint32_t>(terrainCount);
-  stats.buildableTiles = static_cast<uint32_t>(count - waterCount - terrainCount);
+  stats.waterTiles = static_cast<uint32_t>(placed);
+  stats.terrainTiles = static_cast<uint32_t>(hills);
+  stats.buildableTiles = static_cast<uint32_t>(count - placed - hills);
   return stats;
 }

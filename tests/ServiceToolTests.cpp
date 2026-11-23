@@ -147,9 +147,9 @@ TEST(ServiceToolTests, CivicTypesHaveDistinctPositiveOperatingCosts) {
   EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Sanitation), 7000);
   EXPECT_GT(ServiceTool::coverageDistance(ServiceType::Power), 0);
   EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Garbage), 9000);
-  EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Recycling), 100000);
-  EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Cemetery), 80000);
-  EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Crematorium), 650000);
+  EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Recycling), 20000);
+  EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Cemetery), 16000);
+  EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Crematorium), 65000);
 }
 
 TEST(ServiceToolTests, MustClearParkBeforePlacingFacility) {
@@ -242,7 +242,7 @@ TEST(ServiceToolTests, IncineratorPurchaseRequiresRoadAndFunds) {
   CityMap map({16,16}); RoadNetwork roads(map);
   roads.buildRoad({4,4}, {5,4});
   std::vector<ServiceFacility> facilities;
-  int64_t funds = 902000;
+  int64_t funds = 92000;
   const auto plan = ServiceTool::plan(map, roads, facilities, ServiceType::Incinerator, {4,3}, funds);
   ASSERT_TRUE(plan.valid);
   ASSERT_TRUE(ServiceTool::build(map, roads, facilities, plan, funds));
@@ -264,12 +264,12 @@ TEST(ServiceToolTests, PowerPlantCatalogMatchesTheMilestone) {
   const Row rows[] = {
     {PowerSourceType::Generic, 12000, 45, 100.f, 400.f, false, 1},
     {PowerSourceType::Coal, 10000, 40, 80.f, 1000.f, false, 1},
-    {PowerSourceType::NaturalGas, 400000, 36, 60.f, 450.f, false, 1},
-    {PowerSourceType::Nuclear, 1800000, 90, 200.f, 12.f, false, 1},
-    {PowerSourceType::Solar, 300000, 8, 15.f, 45.f, false, 2},
+    {PowerSourceType::NaturalGas, 80000, 36, 60.f, 450.f, false, 1},
+    {PowerSourceType::Nuclear, 350000, 90, 200.f, 12.f, false, 1},
+    {PowerSourceType::Solar, 60000, 8, 15.f, 45.f, false, 2},
     {PowerSourceType::Wind, 6000, 6, 10.f, 11.f, false, 1},
-    {PowerSourceType::Hydro, 750000, 18, 40.f, 24.f, true, 1},
-    {PowerSourceType::Substation, 150000, 4, 0.f, 0.f, false, 1},
+    {PowerSourceType::Hydro, 150000, 18, 40.f, 24.f, true, 1},
+    {PowerSourceType::Substation, 30000, 4, 0.f, 0.f, false, 1},
   };
 
   CityMap map({20, 12});
@@ -314,14 +314,14 @@ TEST(ServiceToolTests, PowerPlantCatalogMatchesTheMilestone) {
     ASSERT_TRUE(ServiceTool::build(map, roads, facilities, plan, funds));
   }
   EXPECT_EQ(facilities.size(), 6u);
-  EXPECT_EQ(funds, 4000000 - (12000 + 10000 + 400000 + 1800000 + 300000 + 6000));
+  EXPECT_EQ(funds, 4000000 - (12000 + 10000 + 80000 + 350000 + 60000 + 6000));
 }
 
 TEST(ServiceToolTests, HydroRequiresShoreAndDoesNotBecomeAnIntake) {
   CityMap map({16, 16});
   RoadNetwork roads(map);
   layEastRoad(roads, 4, 3, 8);
-  int64_t funds = 832000;
+  int64_t funds = 232000;
 
   const ServicePlan inland = powerPlan(map, roads, {}, PowerSourceType::Hydro, {4, 3}, funds);
   EXPECT_FALSE(inland.valid);
@@ -339,7 +339,7 @@ TEST(ServiceToolTests, HydroRequiresShoreAndDoesNotBecomeAnIntake) {
 
   const ServicePlan shore = powerPlan(map, roads, {}, PowerSourceType::Hydro, {4, 3}, funds);
   ASSERT_TRUE(shore.valid) << shore.error;
-  EXPECT_EQ(shore.cost, 750000);
+  EXPECT_EQ(shore.cost, 150000);
   EXPECT_FLOAT_EQ(shore.facility.powerCapacityMW, 40.f);
   EXPECT_FLOAT_EQ(shore.facility.emissionsKgPerMWh, 24.f);
   EXPECT_FALSE(shore.facility.surfaceWater);
@@ -357,7 +357,7 @@ TEST(ServiceToolTests, SolarFootprintRejectsPartialSitesAndClearsEveryTile) {
   CityMap map({16, 16});
   RoadNetwork roads(map);
   layEastRoad(roads, 2, 1, 8);
-  int64_t funds = 342000;
+  int64_t funds = 102000;
 
   const ServicePlan offMap = powerPlan(map, roads, {}, PowerSourceType::Solar, {15, 3}, funds);
   EXPECT_FALSE(offMap.valid);
@@ -376,7 +376,7 @@ TEST(ServiceToolTests, SolarFootprintRejectsPartialSitesAndClearsEveryTile) {
   std::vector<ServiceFacility> facilities;
   const ServicePlan plan = powerPlan(map, roads, facilities, PowerSourceType::Solar, {2, 3}, funds);
   ASSERT_TRUE(plan.valid) << plan.error;
-  EXPECT_EQ(plan.cost, 300000);
+  EXPECT_EQ(plan.cost, 60000);
   EXPECT_EQ(facilityFootprintSpan(plan.facility), 2);
   ASSERT_TRUE(ServiceTool::build(map, roads, facilities, plan, funds));
   EXPECT_EQ(funds, 42000);
@@ -619,10 +619,10 @@ TEST(ServiceToolTests, ShoreTreatmentReplacesRawOutletWithFullPriceAndUpkeep) {
   ServiceFacility raw{ServiceType::Sanitation,{7,6},18,1.f}; raw.surfaceWater = true;
   std::vector<ServiceFacility> facilities{raw};
   ServicePlacementOptions options; options.surfaceWater = true; options.sewageTreatment = true;
-  int64_t funds = 611000;
+  int64_t funds = 131000;
   const auto plan = ServiceTool::plan(map,roads,facilities,ServiceType::Sanitation,{7,6},funds,options);
   ASSERT_TRUE(plan.valid) << plan.error;
-  EXPECT_EQ(plan.cost,600000);
+  EXPECT_EQ(plan.cost,120000);
   ASSERT_TRUE(ServiceTool::build(map,roads,facilities,plan,funds));
   ASSERT_EQ(facilities.size(),1u);
   EXPECT_TRUE(facilities[0].sewageTreatment);
@@ -646,8 +646,8 @@ TEST(ServiceToolTests, TreatmentRequiresSanitationShoreRoadAndFunds) {
   map.getTile({8,6}).type = 2;
   EXPECT_FALSE(ServiceTool::plan(map,roads,{},ServiceType::Sanitation,{7,6},20000,options).valid);
   roads.buildRoad({6,6},{6,7});
-  EXPECT_FALSE(ServiceTool::plan(map,roads,{},ServiceType::Sanitation,{7,6},599999,options).valid);
-  EXPECT_TRUE(ServiceTool::plan(map,roads,{},ServiceType::Sanitation,{7,6},600000,options).valid);
+  EXPECT_FALSE(ServiceTool::plan(map,roads,{},ServiceType::Sanitation,{7,6},119999,options).valid);
+  EXPECT_TRUE(ServiceTool::plan(map,roads,{},ServiceType::Sanitation,{7,6},120000,options).valid);
   options.surfaceWater = false;
   EXPECT_FALSE(ServiceTool::plan(map,roads,{},ServiceType::Sanitation,{7,6},20000,options).valid);
   EXPECT_EQ(ServiceTool::constructionCost(ServiceType::Sanitation),7000);
@@ -659,16 +659,16 @@ TEST(ServiceToolTests, TreatmentRequiresSanitationShoreRoadAndFunds) {
 TEST(ServiceToolTests, MilestonePricesRejectShortFundsAndChargeExactlyOnce) {
   struct Purchase { ServiceType type; PowerSourceType source; bool treatment; int64_t cost; };
   const Purchase purchases[] = {
-    {ServiceType::Cemetery,PowerSourceType::Generic,false,80000},
-    {ServiceType::Recycling,PowerSourceType::Generic,false,100000},
-    {ServiceType::Power,PowerSourceType::NaturalGas,false,400000},
-    {ServiceType::Power,PowerSourceType::Solar,false,300000},
-    {ServiceType::Power,PowerSourceType::Substation,false,150000},
-    {ServiceType::Power,PowerSourceType::Hydro,false,750000},
-    {ServiceType::Sanitation,PowerSourceType::Generic,true,600000},
-    {ServiceType::Crematorium,PowerSourceType::Generic,false,650000},
-    {ServiceType::Incinerator,PowerSourceType::Generic,false,900000},
-    {ServiceType::Power,PowerSourceType::Nuclear,false,1800000},
+    {ServiceType::Cemetery,PowerSourceType::Generic,false,16000},
+    {ServiceType::Recycling,PowerSourceType::Generic,false,20000},
+    {ServiceType::Power,PowerSourceType::NaturalGas,false,80000},
+    {ServiceType::Power,PowerSourceType::Solar,false,60000},
+    {ServiceType::Power,PowerSourceType::Substation,false,30000},
+    {ServiceType::Power,PowerSourceType::Hydro,false,150000},
+    {ServiceType::Sanitation,PowerSourceType::Generic,true,120000},
+    {ServiceType::Crematorium,PowerSourceType::Generic,false,65000},
+    {ServiceType::Incinerator,PowerSourceType::Generic,false,90000},
+    {ServiceType::Power,PowerSourceType::Nuclear,false,350000},
   };
   for (const auto& purchase : purchases) {
     SCOPED_TRACE(purchase.cost);

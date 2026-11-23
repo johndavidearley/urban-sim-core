@@ -147,7 +147,7 @@ TEST(RegionalLogisticsTests, ReadOnlyRefreshNeverActivatesOrBillsAndCompletedTic
 
 TEST(RegionalLogisticsTests, PassengerTerminalAloneNeverActivatesCargoAndDisabledPortsHaveNoUpkeep) {
   City city; auto c=city.candidate(); c.kind=regional::Kind::PassengerTerminal;
-  int64_t funds=1540000;
+  int64_t funds=340000;
   ASSERT_TRUE(PortTool::build(city.map,city.roads,city.ports,c,{25,8},{},funds));
   PlayableCityTickState state; state.regionalConnections=city.ports;
   PlayableCityTickOptions options; options.enableTransit=false; options.growthChance=0;

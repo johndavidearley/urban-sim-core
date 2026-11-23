@@ -176,12 +176,12 @@ TEST(Environment, BoundaryReservoirsAreLedgeredAndDroughtStopsReplenishment) {
 #include "src/systems/UtilityNetworkSystem.hpp"
 namespace {
 struct PipeCity {
-  CityMap map{{12,12}};RoadNetwork roads{map};EntityStore store;PopulationStore people;
+  CityMap map;RoadNetwork roads{map};EntityStore store;PopulationStore people;
   std::vector<ServiceFacility> facilities;
   EntityId home;
-  PipeCity() {
+  explicit PipeCity(int side=12):map({side,side}) {
     EnvironmentSystem::initialize(map,42);
-    for(int y=0;y<12;++y) for(int x=0;x<12;++x) map.environment({x,y}).terrainMeters=10-y*.25f;
+    for(int y=0;y<side;++y) for(int x=0;x<side;++x) map.environment({x,y}).terrainMeters=10-y*.25f;
     home=store.createBuilding(BuildingType::Residential,{3,4},10000);
     store.getBuilding(home)->occupancy=10000;map.getTile({3,4}).buildingId=static_cast<uint32_t>(home);
     ServiceFacility well;well.type=ServiceType::Water;well.position={1,1};
@@ -554,4 +554,37 @@ TEST(SewerLifts, SharedCatchmentReachMatchesActualPressureRoutingForEveryParcel)
     const auto actual=UtilityNetworkSystem::evaluate(trial,city.store,city.facilities);
     EXPECT_EQ(reach.sewerConnected[size_t(y)*12+x],actual.backlog[size_t(y)*12+x]<1e-7)<<x<<","<<y;
   }
+}
+
+TEST(PipeNetworks, DenseAndSparsePressureSearchesPreserveExactFlowsAndReach) {
+  PipeCity city(128);makeHighWaterDistrict(city);powerLift(city);addBooster(city);
+  addLift(city);addLift(city,{2,6});
+  city.map.environment({2,6}).terrainMeters=23;
+  city.map.environment({2,7}).terrainMeters=38;
+  city.facilities[0].waterSupplyUnits=200;
+  city.facilities.push_back(city.facilities[0]);
+  city.store.getBuilding(city.home)->capacity=30000;
+  city.store.getBuilding(city.home)->occupancy=30000;
+  const auto second=city.store.createBuilding(BuildingType::Residential,{3,5},20000);
+  city.store.getBuilding(second)->occupancy=20000;
+  city.map.getTile({3,5}).buildingId=static_cast<uint32_t>(second);
+  city.map.environment({3,5}).terrainMeters=35;
+  city.map.environment({2,5}).terrainMeters=35;
+  city.map.utility({3,4}).sewageBacklog=80;
+  const auto dense=UtilityNetworkSystem::evaluate(city.map,city.store,city.facilities);
+  EXPECT_DOUBLE_EQ(dense.boosterUsed[2*128+2],75);
+  // Disconnected, powered stations force the bounded-memory sparse path.
+  // They cannot change any route in the serviced neighbourhood.
+  for(int x=20;x<84;++x) {
+    auto& pipe=city.map.utility({x,20});
+    pipe.waterPipe=pipe.sewerPipe=pipe.waterBooster=pipe.sewageLift=true;
+    city.map.getTile({x,20}).connectedToPower=true;
+  }
+  const auto sparse=UtilityNetworkSystem::evaluate(city.map,city.store,city.facilities);
+  EXPECT_EQ(dense.sourceUsed,sparse.sourceUsed);EXPECT_EQ(dense.outletUsed,sparse.outletUsed);
+  EXPECT_EQ(dense.liftUsed,sparse.liftUsed);EXPECT_EQ(dense.boosterUsed,sparse.boosterUsed);
+  EXPECT_EQ(dense.delivered,sparse.delivered);EXPECT_EQ(dense.handled,sparse.handled);
+  EXPECT_EQ(dense.waterPressure,sparse.waterPressure);
+  EXPECT_EQ(dense.waterConnected,sparse.waterConnected);EXPECT_EQ(dense.sewerConnected,sparse.sewerConnected);
+  EXPECT_EQ(dense.backlog,sparse.backlog);EXPECT_DOUBLE_EQ(dense.discharged,sparse.discharged);
 }

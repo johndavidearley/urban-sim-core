@@ -767,3 +767,23 @@ TEST(BuildingDiagnosticsTests, NeighborhoodIsBoundedAndUsesMeasuredOccupancyWeig
   EXPECT_FLOAT_EQ(d.neighborhood.serviceCoverage[0],1.f);
   EXPECT_EQ(BuildingDiagnostics::evaluate(map,roads,store,{0,0},{},cache).neighborhood.tiles,25u);
 }
+
+TEST(GrowthSystemTests, PlayableRedevelopmentRateIsSeparateFromNewConstruction) {
+  CityMap map({8,8}); RoadNetwork roads(map); EntityStore store;
+  roads.buildRoad({2,3},{3,3});
+  const Coord site{2,3};
+  map.setZone(site,static_cast<int>(ZoneType::Residential));
+  map.landValue(site)=kRedevelopmentLandValueCeiling;
+  map.getTile(site).buildingId=store.createBuilding(BuildingType::Residential,site,8);
+  ZoneDemand demand; demand.residential=1.f;
+  for (uint32_t seed=0;seed<100;++seed)
+    GrowthSystem::runStep(map,store,demand,seed,0.f,nullptr,{-1,-1},{-1,-1},nullptr,false,&roads,nullptr,nullptr,0.f);
+  EXPECT_EQ(store.getBuilding(map.getTile(site).buildingId)->capacity,8);
+  int64_t construction=0;
+  for (uint32_t seed=0;seed<100;++seed) {
+    const auto stats=GrowthSystem::runStep(map,store,demand,seed,0.f,nullptr,{-1,-1},{-1,-1},nullptr,false,&roads,nullptr,nullptr,1.f);
+    construction+=stats.constructionSpend;
+  }
+  EXPECT_GT(store.getBuilding(map.getTile(site).buildingId)->capacity,8);
+  EXPECT_GT(construction,0);
+}

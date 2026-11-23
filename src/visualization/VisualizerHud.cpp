@@ -46,6 +46,12 @@
 
 namespace visualizer {
 namespace {
+std::string fitUiText(const std::string& text, int width, int scale) {
+  if (textWidth(text,scale) <= width) return text;
+  std::string result = text;
+  while (!result.empty() && textWidth(result + "...",scale) > width) result.pop_back();
+  return result + "...";
+}
 std::string schoolCapacityLine(const ServiceCoverageSummary& s) {
   return "SEATS " + std::to_string(std::lround(s.schoolSeatsUsed)) + "/" +
     std::to_string(std::lround(s.schoolSeats)) +
@@ -508,10 +514,10 @@ Rect hudControlRect(HudAction action, int windowWidth) {
     case HudAction::Fast: return {panelX + 188, y, 42, 24};
     case HudAction::Save: return {panelX + 10, y + 30, 106, 24};
     case HudAction::Load: return {panelX + 124, y + 30, 106, 24};
-    case HudAction::ToggleDisasters: return {panelX + 10, 322, 180, 24};
+    case HudAction::ToggleDisasters: return {panelX + 10, 278, 180, 24};
     case HudAction::Transport: return {panelX + 242, y, 128, 24};
     case HudAction::Alerts: return {panelX + 242, y + 30, 128, 24};
-    case HudAction::Budget: return {panelX + 210, 322, 160, 24};
+    case HudAction::Budget: return {panelX + 210, 278, 160, 24};
     default: return {0, 0, 0, 0};
   }
 }
@@ -549,7 +555,7 @@ void drawGameplayHud(
   int64_t funds,
   const std::string& toolLabel,
   const LiveSimulationState& liveState,
-  const PopulationStore& populationStore,
+  const PopulationStore&,
   int mouseX,
   int mouseY
 ) {
@@ -568,7 +574,8 @@ void drawGameplayHud(
   drawText(renderer, x + 122, y + 50,
            "BAL $" + std::to_string(liveState.economy.balance),
            liveState.economy.balance >= 0 ? RGB{105, 230, 135} : RGB{255, 145, 120}, 1);
-  drawText(renderer, x + 122, y + 66, toolLabel, {160, 205, 255}, 1);
+  // Tool modes can be long; leave a gap before the service statistics column.
+  drawText(renderer, x + 122, y + 66, fitUiText(toolLabel, 244 - 122 - 8, 1), {160, 205, 255}, 1);
 
   drawDemandBar(renderer, x + 12, y + 92, liveState.demand.residential, zoneColor(1), "R");
   drawDemandBar(renderer, x + 12, y + 106, liveState.demand.commercial, zoneColor(2), "C");
@@ -606,51 +613,16 @@ void drawGameplayHud(
            "PWR " + std::to_string(static_cast<int>(liveState.serviceSummary.powerSupplyRatio * 100.0f))
              + "%  WTR " + std::to_string(static_cast<int>(liveState.serviceSummary.waterSupplyRatio * 100.0f)) + "%",
            utilityShort ? RGB{255, 150, 120} : RGB{105, 230, 135}, 1);
-  uint32_t lowIncome = 0;
-  uint32_t middleIncome = 0;
-  uint32_t highIncome = 0;
-  for (const auto& [id, group] : populationStore.getGroups()) {
-    (void)id;
-    if (group.band == IncomeBand::Low) {
-      lowIncome += group.size;
-    } else if (group.band == IncomeBand::Middle) {
-      middleIncome += group.size;
-    } else {
-      highIncome += group.size;
-    }
-  }
-  drawText(renderer, x + 12, y + 238,
-           "LOW " + std::to_string(lowIncome)
-             + "  MID " + std::to_string(middleIncome)
-             + "  HIGH " + std::to_string(highIncome),
-           {225, 228, 235}, 1);
-
-  const auto &change = liveState.populationChange;
-  drawText(renderer, x + 12, y + 254,
-           "IN " + std::to_string(change.arrivals) + " OUT " +
-               std::to_string(change.departures) + " DEAD " +
-               std::to_string(change.deaths) + " NET " +
-               std::to_string(change.net),
-           {175, 205, 235}, 1);
-
-  const auto &freight = liveState.trafficSummary.freight;
-  drawText(renderer, x + 12, y + 268,
-           "TRUCKS " + std::to_string(freight.trucks) + " UNROUTED " +
-               std::to_string(freight.unroutedGoods) + " GATE " +
-               std::to_string(freight.gate.x) + "," + std::to_string(freight.gate.y) +
-               (freight.gateConnected ? " OK" : " NO ROAD"),
-           {180, 200, 225}, 1);
-
   const auto& events = liveState.disasters;
-  drawText(renderer, x + 12, y + 340,
+  drawText(renderer, x + 12, y + 296,
            "FIRES " + std::to_string(events.fire.activeFires) +
            " LOST FIRE " + std::to_string(events.buildingsLostToFire) +
            " OTHER " + std::to_string(events.buildingsLostToDisaster) +
            " COV " + std::to_string(static_cast<int>(liveState.serviceSummary.fireCoverage * 100.f)) + "%", {255, 175, 110}, 1);
-  // Both civic rows end above the disaster and budget buttons at y = 322.
-  drawText(renderer, x + 12, y + 283, schoolCapacityLine(liveState.serviceSummary), {185, 215, 225}, 1);
-  drawText(renderer, x + 12, y + 298, hospitalCapacityLine(liveState.serviceSummary), {185, 215, 225}, 1);
-  drawText(renderer, x + 12, y + 356,
+  // Keep civic capacities above the disaster and budget controls.
+  drawText(renderer, x + 12, y + 238, schoolCapacityLine(liveState.serviceSummary), {185, 215, 225}, 1);
+  drawText(renderer, x + 12, y + 254, hospitalCapacityLine(liveState.serviceSummary), {185, 215, 225}, 1);
+  drawText(renderer, x + 12, y + 312,
            events.disaster.earthquakeOccurred ? "EARTHQUAKE" :
            (events.disaster.floodOccurred ? "FLOOD" : ""), {255, 145, 100}, 1);
   const std::array<std::pair<HudAction, const char*>, 10> controls = {{
@@ -726,15 +698,6 @@ void drawCompactGameplayHud(DrawList *renderer, int windowWidth, bool paused,
              "LOST FIRE " + std::to_string(disasters->buildingsLostToFire) +
              " OTHER " + std::to_string(disasters->buildingsLostToDisaster), {255, 175, 110}, 1);
   }
-}
-
-namespace {
-std::string fitUiText(const std::string& text, int width, int scale) {
-  if (textWidth(text,scale) <= width) return text;
-  std::string result = text;
-  while (!result.empty() && textWidth(result + "...",scale) > width) result.pop_back();
-  return result + "...";
-}
 }
 
 void drawToast(
@@ -973,8 +936,10 @@ void drawTileInspector(
   constexpr int x = 14;
   constexpr int y = 170;
   constexpr int width = 360;
-  const int height = (diagnostics ? (civic ? 358 : 326) : (civic ? 166 : 132)) +
-    (diagnostics && civic && civic->boundedDepartments ? 48 : 0);
+  const bool details = pinned && diagnostics;
+  const int diagnosticRows = details ? 9 + (diagnostics->growth.occupied ? 1 : 0) +
+    (civic && civic->boundedDepartments ? 3 : 0) : (diagnostics ? 2 : 0);
+  const int height = 132 + diagnosticRows * 16;
   drawFilledRect(renderer, x, y, width, height, {14, 17, 22}, 185);
   drawRectOutline(renderer, x, y, width, height, {150, 160, 175}, 240);
 
@@ -1095,37 +1060,37 @@ void drawTileInspector(
     const std::string reason = d.growth.blockers.empty() ? "local_gates_pass" : d.growth.blockers.front();
     std::string label = reason;
     std::replace(label.begin(),label.end(),'_',' ');
-    drawText(renderer,x+10,y+132,"GROWTH " + label,{135,215,240},1);
-    drawText(renderer,x+10,y+148,BuildingDiagnostics::advice(reason),{235,195,145},1);
-    drawText(renderer,x+10,y+164,"DEMAND " + pct(d.growth.demand) + " CIVIC " + pct(d.growth.civicCoverage) +
-      " CONGEST " + pct(d.growth.congestion),{190,205,220},1);
-    std::string coverage = "REACH F/P/H/E ";
-    for (int i = 0; i < 4; ++i) coverage += (d.services & (1u << i)) ? "Y " : "N ";
-    drawText(renderer,x+10,y+180,coverage + " FIRE " + pct(d.fireResponse),{190,205,220},1);
-    if (d.growth.occupied) {
-      drawText(renderer,x+10,y+196,std::string(d.residential ? "VACANT HOUSING SLOTS " : "UNFILLED JOBS ") +
-        std::to_string(std::max(0,d.capacity-d.occupancy)),{220,225,210},1);
-      drawText(renderer,x+10,y+212,d.residential ? "CHECK JOBS, UTILITIES AND TAX ATTRACTION." :
-        "CHECK CITY WORKFORCE, EDUCATION AND UTILITIES.",{165,185,205},1);
+    int rowY = y + 132;
+    const auto row = [&](const std::string& text, RGB color) {
+      drawText(renderer,x+10,rowY,fitUiText(text,width-20,1),color,1);
+      rowY += 16;
+    };
+    row("GROWTH " + label,{135,215,240});
+    row(details ? BuildingDiagnostics::advice(reason) : "I PIN FOR LOCAL DIAGNOSTICS",{235,195,145});
+    if (details) {
+      row("DEMAND " + pct(d.growth.demand) + " CIVIC " + pct(d.growth.civicCoverage) +
+        " CONGEST " + pct(d.growth.congestion),{190,205,220});
+      std::string coverage = "REACH F/P/H/E ";
+      for (int i = 0; i < 4; ++i) coverage += (d.services & (1u << i)) ? "Y " : "N ";
+      row(coverage + " FIRE " + pct(d.fireResponse),{190,205,220});
+      if (d.growth.occupied)
+        row(std::string(d.residential ? "VACANT HOUSING SLOTS " : "UNFILLED JOBS ") +
+          std::to_string(std::max(0,d.capacity-d.occupancy)),{220,225,210});
+      const auto& n = d.neighborhood;
+      row("NEARBY R4: " + std::to_string(n.buildings) + " BUILDINGS",{135,215,240});
+      row("RES " + std::to_string(n.residents) + "/" + std::to_string(n.housingCapacity) +
+        " JOBS " + std::to_string(n.filledJobs) + "/" + std::to_string(n.jobCapacity),{190,205,220});
+      row("RES-WEIGHTED CRIME " + pct(n.crime) + " ILL " + pct(n.illness),{210,190,165});
+      row("CITY JOBLESS " + pct(cityJoblessness) + " - NOT LOCAL",{165,185,205});
+      row("LOCAL GATES ONLY; GROWTH IS PROBABILISTIC.",{165,185,205});
+      if (civic && civic->boundedDepartments) {
+        const char* names[] = {"FIRE", "POLICE", "SEWAGE"};
+        for (size_t i=0;i<3;++i)
+          row(std::string("TILE ")+names[i]+" SERVED "+
+            std::to_string(std::llround(d.departmentServed[i]))+" UNSERVED "+
+            std::to_string(std::llround(d.departmentUnserved[i])),{185,215,225});
+      }
     }
-    const auto& n = d.neighborhood;
-    drawText(renderer,x+10,y+232,"NEARBY R4: " + std::to_string(n.buildings) + " BUILDINGS",{135,215,240},1);
-    drawText(renderer,x+10,y+248,"RES " + std::to_string(n.residents) + "/" + std::to_string(n.housingCapacity) +
-      " JOBS " + std::to_string(n.filledJobs) + "/" + std::to_string(n.jobCapacity),{190,205,220},1);
-    drawText(renderer,x+10,y+264,"RES-WEIGHTED CRIME " + pct(n.crime) + " ILL " + pct(n.illness),{210,190,165},1);
-    drawText(renderer,x+10,y+280,"CITY JOBLESS " + pct(cityJoblessness) + " - NOT LOCAL",{165,185,205},1);
-    drawText(renderer,x+10,y+302,"LOCAL GATES ONLY. GROWTH IS PROBABILISTIC.",{165,185,205},1);
-  }
-  if (diagnostics && civic && civic->boundedDepartments) {
-    const char* names[] = {"FIRE", "POLICE", "SEWAGE"};
-    for (size_t i=0;i<3;++i)
-      drawText(renderer,x+10,y+350+static_cast<int>(i)*16,std::string("TILE ")+names[i]+" SERVED "+
-        std::to_string(std::llround(diagnostics->departmentServed[i]))+" UNSERVED "+
-        std::to_string(std::llround(diagnostics->departmentUnserved[i])),{185,215,225},1);
-  }
-  if (civic) {
-    drawText(renderer,x+10,y+(diagnostics ? 318 : 132),"CITY " + schoolCapacityLine(*civic),{185,215,225},1);
-    drawText(renderer,x+10,y+(diagnostics ? 334 : 148),"CITY " + hospitalCapacityLine(*civic),{185,215,225},1);
   }
 
 }

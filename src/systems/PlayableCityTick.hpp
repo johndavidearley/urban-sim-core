@@ -99,6 +99,8 @@ struct PlayableCityTickOptions {
   FireParams fireParams;
   DisasterParams disasterParams;
   float growthChance = 0.18f;
+  // Serviced density should develop before years of idle surplus accumulate.
+  float redevelopmentChance = 0.30f;
   bool requireUtilities = true;
   double treasuryTickScale = 0.01;
   double treasuryInterestRate = 0.001;

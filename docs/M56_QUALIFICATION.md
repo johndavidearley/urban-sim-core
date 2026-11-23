@@ -1,5 +1,147 @@
 # M56 — Local candidate qualification
 
+## November 18 macOS moving-activity diagnostic
+
+The user-requested visual activity pass adds bounded cars, freight trucks and
+sidewalk pedestrians without changing simulation rules or persistence.
+Strict Release, all 780 C++ tests, ten Python tests and two targeted native
+camera/picking and pipe save/CLI-continuation cases pass. The paced native
+10k-city walkthrough verifies changed positions while running, exact pause,
+inspection, construction and reload. Orthographic, perspective and top-down
+captures were visually reviewed. Behavior and scope:
+[moving activity](RENDERING_3D.md#moving-city-activity).
+A synthetic same-tick reload regression also clears/restores pedestrians when
+loading unoccupied/inhabited copies with unchanged roads and building count.
+The qualified executable invalidates its activity cache on successful load.
+
+A quiet, unprofiled 120-second native 1X run uses the earned 96×96/10k checkpoint,
+a ten-second warmup, no bridge polling during measurement, and 1280×720 logical /
+2560×1440 framebuffer pixels. No compilation or tests overlap the timed interval.
+
+| Metric | Result |
+| --- | ---: |
+| Mean throughput | 50.71 FPS |
+| p95 frame | 17.22 ms |
+| p99 frame | 145.37 ms |
+| Mean simulation tick | 133.91 ms |
+| p95 simulation tick | 141.86 ms |
+| Completed / expected ticks | 171 / 171.43 |
+| Vulkan validation errors | 0 |
+
+This single local diagnostic passes the probe's 33.3 ms p95 frame check. It is
+not a controlled before/after comparison or a Windows minimum-hardware pass.
+M56 remains open for its Windows 1080p, hosted CI/leak and packaged-soak gates.
+The initial Nov 18 activity candidate had spatial sampling concentrated on
+northern roads; the qualified candidate uses stable spatial sampling across the
+city. Earlier exploratory traces retain their separate candidate identities.
+
+Evidence: `playtest-artifacts/city-activity-qualification/verification-summary.json`,
+`playtest-artifacts/organic-walkthrough/20261118-102408-e44c09ac/` and
+`playtest-artifacts/city-activity-performance/20261118-102628-f7450da0/`, with its
+adjacent frame CSV. Executable SHA-256:
+`c395325361d5563775c81aa31ba603d0ed3a76bca376ca2ac5275c1085135b72`.
+Logs and changed-source hashes are retained in the qualification directory.
+
+## November 16 macOS connector-allocation follow-up
+
+CPU sampling of the optimized earned 96×96/10k city still identifies utility
+routing allocation overhead. Connector lookups now return fixed storage for the
+parcel and its four neighbours instead of allocating a vector. Connector order,
+search rules and flow allocation are unchanged.
+
+One matching pair of 120-second native 1X probes uses the same checkpoint and
+1280×720 logical / 2560×1440 framebuffer resolution. Each probe has a ten-second
+warmup and a separate ten-second CPU sample before the timed interval; neither
+timed interval overlaps compilation or test runs.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Mean simulation tick | 150.71 ms | 143.33 ms |
+| Median simulation tick | 150.17 ms | 142.91 ms |
+| p95 simulation tick | 155.04 ms | 149.77 ms |
+| p95 frame | 17.28 ms | 20.25 ms |
+| p99 frame | 161.12 ms | 154.26 ms |
+| Mean throughput | 49.38 FPS | 49.62 FPS |
+| Completed / expected ticks | 172 / 171.43 | 171 / 171.43 |
+
+Mean tick time improves 4.9%, p95 tick time 3.4%, and p99 frame time 4.3% in this
+single comparison. P95 frame time worsens; no repeat-trial or universal frame-time
+improvement is claimed. Both runs report zero Vulkan validation errors. Strict
+Release and all 773 C++ tests pass. The entire city and session match the baseline
+after 100 CLI ticks, apart from the output snapshot filename.
+All three targeted native pipe, sewer-lift and water-booster regressions pass
+(7.75 seconds), including power loss, repair and exact save continuation;
+`rendered.log` and the `rendered/` directory retain their evidence.
+
+Evidence is under `playtest-artifacts/m56-next-profile/`: baseline run
+`20261116-083701-b065d432`, changed run `20261116-084346-56c8dbd0`, adjacent frame
+CSVs, CPU samples, continuation outputs, `strict-tests.log` and
+`verification-summary.json`. Baseline executable SHA-256:
+`7d5dc5c100d9934a3165e8e7da301121bf9e1237214719a3fcc12fc93ab0720b`;
+changed executable:
+`7c0b89b21a23fe21dcbffa616bb9e53bc69b3456e2e2792946ffa445b8feecd9`.
+The initial sandbox-blocked launch (`20261116-083620-87d3e9c5`) is excluded.
+M56 remains in progress for Windows 1080p remeasurement, fresh hosted CI/leaks
+and three two-hour packaged sessions. Earlier full-suite/sanitizer evidence below
+belongs to its recorded candidate; those suites have not been repeated here.
+
+## November 14 macOS performance follow-up
+
+M56 remains **in progress**. CPU sampling of the earned 96×96/10k city
+identified repeated pressure-route visited-state allocation as a simulation
+hotspot. Water/sewer routing now uses an evaluation-local dense best-step
+table, resetting only touched entries between searches. The table is capped at
+1,048,576 entries (4 MiB); maps exceeding that bound retain the original sparse
+search. Search order, pressure states, finite head and residual capacities are
+unchanged. No routing data is cached across evaluations or ticks.
+
+The performance probe now accepts `--resolution` for diagnostic comparisons
+(1920×1080 remains the default), records window/framebuffer dimensions and
+supports optional macOS `--cpu-profile` sampling before the timed measurement.
+This Mac clamps a requested 1080p window to 777 pixels high, so the retained
+comparison uses 1280×720 logical / 2560×1440 framebuffer pixels. It does **not**
+qualify the minimum-Windows-machine 1080p gate.
+
+Two unprofiled 120-second normal-speed runs start from the same sustainable
+10k checkpoint, with a ten-second warmup and no status polling during the sample:
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Mean simulation tick | 184.42 ms | 160.21 ms |
+| Median simulation tick | 182.86 ms | 154.37 ms |
+| p95 simulation tick | 195.45 ms | 199.13 ms |
+| p95 frame | 17.70 ms | 17.21 ms |
+| p99 frame | 196.20 ms | 167.20 ms |
+| Mean throughput | 46.43 FPS | 48.45 FPS |
+| Completed / expected ticks | 171 / 171.43 | 171 / 171.43 |
+
+Mean tick time improves 13.1% and p99 frame time improves 14.8% in this single
+comparison; p95 tick time does not improve. Both runs end with 10,256 residents
+and zero Vulkan validation errors. These are local diagnostic results, not
+repeat-trial or Windows acceptance claims. The separate sampled run overlapped
+compilation and is used only to identify CPU hotspots, not for timing comparison.
+
+Evidence: `playtest-artifacts/m56-performance-mac-before/20261114-141528-04f2c346/`
+and `playtest-artifacts/m56-performance-mac-after/20261114-142518-84852d22/`, with
+their adjacent timestamped frame CSVs. The profile is under the before root at
+`20261114-142051-8f9a3d47/cpu-profile.txt`. Baseline executable SHA-256:
+`faf511042fa66e1290ccd1290056bd4e2dce0563408edffd18cbd0e99dc01ada`;
+optimized executable:
+`7d5dc5c100d9934a3165e8e7da301121bf9e1237214719a3fcc12fc93ab0720b`.
+
+Strict Release and all **773 C++ tests** pass, including an exact dense/sparse
+comparison with shared booster capacity, chained lifts and backlog. A 100-tick
+CLI continuation matches the baseline's entire city and session exactly apart
+from the output snapshot filename. All **58 rendered cases** pass in one
+invocation (419.2 seconds). Seven
+Python unit tests and all **771 headless ASan/UBSan cases** pass with no findings
+(`detect_leaks=0`; the two GLFW cases are excluded). All **771 headless TSan
+cases** also pass with no findings (`halt_on_error=1:history_size=7`). Logs,
+continuation outputs, source/candidate hashes and `verification-summary.json`
+are retained under `playtest-artifacts/m56-pressure-routing/`.
+Hosted CI, Windows remeasurement, leak
+qualification and three two-hour packaged sessions remain open.
+
 ## November 14 Windows work
 
 M56 remains **in progress**. M55's Windows display/DPI work is now locally
@@ -145,4 +287,4 @@ M56 stays open. The full-suite/sanitizer release item also requires fresh hosted
 CI tied to the candidate's source revision; the uncommitted local tree has not
 been published. Proposed-minimum Windows 1080p performance, Windows/platform
 qualification, leak qualification and three two-hour packaged-build sessions
-remain open. M55's full 1080-high and Windows 150% display checks also remain open.
+remain open. M55's Windows display/DPI acceptance is verified as recorded above.

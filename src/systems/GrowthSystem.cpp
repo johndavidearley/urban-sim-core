@@ -483,7 +483,8 @@ GrowthStats GrowthSystem::runStep(
   bool requireUtilities,
   const RoadNetwork* roads,
   const ServiceCoverageCache* services,
-  const DistrictSystem* districts
+  const DistrictSystem* districts,
+  float redevelopmentChance
 ) {
   GrowthStats stats;
   DeterministicRandom rng(seed);
@@ -560,7 +561,7 @@ GrowthStats GrowthSystem::runStep(
   // is read once and the appropriate action is taken based on occupancy.
   // Note: RNG draws are interleaved per-tile rather than per-phase, which
   // changes city evolution vs. the three-pass original (still deterministic).
-  const float rebuildBaseChance = 0.05f;
+  const float rebuildBaseChance = std::clamp(redevelopmentChance, 0.0f, 1.0f);
   for (int y = y0; y <= y1; ++y) {
     for (int x = x0; x <= x1; ++x) {
       Tile& tile = map.getTile({x, y});

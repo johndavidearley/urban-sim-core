@@ -39,12 +39,14 @@ class Session:
         terrain_seed: int = 42,
         simulation_seed: int = 98765,
         mode: str = "deterministic",
+        *,
+        terrain_profile: str | None = None,
     ) -> dict:
         async with self.lock:
-            return await self._launch(terrain_seed, simulation_seed, mode)
+            return await self._launch(terrain_seed, simulation_seed, mode, terrain_profile)
 
     async def _launch(
-        self, terrain_seed=42, simulation_seed=98765, mode="deterministic"
+        self, terrain_seed=42, simulation_seed=98765, mode="deterministic", terrain_profile=None
     ):
         if self.process and self.process.returncode is None:
             raise PlaytestError(
@@ -68,6 +70,10 @@ class Session:
         self.config = dict(
             terrain_seed=terrain_seed, simulation_seed=simulation_seed, mode=mode
         )
+        terrain_options = []
+        if terrain_profile is not None:
+            self.config["terrain_profile"] = terrain_profile
+            terrain_options = ["--terrain-profile", terrain_profile]
         env = os.environ.copy()
         self.log_file = (self.run_dir / "game.log").open("wb")
         self.broken = False
@@ -82,6 +88,7 @@ class Session:
                 str(simulation_seed),
                 "--time-mode",
                 mode,
+                *terrain_options,
                 cwd=self.run_dir,
                 env=env,
                 stdin=asyncio.subprocess.PIPE,

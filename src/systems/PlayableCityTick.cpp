@@ -301,7 +301,7 @@ void playableCityTick(
     growth = GrowthSystem::runStep(
       map, store, state.demand, tickSeed + 1u, options.growthChance,
       growthModifiers, {-1, -1}, {-1, -1}, nullptr, options.requireUtilities,
-      &roads, &state.serviceCache, options.districts
+      &roads, &state.serviceCache, options.districts, options.redevelopmentChance
     );
   }
   state.buildingsSpawned = growth.totalSpawned();

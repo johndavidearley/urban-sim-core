@@ -1,6 +1,7 @@
 #include "src/systems/UtilityNetworkSystem.hpp"
 #include "src/systems/EnvironmentSystem.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <queue>
 #include <numeric>
@@ -17,10 +18,21 @@ struct Router {
   std::vector<double> remaining,stationRemaining;
   bool hasStations=false;
   std::vector<Coord> stationSites;
+  std::vector<int> stationOrdinals;
+  // Scratch belongs to one evaluation, never a persisted/cross-tick cache.
+  // Bound the dense best-step table to 4 MiB; unusually station-heavy maps use
+  // the sparse search below. Reset only visited entries between searches.
+  mutable std::vector<int> pressureBest;
+  mutable std::vector<size_t> pressureTouched;
   Router(const CityMap& m,bool s,bool gridPower=false):map(m),width(m.getDimensions().x),sewer(s),remaining(m.getTileCount(),100),stationRemaining(m.getTileCount(),s?UtilityNetworkSystem::liftCapacity:UtilityNetworkSystem::boosterCapacity) {
     if(gridPower) for(size_t i=0;i<map.getTileCount();++i) {
       const Coord p{int(i%width),int(i/width)};
       if((sewer?map.utility(p).sewageLift:map.utility(p).waterBooster) && map.getTile(p).connectedToPower) {hasStations=true;stationSites.push_back(p);}
+    }
+    if(hasStations && stationSites.size()+2<=1048576/map.getTileCount()) {
+      stationOrdinals.assign(map.getTileCount(),-1);
+      for(size_t i=0;i<stationSites.size();++i) stationOrdinals[index(stationSites[i])]=int(i);
+      pressureBest.assign((stationSites.size()+2)*map.getTileCount(),-1);
     }
   }
   size_t index(Coord p) const {return static_cast<size_t>(p.y)*width+p.x;}
@@ -31,8 +43,18 @@ struct Router {
   // A parcel lateral drops into a sewer buried 2m below its terrain. Once
   // inside the trunk, pipe-to-pipe gravity still follows the original grade.
   bool sewerEntry(Coord parcel,Coord pipeTile) const {return height(pipeTile)-2.f<=height(parcel)+.05f;}
-  std::vector<Coord> connectors(Coord p) const {
-    std::vector<Coord> result;if(pipe(p)) result.push_back(p);
+  // At most the parcel itself and its four neighbours, in route priority order.
+  // Keep these frequent lookups on the stack rather than allocating per query.
+  struct Connectors {
+    std::array<Coord,5> tiles{};
+    size_t count=0;
+    void push_back(Coord p) {tiles[count++]=p;}
+    const Coord* begin() const {return tiles.data();}
+    const Coord* end() const {return tiles.data()+count;}
+    bool empty() const {return count==0;}
+  };
+  Connectors connectors(Coord p) const {
+    Connectors result;if(pipe(p)) result.push_back(p);
     for(auto d:directions) {const Coord n{p.x+d.x,p.y+d.y};if(pipe(n)) result.push_back(n); }
     return result;
   }
@@ -79,11 +101,23 @@ struct Router {
     struct State {size_t tile;int pump,steps,parent;};
     std::vector<State> states;std::queue<size_t> queue;
     std::unordered_map<uint64_t,int> best;
+    for(const auto i:pressureTouched) pressureBest[i]=-1;
+    pressureTouched.clear();
     const auto push=[&](size_t tile,int pump,int steps,int parent) {
       if(residual && remaining[tile]<=epsilon) return;
-      const auto key=(uint64_t(pump+2)<<32)|tile;
-      const auto found=best.find(key);if(found!=best.end() && found->second<=steps) return;
-      best[key]=steps;states.push_back({tile,pump,steps,parent});queue.push(states.size()-1);
+      if(!pressureBest.empty()) {
+        const auto ordinal=pump<0?pump+2:stationOrdinals[size_t(pump)]+2;
+        const size_t key=size_t(ordinal)*map.getTileCount()+tile;
+        auto& previous=pressureBest[key];
+        if(previous>=0 && previous<=steps) return;
+        if(previous<0) pressureTouched.push_back(key);
+        previous=steps;
+      } else {
+        const auto key=(uint64_t(pump+2)<<32)|tile;
+        const auto found=best.find(key);if(found!=best.end() && found->second<=steps) return;
+        best[key]=steps;
+      }
+      states.push_back({tile,pump,steps,parent});queue.push(states.size()-1);
     };
     for(Coord p:starts) {
       if(sewer ? sewerEntry(from,p) : height(p)<=height(from)+UtilityNetworkSystem::pumpHead-.05f)

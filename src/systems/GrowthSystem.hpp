@@ -134,6 +134,7 @@ public:
     bool requireUtilities = false,
     const RoadNetwork* roads = nullptr,
     const ServiceCoverageCache* services = nullptr,
-    const DistrictSystem* districts = nullptr
+    const DistrictSystem* districts = nullptr,
+    float redevelopmentChance = 0.05f
   );
 };

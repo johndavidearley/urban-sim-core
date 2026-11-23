@@ -13,6 +13,7 @@ public:
   PlaytestBridge();
   ~PlaytestBridge();
   bool deterministic = true;
+  bool journeyTerrain = false;
   uint32_t terrainSeed = 42, simulationSeed = 98765;
   uint64_t revision = 0, frame = 0;
   void

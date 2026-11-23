@@ -191,6 +191,132 @@ input as `ui`, window operations as `window`, and other commands as `semantic`.
 
 ## Recording and evidence
 
+### Paced exploratory usage
+
+Use a paced walkthrough when assessing the player experience: keep a moderate
+neighbourhood view, approach the interaction site gradually, orbit around it,
+leave time to read previews/inspectors, and observe normal-speed simulation.
+Capture the intermediate interaction states and visually review them. Fast
+batched regression runs and stationary performance probes retain their separate
+purposes; neither establishes that a session feels usable.
+
+`urban_sim_mcp.paced_input.PacedInput` provides eased cursor movement, separate
+held-button frames, reading pauses, moderate zoom (24–36 tile pixels), native
+panning and local right-drag orbiting. Its gesture cleanup releases held buttons
+when interrupted. Use it in new exploratory scripts instead of instantaneous
+endpoint-only input batches. Cancel active construction tools before orbiting.
+
+Run a saved-city walkthrough with:
+
+```sh
+PYTHONPATH=playtest .venv/bin/python playtest/examples/organic_walkthrough.py \
+  --executable build-strict/bin/UrbanSimCore-playtest \
+  --session /path/to/developed-city.json
+```
+
+The runner imports a copy of the save, uses native input to load/focus/zoom,
+visits three nearby service types in 3D at native 1X, orbits each interaction
+area, and reads the visible-surface inspector. It then pauses, previews and
+cancels a short connected street extension, checks unchanged tick/funds/road
+count, and buys the same street for its quoted price. It orbits the finished
+street, reads the budget, observes eight more seconds at native 1X, then saves
+its copy. It records actions, delays, screenshots, camera/site data
+and validation results under `playtest-artifacts/organic-walkthrough/`.
+This is scripted exploration requiring visual review, not an autonomous player,
+OS-input-delivery test or an uninstrumented performance measurement. Existing
+journey acceptance traces retain their original pacing and candidate identity.
+
+November 16 local macOS acceptance:
+`playtest-artifacts/organic-walkthrough/20261116-090203-54d200d6/` visits the
+hospital, power and water sites at 30-pixel zoom. All three native orbits and
+visible-surface pins pass, 11 normal-speed ticks advance, and Vulkan reports
+zero validation errors. All six captures were visually reviewed: neighbourhood
+context is retained and inspectors/budget are readable; the large HUD panels
+still occupy substantial screen area. Nine Python unit tests pass, including
+interrupted-gesture button release and rejection of extreme exploration zoom.
+
+November 17 live/construction extension:
+`playtest-artifacts/organic-walkthrough/20261117-090532-ce7067e2/` retains the
+same 30-pixel view and slower gestures while 53 simulation ticks advance during
+the three site visits. The paused street preview from (49,48) to (49,50) is
+cancelled without changing tick, funds or road count. Rebuilding spends the
+quoted $200 for two new road tiles; the final local orbit passes. Eleven more
+ticks advance during the closing observation, with zero Vulkan validation
+errors. Ten Python tests pass, including cancellation before mouse release when
+a construction preview check fails.
+
+Six captures (three live inspectors and three construction states) were visually
+reviewed. The road-mode status text overlaps the illness/crime column in
+`captures/street-preview.png`; this is an open usability finding, not a visual
+acceptance pass. Large HUD/inspector panels also consume substantial view area.
+The walkthrough's semantic reads and per-frame input bridge responses mean its
+wall times must not be used as uninstrumented performance measurements.
+
+November 17 HUD repair: the full HUD now fits tool-mode text to its own column,
+with an eight-pixel gap before service statistics and an ellipsis for long
+labels. Detailed road settings remain in the construction palette. Strict
+Release builds successfully. The paced walkthrough rerun at
+`playtest-artifacts/organic-walkthrough/20261117-091237-b8680c9d/` passes live
+orbits/inspection (53 ticks), cancellation, the quoted $200 street purchase and
+the closing observation (11 ticks), with zero Vulkan validation errors.
+Visual review of `captures/street-preview.png` confirms separation from the
+illness/crime column and readable palette settings, closing the overlap finding
+above. This does not close the broader concern about HUD/inspector view area.
+The run result retains executable, checkpoint and runner/helper hashes.
+
+November 18 panel-footprint pass: hover inspection is now a brief tile/site
+summary with a growth blocker and an explicit I-to-pin hint. Pinned inspection
+retains local growth, neighbourhood and department-capacity diagnostics in
+consecutive rows, omitting duplicated citywide capacity rows. On the service
+sites reviewed here, hover height falls from 406 to 164 logical pixels and
+pinned height to 324; occupied sites add one row. Text size is unchanged.
+The main HUD falls from 370 to 326 pixels by removing the always-visible income
+band, migration and freight detail rows. Citywide school/hospital capacities
+remain visible, and Budget/Disasters controls move upward with shared hitboxes.
+
+Strict Release, all 774 C++ tests and ten Python tests pass. The new geometry
+regression compares hover/pinned bounds and validates the moved HUD controls.
+Evidence: `playtest-artifacts/organic-walkthrough/20261118-090918-d7e31653/`.
+At 30-pixel zoom, the paced run advances 60 live exploration ticks, passes native
+orbits, previews/cancels and purchases the $200 street, opens Budget using the
+moved button, then advances eleven observation ticks. Native F5/F9 reload
+preserves tick, funds, road count and paused state. Vulkan validation errors: zero.
+Four captures were visually reviewed (hover, pinned, preview and reload), showing
+readable text and more unobstructed city area. This closes the bounded panel-size
+follow-up locally; it is not outside-player or Windows display acceptance.
+
+### Moving citizens and vehicles
+
+Add `--check-activity` to the paced walkthrough on a developed mixed city to
+require visible cars, freight trucks and pedestrians, changed position samples
+while running, and identical samples/time while paused. The runner also captures
+top-down and perspective views, using native panning to keep the developed
+neighbourhood visible in top-down mode. Actor counts and a bounded position
+sample are available in `state.activity`.
+
+November 18 local acceptance is retained in
+`playtest-artifacts/city-activity-qualification/verification-summary.json` and
+`playtest-artifacts/organic-walkthrough/20261118-102408-e44c09ac/`.
+Strict Release, all 780 C++ tests and ten Python tests pass. Two targeted native
+camera/picking and pipe save/CLI-continuation regressions pass. The paced 10k city
+shows 192 cars, 64 trucks and 96 pedestrians; movement, exact pause, local
+orbits/inspection, paid street construction and native save/reload pass with
+zero Vulkan validation errors. Visual review covers the distributed traffic,
+different moving frames, sidewalk figures and both camera projections plus
+top-down. A separate same-tick reload regression at
+`playtest-artifacts/city-activity-reload/20261118-102328-ae55ffd4/` loads an
+unoccupied test copy with the same roads/building count, verifies that its
+pedestrians clear, then reloads the inhabited source and verifies their return.
+Only owned test copies are edited. Successful native reload explicitly
+invalidates the renderer's activity cache.
+
+The C++ activity tests cover empty cities, connected routes, one-way roads,
+freight-only truck paths, bounded counts, deterministic sampling, pause,
+congestion-speed continuity, road removal, non-interference with picking,
+Bezier/deck geometry and omission of highway sidewalk walkers. These visual
+representatives do not add simulation agents or save fields; see
+[rendering behavior](RENDERING_3D.md#moving-city-activity).
+
 Default deterministic sessions run simulation only through explicit ticks
 (including the player step key while paused), with controlled animation time.
 Realtime sessions retain normal wall-clock pause/speed behavior. Terrain and
@@ -1008,3 +1134,135 @@ The roof inspection acceptance fixture contains one tall office. At four angles
 in each camera projection, it projects a roof point, pins that building through
 native I input, then proves that a road drag from the same pixel still starts
 on the ground behind it. Fixtures do not change normal construction rules.
+
+## Ten-thousand-resident finance balance
+
+The November 19 finance candidate changes fixed catalog construction prices and
+raises playable redevelopment's base chance from 0.05 to 0.30. New buildings,
+recurring taxes/upkeep, starting cash, and autonomous growth defaults keep their
+existing settings. See [the current catalog](POPULATION_MILESTONES.md).
+
+The retained finance acceptance below used the grid profile. Reproduce that
+profile with paced 3D input:
+
+```sh
+PYTHONPATH=playtest .venv/bin/python playtest/examples/balanced_native_journey.py \
+  --executable build-strict/bin/UrbanSimCore-playtest --road-profile grid --flat-map
+```
+
+Fresh runs default to a 96×96 terrain map with seed 42, a connected river and
+lake, and heightmap-driven hills. The construction area keeps its base grade
+and remains buildable for both road profiles. Checkpoint resumes use the
+terrain saved in the checkpoint.
+
+Purchases use native tools and quotes. The runner uses neighborhood zoom,
+separate eased pointer events, held previews, checkpoint orbits, and reading
+pauses. Time advances with paused batches of native single-step events; this is
+not a realtime scheduling or performance test. At 8,000 residents it switches
+to individual ticks to capture the first 10,000-resident crossing. The reserve
+target is $200,000–$500,000; `result.json` records `reserve_pass`. It also requires
+100 subsequent ticks with positive total cash flow after redevelopment, every
+service at 100% funding, no debt, and an exact 100-tick native reload/CLI replay.
+Individual capital-spending spikes may have negative cash flow.
+
+The fixed itinerary expands western housing once its $150,000 reserve and
+3,000 residents are available. Its tools unlock by 500 residents, so waiting
+for the 5,000 tier unnecessarily banks idle surplus. It retains the existing
+5/8/6/9/5 tax rates through final growth instead of taking the old itinerary's
+optional household/income cut to 4/8/6/9/4 before building a reserve. Players who defer
+expansion can still accumulate more cash; there is no treasury cap or
+retroactive subtraction from saves. Budget income/expenses remain per tick,
+not a weekly claim based on another game's calendar.
+
+`--calibration` uses fast top-down input and must be distinguished from paced
+acceptance. The three resume flags import retained utility-recovery, tier-2500, or
+city-infrastructure checkpoints, check the executable hash, and retain a `resume.json` chain plus
+prior ledger/decision records. They do not grant funds or alter the city.
+
+November 19 local macOS acceptance reaches **10,004 residents at tick 3,479
+with $395,628**, 230 buildings and 51 facilities. The next 100 ticks receive
+$414,607 and spend $287,920 including redevelopment, gaining $126,687. Every
+service stays at 100%, debt remains zero, and power/water supply are sufficient.
+The earlier itinerary with the unnecessary 5,000 wait reaches $753,835; earlier
+housing plus the optional tax cut reaches $169,206. These retained comparisons
+show why cash depends on expansion and policy timing rather than population
+alone. No reserve limit is imposed by the simulation.
+
+The earned checkpoint chain, all on executable SHA-256
+`5e5f2ac2fb4a4817482c5a7e5c46be681f9b538b5aa058d46172d203f233a05d`, is:
+
+- `playtest-artifacts/balanced-journey/20261119-081547-1ce5fc57/`: fresh opening
+  through utility recovery. A slash in a screenshot name safely cancelled the
+  next preview; the runner now sanitizes stage names.
+- `playtest-artifacts/balanced-journey/20261119-082149-34ee6bd4/`: resume from
+  utility recovery through tier 2,500; also retains the late-expansion comparison.
+- `playtest-artifacts/balanced-journey/20261119-083938-de31adaa/`: resume from
+  tier 2,500 through earlier housing and retail construction; also retains the
+  optional tax-cut comparison.
+- `playtest-artifacts/balanced-journey/20261119-085333-224193f1/`: resume from the
+  infrastructure checkpoint, restore established rates before another tick,
+  capture the exact first 10k crossing, sustainability and continuation checks.
+
+The final directory retains build hashes, resume ancestry, native actions,
+recording/captures, ledger/decisions, snapshots and strict-build/C++/Python logs.
+This is one fixed-seed local balance journey, not broad seed or Windows release
+qualification. Existing M55 Windows and M56 performance evidence refers to its
+recorded older candidates.
+
+Final acceptance passes 100-tick native reload and CLI continuation with exact
+whole-city/session comparison, zero Vulkan validation errors across the earned
+checkpoint chain, 781 C++ tests and ten Python unit tests. The reviewed 10k
+capture shows the correct $395,628 treasury; its -$93 single-tick balance includes
+redevelopment, while the following 100-tick ledger gains $126,687. See
+`verification-summary.json` in the final directory for source/executable hashes
+and checks. No realtime/performance or Windows rerun is claimed.
+
+
+## Half-grid, half-curved playtests
+
+The full `balanced_native_journey.py` now defaults to `--road-profile mixed`:
+**nine grid street placements and nine freeform Bezier street placements**.
+The count excludes the existing-road arterial upgrade, cancelled previews and
+retries. It measures construction strokes, not individual cardinal simulation
+edges or a census of junction angles. Curve previews cannot silently fall back
+to grid roads. `road-mix.json` and checkpoint `.roads.json` files retain each
+nominal street, actual routing path, saved curve and count. Mixed resumes require
+matching geometry metadata; use `--road-profile grid` for older grid checkpoints.
+
+Zoning and service sites follow the actual saved routing nodes. This matters
+because the rendered swept footprint can contain road-marked tiles that have
+no routing node. Pipes follow every turn of the built path and use shared
+trenches at intersections. Checkpoints assert a connected street graph and
+water/sewer continuity along every street. These placements use normal funds
+and native tools. Changes in street shape also change traffic, buildable land
+and financial outcomes; the older grid finance result is not a new mixed-city
+reserve qualification.
+
+The shorter `organic_walkthrough.py` now previews, cancels and purchases **one
+grid street and one freeform curve**, with a local orbit at each. It lays paid
+water/sewer trenches along both paths, checks every routing tile, captures the
+curved utility overlay in 3D and top-down views, and verifies reload. Its
+`road-mix.json` and `walkthrough-result.json` record the 50/50 interaction split.
+Existing roads in an imported save are not counted as new placements.
+
+November 19 local verification:
+
+- Full native fast calibration:
+  `playtest-artifacts/mixed-layout-calibration/20261119-100215-8afdd6fb/`.
+  All 18 streets (9/9), roadside pipe continuity, connected routing, 10,032
+  residents and exact 100-tick native reload/CLI continuation pass. The city
+  gains $138,141 over its next 100 ticks with full funding and no debt. Its
+  $545,100 first-10k treasury exceeds the older $500,000 reserve target;
+  `reserve_pass` is correctly false. This is geometry qualification, not a new
+  successful finance acceptance or a full paced 3D journey.
+- Paced 3D walkthrough:
+  `playtest-artifacts/mixed-layout-walkthrough/20261119-100516-56b4d451/`.
+  One grid street ($200) and one curve ($700), cancelled previews, paid
+  continuous roadside water/sewer ($140/$490), local orbits, activity movement
+  and exact pause, budget reading and native reload pass. 3D and top-down
+  curved-utility captures were visually reviewed; zero Vulkan errors.
+- Strict Release, all 783 C++ tests and 13 Python tests pass. The final
+  calibration directory contains logs, source/build hashes and
+  `verification-summary.json`. Both native runs use executable SHA-256
+  `8b510e681eda3ac4ce8f191098b72496ea2d4610c866bc1ed42dedc84e4d67dd`.
+  Earlier grid finance/performance evidence retains its own build identity.

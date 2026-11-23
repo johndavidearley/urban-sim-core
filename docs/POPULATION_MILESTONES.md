@@ -62,32 +62,40 @@ python3 tools/catalog_price_calibration.py path/to/measurements.json
 | 5,000 | 4,781–5,211 | $2,986 |
 | 10,000 | 9,900–10,101 | $2,855 |
 
-Early schools and hospitals cost about 500–591 ticks at the $11 reference;
-generic power costs about 1,091. Major newly unlocked facilities now cost
-roughly 400–750 ticks at their own tier. Substations remain a cheaper reach-only
-purchase. Road and zoning unit prices keep roughly the same ticks per segment
-or tile as early local roads and R/C/I zoning.
+The historical surplus reference above motivated the first milestone prices.
+The November 18 reserve tuning replaces those prices: long density waits and
+large required purchases encouraged banking millions before 10,000 residents.
+The new target is $200,000–$500,000 on first reaching 10,000 during the fixed
+fresh-city journey, with full service funding, no debt, and positive cash flow
+including redevelopment over the following 100 ticks. This is a playthrough
+target, not a cash cap; cities can continue saving and existing saves keep cash.
 
-| Tier | Item | Construction cost | Reference ticks of surplus |
-|------|------|-------------------|----------------------------|
-| 500 | New arterial segment / upgrade | $1,500 / $1,400 | 8.6 / 8.0 |
-| 500 | Park tile | $1,500 | 8.6 |
-| 500 | Cemetery / recycling | $80,000 / $100,000 | 457 / 571 |
-| 1,200 | Office tile | $1,500 | 2.2 |
-| 1,200 | Gas / solar | $400,000 / $300,000 | 596 / 447 |
-| 2,500 | Substation | $150,000 | 120 |
-| 2,500 | Hydro | $750,000 | 600 |
-| 2,500 | Shore treatment | $600,000 | 480 |
-| 2,500 | Crematorium / incinerator | $650,000 / $900,000 | 520 / 721 |
-| 5,000 | Hotel / passenger terminal | $1,500,000 each | 502 |
-| 5,000 | Cargo port | $1,800,000 | 603 |
-| 10,000 | Nuclear / airport | $1,800,000 each | 630 |
+| Tier | Item | Construction cost |
+|------|------|-------------------|
+| 500 | New arterial segment / upgrade | $400 / $300 |
+| 500 | Park tile | $250 |
+| 500 | Cemetery / recycling | $16,000 / $20,000 |
+| 1,200 | Office tile | $250 |
+| 1,200 | Gas / solar | $80,000 / $60,000 |
+| 2,500 | Substation | $30,000 |
+| 2,500 | Hydro | $150,000 |
+| 2,500 | Shore treatment | $120,000 |
+| 2,500 | Crematorium / incinerator | $65,000 / $90,000 |
+| 5,000 | Hotel / passenger terminal | $250,000 / $300,000 |
+| 5,000 | Cargo port | $350,000 |
+| 10,000 | Nuclear / airport | $350,000 each |
 
-Local roads stay $100 per new segment; R/C/I stay $25 per changed tile. Every
-starting service and power variant retains its original construction price and
-upkeep. Districts and height-cap edits remain free; bus placement and municipal
-bond terms are unchanged. A default autonomous `--simulate` run is unchanged.
-Final integrated balance tuning and the revised player journey belong to M54.
+Playable redevelopment uses a base chance of 0.30 rather than 0.05. Demand,
+land value, congestion, civic coverage, height caps, and construction charges
+still apply. New-building chance stays 0.18. Autonomous GrowthSystem callers
+retain the 0.05 default. Native and CLI session continuation use the same
+playable rules. Older saves can develop faster after loading, without treasury
+rebasing or compensation for earlier purchases.
+
+Local roads stay $100 per new segment; R/C/I stay $25 per changed tile. Starting
+services and power variants retain their construction prices and upkeep. Tax
+rates, recurring expenses, districts, bus placement, and bond terms are unchanged.
+Budget flows remain per simulation tick; no weekly conversion is implied.
 
 Tests cover exact boundaries, skipped tiers, population decline, malformed and
 legacy saves, shared native/MCP refusals, nuclear and airport unlocks, and legacy
@@ -95,7 +103,7 @@ airport operation. Older feature acceptance scenarios explicitly grant tiers in
 their save fixtures; fresh-city and migration progression checks remain separate.
 
 
-Local validation: strict Clang, 643 CTest cases, seven Python unit tests and all
+Historical M49 validation (before the reserve tuning): strict Clang, 643 CTest cases, seven Python unit tests and all
 41 rendered acceptance cases (39 in the full run, two corrected fixture
 assertions verified in a targeted rerun). Native hotel, airport and treatment
 prices were inspected at 800×640. Exact affordability, forged/stale plans and
@@ -103,3 +111,9 @@ one-time charging are covered across every repriced service. Two retained
 pre-pricing early-city continuations match their saved sessions and city
 snapshots exactly; the default 400-tick CSV matches M46 byte-for-byte. Evidence
 and calibration data are under `playtest-artifacts/m49-prices/`.
+
+November 19 reserve acceptance reaches 10,004 residents with $395,628; the next
+100 ticks add $126,687 after growth spending, with all services fully funded and
+no debt. Expansion and tax choices still change the result. The retained
+[finance journey](PLAYTESTING.md#ten-thousand-resident-finance-balance) records
+its checkpoint ancestry and alternative itineraries.

@@ -48,16 +48,27 @@ async def run(args):
         assert session.last_state["population"] >= 10000
         await key("F10")
         await control("settings_reset")
-        await control("settings_resolution")
-        await control("settings_resolution")
+        for _ in range(("1280x720", "1600x900", "1920x1080").index(args.resolution)):
+            await control("settings_resolution")
         await control("settings_apply")
         await control("settings_close")
-        assert [session.last_state["dimensions"][k] for k in ("width", "height")] == [1920, 1080]
+        width, height = map(int, args.resolution.split("x"))
+        actual = session.last_state["dimensions"]
+        assert [actual[k] for k in ("width", "height")] == [width, height], actual
         await key("F")
         await control("speed_1")  # The native 1X button is a 700 ms interval.
         if session.last_state["paused"]:
             await key("Space")
         await asyncio.sleep(args.warmup)
+        if args.cpu_profile:
+            if platform.system() != "Darwin":
+                raise RuntimeError("--cpu-profile requires macOS sample")
+            assert session.process is not None
+            profiler = await asyncio.create_subprocess_exec(
+                "sample", str(session.process.pid), "10", "-file",
+                str(session.artifact("cpu-profile.txt")))
+            if await profiler.wait():
+                raise RuntimeError("CPU sampling failed")
         await session.request("status")
         start_tick = session.last_state["tick"]
         started = time.monotonic()
@@ -74,8 +85,8 @@ async def run(args):
         rows = list(csv.DictReader(capture.open(newline="", encoding="utf-8")))
         active = [r for r in rows if r["paused"] == "0"
                   and start_tick < int(r["tick"]) < end_tick
-                  and r["width"] == "1920" and r["height"] == "1080"]
-        assert active, "No active 1080p samples"
+                  and int(r["width"]) == width and int(r["height"]) == height]
+        assert active, "No active samples at the requested resolution"
         frames = [float(r["frame_ms"]) for r in active]
         ticks = [float(r["tick_ms"]) for r in active if float(r["tick_ms"]) > 0]
         interval = state["speed_interval_ms"]
@@ -88,6 +99,8 @@ async def run(args):
             "frames": len(frames), "mean_fps": 1000 / (sum(frames) / len(frames)),
             "p50_frame_ms": percentile(frames, .5), "p95_frame_ms": percentile(frames, .95),
             "p99_frame_ms": percentile(frames, .99), "max_frame_ms": max(frames),
+            "mean_tick_ms": sum(ticks) / len(ticks) if ticks else None,
+            "p50_tick_ms": percentile(ticks, .5) if ticks else None,
             "p95_tick_ms": percentile(ticks, .95) if ticks else None,
             "max_schedule_late_ms": max(float(r["schedule_late_ms"]) for r in active),
             "start_tick": start_tick, "end_tick": end_tick,
@@ -95,8 +108,9 @@ async def run(args):
             "completed_ticks": end_tick - start_tick,
             "tick_deficit": max(0, wall * 1000 / interval - (end_tick - start_tick)),
             "population": state["population"], "validation_errors": state["validation_errors"],
+            "dimensions": state["dimensions"],
             "frame_time_pass": percentile(frames, .95) <= 33.3,
-            "scope": "developer realtime 1080p probe; no packaged-soak or minimum-hardware sign-off",
+            "scope": f"developer realtime {args.resolution} probe; no packaged-soak or minimum-hardware sign-off",
         }
         session.artifact("performance-result.json").write_text(json.dumps(result, indent=2))
         print(json.dumps(result, indent=2), flush=True)
@@ -115,6 +129,10 @@ if __name__ == "__main__":
     p.add_argument("--artifacts", default="build-windows/m56-performance")
     p.add_argument("--seconds", type=float, default=120)
     p.add_argument("--warmup", type=float, default=10)
+    p.add_argument("--resolution", choices=("1280x720", "1600x900", "1920x1080"),
+                   default="1920x1080", help="Use smaller sizes only for diagnostic comparisons")
+    p.add_argument("--cpu-profile", action="store_true",
+                   help="Capture a macOS CPU sample before the timed measurement")
     args = p.parse_args()
     if args.seconds <= 0 or args.warmup < 0:
         p.error("seconds must be positive and warmup nonnegative")

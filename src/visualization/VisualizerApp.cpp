@@ -14,6 +14,8 @@
 #include "src/visualization/RoadAlignmentRender.hpp"
 #include "src/visualization/ScenePicking3D.hpp"
 #include "src/visualization/Scene3D.hpp"
+#include "src/visualization/CityActivityRender.hpp"
+#include "src/visualization/UtilityOverlayGeometry.hpp"
 #include "src/gameplay/CatalogUnlocks.hpp"
 #include <algorithm>
 #include <cctype>
@@ -97,6 +99,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
   VulkanRenderer gpu(host.window());
   DrawList drawList;
   ScenePicking3D scenePicking;
+  CityActivity cityActivity;
   DrawList *renderer = &drawList;
   int windowWidth = 1280, windowHeight = 800;
   if (argc > 1 && (std::string(argv[1]) == "--graphics-smoke" ||
@@ -222,7 +225,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
 
   if (!loadedAtStartup) {
     if (start.generateTerrain) {
-      TerrainGenerator::generate(map, bridge ? bridge->terrainSeed : 42u);
+      TerrainParams terrain;
+      if (bridge && bridge->journeyTerrain && mapSize == 96)
+        terrain.buildArea = TerrainBuildArea{{4, 34}, {70, 66}};
+      TerrainGenerator::generate(map, bridge ? bridge->terrainSeed : 42u, terrain);
     }
     // A new game is intentionally empty: the player establishes the first
     // road, zones, and services through the same tools used thereafter.
@@ -677,6 +683,7 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     liveState.paused = session.paused;
     liveState.tickIntervalMs = session.tickIntervalMs;
     liveState.demand = session.demand;
+    cityActivity.invalidate();
     liveState.treasuryRevenue = session.treasuryRevenue;
     liveState.treasuryExpenses = session.treasuryExpenses;
     liveState.treasuryNet = session.treasuryNet;
@@ -1377,6 +1384,18 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
                          {"earthquake", liveState.disasters.disaster.earthquakeOccurred},
                          {"flood", liveState.disasters.disaster.floodOccurred}}},
          {"dirty", sessionDirty},
+         {"activity", [&]() {
+           nlohmann::json sample=nlohmann::json::array();
+           size_t cars=0,trucks=0,people=0;
+           for(const auto& a:cityActivity.actors()) {
+             const char* kind=a.kind==CityActivity::Kind::Car ? "car" : a.kind==CityActivity::Kind::Truck ? "truck" : "pedestrian";
+             if(a.kind==CityActivity::Kind::Car) ++cars;
+             else if(a.kind==CityActivity::Kind::Truck) ++trucks;else ++people;
+             if(sample.size()<12) sample.push_back({{"kind",kind},{"x",a.x},{"z",a.z}});
+           }
+           return nlohmann::json{{"cars",cars},{"trucks",trucks},{"pedestrians",people},
+                                  {"seconds",cityActivity.seconds()},{"sample",sample}};
+         }()},
          {"population", population.getTotalPopulation()},
          {"buildings", store.getBuildingCount()},
          {"facilities", facilities.size()},
@@ -2560,6 +2579,10 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     }
     if(liveState.tick<lastAutosaveTick) lastAutosaveTick=liveState.tick;
 
+    cityActivity.refresh(roads,store,liveState.tick);
+    cityActivity.advance(renderer->frameTimeMs,liveState.paused || showQuitDialog || showSettings || showSaveBrowser,
+                         700.f/float(liveState.tickIntervalMs));
+    const auto visibleActivity=cityActivity.actors();
     setDrawColor(renderer, 91, 108, 91, 255);
     clearFrame(renderer);
 
@@ -2646,28 +2669,32 @@ int runVisualizer(int argc, char *argv[], visualizer::PlaytestBridge *bridge) {
     if(!threeDimensionalView) for(int level:{-1,0,1}) for(const auto& alignment:roads.alignments())
       if(alignment.elevation==level) drawAlignmentTopDown(renderer,alignment,viewX,viewY,tilePixels,{57,63,70},false,&roads);
 
+    if(threeDimensionalView) drawCityActivity3D(renderer,camera3D(),visibleActivity);
+    else drawCityActivityTopDown(renderer,visibleActivity,viewX,viewY,tilePixels);
+
     if(overlayMode==OverlayMode::Utilities) {
       const auto point=[&](float x,float z) -> ScreenPoint {
         if(threeDimensionalView) return camera3D().worldToScreen({x,.09f,z});
         return {int((x-viewX)*tilePixels),int((z-viewY)*tilePixels)};
       };
+      for(int kind:{1,2}) {
+        const auto geometry=utilityOverlayGeometry(map,roads,kind==1);
+        const float offset=kind==1?-.07f:.07f;
+        const RGB color=kind==1?RGB{75,200,255}:RGB{245,150,65};
+        setDrawColor(renderer,color.r,color.g,color.b,255);
+        for(const auto& segment:geometry.segments) {
+          const auto a=point(segment.first.x+offset,segment.first.y+offset);
+          const auto b=point(segment.second.x+offset,segment.second.y+offset);
+          renderer->line(a.x,a.y,b.x,b.y);renderer->line(a.x+1,a.y,b.x+1,b.y);
+        }
+        for(const auto p:geometry.junctions) {
+          const auto a=point(p.x+offset,p.y+offset);
+          drawFilledRect(renderer,a.x-2,a.y-2,4,4,color);
+        }
+      }
       const auto dims=map.getDimensions();
       for(int y=0;y<dims.y;++y) for(int x=0;x<dims.x;++x) {
         const auto& cell=map.utility({x,y});
-        for(int kind:{1,2}) {
-          if(kind==1?!cell.waterPipe:!cell.sewerPipe) continue;
-          const float offset=kind==1?-.07f:.07f;
-          const auto a=point(x+.5f+offset,y+.5f+offset);
-          if(a.x<-100 || a.y<-100 || a.x>windowWidth+100 || a.y>windowHeight+100) continue;
-          const RGB color=kind==1?RGB{75,200,255}:RGB{245,150,65};
-          drawFilledRect(renderer,a.x-2,a.y-2,4,4,color);
-          for(Coord d:{Coord{1,0},Coord{0,1}}) {
-            const Coord n{x+d.x,y+d.y};if(!map.isValid(n)) continue;
-            const auto& next=map.utility(n);if(kind==1?!next.waterPipe:!next.sewerPipe) continue;
-            const auto b=point(n.x+.5f+offset,n.y+.5f+offset);
-            setDrawColor(renderer,color.r,color.g,color.b,255);renderer->line(a.x,a.y,b.x,b.y);renderer->line(a.x+1,a.y,b.x+1,b.y);
-          }
-        }
         for(int station:{4,5}) {
           if(station==4?!cell.sewageLift:!cell.waterBooster) continue;
           const auto p=point(x+.5f,y+.5f);const bool powered=station==4?cell.liftPowered:cell.boosterPowered;
