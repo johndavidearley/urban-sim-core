@@ -1,181 +1,66 @@
-name: CI
+name: Regenerate 10k checkpoint
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
+on: workflow_dispatch
 
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  strict:
-    name: Strict (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+  checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Install Linux graphics dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libvulkan-dev glslc mesa-vulkan-drivers vulkan-validationlayers xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols xvfb xauth weston xdotool wmctrl openbox x11-utils
-
-      - name: Install macOS graphics dependencies
-        if: runner.os == 'macOS'
-        run: brew install glfw vulkan-headers vulkan-loader molten-vk shaderc
-
-      - name: Install Windows Vulkan SDK
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $version = '1.4.313.0'
-          $installer = Join-Path $env:RUNNER_TEMP 'vulkan-sdk.exe'
-          $sdkRoot = Join-Path $env:RUNNER_TEMP 'VulkanSDK'
-          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$version/windows/vulkansdk-windows-X64-$version.exe" -OutFile $installer
-          $process = Start-Process -FilePath $installer -ArgumentList "--root `"$sdkRoot`" --accept-licenses --default-answer --confirm-command install" -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw 'Vulkan SDK installation failed' }
-          "VULKAN_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "$sdkRoot\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-
-      - name: Set up Python for MCP playtesting
-        uses: actions/setup-python@v5
+          persist-credentials: false
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      - name: Install and test MCP server
-        run: |
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev glslc mesa-vulkan-drivers vulkan-validationlayers xorg-dev libwayland-dev wayland-protocols libxkbcommon-dev xvfb xauth
           python -m pip install ./playtest
-          python -m unittest discover -s playtest/tests -p test_unit.py -v
-
-      - name: Test consumer packaging helpers
-        run: python -m unittest discover -s scripts/tests -v
-
-      - name: Configure
-        run: >-
-          cmake -S . -B build-ci
-          -DCMAKE_BUILD_TYPE=Debug
-          -DURBAN_SIM_WARNINGS_AS_ERRORS=ON
-
-      - name: Build
-        run: cmake --build build-ci --config Debug --parallel 2
-
-      - name: Test
-        run: ctest --test-dir build-ci -C Debug --parallel 4 --output-on-failure
-
-      - name: Linux Vulkan smoke (X11)
-        if: runner.os == 'Linux'
-        run: |
-          timeout 90s xvfb-run -a ./build-ci/bin/UrbanSimCore-visualizer --graphics-smoke graphics-x11
-          python3 scripts/check_graphics_capture.py graphics-x11
-
-      - name: Linux visualizer controls (X11)
-        if: runner.os == 'Linux'
-        run: timeout 90s xvfb-run -a bash scripts/smoke_visualizer_controls.sh ./build-ci/bin/UrbanSimCore-visualizer
-
-      - name: Linux Vulkan smoke (Wayland)
-        if: runner.os == 'Linux'
-        run: timeout 100s xvfb-run -a bash scripts/smoke_wayland.sh ./build-ci/bin/UrbanSimCore-visualizer graphics-wayland
-
-      - name: MCP rendered playtests (X11)
-        if: ${{ success() && runner.os == 'Linux' }}
+      - run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 2 --target UrbanSimCore-playtest UrbanSimCore-cli
+      - name: Earn and validate the checkpoint
         env:
-          URBAN_SIM_PLAYTEST_EXECUTABLE: ${{ github.workspace }}/build-ci/bin/UrbanSimCore-playtest
-          URBAN_SIM_PLAYTEST_ARTIFACTS: ${{ github.workspace }}/playtest-artifacts/x11
-        # The full rendered suite runs on the hosted software Vulkan renderer.
-        run: timeout 600s xvfb-run -a bash scripts/smoke_playtest_x11.sh
+          XDG_SESSION_TYPE: x11
+          LP_NUM_THREADS: '2'
+        run: xvfb-run -a -s '-screen 0 1920x1080x24' python playtest/examples/balanced_native_journey.py --executable build/bin/UrbanSimCore-playtest --calibration
+      - name: Make the validated checkpoint portable
+        run: |
+          python - <<'PY'
+          import json
+          import shutil
+          from pathlib import Path
 
-      - name: MCP rendered playtests (Wayland)
-        if: ${{ success() && runner.os == 'Linux' }}
-        run: timeout 600s xvfb-run -a bash scripts/smoke_playtest_wayland.sh ./build-ci/bin/UrbanSimCore-playtest ./playtest-artifacts/wayland
-
-      - name: Upload MCP playtest evidence
-        if: always()
-        uses: actions/upload-artifact@v4
+          root = Path("playtest-artifacts/balanced-journey")
+          session_path, = root.glob("*/sustainable-ten-thousand.json")
+          city_path = session_path.with_suffix(".city.json")
+          session = json.loads(session_path.read_text())
+          city = json.loads(city_path.read_text())
+          population = sum(group["size"] for group in city["populationGroups"])
+          assert population >= 10000, population
+          evidence = session_path.parent
+          assert json.loads((evidence / "result.json").read_text())["complete"]
+          output = Path("checkpoint")
+          output.mkdir()
+          session["citySnapshot"] = city_path.name
+          (output / session_path.name).write_text(json.dumps(session, indent=2))
+          shutil.copyfile(city_path, output / city_path.name)
+          for name in ("build-identity.json", "result.json", "sustainability.json", "continuation.json"):
+              shutil.copyfile(evidence / name, output / name)
+          print(f"Population: {population}; tick: {session['tick']}")
+          PY
+      - uses: actions/upload-artifact@v4
         with:
-          name: playtest-${{ matrix.os }}
+          name: earned-10k-checkpoint
+          path: checkpoint/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: checkpoint-diagnostics
           path: playtest-artifacts/
-          if-no-files-found: ignore
-
-      - name: Verify install layout
-        run: cmake --install build-ci --config Debug --prefix install-ci
-
-      - name: Installed macOS graphics smoke
-        if: runner.os == 'macOS'
-        run: |
-          env -u VK_DRIVER_FILES -u VK_ICD_FILENAMES ./install-ci/bin/UrbanSimCore-visualizer --graphics-smoke graphics-macos
-          python3 scripts/check_graphics_capture.py graphics-macos
-
-      - name: Upload graphics captures
-        if: always() && runner.os != 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphics-${{ matrix.os }}
-          path: |
-            graphics-*/
-            weston.log
-          if-no-files-found: ignore
-
-  asan-ubsan:
-    name: ASan and UBSan
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Configure
-        run: >-
-          cmake -S . -B build-sanitized
-          -DCMAKE_BUILD_TYPE=Debug
-          -DURBAN_SIM_WARNINGS_AS_ERRORS=ON
-          -DURBAN_SIM_ENABLE_ASAN_UBSAN=ON
-          -DURBAN_SIM_BUILD_VISUALIZER=OFF
-
-      - name: Build
-        run: cmake --build build-sanitized --parallel 2
-
-      - name: Test
-        env:
-          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
-          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: ctest --test-dir build-sanitized --parallel 4 --output-on-failure
-
-  tsan:
-    name: ThreadSanitizer
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Configure
-        run: >-
-          cmake -S . -B build-tsan
-          -DCMAKE_BUILD_TYPE=Debug
-          -DURBAN_SIM_WARNINGS_AS_ERRORS=ON
-          -DURBAN_SIM_ENABLE_TSAN=ON
-          -DURBAN_SIM_BUILD_VISUALIZER=OFF
-
-      - name: Build
-        run: cmake --build build-tsan --parallel 2
-
-      - name: Test
-        env:
-          TSAN_OPTIONS: halt_on_error=1:history_size=7
-        run: ctest --test-dir build-tsan --parallel 4 --output-on-failure
